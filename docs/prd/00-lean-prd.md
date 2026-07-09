@@ -1,15 +1,15 @@
 # Sakta Cab — Lean Hypothesis PRD
 
-**Status: LIVING DRAFT — the project-start gate. The exact feature list is deliberately NOT final here: it gets added/finalized from the anketa answers (Atis & Dina, the product developers, questionnaire in progress). Review with Atis; the spec (01-spec.md) follows once the hypothesis + anketa-derived features settle.**
-**Date:** 2026-07-06 · **Author:** Linards + Claude · **Canon:** second-brain `prd-best-practices.md` (lean PRD, hypothesis with RIGHT and WRONG conditions)
+**Status: LIVING DRAFT — the project-start gate. Anketa first pass is IN (76/76 answered 2026-07-06/07; translation + synthesis in `anketa-findings.md`). Review with Atis; the spec (01-spec.md) follows once the hypothesis + anketa-derived features settle.**
+**Date:** 2026-07-06, evidence updated 2026-07-09 · **Author:** Linards + Claude · **Canon:** second-brain `prd-best-practices.md` (lean PRD, hypothesis with RIGHT and WRONG conditions) · **Evidence:** `anketa-findings.md`
 
 ## Problem statement
 
-Rīga's ride-hailing market is dominated by Bolt, and its drivers carry the cost: Atis (working Bolt driver, our partner) pays an **effective ~30% commission** and describes penalty and support practices bad enough that we are collecting documentary evidence (screenshots via the anketa). On the rider side, competitors do specific jobs badly or not at all — no professional 24/7 dispatcher, unreliable scheduled pickups, no multi-taxi orders, and near-unusable apps for blind users. Evidence base: firsthand from Atis (driver, Bolt) and Dina (working dispatcher, Rīga autoosta), being formalized in the Sakta Cab anketa (76 questions, running).
+Rīga's ride-hailing market is dominated by Bolt, and its drivers carry the cost. First-pass anketa numbers (Atis, working Bolt driver, our partner): Bolt's base commission is **25% plus a surge margin the driver never sees** — he cannot see what the passenger pays at all; his single documented worst gap is a ride where **the passenger paid €200 and he received €130** (35%). Add penalties over "mixed-up addresses" and support that didn't resolve his last issue. On the rider side, competitors do specific jobs badly or not at all — no professional dispatcher who knows the city (Panda's phone dispatch exists but "dispatchers don't know Rīga"), unreliable scheduled pickups, no multi-taxi orders, and near-unusable apps for blind users — Atis independently named **blind clients** as demand no service covers. Evidence base: anketa first pass 76/76 answered (2026-07-06/07), translated and synthesized in `anketa-findings.md`; documentary screenshots still to be collected (follow-up round open).
 
 ## Why now
 
-- Atis is committed as the business partner and driver-side insider; Dina is the planned dispatcher — the differentiator staffing exists before the software does.
+- Atis is committed as the business partner and driver-side insider (self-rated readiness **10/10** in the anketa); Dina is the planned dispatcher — and the anketa revealed she **headed the planning & scheduling department at Lady Taxi**, working directly with taxi drivers. The differentiator staffing exists, credentialed, before the software does.
 - Bolt's driver terms create a recruitment wedge: a platform taking ~half the commission is a direct raise for a driver who switches.
 - AI-assisted solo development makes a four-surface platform buildable by one person at near-zero payroll — the cost structure that historically made "compete with Bolt" absurd no longer holds.
 - The anketa is already gathering the numbers that turn this from opinion into evidence.
@@ -24,7 +24,7 @@ Rīga's ride-hailing market is dominated by Bolt, and its drivers carry the cost
 > **We'll know we're RIGHT if** ≥20 drivers are active (≥1 shift/week) and the platform completes ≥200 rides/week within 3 months of the Rīga pilot opening, with ≥30% of riders taking a repeat ride within a month.
 > **We'll know we're WRONG if** after 3 months of pilot we have <10 active drivers, or monthly driver churn exceeds 50%, or the median pickup ETA in the pilot geozones exceeds 15 minutes (riders won't switch, regardless of driver goodwill).
 
-*Numbers are provisional — to be pressure-tested against anketa findings and set final with Atis before pilot. The switch test: drivers switch for money (30% → ~10–15% is a raise); riders switch only for reliability at price parity. Solving the driver problem is the bet; rider UX is table stakes.*
+*Numbers are provisional — to be pressure-tested against anketa findings and set final with Atis before pilot. The switch test: drivers switch for money (30% → ~10–15% is a raise); riders switch only for reliability at price parity. Solving the driver problem is the bet; rider UX is table stakes. Anketa first pass confirms the wedge: fair commission = **14%**, he wouldn't even consider switching above **16%**, and he prefers a **flat 15% with no bonus games** over 25%-with-bonuses. **Decision (Linards, 2026-07-09): launch commission = 10% flat** — under even the "fair" line, so the driver pitch is unambiguous (Bolt keeps 25, we keep 10). His pilot-guarantee thresholds: €15/h or €500/week; at 0% + guarantee for 3 months he's in.*
 
 ## Target user
 
@@ -49,15 +49,17 @@ Rīga's ride-hailing market is dominated by Bolt, and its drivers carry the cost
 | One dispatcher (Dina) ≠ 24/7 | Pilot volume fits staffed hours | Phase dispatcher hours; dispatcher-off fallback = pure auto-match |
 | €100/mo budget vs Google Maps costs | Free credit + caching covers pilot volume | Cache geocodes/routes, monitor spend weekly, OSM fallback seam |
 | Solo builder bus factor | Strict conventions keep the repo handoff-able | Per-app CLAUDE.md, VSA, deterministic validation gates |
+| Anketa numbers soft where it matters most | Respondents can produce hard weekly numbers + screenshots when nudged | Precizējumi round (12-item list in `anketa-findings.md`) before any number goes into a pitch |
 
 ## Open questions
 
-1. Exact commission % (anketa → what feels like a raise but sustains the platform?)
-2. Driver payout rails — Stripe Connect availability/cost for LV drivers vs SEPA batch transfers?
-3. ATD registration requirements for a dispatching platform (vs taxi operator) — exact obligations?
-4. Rider acquisition: what makes the first 500 riders download an app with 20 cars?
-5. Which Rīga geozones open first (center + RIX + autoosta?)
+1. ~~Exact commission %~~ **DECIDED (Linards, 2026-07-09): launch at 10% flat, no penalty fees.** Deliberately under the evidenced band (fair = 14%, switch ceiling = 16% — `anketa-findings.md`) to maximize the recruitment wedge. Stays config-not-constant; revisit against pilot unit economics.
+2. Driver payout rails — Stripe Connect availability/cost for LV drivers vs SEPA batch transfers? *New wrinkle: instant-payout importance contradicts itself in the anketa (1/10 score vs rank #2 switch reason) — clarify before building rails.*
+3. ATD registration requirements for a dispatching platform (vs taxi operator) — exact obligations? *(Still open; Atis's legal status "Other" (S1-4) also unresolved — affects onboarding/tax design.)*
+4. Rider acquisition: what makes the first 500 riders download an app with 20 cars? *Partial: phone-booking segments named (elderly, hotels, bars, restaurants); autoosta partnership door = its marketing manager; rider pitch order = cheaper → call-or-app → local.*
+5. ~~Which Rīga geozones open first~~ **Evidenced: center + RIX + Old Town/nightlife + autoosta; peaks weekdays 07–09:30 & 16:30–19:00, Fri/Sat nights** — final zone cut with Atis.
 6. SIA formation timing (blocks Stripe live mode, Apple company account).
+7. **New:** does the evidence dossier materialize? Zero screenshots uploaded so far — the Bolt weekly report (S2-1) is the single most important missing artifact.
 
 ## Success metrics (pilot window: first 3 months, Rīga)
 
@@ -67,7 +69,7 @@ Rīga's ride-hailing market is dominated by Bolt, and its drivers carry the cost
 
 ## Experiments (thinnest slices first)
 
-1. **Anketa** (running) — hard numbers on Bolt economics + feature validation from the two insiders. Output feeds commission model and backlog.
+1. **Anketa** (first pass complete 2026-07-07; precizējumi round open) — numbers on Bolt economics + feature validation from the two insiders landed in `anketa-findings.md`; screenshots still owed. Output feeds commission model and backlog.
 2. **Demo** (no deadline, quality-first) — one ride end-to-end across all four surfaces **plus the three differentiators** (scheduled ride, multi-taxi order, shared-ride price knock-down) shown to Atis & Dina.
 3. **Driver LOI test** — before pilot spend, pitch the commission model to drivers from Atis's network; count signed/verbal commitments against the ≥20-driver RIGHT condition.
 4. **Rīga soft pilot** — limited geozones, staffed dispatcher hours, measure the RIGHT/WRONG conditions above.

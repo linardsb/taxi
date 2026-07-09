@@ -54,6 +54,8 @@ Admin link opens **review mode** in the same app: answers + screenshots side by 
 
 Answers stay editable; editing after review resets status to ↻. Statuses also land in the Sheet. This turns the multi-evening format into a dialogue.
 
+**Deep links (added 2026-07-06):** notification emails anchor to the exact spot — section-complete email → `&s=<N>` (opens that section; admin list scrolls to its heading); precizējumi digest → each question line carries `&q=<qid>` (opens the section and flashes that card). Params parsed at boot in `app.js`; invalid ids fall back safely.
+
 ## 6. Privacy
 
 Light-touch: intro screen states what the data is for, that it lives in Linards' private Drive, and that every question is skippable. Every upload zone reminds: blur/crop passenger names, addresses, phones. Dispatcher section additionally warns: nothing that breaches her employment confidentiality (no internal employer data).
@@ -69,7 +71,8 @@ Sections: Atis 1–6 (Profils · Naudas realitāte · Izmaksas · Attiecības ar
 2. ✅ **JAUTAJUMI.md** — question set approved 2026-07-06, content built 1:1 into the app.
 3. ✅ **Frontend built**: `app/` (index.html · styles.css · questions.js · app.js · config.js) — vanilla JS SPA, no framework, no build step. Demo mode fully functional in-browser (localStorage + IndexedDB for screenshots); live mode activates by setting the Apps Script URL in `config.js`. API contract documented in the header of `app.js`. Verified: 40/40 jsdom interaction tests + headless-Chrome render checks (76 questions in one combined pool, all widget types, by-tags, skip/autosave/complete, admin approve→comment→respondent-sees→edit→re-review loop).
 4. ✅ **Backend + deploy guide written**: `backend/Code.gs` (full API per contract, plus `setup()` and `resetAnswers()`) and `DEPLOY.md` (click-by-click). Execution pending on Linards: Google-side setup (~10 min, section A) and one `npx wrangler login`; then the deploy commands run from here.
-5. After both finish: synthesis report — findings + the actual anti-Bolt plan (service design, cooperative option, evidence dossier).
+5. ✅ **DEPLOYED & LIVE 2026-07-06**: https://sakta-cab.pages.dev wired to Apps Script /exec, smoke-tested end-to-end (health, token auth both roles, admin-only guard, save→read round-trip all pass). Links: anketa `?t=c4710c10f5584b038ec4`, admin `?t=89cf34681a554ee7be3f`. Optional: Linards runs `resetAnswers` to clear one blank smoke-test row; add Dina's email to RESP_EMAILS.
+6. 🔶 **IN PROGRESS 2026-07-09**: first pass answered **76/76** (2026-07-06/07). Synthesis + full EN translation: `docs/prd/anketa-findings.md`; PRD (`docs/prd/00-lean-prd.md`) updated with the evidence. Review round DONE via API 2026-07-09: 63 answers ✓ apstiprināts, 13 ❓ precizēt with comments, 📣 digest (all 13 items) sent. Waiting on: respondents' clarifications and the evidence dossier (zero screenshots uploaded yet; Bolt weekly report is the key missing artifact). Note: RESP_EMAILS still lacks Dina's address — digest reached only Atis.
 
 ## 9. Decided against
 
