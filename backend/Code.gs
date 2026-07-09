@@ -47,10 +47,19 @@ function setup() {
     NOTIFY_EMAIL: Session.getActiveUser().getEmail() || 'linardsberzins@gmail.com',
     COMPLETED: '[]',
     APP_URL: 'https://sakta-cab.pages.dev',
-    RESP_EMAILS: 'atisvikis@gmail.com', // precizējumu e-pastu saņēmēji — pievieno Dinas adresi ar komatu
+    RESP_EMAILS: 'atisvikis@gmail.com, dina_vike@inbox.lv', // precizējumu e-pastu saņēmēji (Atis + Dina)
   });
   Logger.log('Gatavs! ↓');
   logInfo_();
+}
+
+// Uzstāda/atjaunina saņēmēju adreses un lapas URL arī tad, ja setup jau bija palaists.
+// Palaid vienreiz pēc koda atjaunināšanas — droši pārrakstāms, tokenus un datus nemaina.
+function configure() {
+  PROPS.setProperty('RESP_EMAILS', 'atisvikis@gmail.com, dina_vike@inbox.lv');
+  PROPS.setProperty('APP_URL', 'https://sakta-cab.pages.dev');
+  Logger.log('RESP_EMAILS = ' + PROPS.getProperty('RESP_EMAILS'));
+  Logger.log('APP_URL = ' + PROPS.getProperty('APP_URL'));
 }
 
 function logInfo_() {
@@ -243,13 +252,13 @@ function sectionComplete_(req) {
   if (email) {
     var appUrl = PROPS.getProperty('APP_URL') || '';
     var adminLink = appUrl
-      ? appUrl.replace(/\/$/, '') + '/?t=' + PROPS.getProperty('TOKEN_ADMIN')
+      ? appUrl.replace(/\/$/, '') + '/?t=' + PROPS.getProperty('TOKEN_ADMIN') + '&s=' + sid
       : '(ieraksti APP_URL Script Properties, lai šeit būtu klikšķināma saite)';
     MailApp.sendEmail(
       email,
       'Sakta Cab: pabeigta sadaļa ' + sid,
       'Anketā tikko atzīmēta kā pabeigta sadaļa ' + sid + '.\n\n' +
-      'Apskatīt un apstiprināt atbildes:\n' + adminLink + '\n\n' +
+      'Saite ved tieši uz šo sadaļu apskatam un apstiprināšanai:\n' + adminLink + '\n\n' +
       '— Sakta Cab anketa'
     );
   }
@@ -272,18 +281,18 @@ function notifyPrecizejumi_(req) {
   var to = (PROPS.getProperty('RESP_EMAILS') || '').trim();
   if (!to) throw new Error('Ieraksti RESP_EMAILS (⚙ Project Settings → Script Properties) — adreses, atdalot ar komatu.');
   var appUrl = PROPS.getProperty('APP_URL') || '';
-  var link = appUrl
-    ? appUrl.replace(/\/$/, '') + '/?t=' + PROPS.getProperty('TOKEN_ANKETA')
-    : '(anketas saite — ieraksti APP_URL Script Properties)';
+  var base = appUrl ? appUrl.replace(/\/$/, '') + '/?t=' + PROPS.getProperty('TOKEN_ANKETA') : '';
   var lines = items.map(function (it) {
-    return '• ' + it.num + '. ' + it.text + '\n   Linards: ' + (it.comment || '');
+    var qlink = base && it.qid ? '\n   → ' + base + '&q=' + it.qid : '';
+    return '• ' + it.num + '. ' + it.text + '\n   Linards: ' + (it.comment || '') + qlink;
   });
   MailApp.sendEmail(
     to,
     'Sakta Cab: Linards lūdz precizēt ' + items.length + ' atbildi(-es)',
-    'Sveiki!\n\nLinards pārskatīja jūsu atbildes un lūdz precizēt šos jautājumus:\n\n' +
+    'Sveiki!\n\nLinards pārskatīja jūsu atbildes un lūdz precizēt šos jautājumus.\n' +
+    'Aiz katra jautājuma ir saite, kas ved tieši uz to anketā:\n\n' +
     lines.join('\n\n') +
-    '\n\nAtveriet anketu — pie šiem jautājumiem būs oranžs komentārs:\n' + link + '\n\n— Sakta Cab anketa'
+    '\n\n— Sakta Cab anketa'
   );
   sheet_(SHEET_EVENTS).appendRow([new Date(), 'nosūtīts precizējumu e-pasts (' + items.length + ')', '']);
   return { sent: items.length };

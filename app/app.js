@@ -18,7 +18,8 @@
  *  deleteFile  {qid,fileId}                  -> { ok }
  *  sectionComplete {sectionId}               -> { ok }   (nosūta e-pastu Linardam)
  *  setStatus   {qid,status,comment}          -> { ok }   (tikai admin tokenam)
- *  notifyPrecizejumi {items:[{num,text,comment}]} -> { ok, sent } (admin; viens digest e-pasts Atim & Dinai)
+ *  notifyPrecizejumi {items:[{qid,num,text,comment}]} -> { ok, sent } (admin; viens digest e-pasts Atim & Dinai)
+ * Dziļās saites (e-pastos): ?t=<token>&s=<sadaļa> vai &q=<qid> — atver un izgaismo konkrēto vietu.
  * atbildes ieraksts (rec): { data:{lauks:vērtība}, files:[meta], skipped, status, comment, by }
  * status: null | 'jauns' | 'atjaunots' | 'apstiprinats' | 'precizet'
  */
@@ -38,6 +39,9 @@ const App = {
   errMsg: '',
   _kopa: null,         // demo krātuves kešs
   _arm: null,          // "pabeigt sadaļu" dubultklikšķa stāvoklis
+  deepQ: null,         // dziļā saite: konkrēts jautājums (?q=S5-3)
+  deepS: null,         // dziļā saite: sadaļa (?s=5)
+  _deepPending: false, // patērē dziļo saiti tikai pirmajā renderā
 };
 
 const thumbCache = {};
@@ -805,7 +809,7 @@ function matchesFilter(q, r) {
 
 function openPrecizejumi() {
   return QUESTIONS.filter((q) => getRec(q.id).status === 'precizet')
-    .map((q) => ({ num: qnum(q), text: q.text, comment: getRec(q.id).comment || '' }));
+    .map((q) => ({ qid: q.id, num: qnum(q), text: q.text, comment: getRec(q.id).comment || '' }));
 }
 
 let armNotify = false;
@@ -872,7 +876,7 @@ function renderAdmin() {
   for (const s of SECTIONS) {
     const qs = questionsOf(s.id).filter((q) => matchesFilter(q, getRec(q.id)));
     if (!qs.length) continue;
-    content.append(el('div', { class: 'asec-h' },
+    content.append(el('div', { class: 'asec-h', 'data-sec-anchor': String(s.id) },
       el('span', { class: 'yn' }, s.id + '.'), s.title,
       el('span', { class: 'badge who who-' + s.who }, WHO[s.who].ico + ' ' + WHO[s.who].dat),
       st0.completed.includes(s.id) ? el('span', { class: 'compl' }, '✓ pabeigta') : null));
@@ -1007,9 +1011,34 @@ function render() {
       el('p', {}, App.errMsg || 'Pārbaudi saiti vai interneta savienojumu.'),
       el('button', { class: 'btn', onclick: () => location.reload() }, 'Mēģināt vēlreiz')));
   }
+  applyDeepLink();
+}
+
+// Dziļā saite no e-pasta: aizritina līdz konkrētajam jautājumam vai sadaļai un
+// uz brīdi to izgaismo. Patērē tikai vienreiz, lai vēlākie renderi neaizlec prom.
+function applyDeepLink() {
+  if (!App._deepPending) return;
+  if (App.screen !== 'main' && App.screen !== 'admin') return;
+  App._deepPending = false;
+  const qid = App.deepQ, sid = App.deepS;
+  requestAnimationFrame(() => {
+    let target = null;
+    if (qid) target = document.querySelector('[data-q="' + qid + '"]');
+    else if (sid != null) target = document.querySelector('[data-sec-anchor="' + sid + '"]');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const card = qid ? target : null;
+    if (card) { card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 2600); }
+  });
 }
 
 async function boot() {
+  App.deepQ = PARAMS.get('q');
+  App.deepS = PARAMS.get('s') != null ? Number(PARAMS.get('s')) : null;
+  if (App.deepQ && !QBYID[App.deepQ]) App.deepQ = null;
+  if (App.deepS != null && !SBYID[App.deepS]) App.deepS = null;
+  App._deepPending = !!(App.deepQ || App.deepS != null);
+
   const t = PARAMS.get('t');
   if (CFG.apiUrl && t) {
     App.mode = 'live';
@@ -1048,6 +1077,8 @@ async function boot() {
 }
 
 function pickStartSection() {
+  if (App.deepQ) { App.view.section = QBYID[App.deepQ].s; return; }
+  if (App.deepS != null) { App.view.section = App.deepS; return; }
   const st = store();
   const next = SECTIONS.find((s) => !st.completed.includes(s.id)) || SECTIONS[0];
   App.view.section = next.id;

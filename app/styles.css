@@ -180,6 +180,11 @@ html, body {
 .qcard:focus-within { border-color: rgba(255, 196, 0, 0.45); }
 .qcard.skipped { opacity: 0.55; }
 .qcard.st-precizet { border-color: rgba(255, 171, 64, 0.55); }
+.qcard.flash { animation: flashcard 2.6s ease; }
+@keyframes flashcard {
+  0%, 22% { border-color: var(--yellow); box-shadow: 0 0 0 3px rgba(255, 196, 0, 0.28); }
+  100% { border-color: var(--line); box-shadow: none; }
+}
 
 .qhead { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 4px; }
 .qnum { font-size: 12.5px; font-weight: 800; color: var(--yellow); padding-top: 3px; white-space: nowrap; }
