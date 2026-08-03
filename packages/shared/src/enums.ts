@@ -18,3 +18,27 @@ export type PricingModel = (typeof PRICING_MODELS)[number];
 
 export const DRIVER_STATUSES = ["offline", "online", "on_ride"] as const;
 export type DriverStatus = (typeof DRIVER_STATUSES)[number];
+
+/**
+ * The four evidenced pilot hotspots (S5-2, S7-2). Geozones themselves are data
+ * (#6 seeds them) — this is the stable slug set for the pilot, not a closed
+ * universe of zones; `geozone.slug` stays a free-form string.
+ */
+export const RIGA_PILOT_DISTRICTS = ["centre", "rix", "autoosta", "old_town"] as const;
+export type RigaPilotDistrict = (typeof RIGA_PILOT_DISTRICTS)[number];
+
+/** Outcome of one offer to one driver. Flat by design — see `rideOfferSchema.status`. */
+export const OFFER_STATUSES = ["pending", "accepted", "declined", "expired", "revoked"] as const;
+export type OfferStatus = (typeof OFFER_STATUSES)[number];
+
+/**
+ * How a ride got its driver: either a dispatch mode, or Dina's manual override.
+ * `dispatcher` is a source and not a `DispatchMode` because "dispatcher override
+ * is NOT a strategy" (.claude/references/dispatch-strategies.md).
+ */
+export const ASSIGNMENT_SOURCES = [...DISPATCH_MODES, "dispatcher"] as const;
+export type AssignmentSource = (typeof ASSIGNMENT_SOURCES)[number];
+
+/** Which rule produced a commission percentage. A const array so #27 adds "loyalty_tier" in one place. */
+export const COMMISSION_SOURCES = ["platform_base", "driver_override"] as const;
+export type CommissionSource = (typeof COMMISSION_SOURCES)[number];

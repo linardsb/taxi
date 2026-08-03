@@ -86,7 +86,7 @@ taxi/
 │   │                            #   execute, validate, code-review, code-review-fix, commit
 │   └── references/              # on-demand context: api-contracts.md, realtime-events.md,
 │                                #   ride-state-machine.md, dispatch-strategies.md, logging-standard.md
-├── .agent/plans/                # living per-feature plans (plan-format canon from second-brain)
+├── .claude/plans/                # living per-feature plans (plan-format canon from second-brain)
 ├── docs/
 │   ├── prd/                     # 00-lean-prd.md (hypothesis gate) → 01-spec.md (after gate)
 │   ├── domain/                  # ride lifecycle, geozones, pricing, LV/ATD regulatory notes

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DRIVER_STATUSES, LANGUAGES } from "../enums";
+import { centsSchema, commissionPctSchema } from "../money";
 
 export const driverProfileSchema = z.object({
   userId: z.string().uuid(),
@@ -15,6 +16,12 @@ export const driverProfileSchema = z.object({
   fleetId: z.string().uuid().nullable().default(null),
   rating: z.number().min(1).max(5).optional(),
   /** Net balance in cents; cash-ride commission nets against card earnings. Negative blocks new rides. */
-  balanceCents: z.number().int().default(0),
+  balanceCents: centsSchema.default(0),
+  /**
+   * Per-driver commission override set by admin (#20) — e.g. Atis's evidenced
+   * "0% + hourly guarantee" pilot (S6-7). null = use the platform base.
+   * Read by `resolveCommissionPct`.
+   */
+  commissionPctOverride: commissionPctSchema.nullable().default(null),
 });
 export type DriverProfile = z.infer<typeof driverProfileSchema>;

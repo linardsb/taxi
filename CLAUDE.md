@@ -38,7 +38,7 @@ pnpm --filter @taxi/shared test   # one package
 
 ## Workflow (PIV loop)
 
-Prime → Plan → Implement → Validate. Skills in `.claude/skills/`: run `prime` (or the focused `prime-app <surface>`) before planning, `plan-feature` writes `.agent/plans/<name>.md`, `execute` implements it, `validate` runs the gates. After a nontrivial slice ships, close the loop: `execution-report` (→ `.agent/execution-reports/`) then `system-review` (→ `.agent/system-reviews/`) — that pair evolves the skills and this file. `create-spec` writes `docs/prd/01-spec.md` once the lean PRD gate passes; `vertical-slice-audit` scores a slice against the VSA rules. Fresh session per phase; load only the surface you're working on.
+Prime → Plan → Implement → Validate. Skills in `.claude/skills/`: run `prime` (or the focused `prime-app <surface>`) before planning, `plan-feature` writes `.claude/plans/<name>.md`, `execute` implements it, `validate` runs the gates. After a nontrivial slice ships, close the loop: `execution-report` (→ `.claude/reports/`) then `system-review` (→ `.claude/system-reviews/`) — that pair evolves the skills and this file. **All PIV artifacts live under `.claude/`, never `.agent/`.** `create-spec` writes `docs/prd/01-spec.md` once the lean PRD gate passes; `vertical-slice-audit` scores a slice against the VSA rules. Fresh session per phase; load only the surface you're working on.
 
 ## On-demand context
 
