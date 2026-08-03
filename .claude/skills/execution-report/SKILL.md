@@ -18,7 +18,7 @@ You have just finished implementing a feature. Before moving on, reflect on:
 
 ## Generate Report
 
-Save to: `.agent/execution-reports/[feature-name].md`
+Save to: `.claude/reports/[feature-name].md`
 
 ### Meta Information
 

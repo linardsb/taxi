@@ -103,7 +103,7 @@ Based on patterns across divergences, suggest:
 
 ## Output Format
 
-Save your analysis to: `.agent/system-reviews/[feature-name]-review.md`
+Save your analysis to: `.claude/system-reviews/[feature-name]-review.md`
 
 ### Report Structure:
 

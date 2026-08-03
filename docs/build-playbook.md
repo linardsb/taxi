@@ -52,10 +52,10 @@ For **every** slice in the spec, fresh tab:
 ```
 1.  /prime-app <surface>                  # rider|driver|dispatch|admin|api|shared
 2.  /plan-feature <one-sentence slice statement from the spec>
-        → writes .agent/plans/<slice>.md; read it (5 min) — sanity-check
+        → writes .claude/plans/<slice>.md; read it (5 min) — sanity-check
           file list, patterns, validation commands
 3.  (new tab, or clear context)
-    /execute .agent/plans/<slice>.md
+    /execute .claude/plans/<slice>.md
 4.  /validate                             # or: pnpm check + targeted filter run
 5.  /code-review → /code-review-fix       # fix anything real it finds
 6.  /commit
