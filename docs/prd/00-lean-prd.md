@@ -1,6 +1,6 @@
 # Sakta Cab — Lean Hypothesis PRD
 
-**Status: LIVING DRAFT — the project-start gate. Anketa first pass is IN (76/76 answered 2026-07-06/07; translation + synthesis in `anketa-findings.md`). Review with Atis; the spec (01-spec.md) follows once the hypothesis + anketa-derived features settle.**
+**Status: SUPERSEDED (2026-08-03) by `docs/epics/sakta-cab.prd.md` — the main product PRD. Kept as historical draft. Note: launch commission changed 10% → 15% flat; driver target ≥20 → ≥10; see the new PRD for all current decisions.**
 **Date:** 2026-07-06, evidence updated 2026-07-09 · **Author:** Linards + Claude · **Canon:** second-brain `prd-best-practices.md` (lean PRD, hypothesis with RIGHT and WRONG conditions) · **Evidence:** `anketa-findings.md`
 
 ## Problem statement
