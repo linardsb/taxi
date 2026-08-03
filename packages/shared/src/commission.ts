@@ -64,17 +64,25 @@ export const fareSplitSchema = z
 export type FareSplit = z.infer<typeof fareSplitSchema>;
 
 /**
- * Builds the split. The net is derived by subtraction so the result always
- * satisfies `fareSplitSchema`'s invariant, at any rounding.
+ * Builds the split. The net is derived by subtraction, so the no-leak invariant
+ * holds at any rounding — but ONLY the sum is structural. Nothing bounds
+ * `resolution.pct`, so the result is parsed rather than asserted: returning it
+ * unparsed would type a rejected value as a `FareSplit`.
+ *
+ * That door is real, not theoretical. `CommissionDriverInput` is deliberately
+ * structural so #6 can hand it a raw Drizzle row that was never zod-parsed and
+ * #27 can widen it, and `pct: 150` there makes `driverNetCents` negative — a
+ * driver paying the platform. The parse costs one pass per offer and turns that
+ * into a loud failure at the source instead of a silent one on the offer card.
  */
 export function splitFare(totalCents: number, resolution: CommissionResolution): FareSplit {
   const commissionCents = commissionCentsFor(totalCents, resolution.pct);
-  return {
+  return fareSplitSchema.parse({
     currency: "EUR",
     totalCents,
     commissionPct: resolution.pct,
     commissionSource: resolution.source,
     commissionCents,
     driverNetCents: totalCents - commissionCents,
-  };
+  });
 }

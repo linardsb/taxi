@@ -11,7 +11,9 @@ import { rideOfferSchema } from "./schemas/ride";
  *
  * Wire timestamps are ISO strings (`z.string().datetime()`), not `Date`. The
  * domain schemas in ./schemas use `z.coerce.date()` and re-hydrate them on
- * receipt; do not unify the two worlds.
+ * receipt; do not unify the two worlds. This holds for all 8 events with no
+ * exception: `ride:offer` is derived from a domain schema, so it overrides its
+ * two date fields to obey the rule (see `rideOfferEventSchema`).
  *
  * `RT` must stay the first `as const` block in this file — the doc-sync check
  * that keeps .claude/references/realtime-events.md honest slices the catalog
@@ -71,11 +73,23 @@ export const rideStatusEventSchema = z.object({
 export type RideStatusEvent = z.infer<typeof rideStatusEventSchema>;
 
 /**
- * The offer contract IS the wire payload — one shape, no duplication.
- * `sentAt`/`expiresAt` serialize as ISO strings and `z.coerce.date()`
- * re-hydrates them on receipt.
+ * The wire projection of `rideOfferSchema` — derived with `.extend()` rather
+ * than restated, so the offer still has exactly one source of truth.
+ *
+ * The two timestamps are overridden on purpose. `rideOfferSchema` is the DOMAIN
+ * shape (`z.coerce.date()`, so `z.infer` says `Date`); this is the WIRE shape,
+ * and JSON carries ISO strings. Without the override the typed handler promises
+ * #15 a `Date` that never arrives: `payload.expiresAt.getTime()` would compile
+ * and throw, and `Date.now() < payload.expiresAt` would compile, coerce to NaN
+ * and silently render every offer as already-expired.
+ *
+ * Producers serialize before emitting; a consumer that wants the domain object
+ * calls `rideOfferSchema.parse(payload)`, which re-hydrates both fields.
  */
-export const rideOfferEventSchema = rideOfferSchema;
+export const rideOfferEventSchema = rideOfferSchema.extend({
+  sentAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+});
 export type RideOfferEvent = z.infer<typeof rideOfferEventSchema>;
 
 /** Clears the driver's offer card (#15) when the offer is no longer live. */
@@ -87,14 +101,27 @@ export const rideOfferRevokedEventSchema = z.object({
 });
 export type RideOfferRevokedEvent = z.infer<typeof rideOfferRevokedEventSchema>;
 
-/** A ride now has a driver — to the ride room and to the winning driver. */
-export const rideAssignedEventSchema = z.object({
-  rideId: z.string().uuid(),
-  driverId: z.string().uuid(),
-  source: z.enum(ASSIGNMENT_SOURCES),
-  dispatcherId: z.string().uuid().nullable().default(null),
-  at: z.string().datetime(),
-});
+/**
+ * A ride now has a driver — to the ride room and to the winning driver.
+ *
+ * Carries the same audit rule as `rideAssignmentSchema`: what the record
+ * rejects, the wire must reject too, or an unauditable override reaches Dina's
+ * board and admin (#20) and only fails later when someone writes the record.
+ * Safe as a `ZodEffects` here — unlike `rideSchema`, this is a leaf wire schema
+ * that nothing needs to `.omit()`/`.extend()`.
+ */
+export const rideAssignedEventSchema = z
+  .object({
+    rideId: z.string().uuid(),
+    driverId: z.string().uuid(),
+    source: z.enum(ASSIGNMENT_SOURCES),
+    dispatcherId: z.string().uuid().nullable().default(null),
+    at: z.string().datetime(),
+  })
+  .refine((a) => a.source !== "dispatcher" || a.dispatcherId !== null, {
+    message: "dispatcher assignments require dispatcherId (audit trail)",
+    path: ["dispatcherId"],
+  });
 export type RideAssignedEvent = z.infer<typeof rideAssignedEventSchema>;
 
 /**
@@ -139,8 +166,26 @@ export const rideRoom = (rideId: string) => `ride:${rideId}` as const;
 export const driverRoom = (driverId: string) => `driver:${driverId}` as const;
 export const dispatchRoom = (cityId: string) => `dispatch:${cityId}` as const;
 
-/** For Socket.IO generics in #7: `Server<ClientToServerEvents, ServerToClientEvents>`. */
+/**
+ * The SERVER's listen map: `Server<ClientToServerEvents, ServerToClientEvents>`.
+ *
+ * `unknown` on purpose — this is the untrusted boundary. A typed payload here
+ * would let a #7 handler read `payload.location.lat` off raw client JSON that
+ * has never been parsed, with the type system implying it was validated. The
+ * only way in is `driverLocationPingSchema.parse(payload)`, which is also what
+ * strips a spoofed `driverId` (see the schema comment above).
+ */
 export interface ClientToServerEvents {
+  [RT.driverLocation]: (payload: unknown) => void;
+}
+
+/**
+ * The CLIENT's emit map: `Socket<ServerToClientEvents, ClientToServerEmitEvents>`
+ * in the driver app. Typed, because the app is our own code and the payload it
+ * builds should be checked at compile time — the same event, one trust level
+ * per direction, mirroring the ping/event schema split above.
+ */
+export interface ClientToServerEmitEvents {
   [RT.driverLocation]: (payload: DriverLocationPing) => void;
 }
 

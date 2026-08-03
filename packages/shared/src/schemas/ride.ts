@@ -98,6 +98,31 @@ export const rideOfferSchema = z.object({
 });
 export type RideOffer = z.infer<typeof rideOfferSchema>;
 
+/**
+ * The two halves of the driver's transparency card must describe the SAME fare.
+ *
+ * `fareSplitSchema`'s no-leak refinement proves the split is internally
+ * consistent; it cannot see the quote sitting next to it. Without this, an
+ * offer built from a stale quote parses clean and the S2-5 card — the whole
+ * wedge — reads "€20.00 fare · you keep €4.25".
+ *
+ * A predicate rather than a `.refine()`, for the reason recorded on
+ * `isRideAssignmentConsistent`: `rideOfferSchema` must stay a plain `ZodObject`
+ * so #6 can derive a `ride_offers` insert shape from it. Call at the write and
+ * emit boundaries (#10/#11).
+ */
+export function isOfferSplitConsistent(offer: RideOffer): boolean {
+  return offer.quote.totalCents === offer.split.totalCents;
+}
+
+export function assertOfferSplitConsistent(offer: RideOffer): void {
+  if (!isOfferSplitConsistent(offer)) {
+    throw new Error(
+      `Offer ${offer.id}: split.totalCents ${offer.split.totalCents} does not match quote.totalCents ${offer.quote.totalCents}`,
+    );
+  }
+}
+
 /** The ride record ("RideRecord" in issue #2 and the build playbook). */
 export const rideSchema = z.object({
   id: z.string().uuid(),
@@ -137,6 +162,30 @@ export function assertRideAssignmentConsistent(ride: Ride): void {
     throw new Error(
       `Ride ${ride.id}: driverId ${String(ride.driverId)} does not match assignment.driverId ${String(
         ride.assignment?.driverId,
+      )}`,
+    );
+  }
+}
+
+/**
+ * The settled counterpart of `isOfferSplitConsistent`: what #11 pays the driver
+ * must be a cut of what the rider was actually quoted.
+ *
+ * Checked only when BOTH are present — a quote with no split is the legitimate
+ * mid-ride state (the quote lands at request time, the split at completion), so
+ * requiring both would fire on every in-flight ride.
+ */
+export function isRideSplitConsistent(ride: Ride): boolean {
+  return (
+    ride.quote === null || ride.split === null || ride.quote.totalCents === ride.split.totalCents
+  );
+}
+
+export function assertRideSplitConsistent(ride: Ride): void {
+  if (!isRideSplitConsistent(ride)) {
+    throw new Error(
+      `Ride ${ride.id}: split.totalCents ${String(ride.split?.totalCents)} does not match quote.totalCents ${String(
+        ride.quote?.totalCents,
       )}`,
     );
   }

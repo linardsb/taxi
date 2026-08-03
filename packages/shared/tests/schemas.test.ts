@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { splitFare } from "../src/commission";
 import { phoneSchema } from "../src/schemas/user";
 import {
+  assertOfferSplitConsistent,
   assertRideAssignmentConsistent,
+  assertRideSplitConsistent,
+  isOfferSplitConsistent,
   isRideAssignmentConsistent,
+  isRideSplitConsistent,
   rideAssignmentSchema,
   rideOfferSchema,
   rideRequestSchema,
@@ -170,6 +174,23 @@ describe("rideOfferSchema", () => {
   it("rejects a queue position of 0 (failure)", () => {
     expect(rideOfferSchema.safeParse({ ...base, queuePosition: 0 }).success).toBe(false);
   });
+
+  it("ties the split to the quote it splits (edge — the two halves of S2-5)", () => {
+    expect(isOfferSplitConsistent(rideOfferSchema.parse(base))).toBe(true);
+    // Same reason rideSchema stays plain: #6 needs .omit() for a ride_offers insert shape.
+    expect(() => rideOfferSchema.omit({ id: true })).not.toThrow();
+  });
+
+  it("throws when split.totalCents drifts from quote.totalCents (failure)", () => {
+    // Parses clean — fareSplitSchema only proves the split sums to ITS OWN
+    // total. Unguarded, the driver's card reads "€20.00 fare · you keep €4.25".
+    const drifted = rideOfferSchema.parse({
+      ...base,
+      split: splitFare(500, { pct: 15, source: "platform_base" }),
+    });
+    expect(isOfferSplitConsistent(drifted)).toBe(false);
+    expect(() => assertOfferSplitConsistent(drifted)).toThrow(/does not match quote.totalCents/);
+  });
 });
 
 describe("rideAssignmentSchema", () => {
@@ -231,6 +252,24 @@ describe("rideSchema", () => {
     // derive Drizzle insert shapes from it. This line stops typechecking if
     // anyone turns it into a ZodEffects with a `.refine()`.
     expect(() => rideSchema.omit({ id: true })).not.toThrow();
+  });
+
+  it("is split-consistent while quote or split is still null (edge — mid-ride)", () => {
+    // A quote with no split is the legitimate in-flight state (#11 writes the
+    // split at completion), so the predicate must not fire on it.
+    expect(isRideSplitConsistent(rideSchema.parse(base))).toBe(true);
+    expect(isRideSplitConsistent(rideSchema.parse({ ...base, quote }))).toBe(true);
+  });
+
+  it("throws when the settled split drifts from the quote (failure)", () => {
+    const ride = rideSchema.parse({
+      ...base,
+      status: "completed",
+      quote,
+      split: splitFare(500, { pct: 15, source: "platform_base" }),
+    });
+    expect(isRideSplitConsistent(ride)).toBe(false);
+    expect(() => assertRideSplitConsistent(ride)).toThrow(/does not match quote.totalCents/);
   });
 
   it("throws when assignment.driverId drifts from ride.driverId (failure)", () => {

@@ -64,6 +64,15 @@ describe("splitFare", () => {
     }
   });
 
+  it("throws on a pct the schema rejects, instead of returning it typed (failure)", () => {
+    // The reachable door: `CommissionDriverInput` is structural on purpose, so
+    // a raw #6 Drizzle row or a #27-widened input can carry an unbounded pct.
+    // Unparsed, this returned {commissionCents: 3000, driverNetCents: -1000}
+    // typed as a `FareSplit` — a driver paying the platform, and it typechecked.
+    expect(() => splitFare(2000, { pct: 150, source: "driver_override" })).toThrow();
+    expect(() => splitFare(2000, { pct: -1, source: "driver_override" })).toThrow();
+  });
+
   it("rejects a split that does not sum to the total (failure)", () => {
     expect(
       fareSplitSchema.safeParse({
