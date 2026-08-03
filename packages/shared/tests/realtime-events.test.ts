@@ -213,7 +213,7 @@ describe("rideOfferEventSchema — the wire projection", () => {
     const overWire: unknown = JSON.parse(JSON.stringify(emitted));
     const reparsed = rideOfferEventSchema.parse(overWire);
     expect(reparsed).toEqual(emitted); // nothing is lost or coerced in transit
-    expect((reparsed.expiresAt as unknown as Date).getTime).toBeUndefined();
+    expect(typeof reparsed.expiresAt).toBe("string");
 
     // ...and the domain schema still re-hydrates the same payload to Dates.
     const domain = rideOfferSchema.parse(overWire);
