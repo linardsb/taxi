@@ -17,6 +17,11 @@ describe("polygonToEwkt", () => {
     expect(ewkt.match(/24 56\.9/g)).toHaveLength(4);
   });
 
+  it("throws on a ring with fewer than 3 vertices instead of emitting invalid EWKT (failure)", () => {
+    expect(() => polygonToEwkt([])).toThrow(/≥3 vertices/);
+    expect(() => polygonToEwkt([{ lat: 56.9, lng: 24.0 }])).toThrow(/≥3 vertices/);
+  });
+
   it("emits SRID 4326 and lng-before-lat — WKT axis order, not lat-lng (failure guard)", () => {
     const ewkt = polygonToEwkt([
       { lat: 1, lng: 2 },

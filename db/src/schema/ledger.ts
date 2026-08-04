@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { ledgerEntryTypeEnum, ledgerOwnerTypeEnum } from "./enums";
 import { rides } from "./rides";
 
@@ -17,7 +17,8 @@ export const ledgerAccounts = pgTable(
     currency: text("currency").notNull().default("EUR"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("ledger_accounts_owner_uix").on(t.ownerType, t.ownerId)],
+  // NULLS NOT DISTINCT so the platform account (owner_id NULL) dedupes too.
+  (t) => [unique("ledger_accounts_owner_uix").on(t.ownerType, t.ownerId).nullsNotDistinct()],
 );
 
 export const ledgerEntries = pgTable(

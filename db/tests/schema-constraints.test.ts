@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import { drivers, rideFareLines, rides, users } from "../src/schema";
+import { drivers, ledgerAccounts, rideFareLines, rides, users } from "../src/schema";
 import { closeTestDb, getTestDb } from "./helpers";
 
 afterAll(closeTestDb);
@@ -50,7 +50,7 @@ describe("schema constraints", () => {
     const db = getTestDb();
     const result = await db.execute<{ table_name: string; column_name: string; data_type: string }>(
       sql`SELECT table_name, column_name, data_type FROM information_schema.columns
-          WHERE table_schema = 'public' AND column_name LIKE '%\_cents'`,
+          WHERE table_schema = 'public' AND column_name LIKE '%\\_cents'`,
     );
     expect(result.rows.length).toBeGreaterThan(0);
     for (const row of result.rows) {
@@ -58,6 +58,55 @@ describe("schema constraints", () => {
         `${row.table_name}.${row.column_name}: integer`,
       );
     }
+  });
+
+  it("a second platform ledger account (owner_id NULL) is rejected — NULLS NOT DISTINCT (failure)", async () => {
+    const db = getTestDb();
+    await db.insert(ledgerAccounts).values({ ownerType: "platform" });
+    const err: unknown = await db
+      .insert(ledgerAccounts)
+      .values({ ownerType: "platform" })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(String((err as Error).cause)).toMatch(/ledger_accounts_owner_uix/);
+  });
+
+  it("updated_at moves on UPDATE instead of staying frozen at insert (edge)", async () => {
+    const db = getTestDb();
+    const [rider] = await db
+      .insert(users)
+      .values({ phone: "+37120000003", role: "rider" })
+      .returning();
+    const [ride] = await db
+      .insert(rides)
+      .values({
+        orderId: "10000000-0000-4000-8000-000000000002",
+        status: "requested",
+        riderId: rider!.id,
+        request: {},
+        paymentMethod: "cash",
+        category: "standard",
+      })
+      .returning();
+
+    await new Promise((r) => setTimeout(r, 5)); // outlast ms timestamp granularity
+    const [after] = await db
+      .update(rides)
+      .set({ status: "cancelled_by_rider" })
+      .where(eq(rides.id, ride!.id))
+      .returning();
+    expect(after!.updatedAt.getTime()).toBeGreaterThan(ride!.updatedAt.getTime());
+  });
+
+  it("ride_offers has the driver-side composite index the dispatch loop reads by (edge)", async () => {
+    const db = getTestDb();
+    const result = await db.execute<{ indexdef: string }>(
+      sql`SELECT indexdef FROM pg_indexes
+          WHERE tablename = 'ride_offers' AND indexname = 'ride_offers_driver_idx'`,
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.indexdef).toMatch(/\(driver_id, status\)/);
   });
 
   it("rejects a ride status outside the shared state machine (failure)", async () => {

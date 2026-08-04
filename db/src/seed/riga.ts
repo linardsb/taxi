@@ -67,7 +67,12 @@ const ZONES: Record<
   },
 };
 
-/** Idempotent: upserts keyed on the natural uniques, so re-runs converge instead of duplicating. */
+/**
+ * Idempotent: upserts keyed on the natural uniques, so re-runs converge instead
+ * of duplicating. Caveat: only for seed-owned rows — if a same-name city or
+ * same-slug zone pre-exists under a different id (e.g. created via the admin
+ * panel, #20), the fixed-UUID exports above diverge from the actual rows.
+ */
 export async function seedRiga(db: Db): Promise<void> {
   await db
     .insert(cities)

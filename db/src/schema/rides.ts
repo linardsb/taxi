@@ -54,7 +54,10 @@ export const rides = pgTable(
     commissionCents: integer("commission_cents"),
     driverNetCents: integer("driver_net_cents"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
   (t) => [
     index("rides_rider_idx").on(t.riderId),
@@ -109,5 +112,9 @@ export const rideOffers = pgTable(
     /** 1-based position when the offer came from a geozone queue (S7-2). */
     queuePosition: integer("queue_position"),
   },
-  (t) => [index("ride_offers_ride_idx").on(t.rideId)],
+  (t) => [
+    index("ride_offers_ride_idx").on(t.rideId),
+    // Dispatch's driver-side hot read is always status-filtered ("pending offer for driver X?").
+    index("ride_offers_driver_idx").on(t.driverId, t.status),
+  ],
 );

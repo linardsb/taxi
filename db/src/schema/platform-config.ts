@@ -24,5 +24,8 @@ export const platformConfig = pgTable("platform_config", {
   defaultDispatchMode: dispatchModeEnum("default_dispatch_mode").notNull().default("auto_match"),
   offerTimeoutSeconds: integer("offer_timeout_seconds").notNull().default(20),
   unclaimedAlertSeconds: integer("unclaimed_alert_seconds").notNull().default(60),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
 });
