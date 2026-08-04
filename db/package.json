@@ -1,0 +1,36 @@
+{
+  "name": "@taxi/db",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Sakta Cab persistence layer: Drizzle schema, PostGIS migrations, Rīga pilot seed",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "pretest": "docker compose -f ../docker-compose.yml up -d --wait db",
+    "test": "vitest run",
+    "generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit migrate",
+    "seed": "tsx src/seed/run.ts"
+  },
+  "dependencies": {
+    "@taxi/shared": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@taxi/config": "workspace:*",
+    "@types/pg": "^8.11.0",
+    "drizzle-kit": "^0.31.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

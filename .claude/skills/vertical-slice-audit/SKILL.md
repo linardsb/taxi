@@ -1,19 +1,18 @@
 ---
 name: vertical-slice-audit
-description: Audit a feature or module against the Vertical Slice Architecture (VSA) checklist and produce a migration plan if it fails. Use when the user asks to "audit my feature for VSA", "check if this slice is AI-friendly", "score this module against vertical slice architecture", or wants to know whether a folder's code organization fits the vertical-slice pattern. Walks a 10-row checklist (own folder, local models/schemas/routes/service, local errors, colocated tests, explicit public API, low cross-feature coupling), scores each row, classifies the slice (AI-friendly / partially migrated / horizontally organized), and outputs a migration playbook if the slice scores below 9/10. Takes a `feature_path` argument pointing at the folder to audit.
-arguments:
-  - feature_path
+description: Audit a feature folder against the 10-row Vertical Slice Architecture checklist, score and classify it, and produce a migration playbook if it scores below 9/10. Use when checking whether a feature or module's code organization fits the vertical-slice pattern.
+argument-hint: "[feature_path]"
 ---
 
 # Vertical Slice Audit — Score a Feature, Produce a Migration Plan
 
 You are auditing a single feature/folder for adherence to Vertical Slice Architecture (VSA). VSA is the codebase-level optimization that lets a coding agent load one slice end-to-end and ship — instead of chasing cross-folder context across layered architecture.
 
-**Target path**: `$1` (the feature folder to audit). If `$1` is empty, ask the user which feature to audit before proceeding.
+**Target path**: `$ARGUMENTS` (the feature folder to audit). If `$ARGUMENTS` is empty, ask the user which feature to audit before proceeding.
 
 ## What you will do
 
-1. Read the target folder at `$1`
+1. Read the target folder at `$ARGUMENTS`
 2. Walk the 10-row checklist below, scoring each row
 3. Classify the slice based on the total score
 4. If the slice fails (score < 9/10), produce a step-by-step migration plan
@@ -23,7 +22,7 @@ You are auditing a single feature/folder for adherence to Vertical Slice Archite
 
 ## The 10-row checklist
 
-For the feature at `$1`, score each row PASS or FAIL:
+For the feature at `$ARGUMENTS`, score each row PASS or FAIL:
 
 | # | Check | PASS | FAIL |
 |---|---|---|---|

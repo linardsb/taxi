@@ -1,6 +1,6 @@
 # Sakta Cab — Build Playbook
 
-**Status:** the step-by-step execution guide from spec to demo. Written 2026-07-10, after the PRD gate passed. Numbers updated 2026-08-03 per `docs/epics/sakta-cab.prd.md` (commission locked: 15% flat; driver target ≥10). Sequencing decision (all 8 MVP components before pilot, linear) in `docs/epics/sakta-cab.architecture.md`. The slice lists below are the *expected* shape — `docs/prd/01-spec.md` (Step 1) finalizes them; where they disagree, the spec wins.
+**Status:** the step-by-step execution guide from spec to demo. Written 2026-07-10, after the PRD gate passed. Numbers updated 2026-08-03 per `docs/epics/sakta-cab.prd.md` (commission locked: 15% flat; driver target ≥10). Sequencing decision (all 8 MVP components before pilot, linear) in `docs/epics/sakta-cab.architecture.md`. The slice lists below are the *expected* shape — `/piv-slice-epic` (Step 1) finalizes them as GitHub Issues; where they disagree, the epic docs (`docs/epics/sakta-cab.prd.md` + `sakta-cab.architecture.md`) win.
 
 **The rhythm (memorize this, everything else is detail):** every slice = one PIV cycle in a fresh tab. Prime → Plan → Execute → Validate → Review → Commit. Never two execute-sessions in the same package at once. `pnpm check` green before every commit, no exceptions.
 
@@ -15,35 +15,35 @@
 | 0.3 | `cp .env.example .env` (fill values) | Linards | `pnpm --filter @taxi/api dev` boots, `curl localhost:3001/health` → 200 |
 | 0.4 | `pnpm install && pnpm check` | either | 12/12 turbo tasks green (baseline) |
 
-## Step 1 — The spec (one session, new tab)
+## Step 1 — Slice the epic into tickets (one session, new tab)
 
 Paste:
 
 ```
-/create-spec
+/piv-slice-epic docs/epics/sakta-cab.prd.md
 
 Context: the lean PRD gate has passed. Already decided and recorded: launch
 commission = 15% flat, no penalty fees (config, not constant). The precizējumi
 round is still out — treat driver weekly economics and the pilot guarantee
 amount (candidates: €15/h or €500/week) as unsettled CONFIG inputs, not
-blockers. Scope the spec to the PRD's Demo experiment: one ride end-to-end
+blockers. Scope the tickets to the PRD's Demo experiment: one ride end-to-end
 across all four surfaces plus the three differentiators (scheduled ride,
 multi-taxi order, shared-ride price knock-down), incorporating the validated
 feature signals from docs/prd/anketa-findings.md — hybrid dispatch with
 dispatcher override on unclaimed orders, geozone/district queue fairness,
 phone-booking channel as first-class, fare transparency to the driver,
 screen-reader-first rider flows, dispatcher console reliability over features.
-Shape the implementation phases as PIV cycles with named slices.
+Shape the tickets as PIV cycles with named slices and a dependency graph.
 ```
 
-**Your review checklist for `01-spec.md` (~30 min):**
+**Your review checklist for the ticket set (~30 min):**
 - [ ] Scope: everything the demo needs, nothing beyond it (non-goals respected)
 - [ ] Every slice traces to a PRD differentiator or an anketa signal
 - [ ] Phase order respects dependencies (contracts → api → clients → console → differentiators)
 - [ ] Unsettled numbers (guarantee, weekly economics) marked as config
-- [ ] Each phase's validation criteria are executable, not vibes
+- [ ] Each ticket's validation criteria are executable, not vibes
 
-Then: `/commit` in that tab.
+Then: `/piv-commit` in that tab.
 
 ## Step 2 — The per-slice loop (the template you repeat ~25–35 times)
 
@@ -51,22 +51,22 @@ For **every** slice in the spec, fresh tab:
 
 ```
 1.  /prime-app <surface>                  # rider|driver|dispatch|admin|api|shared
-2.  /plan-feature <one-sentence slice statement from the spec>
+2.  /piv-plan-implementation <ticket #N or one-sentence slice statement>
         → writes .claude/plans/<slice>.md; read it (5 min) — sanity-check
           file list, patterns, validation commands
 3.  (new tab, or clear context)
-    /execute .claude/plans/<slice>.md
-4.  /validate                             # or: pnpm check + targeted filter run
-5.  /code-review → /code-review-fix       # fix anything real it finds
-6.  /commit
+    /piv-implement .claude/plans/<slice>.md
+4.  /piv-validate                         # or: pnpm check + targeted filter run
+5.  /piv-review-changes → /piv-fix-review-findings   # fix anything real it finds
+6.  /piv-commit
 7.  Nontrivial slice or something diverged?
-    /execution-report → /system-review    # apply its CLAUDE.md/skill suggestions
+    /system-execution-report → /system-evolution-review   # apply 1–2 of its suggestions
 ```
 
 **Session hygiene rules:**
 - One slice per tab. Kill the tab when the slice is committed.
-- Never run two `execute` sessions that touch the same package concurrently. Parallel work across *different* surfaces is fine once contracts are stable.
-- If `/execute` hits two failed fix attempts on a gate, stop — hand the error output back to a fresh session with the plan, don't let it thrash.
+- Never run two `piv-implement` sessions that touch the same package concurrently. Parallel work across *different* surfaces is fine once contracts are stable.
+- If `/piv-implement` hits two failed fix attempts on a gate, stop — hand the error output back to a fresh session with the plan, don't let it thrash.
 - Every slice ships ≥1 expected + 1 edge + 1 failure test (hard rule).
 - New socket event or schema? It goes in `packages/shared` **and** `.claude/references/realtime-events.md` in the same slice.
 
@@ -98,7 +98,7 @@ The heart. Order matters (each slice depends on the previous):
 | 2.7 ride lifecycle | accept → arrived → started → completed → paid; **payment method locks at acceptance** (`isPaymentMethodLocked` — never bypass); fare split record: full fare visible to driver, 15% commission line | The fare-transparency wedge (S2-5) is born here |
 | 2.8 payments + ledger | Cash + Stripe test mode through the payments seam; one ledger, integer cents; cash rides net against card earnings, negative balance blocks driver | Stripe stays test mode until SIA |
 
-**Phase gate:** scripted end-to-end ride via curl/socket client: request → match → accept → lifecycle → completed, all events observed. Live API smoke test in `/validate` passes.
+**Phase gate:** scripted end-to-end ride via curl/socket client: request → match → accept → lifecycle → completed, all events observed. Live API smoke test in `/piv-validate` passes.
 
 ## Step 5 — Phase 3: Driver app (`apps/driver`) — ~4 slices
 

@@ -1,0 +1,8 @@
+{
+  "extends": "@taxi/config/tsconfig/base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src", "tests", "drizzle.config.ts"]
+}
