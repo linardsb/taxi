@@ -15,6 +15,7 @@ import {
   rideOfferRevokedEventSchema,
   rideRoom,
   rideStatusEventSchema,
+  userRoom,
 } from "../src/realtime-events";
 import { rideOfferSchema } from "../src/schemas/ride";
 import { splitFare } from "../src/commission";
@@ -50,6 +51,7 @@ describe("socket payloads", () => {
     expect(rideRoom(uuid)).toBe(`ride:${uuid}`);
     expect(driverRoom(uuid)).toBe(`driver:${uuid}`);
     expect(dispatchRoom(uuid)).toBe(`dispatch:${uuid}`);
+    expect(userRoom(uuid)).toBe(`user:${uuid}`);
   });
 
   it("rejects a bad latitude and a non-ISO timestamp (failure)", () => {

@@ -6,6 +6,7 @@ export * from "./commission";
 export * from "./realtime-events";
 export * from "./schemas/geo";
 export * from "./schemas/user";
+export * from "./schemas/auth";
 export * from "./schemas/driver";
 export * from "./schemas/vehicle";
 export * from "./schemas/ride";

@@ -22,7 +22,10 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # Host port is overridable: some dev machines already have something on
+      # 6379 (another project's container here), and the container refuses to
+      # start when the bind fails. Compose reads REDIS_PORT from the root .env.
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

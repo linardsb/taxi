@@ -54,10 +54,12 @@ export const rides = pgTable(
     commissionCents: integer("commission_cents"),
     driverNetCents: integer("driver_net_cents"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow()
-      .$onUpdate(() => new Date()),
+    // Maintained entirely by the database: DEFAULT now() on insert, the
+    // `rides_set_updated_at` trigger on update (migration 0003). Do NOT add
+    // `.$onUpdate(() => new Date())` back — that stamps the APP's clock onto a
+    // column whose insert value comes from Postgres, and any skew between the
+    // two makes updated_at land before created_at.
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("rides_rider_idx").on(t.riderId),
