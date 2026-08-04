@@ -91,13 +91,20 @@ where circular barrel imports usually surface, and it started clean.
 | typecheck · lint · test · build | **18/18 turbo tasks, 0 cached** |
 | lint | 0 errors, 1 warning — the pre-existing `no-unsafe-argument` on supertest |
 | api tests | **39 passed, 8 suites** (was 34 / 7) |
-| GitHub Actions on `96f067f` | **pass** — run [30946043123](https://github.com/linardsb/taxi/actions/runs/30946043123) |
+| GitHub Actions on `cbc9f61` | **pass** — run [30946982601](https://github.com/linardsb/taxi/actions/runs/30946982601), 39 tests, 0 skipped |
 
-**A coverage gap worth knowing:** `.github/workflows/ci.yml` provides no Redis and sets no
-`REDIS_TEST_URL`, so both Redis suites — the adapter's two tests and the three new KV ones — skip
-there. CI runs 34 api tests, not 39, and **finding 3's fix has no CI coverage at all.** Findings 1
-and 2's tests use the in-memory store and do run in CI. Not introduced by this pass, but the new spec
-inherits it; worth a `services:` block on the CI job.
+**A coverage gap, found and closed here.** `.github/workflows/ci.yml` provided no Redis and set no
+`REDIS_TEST_URL`, so both Redis suites skipped there — measured on run 30946495121: *2 suites
+skipped, 5 tests skipped, 34 passed*. CI was running five fewer tests than the local gate, and
+finding 3's fix had no CI coverage at all. Pre-existing, but the new spec inherited it.
+
+`cbc9f61` adds a `redis:7-alpine` service container and the env var (already in turbo's `globalEnv`,
+so strict env mode passes it through and it lands in the cache key). Plus a TCP check from the runner
+before the gate: the service's own health check runs *inside* the container and would pass through a
+wrong host port mapping, and a Redis the suites can't reach is a silent skip rather than a red build.
+
+Confirmed on run [30946982601](https://github.com/linardsb/taxi/actions/runs/30946982601): **8 suites,
+39 tests, 0 skipped** — CI now matches the local gate exactly.
 
 ## Needs a human look
 
