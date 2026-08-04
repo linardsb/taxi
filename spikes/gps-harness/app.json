@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "GPS Spike",
+    "slug": "gps-spike-harness",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "bundleIdentifier": "lv.saktacab.gpsspike",
+      "infoPlist": {
+        "UIBackgroundModes": ["location"],
+        "NSLocationWhenInUseUsageDescription": "GPS spike: records fixes while the app is open.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "GPS spike: records fixes while driving with the app backgrounded."
+      }
+    },
+    "android": {
+      "package": "lv.saktacab.gpsspike",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
+    ]
+  }
+}

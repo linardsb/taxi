@@ -1,0 +1,27 @@
+{
+  "name": "gps-harness",
+  "version": "0.0.1",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
+  },
+  "dependencies": {
+    "expo": "~57.0.2",
+    "expo-battery": "~10.0.1",
+    "expo-dev-client": "~6.0.20",
+    "expo-file-system": "~19.0.21",
+    "expo-location": "~19.0.7",
+    "expo-sharing": "~14.0.7",
+    "expo-status-bar": "~57.0.0",
+    "expo-task-manager": "~14.0.7",
+    "react": "19.2.3",
+    "react-native": "0.86.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
+}
