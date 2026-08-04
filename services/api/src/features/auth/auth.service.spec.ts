@@ -1,6 +1,20 @@
 import { HttpException, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { SignupRole, User, UserRole } from '@taxi/shared';
+import * as nodeCrypto from 'node:crypto';
+
+/**
+ * The guess cap's invariant is "how many guesses reached timingSafeEqual", and
+ * that is the only way to observe it: the export is non-configurable, so
+ * `jest.spyOn` cannot attach. Everything else passes through untouched, and
+ * the comparison still runs for real.
+ */
+jest.mock('node:crypto', () => {
+  const actual =
+    jest.requireActual<typeof import('node:crypto')>('node:crypto');
+  return { ...actual, timingSafeEqual: jest.fn(actual.timingSafeEqual) };
+});
+const comparisons = jest.mocked(nodeCrypto.timingSafeEqual);
 import {
   InMemoryKeyValueStore,
   RecordingSmsProvider,
@@ -170,6 +184,47 @@ describe('AuthService.requestOtp', () => {
     expect(sms.sent).toHaveLength(1);
   });
 
+  it('sends one SMS for a concurrent burst, not one per request (failure)', async () => {
+    const { service, sms, kv } = build();
+
+    // The cooldown used to be read, then written four awaits later. Every
+    // request in a burst read 0, passed, and sent: five requests from anyone
+    // who knew the number spent the whole hourly budget in one round trip —
+    // five real messages, and no new code for the rest of the hour. Sequential
+    // resends never showed it, which is why it survived two review rounds.
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        service.requestOtp({ phone: PHONE, role: 'driver' }),
+      ),
+    );
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(sms.sent).toHaveLength(1);
+    // The payload the attack was really after: the burst cost one hourly slot,
+    // not five, so the phone can still sign in.
+    expect(await kv.get(`otp:rate:${PHONE}`)).toBe('1');
+  });
+
+  it('releases the cooldown when the SMS never went out (failure)', async () => {
+    const { service, sms } = build();
+    jest
+      .spyOn(sms, 'sendOtp')
+      .mockRejectedValueOnce(new Error('provider down'))
+      .mockImplementation((phone: string, code: string) => {
+        sms.sent.push({ phone, code });
+        return Promise.resolve();
+      });
+
+    // Claiming the cooldown before the send must not let an outage block the
+    // retry — the claim is what a delivered SMS keeps, not what an attempt takes.
+    await expect(
+      service.requestOtp({ phone: PHONE, role: 'driver' }),
+    ).rejects.toMatchObject({ status: 502 });
+
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+    expect(sms.sent).toHaveLength(1);
+  });
+
   it('lets a signed-in user request again immediately (edge)', async () => {
     const { service, sms } = build();
     await service.requestOtp({ phone: PHONE, role: 'driver' });
@@ -195,6 +250,10 @@ describe('AuthService.requestOtp', () => {
       service.requestOtp({ phone: PHONE, role: 'driver' }),
     ).rejects.toMatchObject({ status: 429 });
     expect(sms.sent).toHaveLength(5);
+    // Over the cap sends nothing, so it leaves no cooldown behind: the key
+    // means "an SMS was just delivered", and a claim that outlived its
+    // rejection would report a pending resend that never happened.
+    expect(await kv.ttl(`otp:cooldown:${PHONE}`)).toBe(0);
   });
 });
 
@@ -249,13 +308,15 @@ describe('AuthService.verifyOtp', () => {
     await service.requestOtp({ phone: PHONE, role: 'driver' });
     const code = sms.lastCodeFor(PHONE)!;
 
-    // Every rejection names its reason through Logger.warn, so the wrong_code
-    // ones count exactly the guesses that reached timingSafeEqual.
+    // Counted at the comparison itself. Counting `wrong_code` logs instead is
+    // a proxy that only holds while the cap check sits between the increment
+    // and the log: an ordering that compares eagerly and increments straight
+    // after lets all 50 reach timingSafeEqual while still logging only 5.
+    comparisons.mockClear();
     const warn = jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
 
-    let compared: number;
     try {
       // Fired in parallel, so every guess interleaves at the same await points.
       // A read-modify-write counter lets all 50 observe the same value and
@@ -265,22 +326,19 @@ describe('AuthService.verifyOtp', () => {
           rejection(service.verifyOtp({ phone: PHONE, code: '000000' })),
         ),
       );
-      compared = warn.mock.calls.filter(
-        (call) => (call[0] as { reason?: string }).reason === 'wrong_code',
-      ).length;
+
+      // The reason the counter increments BEFORE the compare. Counting after is
+      // atomic too and burns the code just the same, so the burn alone cannot
+      // tell the two apart — but it would let all 50 guesses through first, and
+      // the cap would bound waves rather than guesses. Exactly, not at-most: a
+      // regression that crashed all 50 would compare nothing at all and sail
+      // through a `toBeLessThanOrEqual`.
+      expect(comparisons).toHaveBeenCalledTimes(OTP_MAX_VERIFY_ATTEMPTS);
     } finally {
       // Not restoring on the failure path would leak a prototype mock into
       // every later test in this file.
       warn.mockRestore();
     }
-
-    // The reason the counter increments BEFORE the compare. Counting after is
-    // atomic too and burns the code just the same, so the burn alone cannot
-    // tell the two apart — but it would let all 50 guesses through first, and
-    // the cap would bound waves rather than guesses. Exactly, not at-most: a
-    // regression that crashed all 50 would log no wrong_code at all and sail
-    // through a `toBeLessThanOrEqual`.
-    expect(compared).toBe(OTP_MAX_VERIFY_ATTEMPTS);
 
     await expect(
       service.verifyOtp({ phone: PHONE, code }),
@@ -292,10 +350,10 @@ describe('AuthService.verifyOtp', () => {
     const { service } = build('driver', kv);
     await service.requestOtp({ phone: PHONE, role: 'driver' });
 
+    comparisons.mockClear();
     const warn = jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
-    let compared: number;
     try {
       // The straggler clears the record read and the TTL gate, then stalls
       // just before its increment.
@@ -312,17 +370,14 @@ describe('AuthService.verifyOtp', () => {
 
       kv.resume();
       await straggler;
-      compared = warn.mock.calls.filter(
-        (call) => (call[0] as { reason?: string }).reason === 'wrong_code',
-      ).length;
+
+      // Deleting the counter along with the code would hand the straggler a
+      // fresh budget and a sixth comparison — against a record the store no
+      // longer has. The counter has to outlive the code it bounds.
+      expect(comparisons).toHaveBeenCalledTimes(OTP_MAX_VERIFY_ATTEMPTS);
     } finally {
       warn.mockRestore();
     }
-
-    // Deleting the counter along with the code would hand the straggler a
-    // fresh budget and a sixth comparison — against a record the store no
-    // longer has. The counter has to outlive the code it bounds.
-    expect(compared).toBe(OTP_MAX_VERIFY_ATTEMPTS);
   });
 
   it('does not extend the code TTL on a wrong guess (edge)', async () => {

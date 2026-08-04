@@ -50,6 +50,11 @@ const attemptsKey = (phone: string) => `otp:attempts:${phone}`;
  * The cooldown is its own key rather than the code's remaining TTL. Derived
  * from the code, five wrong guesses burned it and bought a free resend: 5 SMS
  * and an hour-long sign-in lockout of any known number, in about a second.
+ *
+ * It is CLAIMED with INCR, never read-then-set. A read leaves four awaits
+ * before the write, so a concurrent burst all reads 0, all passes, and all
+ * sends — the same 5 SMS, by a different route. Set means "an SMS was just
+ * delivered", so every path that sends nothing releases it again.
  */
 const cooldownKey = (phone: string) => `otp:cooldown:${phone}`;
 
@@ -94,10 +99,19 @@ export class AuthService {
     // counter is the SMS-spend cap. Counting it would let five taps of "resend"
     // — or five requests from anyone who knows the number — lock a phone out of
     // sign-in for an hour.
-    const cooldown = await this.kv.ttl(cooldownKey(phone));
-    if (cooldown > 0) {
+    const claimed = await this.kv.incrWithTtl(
+      cooldownKey(phone),
+      OTP_RESEND_COOLDOWN_SECONDS,
+    );
+    if (claimed > 1) {
+      // The key can expire between the INCR and this read, and a
+      // retryAfterSeconds of 0 would read as "retry now" on a rejection.
+      const retryAfterSeconds = Math.max(
+        1,
+        await this.kv.ttl(cooldownKey(phone)),
+      );
       throw new HttpException(
-        { message: 'resend_too_soon', retryAfterSeconds: cooldown },
+        { message: 'resend_too_soon', retryAfterSeconds },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -109,6 +123,7 @@ export class AuthService {
       OTP_RATE_WINDOW_SECONDS,
     );
     if (count > OTP_MAX_REQUESTS_PER_HOUR) {
+      await this.kv.del(cooldownKey(phone)); // nothing was sent
       this.logger.warn({
         event: 'auth.otp.throttled',
         phone: masked,
@@ -139,6 +154,9 @@ export class AuthService {
     try {
       await this.sms.sendOtp(phone, code);
     } catch (err) {
+      // Released, so a provider outage does not also block the retry — the
+      // claim above is what a delivered SMS keeps, not what an attempt takes.
+      await this.kv.del(cooldownKey(phone));
       this.logger.error({
         event: 'auth.otp.send_failed',
         phone: masked,
@@ -147,14 +165,6 @@ export class AuthService {
       });
       throw new HttpException('sms_delivery_failed', HttpStatus.BAD_GATEWAY);
     }
-
-    // Started only by a delivered SMS: a provider outage must not also block
-    // the retry.
-    await this.kv.setWithTtl(
-      cooldownKey(phone),
-      '1',
-      OTP_RESEND_COOLDOWN_SECONDS,
-    );
 
     this.logger.log({
       event: 'auth.otp.requested',
