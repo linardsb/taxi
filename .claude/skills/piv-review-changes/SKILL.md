@@ -97,7 +97,7 @@ Save a new file to `.claude/code-reviews/[appropriate-name].md`
 
 ```
 severity: critical|high|medium|low
-file: path/to/file.py
+file: path/to/file.ts
 line: 42
 issue: [one-line description]
 detail: [explanation of why this is a problem]

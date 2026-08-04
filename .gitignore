@@ -19,6 +19,9 @@ build/
 ios/
 android/
 
+# claude — personal overrides stay local
+.claude/settings.local.json
+
 # OS / editor
 .DS_Store
 *.log

@@ -1,7 +1,7 @@
 ---
 name: piv-plan-implementation
-description: Creates a comprehensive, context-rich implementation plan through deep codebase analysis and external research. Accepts a tracker ticket (a Jira/Linear/GitHub key or URL, fetched from the tracker) or a free-form feature request. Use when you have a ticket or feature and need a one-pass-ready plan before writing any code.
-argument-hint: "[ticket key/URL (fetched from your tracker), or a free-form feature description]"
+description: Creates a comprehensive, context-rich implementation plan through deep codebase analysis and external research. Accepts a GitHub issue (#N or URL, fetched via the gh CLI) or a free-form feature request. Use when you have a ticket or feature and need a one-pass-ready plan before writing any code.
+argument-hint: "[GitHub issue #N/URL, or a free-form feature description]"
 ---
 
 # Plan a new task
@@ -10,14 +10,14 @@ argument-hint: "[ticket key/URL (fetched from your tracker), or a free-form feat
 
 ## Resolve the input first
 
-`$ARGUMENTS` is either a **tracker ticket** (a key like `ACC-30`, or a Jira / Linear / GitHub issue URL) or a
+`$ARGUMENTS` is either a **GitHub issue** (a number like `#30`, or an issue URL) or a
 **free-form feature description**. Tell them apart and handle each:
 
-- **A ticket** (a key such as `ABC-123`, or an issue URL): **fetch it from the tracker before you plan** (Jira via
-  the Atlassian MCP, GitHub via `gh issue view`, etc.). Read its summary, acceptance criteria, and per-ticket
-  context. Then **follow its links up to the epic and the epic's linked architecture page** (Confluence via the
-  Atlassian MCP) and inherit those decisions (see "Inherit, don't re-decide" below). Never plan from the bare key;
-  the ticket body plus its epic and architecture are the real input.
+- **An issue** (`#N` or an issue URL): **fetch it before you plan** via `gh issue view <N> --comments`.
+  Read its summary, acceptance criteria, and per-ticket context. Then **follow its links up to the epic issue
+  and the epic's linked architecture doc** (e.g. under `docs/`) and inherit those decisions (see "Inherit,
+  don't re-decide" below). Never plan from the bare number;
+  the issue body plus its epic and architecture are the real input.
 - **A free-form description**: plan directly from it (greenfield or ad-hoc), asking clarifying questions as needed.
 
 ## Mission
@@ -28,7 +28,7 @@ Transform a feature request into a **comprehensive implementation plan** through
 
 **Key Philosophy**: Context is King. The plan must contain ALL information needed for implementation - patterns, mandatory reading, documentation, validation commands - so the execution agent succeeds on the first attempt.
 
-**Inherit, don't re-decide**: This is a **per-ticket** plan. If the ticket belongs to an epic that already has architecture decisions — a **linked architecture page** (e.g. a Confluence page from the `plan-architecture` skill, reached from the ticket's epic), an `## Architecture` / `## Engineering` section on the epic, or a local `architecture.md` / `engineering-plan.md` — **read it first** and treat its cross-cutting calls (stack & versions, data model, security boundaries, the seams new code plugs into) as **already decided**. Inherit them; don't reopen them. Plan only what's left at the ticket level: the specific files, the local patterns to mirror, the tests. If a ticket genuinely needs to break an epic-level decision, flag it in Open Questions rather than silently diverging.
+**Inherit, don't re-decide**: This is a **per-ticket** plan. If the ticket belongs to an epic that already has architecture decisions — a **linked architecture doc** (e.g. one written by the `plan-architecture` skill, reached from the ticket's epic), an `## Architecture` / `## Engineering` section on the epic, or a local `architecture.md` / `engineering-plan.md` — **read it first** and treat its cross-cutting calls (stack & versions, data model, security boundaries, the seams new code plugs into) as **already decided**. Inherit them; don't reopen them. Plan only what's left at the ticket level: the specific files, the local patterns to mirror, the tests. If a ticket genuinely needs to break an epic-level decision, flag it in Open Questions rather than silently diverging.
 
 ## Planning Process
 
@@ -59,7 +59,7 @@ So that <benefit/value>
 - Detect primary language(s), frameworks, and runtime versions
 - Map directory structure and architectural patterns
 - Identify service/component boundaries and integration points
-- Locate configuration files (pyproject.toml, package.json, etc.)
+- Locate configuration files (package.json, turbo.json, tsconfig.json, etc.)
 - Find environment setup and build processes
 
 **2. Pattern Recognition** (Use specialized subagents when beneficial)
@@ -83,7 +83,7 @@ So that <benefit/value>
 
 **4. Testing Patterns**
 
-- Identify test framework and structure (pytest, jest, etc.)
+- Identify test framework and structure (jest in services/api, vitest elsewhere)
 - Find similar test examples for reference
 - Understand test organization (unit vs integration)
 - Note coverage requirements and testing standards
@@ -220,15 +220,15 @@ So that <benefit/value>
 
 <List files with line numbers and relevance>
 
-- `path/to/file.py` (lines 15-45) - Why: Contains pattern for X that we'll mirror
-- `path/to/model.py` (lines 100-120) - Why: Database model structure to follow
-- `path/to/test.py` - Why: Test pattern example
+- `path/to/file.ts` (lines 15-45) - Why: Contains pattern for X that we'll mirror
+- `path/to/schema.ts` (lines 100-120) - Why: Drizzle schema / zod contract structure to follow
+- `path/to/feature.test.ts` - Why: Test pattern example
 
 ### New Files to Create
 
-- `path/to/new_service.py` - Service implementation for X functionality
-- `path/to/new_model.py` - Data model for Y resource
-- `tests/path/to/test_new_service.py` - Unit tests for new service
+- `path/to/new-service.ts` - Service implementation for X functionality
+- `path/to/new-schema.ts` - Data model / zod schema for Y resource
+- `path/to/new-service.test.ts` - Unit tests for new service (colocated with the slice)
 
 ### Relevant Documentation YOU SHOULD READ THESE BEFORE IMPLEMENTING!
 

@@ -43,7 +43,7 @@ git log origin/{base}..HEAD --oneline
 - **Implementation report** (if `piv-implement` wrote one — `.claude/reports/<…>-report.md`): pull the summary,
   validation results, and **documented deviations** (these belong in the PR body — they tell the reviewer what
   was intentional).
-- Linked ticket / issue: look for `ACC-…`, `#123`, `Fixes #…` in the commits/branch name.
+- Linked issue: look for `#123`, `Fixes #…` in the commits/branch name.
 - PR template: if `.github/PULL_REQUEST_TEMPLATE.md` exists, fill it; else use the default below.
 
 ## Phase 3 — Push and open the PR

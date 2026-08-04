@@ -1,16 +1,16 @@
 ---
 name: plan-architecture
-description: Interactively explore HOW to approach an intent (a PRD, epic, brief, or free-form idea) and decide the high-level architecture — the approach, stack, libraries, data shape, and risks the intent left open. A working session with a CTO/staff-engineer advisor that asks questions, proposes 2–3 options with trade-offs, recommends a direction with reasoning, and flags what to de-risk with a spike. Produces a high-level architecture decision doc — a separate page linked to the epic in your tracker (Confluence/Jira), or folded into the PRD/epic, or a standalone doc — NOT a task-by-task implementation plan (that comes later, per ticket, with piv-plan-implementation).
+description: Interactively explore HOW to approach an intent (a PRD, epic, brief, or free-form idea) and decide the high-level architecture — the approach, stack, libraries, data shape, and risks the intent left open. A working session with a CTO/staff-engineer advisor that asks questions, proposes 2–3 options with trade-offs, recommends a direction with reasoning, and flags what to de-risk with a spike. Produces a high-level architecture decision doc — by default a separate markdown doc in the repo linked both ways to the PRD/epic — NOT a task-by-task implementation plan (that comes later, per ticket, with piv-plan-implementation).
 argument-hint: "[path to PRD / epic / brief — or free-form idea] · [optional: paths to reference docs to ground in]"
 ---
 
 # Architect: Explore the Approach, Decide the Architecture
 
-**Input intent**: $ARGUMENTS — a PRD, an epic, a brief, or a free-form idea. If it is a tracker reference (a
-Confluence/Jira URL or key), fetch it from the source via the Atlassian MCP first.
+**Input intent**: $ARGUMENTS — a PRD, an epic, a brief, or a free-form idea. If it is a GitHub issue reference
+(`#N` or URL), fetch it via `gh issue view` first.
 
 **Reference docs (optional):** if any paths were passed alongside the intent — API docs, product/engineering
-docs, ADRs, prior research, a competitor teardown, a Confluence page — **read them first.** They ground the
+docs, ADRs, prior research, a competitor teardown — **read them first.** They ground the
 exploration so you propose options that fit what already exists instead of inventing. If none were passed, **ask
 whether any exist** before you start exploring — a lot of the context you need is usually already written down.
 
@@ -94,17 +94,16 @@ Reversible, low-cost calls → just decide and move on.
 
 ## The output: a high-level architecture decision doc
 
-Only after the calls are made. Pick where it lives. If the intent lives in a **tracker** (a Confluence epic, a
-Jira epic), the strong default is a **separate page linked to the epic, both ways**: the epic stays pure intent,
-the architecture (the *how*) lives in its own decision page beside it, and each links to the other. Keeping them
-as two clean, linked sources is what lets `piv-slice-epic` and `piv-plan-implementation` read intent and
-architecture separately later. The options:
+Only after the calls are made. Pick where it lives. The strong default here is a **separate repo doc linked to
+the PRD/epic, both ways** (e.g. `docs/epics/<name>.architecture.md` beside `docs/epics/<name>.prd.md`): the epic
+stays pure intent, the architecture (the *how*) lives in its own decision doc beside it, and each links to the
+other. Keeping them as two clean, linked sources is what lets `piv-slice-epic` and `piv-plan-implementation`
+read intent and architecture separately later. The options:
 
-- **A separate linked page in your tracker** (recommended when the epic lives in Confluence/Jira): create a new
-  page in the epic's space, as a child of the epic, and link it both ways (via the Atlassian MCP).
+- **A separate linked doc in the repo** (recommended): create it beside the PRD/epic doc and link it both ways.
 - **Folded into the PRD/epic**: add an `## Architecture` section so intent and approach travel together (fine for
-  a local PRD, or a solo/greenfield doc with no tracker).
-- **A standalone `architecture.md`**: a local repo doc when there's no tracker.
+  a small or greenfield doc).
+- **A standalone `architecture.md`**: when there's no PRD/epic doc to sit beside.
 
 Either way keep it high-level and fill this shape:
 
@@ -145,11 +144,11 @@ Confirm where you wrote it, summarize the recommended approach + the key calls i
 natural next moves and let the user pick — **don't force a pipeline**:
 
 - **Slice it into tickets** — feed the doc to `/piv-slice-epic` to break the epic into PIV-sized tickets, and create
-  the GitHub issues / Jira tickets from them.
+  the GitHub Issues from them.
 - **Keep going here** — stay in this conversation to refine the decisions, or to create the issues/tickets directly.
 - **Small epic? Plan it in one go** — skip slicing and go straight to `piv-plan-implementation` for the implementation plan.
 - **Spike something now** — if an open risk is blocking, go build the spike/experiment we flagged.
-- Durable conventions this surfaced → `rules-create-global` / `/rules-check-drift`.
+- Durable conventions this surfaced → add to `CLAUDE.md`, then `/rules-check-drift` keeps them honest.
 
 ## Success criteria
 

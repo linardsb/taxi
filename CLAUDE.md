@@ -11,7 +11,7 @@ Taxi booking platform for Latvia (Bolt competitor, driver-first). Venture name *
 | `apps/dispatch` | Dispatcher web portal (Dina's console) | Next.js App Router, Tailwind | yes |
 | `apps/admin` | Admin panel (stats, config, legal) | Next.js App Router, Tailwind | yes |
 | `services/api` | Backend: REST + Socket.IO + dispatch engine | NestJS, Drizzle, PostGIS, Redis | yes |
-| `packages/shared` | **Contract seam**: zod schemas, ride state machine, enums, provider interfaces | TS + zod | — |
+| `packages/shared` | **Contract seam**: zod schemas, ride state machine, enums, provider interfaces | TS + zod | yes |
 | `packages/config` | tsconfig presets | — | — |
 | `app/` + `backend/` + `DEPLOY.md` + `JAUTAJUMI.md` | **Sakta Cab anketa** — separate research mini-project (vanilla JS + Apps Script). NOT part of the monorepo; do not refactor it into the workspace. | — | see PLAN.md |
 
@@ -52,7 +52,7 @@ pnpm --filter @taxi/shared test   # one package
 
 ## Workflow (PIV loop)
 
-Prime → Plan → Implement → Validate. Skills in `.claude/skills/`: run `prime` (or the focused `prime-app <surface>`) before planning, `plan-feature` writes `.claude/plans/<name>.md`, `execute` implements it, `validate` runs the gates. After a nontrivial slice ships, close the loop: `execution-report` (→ `.claude/reports/`) then `system-review` (→ `.claude/system-reviews/`) — that pair evolves the skills and this file. **All PIV artifacts live under `.claude/`, never `.agent/`.** `create-spec` writes `docs/prd/01-spec.md` once the lean PRD gate passes; `vertical-slice-audit` scores a slice against the VSA rules. Fresh session per phase; load only the surface you're working on.
+Research → Plan → Implement → Validate, one ticket per loop. Skills in `.claude/skills/`: run `prime-codebase` (or the focused `prime-app <surface>`) before planning, `piv-plan-implementation` writes `.claude/plans/<name>.md`, `piv-implement` executes it (fresh session, plan as only input; report → `.claude/reports/`), `piv-validate` runs the gates. Ship via `piv-commit` → `piv-create-pr` → `piv-review-pr`; `piv-review-changes` (dispatches the read-only `code-reviewer` agent → `.claude/code-reviews/`) is the pre-commit review. After a nontrivial slice ships, close the outer loop: `system-execution-report` (→ `.claude/execution-reports/`, same session as the implementation) then `system-evolution-review` (→ `.claude/system-reviews/`, fresh session) — that pair evolves the skills and this file; act on 1–2 of its suggestions, not all. **All PIV artifacts live under `.claude/`, never `.agent/`.** Epic level: `plan-create-prd` → `plan-architecture` → `piv-slice-epic` (GitHub Issues); `vertical-slice-audit` scores a slice against the VSA rules; `rules-check-drift` before merging anything that changes stated rules. Fresh session per phase; load only the surface you're working on.
 
 ## On-demand context
 
@@ -61,9 +61,9 @@ Prime → Plan → Implement → Validate. Skills in `.claude/skills/`: run `pri
 | Ride lifecycle | `.claude/references/ride-state-machine.md` |
 | Sockets/realtime | `.claude/references/realtime-events.md` |
 | Dispatch/matching | `.claude/references/dispatch-strategies.md` |
-| Product intent | `docs/prd/00-lean-prd.md` (living draft — features finalize from the anketa) |
+| Product intent | `docs/epics/sakta-cab.prd.md` (supersedes `docs/prd/00-lean-prd.md`) |
 | Anketa evidence / feature signals | `docs/prd/anketa-findings.md` (EN translation + synthesis of the answers) |
-| Architecture & decisions | `docs/skeleton-proposal.md` |
+| Architecture & decisions | `docs/epics/sakta-cab.architecture.md` (supersedes `docs/skeleton-proposal.md` where they disagree) |
 
 ## Notes
 

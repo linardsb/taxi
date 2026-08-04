@@ -2,7 +2,7 @@
 name: piv-implement-issue
 description: Implement the fix for a GitHub issue from its RCA artifact (created by piv-investigate-issue) — drift-check the plan, branch, implement, add regression tests, and validate. Use after the investigation artifact exists and you're ready to fix the issue.
 argument-hint: [github-issue-id]
-allowed-tools: Read, Write, Edit, Bash(ruff:*), Bash(mypy:*), Bash(pytest:*), Bash(npm:*), Bash(bun:*)
+allowed-tools: Read, Write, Edit, Bash(pnpm:*), Bash(gh:*), Bash(git:*)
 ---
 
 # Implement Issue Fix: GitHub Issue #$ARGUMENTS
@@ -91,12 +91,12 @@ Following the "Testing Requirements" from RCA:
 - Use descriptive test names
 
 **Test implementation:**
-```python
-def test_issue_$ARGUMENTS_fix():
-    """Test that issue #$ARGUMENTS is fixed."""
-    # Arrange - set up the scenario that caused the bug
-    # Act - execute the code that previously failed
-    # Assert - verify it now works correctly
+```typescript
+it("fixes issue #$ARGUMENTS", () => {
+  // Arrange - set up the scenario that caused the bug
+  // Act - execute the code that previously failed
+  // Assert - verify it now works correctly
+});
 ```
 
 ### 5. Run Validation

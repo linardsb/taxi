@@ -12,11 +12,11 @@ The bridge between a strategic doc and the PIV loop. The epic doc is the destina
 
 - `$ARGUMENTS` — the **epic** to slice **and its architecture decisions**. These arrive as **one doc or two**:
   - a single architected epic that carries its own `## Architecture` section, **or**
-  - an **epic plus a separate, linked architecture page** (the common case when the architecture lives beside the
-    epic — e.g. a Confluence epic page and its linked architecture page, both passed as URLs). **Read both.**
+  - an **epic plus a separate, linked architecture doc** (the common case when the architecture lives beside the
+    epic — e.g. `docs/epics/<name>.prd.md` and its linked architecture doc). **Read both.**
   - greenfield: a PRD stands in for the epic.
-  When the inputs are tracker references (Confluence/Jira URLs or keys), fetch them from the source via the
-  Atlassian MCP. **This is the load-bearing input:** the architecture names the seams, data model, and missing
+  When the inputs are GitHub issue references (numbers or URLs), fetch them via `gh issue view`.
+  **This is the load-bearing input:** the architecture names the seams, data model, and missing
   pieces the slices must respect.
 - **Not prime-dependent.** A primed session helps, but isn't required. If the codebase surface isn't loaded, this
   skill orients itself (Step 2) before slicing.
@@ -58,9 +58,9 @@ Map dependencies between tickets. **Independent tickets** — ones that don't to
 
 ### Step 5 — Write the ticket breakdown
 
-Write the tickets to your tracker (Jira via the Atlassian MCP, Linear, GitHub Issues, Archon's tasks) — or to a
-local `docs/tickets/<epic-slug>.md` if you're solo or have no tracker. Either way, **every ticket carries its own
-context** — that's what lets a loop pick it up later without re-reading the whole epic:
+Write the tickets as GitHub Issues via the `gh` CLI (`gh issue create`), each linked back to the epic issue/doc,
+with the dependency graph recorded on the epic — or to a local `docs/tickets/<epic-slug>.md` if working offline.
+Either way, **every ticket carries its own context** — that's what lets a loop pick it up later without re-reading the whole epic:
 
 ```
 # Ticket Breakdown — <epic name>
@@ -89,5 +89,5 @@ codebase orientation. **Priming is optional**; the per-ticket context above is w
 
 ## Notes
 
-- Issue management is **tool-agnostic**: Jira (via Atlassian MCP), Linear, Notion, GitHub Issues, Archon's tasks — or just a folder of markdown files if you're solo. The tracker doesn't matter; the goal is to **split the work just enough that each loop has the highest chance of one-shot success, so you can automate the loop.**
+- This project's tracker is **GitHub Issues via the `gh` CLI**. The tracker matters less than the goal: **split the work just enough that each loop has the highest chance of one-shot success, so you can automate the loop.**
 - Greenfield: the same slicing applies to MVP phases instead of epic tickets.
