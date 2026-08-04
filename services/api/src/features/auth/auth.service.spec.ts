@@ -1,4 +1,4 @@
-import { HttpException, UnauthorizedException } from '@nestjs/common';
+import { HttpException, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { SignupRole, User, UserRole } from '@taxi/shared';
 import {
@@ -186,6 +186,12 @@ describe('AuthService.verifyOtp', () => {
     await service.requestOtp({ phone: PHONE, role: 'driver' });
     const code = sms.lastCodeFor(PHONE)!;
 
+    // Every rejection names its reason through Logger.warn, so the wrong_code
+    // ones count exactly the guesses that reached timingSafeEqual.
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
     // Fired in parallel, so every guess interleaves at the same await points.
     // A read-modify-write counter lets all 50 observe the same value and write
     // back one attempt; the cap must survive that.
@@ -194,6 +200,16 @@ describe('AuthService.verifyOtp', () => {
         rejection(service.verifyOtp({ phone: PHONE, code: '000000' })),
       ),
     );
+    const compared = warn.mock.calls.filter(
+      (call) => (call[0] as { reason?: string }).reason === 'wrong_code',
+    ).length;
+    warn.mockRestore();
+
+    // The reason the counter increments BEFORE the compare. Counting after is
+    // atomic too and burns the code just the same, so the burn alone cannot
+    // tell the two apart — but it would let all 50 guesses through first, and
+    // the cap would bound waves rather than guesses.
+    expect(compared).toBeLessThanOrEqual(OTP_MAX_VERIFY_ATTEMPTS);
 
     await expect(
       service.verifyOtp({ phone: PHONE, code }),
