@@ -12,7 +12,7 @@ import type {
 } from '@taxi/shared';
 import type { Server, Socket } from 'socket.io';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
-import { AuthTokenService } from '../auth/auth-token.service';
+import { AuthTokenService } from '../auth';
 import { roomsOnConnect } from './room-policy';
 
 /** The socket's `data` bag, widened with the claims the handshake verified. */

@@ -101,6 +101,23 @@ describe('AuthService.requestOtp', () => {
     expect(sms.sent).toHaveLength(1);
   });
 
+  it('does not spend an hourly slot on a rejected resend (failure)', async () => {
+    const { service, sms, kv } = build();
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+
+    // Inside the cooldown: no SMS leaves the building, so no slot is spent.
+    await expect(
+      service.requestOtp({ phone: PHONE, role: 'driver' }),
+    ).rejects.toMatchObject({ status: 429 });
+
+    // The four remaining slots must still be there.
+    for (let i = 0; i < 4; i++) {
+      kv.advance(OTP_TTL_SECONDS + 1);
+      await service.requestOtp({ phone: PHONE, role: 'driver' });
+    }
+    expect(sms.sent).toHaveLength(5);
+  });
+
   it('throttles past the hourly cap (failure)', async () => {
     const { service, kv, sms } = build();
 
@@ -158,6 +175,25 @@ describe('AuthService.verifyOtp', () => {
         service.verifyOtp({ phone: PHONE, code: '000000' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     }
+
+    await expect(
+      service.verifyOtp({ phone: PHONE, code }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('counts a concurrent burst of guesses, not just the wave (failure)', async () => {
+    const { service, sms } = build();
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+    const code = sms.lastCodeFor(PHONE)!;
+
+    // Fired in parallel, so every guess interleaves at the same await points.
+    // A read-modify-write counter lets all 50 observe the same value and write
+    // back one attempt; the cap must survive that.
+    await Promise.all(
+      Array.from({ length: 50 }, () =>
+        rejection(service.verifyOtp({ phone: PHONE, code: '000000' })),
+      ),
+    );
 
     await expect(
       service.verifyOtp({ phone: PHONE, code }),

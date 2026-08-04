@@ -10,7 +10,7 @@ export interface KeyValueStore {
   get(key: string): Promise<string | null>;
   setWithTtl(key: string, value: string, ttlSeconds: number): Promise<void>;
   del(key: string): Promise<void>;
-  /** INCR then EXPIRE only on first write; returns the new counter value. */
+  /** Atomic increment; sets the expiry only when the key has none. */
   incrWithTtl(key: string, ttlSeconds: number): Promise<number>;
   /** Remaining TTL in whole seconds, or 0 when the key is gone. */
   ttl(key: string): Promise<number>;

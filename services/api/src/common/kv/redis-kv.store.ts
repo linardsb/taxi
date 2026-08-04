@@ -27,13 +27,33 @@ export class RedisKeyValueStore implements KeyValueStore, OnModuleDestroy {
   }
 
   /**
-   * Only the FIRST incr sets the expiry. Refreshing it on every call would let
-   * a burst keep pushing the window out and the rate limit would never close.
+   * Counter and expiry in one atomic step. Two hazards make this a script
+   * rather than INCR-then-EXPIRE: a crash between the two commands leaves a
+   * counter that never expires — it climbs past every cap forever and only a
+   * manual DEL recovers it — while refreshing the TTL on every call would let a
+   * burst keep pushing the window out so the limit never closes.
+   *
+   * `TTL < 0` is both cases at once: -1 is the counter this call just created,
+   * and also the one some earlier crash left without an expiry, so a stuck key
+   * heals itself on the next increment.
    */
+  private static readonly INCR_WITH_TTL = `
+    local n = redis.call('INCR', KEYS[1])
+    if redis.call('TTL', KEYS[1]) < 0 then
+      redis.call('EXPIRE', KEYS[1], ARGV[1])
+    end
+    return n
+  `;
+
   async incrWithTtl(key: string, ttlSeconds: number): Promise<number> {
-    const n = await this.redis.incr(key);
-    if (n === 1) await this.redis.expire(key, ttlSeconds);
-    return n;
+    return Number(
+      await this.redis.eval(
+        RedisKeyValueStore.INCR_WITH_TTL,
+        1,
+        key,
+        ttlSeconds,
+      ),
+    );
   }
 
   /** ioredis returns -2 (no key) / -1 (no expiry); both mean "nothing left". */

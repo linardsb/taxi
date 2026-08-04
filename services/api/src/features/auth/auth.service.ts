@@ -35,11 +35,17 @@ import { SMS_PROVIDER } from './sms/sms.tokens';
 interface OtpRecord {
   hash: string;
   role: SignupRole;
-  attempts: number;
 }
 
 const codeKey = (phone: string) => `otp:code:${phone}`;
 const rateKey = (phone: string) => `otp:rate:${phone}`;
+/**
+ * Guesses live in their own key, NOT in the record: counting them means
+ * read-modify-write on the JSON blob, and a concurrent burst would all read the
+ * same value and write back one attempt — 50 guesses, one counted. INCR is the
+ * only thing that bounds a parallel attacker.
+ */
+const attemptsKey = (phone: string) => `otp:attempts:${phone}`;
 
 /** One message for wrong-code AND no-code, so nothing distinguishes them. */
 const REJECTED = 'invalid_or_expired_code';
@@ -56,6 +62,12 @@ export class AuthService {
     private readonly tokens: AuthTokenService,
   ) {}
 
+  /** The code and its guess counter live and die together. */
+  private async burn(phone: string): Promise<void> {
+    await this.kv.del(codeKey(phone));
+    await this.kv.del(attemptsKey(phone));
+  }
+
   private hash(code: string): string {
     return createHash('sha256')
       .update(`${code}${this.env.JWT_SECRET}`)
@@ -66,6 +78,25 @@ export class AuthService {
     const phone = input.phone;
     const masked = maskPhone(phone);
 
+    // A live code younger than the cooldown means "you just asked" — derived
+    // from the remaining TTL rather than a second key. Checked BEFORE the
+    // hourly counter: this path sends no SMS, and the counter is the SMS-spend
+    // cap. Counting it would let five taps of "resend" — or five requests from
+    // anyone who knows the number — lock a phone out of sign-in for an hour.
+    const remaining = await this.kv.ttl(codeKey(phone));
+    const age = OTP_TTL_SECONDS - remaining;
+    if (remaining > 0 && age < OTP_RESEND_COOLDOWN_SECONDS) {
+      throw new HttpException(
+        {
+          message: 'resend_too_soon',
+          retryAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS - age,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    // Spend the slot before sending, not after: a GET-then-INCR would let a
+    // burst all read the same count and every one of them send an SMS.
     const count = await this.kv.incrWithTtl(
       rateKey(phone),
       OTP_RATE_WINDOW_SECONDS,
@@ -83,30 +114,15 @@ export class AuthService {
       );
     }
 
-    // A live code younger than the cooldown means "you just asked" — derived
-    // from the remaining TTL rather than a second key.
-    const remaining = await this.kv.ttl(codeKey(phone));
-    const age = OTP_TTL_SECONDS - remaining;
-    if (remaining > 0 && age < OTP_RESEND_COOLDOWN_SECONDS) {
-      throw new HttpException(
-        {
-          message: 'resend_too_soon',
-          retryAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS - age,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
     // crypto.randomInt, never Math.random — a predictable OTP is a full auth bypass.
     const code = String(randomInt(0, 10 ** OTP_CODE_LENGTH)).padStart(
       OTP_CODE_LENGTH,
       '0',
     );
-    const record: OtpRecord = {
-      hash: this.hash(code),
-      role: input.role,
-      attempts: 0,
-    };
+    const record: OtpRecord = { hash: this.hash(code), role: input.role };
+    // A new code is a new secret: its guess budget starts at zero. Clearing the
+    // counter here is also what makes a stale one structurally impossible.
+    await this.kv.del(attemptsKey(phone));
     await this.kv.setWithTtl(
       codeKey(phone),
       JSON.stringify(record),
@@ -154,6 +170,39 @@ export class AuthService {
     }
     const record = JSON.parse(raw) as OtpRecord;
 
+    // The counter carries the code's REMAINING life, never a fresh window, so
+    // it dies with the code it belongs to. A code that expired between the read
+    // and here has no life left to give — same rejection as a missing one.
+    const remaining = await this.kv.ttl(codeKey(phone));
+    if (remaining <= 0) {
+      this.logger.warn({
+        event: 'auth.otp.verify_rejected',
+        phone: masked,
+        reason: 'expired',
+        at,
+      });
+      throw new UnauthorizedException(REJECTED);
+    }
+
+    // Count the guess BEFORE comparing it. Counting afterwards is atomic but
+    // bounds nothing: every request in a burst would reach timingSafeEqual
+    // before the first increment landed, so the cap would limit waves rather
+    // than guesses.
+    const attempts = await this.kv.incrWithTtl(attemptsKey(phone), remaining);
+    if (attempts > OTP_MAX_VERIFY_ATTEMPTS) {
+      await this.burn(phone);
+      this.logger.warn({
+        event: 'auth.otp.verify_rejected',
+        phone: masked,
+        reason: 'attempt_cap',
+        attempts,
+        at,
+      });
+      // The same rejection as every other failure: a distinct one here would
+      // tell an attacker their guesses are landing on a live code.
+      throw new UnauthorizedException(REJECTED);
+    }
+
     // Hash both sides before comparing: timingSafeEqual throws on a length
     // mismatch, and two sha256 digests are always the same length. Never `===`
     // on the raw codes.
@@ -163,21 +212,7 @@ export class AuthService {
       candidate.length !== expected.length ||
       !timingSafeEqual(candidate, expected)
     ) {
-      const attempts = record.attempts + 1;
-      if (attempts >= OTP_MAX_VERIFY_ATTEMPTS) {
-        await this.kv.del(codeKey(phone));
-      } else {
-        // Preserve the REMAINING ttl — a fresh one would let wrong guesses
-        // extend the code's life indefinitely.
-        const remaining = await this.kv.ttl(codeKey(phone));
-        if (remaining > 0) {
-          await this.kv.setWithTtl(
-            codeKey(phone),
-            JSON.stringify({ ...record, attempts }),
-            remaining,
-          );
-        }
-      }
+      if (attempts >= OTP_MAX_VERIFY_ATTEMPTS) await this.burn(phone);
       this.logger.warn({
         event: 'auth.otp.verify_rejected',
         phone: masked,
@@ -191,7 +226,7 @@ export class AuthService {
     // Clear the code and its cooldown. The hourly counter deliberately SURVIVES:
     // it is the SMS-spend cap, not a cooldown, and resetting it here would let
     // five wrong guesses reset the budget guardrail.
-    await this.kv.del(codeKey(phone));
+    await this.burn(phone);
 
     const user = await this.repo.findOrCreate({ phone, role: record.role });
     const { accessToken, expiresAt } = await this.tokens.issue(user);
