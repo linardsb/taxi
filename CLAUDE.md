@@ -15,6 +15,20 @@ Taxi booking platform for Latvia (Bolt competitor, driver-first). Venture name *
 | `packages/config` | tsconfig presets | — | — |
 | `app/` + `backend/` + `DEPLOY.md` + `JAUTAJUMI.md` | **Sakta Cab anketa** — separate research mini-project (vanilla JS + Apps Script). NOT part of the monorepo; do not refactor it into the workspace. | — | see PLAN.md |
 
+### How the pieces talk
+
+```
+apps/rider   ─┐                                    ┌─ Postgres + PostGIS  (rides, drivers, geo)
+apps/driver  ─┤                                    ├─ Redis               (dispatch state, presence)
+              ├─→ services/api ────────────────────┤
+apps/dispatch─┤   REST + Socket.IO + dispatch engine└─ seams: maps · SMS · payments
+apps/admin   ─┘
+
+every surface ──imports (build-time)──> packages/shared   zod schemas · ride state machine · enums · seam interfaces
+```
+
+Contracts flow one way: apps and `services/api` import from `packages/shared`; **`shared` imports from nothing in the workspace**. The four apps never talk to each other or to the database — only to `services/api`.
+
 ## Commands
 
 ```bash
