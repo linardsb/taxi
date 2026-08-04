@@ -15,7 +15,13 @@
     "typecheck": {
       "dependsOn": ["^build"]
     },
-    "lint": {},
+    "lint": {
+      // Type-aware eslint rules need the workspace deps' .d.ts, same as
+      // typecheck: without this, `@taxi/shared` types resolve to `error` and
+      // every import becomes a no-unsafe-* violation. Only bites on a cold
+      // dist (CI), which is exactly where it bit.
+      "dependsOn": ["^build"]
+    },
     "test": {
       "dependsOn": ["^build"]
     },
