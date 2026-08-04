@@ -10,10 +10,14 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U taxi"]
+      # TCP, not the unix socket: initdb's temporary server answers a socket
+      # pg_isready, so a fresh volume (CI) went "healthy" before the real
+      # server was up — connections in that gap got terminated.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U taxi -d taxi"]
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
