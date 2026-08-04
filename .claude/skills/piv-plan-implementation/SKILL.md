@@ -95,6 +95,7 @@ So that <benefit/value>
 - Map router/API registration patterns
 - Understand database/model patterns if applicable
 - Identify authentication/authorization patterns if relevant
+- **Task-runner env passlist**: if the plan wires new tasks/tests into a monorepo task runner (turbo, nx), check its env-var allowlist (turbo 2.x `globalEnv` / per-task `env`) for every env var the new code reads. Strict mode strips undeclared vars *silently* — the failure mode is tests passing against the wrong target (e.g. a default localhost DB instead of `DATABASE_URL`).
 
 **Clarify Ambiguities:**
 
@@ -152,6 +153,13 @@ So that <benefit/value>
 - Design for extensibility and future modifications
 - Plan for backward compatibility if needed
 - Consider scalability implications
+
+**DB schema checklist** (run for any ticket that creates or alters tables — detail is not completeness):
+
+- Unique indexes over nullable columns: does NULL-duplication matter? (`NULLS NOT DISTINCT` or a partial index)
+- Mutable rows: does `updated_at` actually update? (Drizzle: `$onUpdate`, not just `defaultNow`)
+- One index per *known* hot read path of this ticket's consumers; name the owning ticket for deferred ones
+- Constraint-rejection tests: check how the ORM surfaces driver errors before specifying the assertion shape (drizzle 0.44 wraps them in `DrizzleQueryError` — assert on `.cause`)
 
 ### Phase 5: Plan Structure Generation
 

@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run .claude/hooks/pre_tool_use.py"
+            "command": "uv run \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py\""
           }
         ]
       }
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run .claude/hooks/stop_check.py"
+            "command": "uv run \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop_check.py\""
           }
         ]
       }
