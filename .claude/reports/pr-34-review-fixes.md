@@ -50,8 +50,14 @@ gone, correct code rejected afterwards, only the hourly `otp:rate:` counter surv
 ### 2 · The hourly cap counted requests, not SMS — High
 
 The cooldown is now evaluated before the increment, so a `resend_too_soon` — which sends nothing —
-no longer spends a slot. Five taps of "resend" used to lock a phone out of sign-in for an hour, and
-anyone who knew a number could do it in about a second.
+no longer spends a slot. Five taps of "resend" used to lock a phone out of sign-in for an hour.
+
+> **Corrected in round 2.** This section originally also claimed the abuse half was closed — that
+> "anyone who knew a number could do it in about a second" was now past tense. It was not: the
+> cooldown was derived from the code key's TTL, and the attempt cap deletes that key, so five wrong
+> guesses bought a free resend. Measured at 5 SMS and an hour-long lockout in under a second. The
+> error came from round 1 (`pr-34-review.md:110-112`) and was inherited here. Closed properly by the
+> round-2 pass below, which gives the cooldown its own key.
 
 The increment deliberately stays *before* `sms.sendOtp` rather than moving after it: incrementing
 only on success would mean a GET-then-INCR check, and a burst would then all read the same count and
@@ -81,6 +87,37 @@ so no test covers the window itself; the fix closes it by construction.
 left alone, as the review advised. The live boot confirms the barrel resolves at runtime — Nest is
 where circular barrel imports usually surface, and it started clean.
 
+## Round 2 — fixing the fix
+
+`.claude/code-reviews/pr-34-review-round2.md` reviewed this pass and found six items. Five were
+fixed; one was logged.
+
+**M2 (High) — the cooldown is its own key now.** `otp:cooldown:<phone>`, 60 s, set only when
+`sms.sendOtp` resolves and deliberately *not* deleted by the burn. A successful verify does clear it,
+which keeps today's UX and is safe: clearing it takes the correct code, so only the phone's real owner
+can — precisely what the burn path cannot do. Setting it after the send also shrinks finding 2's
+logged residue, since a provider outage no longer blocks the retry. Re-ran the attack that reproduced
+it: **1 SMS and 1 hourly slot**, down from 5 and 5. The lockout now genuinely costs 5 minutes.
+
+**M1 (Medium) — `burn()` no longer deletes the attempt counter.** The counter *is* the cap, so
+deleting it with the code let a request already past the TTL gate increment a deleted key, read back
+1, and win a fresh budget. One line removed; the counter now expires on its own and `requestOtp`
+still clears it on reissue, so nothing goes stale. The bound is structural rather than timing-derived.
+
+**M3, M4, L2 (tests).** The burst assertion is `toBe(5)` rather than `toBeLessThanOrEqual` — it used
+to pass at 0, so a regression that crashed all 50 guesses would have read as green — and `rejection()`
+now refuses anything that isn't an `UnauthorizedException` instead of casting. The counter's TTL and
+its reissue reset are asserted, which is also what makes the previously vacuous TTL spec earn its keep.
+The `Logger` spy is restored in a `finally`.
+
+Both new regression tests were verified against a reverted fix: reinstating the counter deletion makes
+the straggler test report 6 comparisons instead of 5, and restoring the TTL-derived cooldown makes the
+burn test go red. M1's window is one round trip, so the interleaving is constructed with a pausable
+KV double rather than raced — 200 staggered live guesses had failed to reproduce it.
+
+**L1 — deferred to #35.** A `ThrottlerGuard` on the auth routes. Named in round 1's finding-1
+remediation as worth having regardless, it fell between "fixed" and "deferred" with no record.
+
 ## Validation
 
 `pnpm turbo run typecheck lint test build --force` from a cleared `dist`, with
@@ -90,7 +127,7 @@ where circular barrel imports usually surface, and it started clean.
 |---|---|
 | typecheck · lint · test · build | **18/18 turbo tasks, 0 cached** |
 | lint | 0 errors, 1 warning — the pre-existing `no-unsafe-argument` on supertest |
-| api tests | **39 passed, 8 suites** (was 34 / 7) |
+| api tests | **43 passed, 8 suites** (was 34 / 7) |
 | GitHub Actions on `cbc9f61` | **pass** — run [30946982601](https://github.com/linardsb/taxi/actions/runs/30946982601), 39 tests, 0 skipped |
 
 **A coverage gap, found and closed here.** `.github/workflows/ci.yml` provided no Redis and set no
@@ -113,9 +150,10 @@ Confirmed on run [30946982601](https://github.com/linardsb/taxi/actions/runs/309
   emits under `driver`/`dispatch`. The first edits a rules file, so it wants `rules-check-drift`
   rather than a quiet patch.
 - **Finding 2's residue**, logged as a comment on #35: an SMS provider outage still spends a slot and
-  writes the code key with a full TTL. A sustained outage burns all five hourly slots in ~4 minutes
-  with nothing delivered. Bounded and self-clearing; best revisited with #13, where a real provider
-  gives an error specific enough to distinguish "never sent" from "maybe delivered".
+  writes the code key with a full TTL. A sustained outage burns all five hourly slots with nothing
+  delivered — though after round 2 it no longer also blocks the retry, since the cooldown starts only
+  on a delivered SMS. Best revisited with #13, where a real provider gives an error specific enough to
+  distinguish "never sent" from "maybe delivered".
 - **`auth.service.spec.ts` "does not extend the code TTL on a wrong guess" went vacuous.** Nothing
   rewrites the code key on a wrong guess anymore — the invariant is now structural rather than
   asserted. Kept, since it still pins the invariant against a future rewrite, but it no longer

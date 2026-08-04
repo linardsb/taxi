@@ -46,6 +46,12 @@ const rateKey = (phone: string) => `otp:rate:${phone}`;
  * only thing that bounds a parallel attacker.
  */
 const attemptsKey = (phone: string) => `otp:attempts:${phone}`;
+/**
+ * The cooldown is its own key rather than the code's remaining TTL. Derived
+ * from the code, five wrong guesses burned it and bought a free resend: 5 SMS
+ * and an hour-long sign-in lockout of any known number, in about a second.
+ */
+const cooldownKey = (phone: string) => `otp:cooldown:${phone}`;
 
 /** One message for wrong-code AND no-code, so nothing distinguishes them. */
 const REJECTED = 'invalid_or_expired_code';
@@ -62,10 +68,16 @@ export class AuthService {
     private readonly tokens: AuthTokenService,
   ) {}
 
-  /** The code and its guess counter live and die together. */
+  /**
+   * Deletes the code and NOTHING else. The counter must outlive it: a request
+   * already past the TTL gate when this lands would otherwise increment a
+   * deleted key, read back 1, and get a fresh guess budget against the record
+   * it is still holding. It expires on its own — and `requestOtp` clears it
+   * whenever a new code is issued, so it can never go stale either.
+   * The cooldown must outlive it too, or burning the code buys a free resend.
+   */
   private async burn(phone: string): Promise<void> {
     await this.kv.del(codeKey(phone));
-    await this.kv.del(attemptsKey(phone));
   }
 
   private hash(code: string): string {
@@ -78,19 +90,14 @@ export class AuthService {
     const phone = input.phone;
     const masked = maskPhone(phone);
 
-    // A live code younger than the cooldown means "you just asked" — derived
-    // from the remaining TTL rather than a second key. Checked BEFORE the
-    // hourly counter: this path sends no SMS, and the counter is the SMS-spend
-    // cap. Counting it would let five taps of "resend" — or five requests from
-    // anyone who knows the number — lock a phone out of sign-in for an hour.
-    const remaining = await this.kv.ttl(codeKey(phone));
-    const age = OTP_TTL_SECONDS - remaining;
-    if (remaining > 0 && age < OTP_RESEND_COOLDOWN_SECONDS) {
+    // Checked BEFORE the hourly counter: this path sends no SMS, and the
+    // counter is the SMS-spend cap. Counting it would let five taps of "resend"
+    // — or five requests from anyone who knows the number — lock a phone out of
+    // sign-in for an hour.
+    const cooldown = await this.kv.ttl(cooldownKey(phone));
+    if (cooldown > 0) {
       throw new HttpException(
-        {
-          message: 'resend_too_soon',
-          retryAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS - age,
-        },
+        { message: 'resend_too_soon', retryAfterSeconds: cooldown },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -140,6 +147,14 @@ export class AuthService {
       });
       throw new HttpException('sms_delivery_failed', HttpStatus.BAD_GATEWAY);
     }
+
+    // Started only by a delivered SMS: a provider outage must not also block
+    // the retry.
+    await this.kv.setWithTtl(
+      cooldownKey(phone),
+      '1',
+      OTP_RESEND_COOLDOWN_SECONDS,
+    );
 
     this.logger.log({
       event: 'auth.otp.requested',
@@ -223,10 +238,13 @@ export class AuthService {
       throw new UnauthorizedException(REJECTED);
     }
 
-    // Clear the code and its cooldown. The hourly counter deliberately SURVIVES:
-    // it is the SMS-spend cap, not a cooldown, and resetting it here would let
-    // five wrong guesses reset the budget guardrail.
+    // Clear the code and the cooldown. Clearing the cooldown takes the correct
+    // code, so only the phone's real owner can — which is what separates this
+    // from the burn path. The hourly counter deliberately SURVIVES: it is the
+    // SMS-spend cap, and resetting it here would let five wrong guesses reset
+    // the budget guardrail.
     await this.burn(phone);
+    await this.kv.del(cooldownKey(phone));
 
     const user = await this.repo.findOrCreate({ phone, role: record.role });
     const { accessToken, expiresAt } = await this.tokens.issue(user);

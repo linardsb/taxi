@@ -20,8 +20,35 @@ const env = { JWT_SECRET: SECRET } as Env;
 
 /** `storedRole` is what the repository reports back — a provisioned dispatcher
  *  is the case that matters, so it is a UserRole, not a SignupRole. */
-function build(storedRole: UserRole = 'driver') {
-  const kv = new InMemoryKeyValueStore();
+/**
+ * Lets one call stall between the TTL gate and its increment — the interleaving
+ * where a burn used to re-arm the counter. The window is a single round trip,
+ * so racing for it is not reproducible; it is constructed instead.
+ */
+class PausableKv extends InMemoryKeyValueStore {
+  private gate?: Promise<void>;
+  private open?: () => void;
+
+  pauseNextIncr(): void {
+    this.gate = new Promise((resolve) => (this.open = resolve));
+  }
+
+  resume(): void {
+    this.open?.();
+  }
+
+  override async incrWithTtl(key: string, ttlSeconds: number): Promise<number> {
+    const gate = this.gate;
+    this.gate = undefined; // only the first caller waits
+    if (gate) await gate;
+    return super.incrWithTtl(key, ttlSeconds);
+  }
+}
+
+function build(
+  storedRole: UserRole = 'driver',
+  kv: InMemoryKeyValueStore = new InMemoryKeyValueStore(),
+) {
   const sms = new RecordingSmsProvider();
   const tokens = new AuthTokenService(
     new JwtService({ secret: SECRET, signOptions: { expiresIn: '30d' } }),
@@ -54,7 +81,11 @@ function build(storedRole: UserRole = 'driver') {
   };
 }
 
-/** The rejection itself, typed — `.catch(e => e)` would widen to a union. */
+/**
+ * The rejection itself, typed — `.catch(e => e)` would widen to a union. The
+ * instanceof check is load-bearing: a cast would let a TypeError masquerade as
+ * a refusal, and a test counting refusals would score the crash as a pass.
+ */
 async function rejection(p: Promise<unknown>): Promise<UnauthorizedException> {
   let caught: unknown;
   let resolved = false;
@@ -65,7 +96,10 @@ async function rejection(p: Promise<unknown>): Promise<UnauthorizedException> {
     caught = e;
   }
   if (resolved) throw new Error('expected a rejection, got a value');
-  return caught as UnauthorizedException;
+  if (!(caught instanceof UnauthorizedException)) {
+    throw new Error(`expected UnauthorizedException, got ${String(caught)}`);
+  }
+  return caught;
 }
 
 describe('AuthService.requestOtp', () => {
@@ -116,6 +150,35 @@ describe('AuthService.requestOtp', () => {
       await service.requestOtp({ phone: PHONE, role: 'driver' });
     }
     expect(sms.sent).toHaveLength(5);
+  });
+
+  it('keeps the cooldown after the code is burned (failure)', async () => {
+    const { service, sms } = build();
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+
+    // Burning the code used to clear the cooldown with it, because the
+    // cooldown was the code's own TTL. That bought a free resend: five wrong
+    // guesses per round, five rounds, and any known number was out of SMS
+    // budget — five real messages and an hour of no sign-in, in one second.
+    for (let i = 0; i < OTP_MAX_VERIFY_ATTEMPTS; i++) {
+      await rejection(service.verifyOtp({ phone: PHONE, code: '000000' }));
+    }
+
+    await expect(
+      service.requestOtp({ phone: PHONE, role: 'driver' }),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(sms.sent).toHaveLength(1);
+  });
+
+  it('lets a signed-in user request again immediately (edge)', async () => {
+    const { service, sms } = build();
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+    await service.verifyOtp({ phone: PHONE, code: sms.lastCodeFor(PHONE)! });
+
+    // Clearing the cooldown takes the correct code, so only the phone's real
+    // owner can — which is exactly what the burn path cannot do.
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+    expect(sms.sent).toHaveLength(2);
   });
 
   it('throttles past the hourly cap (failure)', async () => {
@@ -192,28 +255,74 @@ describe('AuthService.verifyOtp', () => {
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
 
-    // Fired in parallel, so every guess interleaves at the same await points.
-    // A read-modify-write counter lets all 50 observe the same value and write
-    // back one attempt; the cap must survive that.
-    await Promise.all(
-      Array.from({ length: 50 }, () =>
-        rejection(service.verifyOtp({ phone: PHONE, code: '000000' })),
-      ),
-    );
-    const compared = warn.mock.calls.filter(
-      (call) => (call[0] as { reason?: string }).reason === 'wrong_code',
-    ).length;
-    warn.mockRestore();
+    let compared: number;
+    try {
+      // Fired in parallel, so every guess interleaves at the same await points.
+      // A read-modify-write counter lets all 50 observe the same value and
+      // write back one attempt; the cap must survive that.
+      await Promise.all(
+        Array.from({ length: 50 }, () =>
+          rejection(service.verifyOtp({ phone: PHONE, code: '000000' })),
+        ),
+      );
+      compared = warn.mock.calls.filter(
+        (call) => (call[0] as { reason?: string }).reason === 'wrong_code',
+      ).length;
+    } finally {
+      // Not restoring on the failure path would leak a prototype mock into
+      // every later test in this file.
+      warn.mockRestore();
+    }
 
     // The reason the counter increments BEFORE the compare. Counting after is
     // atomic too and burns the code just the same, so the burn alone cannot
     // tell the two apart — but it would let all 50 guesses through first, and
-    // the cap would bound waves rather than guesses.
-    expect(compared).toBeLessThanOrEqual(OTP_MAX_VERIFY_ATTEMPTS);
+    // the cap would bound waves rather than guesses. Exactly, not at-most: a
+    // regression that crashed all 50 would log no wrong_code at all and sail
+    // through a `toBeLessThanOrEqual`.
+    expect(compared).toBe(OTP_MAX_VERIFY_ATTEMPTS);
 
     await expect(
       service.verifyOtp({ phone: PHONE, code }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('does not re-arm the counter for a guess already in flight when the code burns (failure)', async () => {
+    const kv = new PausableKv();
+    const { service } = build('driver', kv);
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    let compared: number;
+    try {
+      // The straggler clears the record read and the TTL gate, then stalls
+      // just before its increment.
+      kv.pauseNextIncr();
+      const straggler = rejection(
+        service.verifyOtp({ phone: PHONE, code: '000000' }),
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Meanwhile the cap is reached and the code is burned out from under it.
+      for (let i = 0; i <= OTP_MAX_VERIFY_ATTEMPTS; i++) {
+        await rejection(service.verifyOtp({ phone: PHONE, code: '000000' }));
+      }
+
+      kv.resume();
+      await straggler;
+      compared = warn.mock.calls.filter(
+        (call) => (call[0] as { reason?: string }).reason === 'wrong_code',
+      ).length;
+    } finally {
+      warn.mockRestore();
+    }
+
+    // Deleting the counter along with the code would hand the straggler a
+    // fresh budget and a sixth comparison — against a record the store no
+    // longer has. The counter has to outlive the code it bounds.
+    expect(compared).toBe(OTP_MAX_VERIFY_ATTEMPTS);
   });
 
   it('does not extend the code TTL on a wrong guess (edge)', async () => {
@@ -229,6 +338,29 @@ describe('AuthService.verifyOtp', () => {
 
     expect(after).toBeLessThanOrEqual(before);
     expect(after).toBeLessThan(OTP_TTL_SECONDS);
+    // The counter carries the code's REMAINING life, never a fresh window —
+    // otherwise it outlives the code it belongs to.
+    expect(await kv.ttl(`otp:attempts:${PHONE}`)).toBeLessThanOrEqual(after);
+  });
+
+  it('gives a reissued code a fresh guess budget (edge)', async () => {
+    const { service, sms, kv } = build();
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+    for (let i = 0; i < 3; i++) {
+      await rejection(service.verifyOtp({ phone: PHONE, code: '000000' }));
+    }
+
+    // A new code is a new secret. If the counter carried over, 3 + 4 would
+    // burn it before the right code was ever tried.
+    kv.advance(OTP_TTL_SECONDS + 1);
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+    const code = sms.lastCodeFor(PHONE)!;
+    for (let i = 0; i < 4; i++) {
+      await rejection(service.verifyOtp({ phone: PHONE, code: '000000' }));
+    }
+
+    const session = await service.verifyOtp({ phone: PHONE, code });
+    expect(session.user.id).toBe(USER_ID);
   });
 
   it('makes a wrong code and an expired code indistinguishable (failure)', async () => {
