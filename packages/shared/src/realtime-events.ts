@@ -167,6 +167,15 @@ export const driverRoom = (driverId: string) => `driver:${driverId}` as const;
 export const dispatchRoom = (cityId: string) => `dispatch:${cityId}` as const;
 
 /**
+ * A user's private room — every authenticated socket joins its own on
+ * connect. This is how the server addresses one person's sockets across
+ * the cluster (`server.in(userRoom(id)).socketsJoin(rideRoom(rideId))`),
+ * which is what makes ride rooms server-orchestrated instead of
+ * client-requested. Clients never ask to join anything.
+ */
+export const userRoom = (userId: string) => `user:${userId}` as const;
+
+/**
  * The SERVER's listen map: `Server<ClientToServerEvents, ServerToClientEvents>`.
  *
  * `unknown` on purpose — this is the untrusted boundary. A typed payload here
@@ -199,3 +208,23 @@ export interface ServerToClientEvents {
   [RT.dispatchBoard]: (payload: DispatchBoardEvent) => void;
   [RT.dispatchUnclaimed]: (payload: DispatchUnclaimedEvent) => void;
 }
+
+/**
+ * Event → payload schema, so the api's emit helpers can `.parse()` before
+ * they send. This makes the ISO-string rule at the top of this file an
+ * enforced invariant instead of a documented one.
+ *
+ * `satisfies`, never an annotation: `rideAssignedEventSchema` is a
+ * `ZodEffects` (it has a `.refine()`), and annotating the object would widen
+ * every entry to the common supertype and destroy per-key inference.
+ */
+export const RT_EVENT_SCHEMAS = {
+  [RT.driverLocation]: driverLocationEventSchema,
+  [RT.driverQueue]: driverQueueEventSchema,
+  [RT.rideStatus]: rideStatusEventSchema,
+  [RT.rideOffer]: rideOfferEventSchema,
+  [RT.rideOfferRevoked]: rideOfferRevokedEventSchema,
+  [RT.rideAssigned]: rideAssignedEventSchema,
+  [RT.dispatchBoard]: dispatchBoardEventSchema,
+  [RT.dispatchUnclaimed]: dispatchUnclaimedEventSchema,
+} satisfies Record<keyof ServerToClientEvents, z.ZodType>;

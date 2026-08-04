@@ -16,9 +16,10 @@
 Accept/decline are **not** socket events — they are REST calls (#10), which need idempotency, auth and retry semantics. The catalog carries offer delivery and revocation only.
 
 Rules:
-- Rooms: `ride:<id>` (rider+driver+dispatch), `dispatch:<cityId>` (board), `driver:<id>` (offers).
-- Build room names with the `rideRoom()` / `driverRoom()` / `dispatchRoom()` helpers in `@taxi/shared` — never hand-build the strings.
+- Rooms: `ride:<id>` (rider+driver+dispatch), `dispatch:<cityId>` (board), `driver:<id>` (offers), `user:<userId>` (every authenticated socket's private room — how the server addresses one person's sockets cluster-wide).
+- Build room names with the `rideRoom()` / `driverRoom()` / `dispatchRoom()` / `userRoom()` helpers in `@taxi/shared` — never hand-build the strings.
 - `driver:location` has **two** schemas on purpose. The inbound ping carries **no `driverId`**: the server takes the driver identity from the JWT. If the inbound schema carried it, any authenticated driver could spoof another driver's position on the dispatch board. Do not merge them.
 - Socket.IO generics come from `ClientToServerEvents` / `ServerToClientEvents` in the same file. The server's listen map types inbound payloads as **`unknown`** on purpose — raw client JSON is untrusted, so the only way to read a field is `driverLocationPingSchema.parse(payload)`. The driver app emits through the typed `ClientToServerEmitEvents`.
-- Auth on connect via JWT; a socket only joins rooms its role allows.
+- JWT is verified in a Socket.IO handshake middleware — an unauthenticated connection is refused before any handler runs. There is **no client-initiated join API**: the gateway places each socket in the rooms `canJoin()` allows for its role, and ride rooms are joined server-side via `RealtimeService.joinRideRoom()`.
+- `RT_EVENT_SCHEMAS` (shared) maps every event to its payload schema; the api's emit helpers `.parse()` before sending, so the ISO-string rule is enforced, not just documented.
 - Add an event = add it to `RT` + payload schema in shared FIRST, then this table.

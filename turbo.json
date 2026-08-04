@@ -1,6 +1,12 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["DATABASE_URL"],
+  "globalEnv": [
+    "DATABASE_URL",
+    "REDIS_URL",
+    "JWT_SECRET",
+    "API_PORT",
+    "REDIS_TEST_URL"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
