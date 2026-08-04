@@ -8,6 +8,25 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # Postgres comes up from docker-compose via the api's `pretest`. Redis does
+    # not: the suites that need it are opt-in behind REDIS_TEST_URL, because
+    # 6379/6380 are taken on the primary dev machine. Unset, they describe.skip
+    # — so CI was silently running five fewer tests than the local gate, and the
+    # Redis KV store's atomicity had no coverage at all.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Already in turbo.json's globalEnv, so strict env mode passes it to the
+      # test task and it lands in the cache key.
+      REDIS_TEST_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -16,4 +35,9 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The service's health check runs INSIDE the container, so it passes even
+      # if the host port mapping is wrong — and a Redis the suites can't reach
+      # is a silent skip, not a red build. Fail here instead.
+      - name: Verify Redis is reachable from the runner
+        run: node -e "require('net').connect(6379,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',(e)=>{console.error(e.message);process.exit(1)})"
       - run: pnpm turbo run typecheck lint test build
