@@ -118,6 +118,62 @@ KV double rather than raced — 200 staggered live guesses had failed to reprodu
 **L1 — deferred to #35.** A `ThrottlerGuard` on the auth routes. Named in round 1's finding-1
 remediation as worth having regardless, it fell between "fixed" and "deferred" with no record.
 
+## Round 3 — the cooldown was still bypassable, concurrently
+
+`.claude/code-reviews/pr-34-review-round3.md` is an independent adversarial pass over the whole thing. It
+found **one** issue, and it is the same attack round 2 measured, reached by a different route.
+
+> **Corrected again.** The round-2 note above claims "**1 SMS and 1 hourly slot**, down from 5 and 5. The
+> lockout now genuinely costs 5 minutes." That was measured on the *sequential* burn-then-resend path, which
+> is genuinely closed. The **concurrent** path was never tried, and it was still wide open: the new cooldown
+> key was read at `:97` and not written until `:153`, four awaits later, so five simultaneous requests all
+> read 0, all passed, and all sent. Measured through the production wiring (real `AppModule`, real Redis, 5
+> concurrent `POST /auth/otp/request`): `[200,200,200,200,200]`, **5 real SMS, `otp:rate=5`** — verbatim the
+> impact the fix was written to remove. Pre-existing, not a regression: the pre-`5b0ab8b` cooldown had the
+> same read-then-act shape.
+
+**H1 — the cooldown is CLAIMED with INCR, not read-then-set.** The same primitive, and the same reasoning,
+that the guess counter already used; the comment at `:42-48` stated it and it simply had not been applied
+here. Three release paths keep the key meaning exactly "an SMS was just delivered": the send failing (which
+preserves the deliberate decision that a provider outage must not block the retry), and the hourly cap
+rejecting (which sends nothing either). `Math.max(1, ttl)` on the rejection, since the key can expire between
+the INCR and the read and a `retryAfterSeconds: 0` reads as "retry now".
+
+Re-measured after the fix, same layer: `[200,429,429,429,429]`, **1 real SMS, `otp:rate=1`**, and the
+delivered code still signs in with a 200.
+
+**M1 — the concurrent request path had no test, which is why this survived two rounds.** Every `requestOtp`
+spec was sequential, including round 2's own regression test for the burn path. Applying the fix changed no
+test outcome — 43/43 before and after — which was the tell. Added: a 5-wide `Promise.allSettled` burst
+asserting one fulfilled, one SMS, and `otp:rate = 1`. Plus one for the release path (the send fails → the
+next request is not blocked), and a cooldown assertion on the existing hourly-cap spec.
+
+**M2 — the burst test counted log lines, not comparisons.** `compared` was the number of `wrong_code`
+warnings, a proxy for "reached `timingSafeEqual`" that only holds while the cap check sits between the
+increment and the log. An ordering that compares eagerly and increments straight after lets all 50 guesses
+compare while still logging 5 — verified green under exactly that mutant. Both burst specs now count the
+comparison itself. `jest.spyOn` cannot attach (the `node:crypto` export is non-configurable), so the module
+is wrapped with `jest.mock` and everything but `timingSafeEqual` passes through untouched.
+
+**All five fixes verified by mutation**, each reverted individually against the new specs:
+
+| Mutation | Result |
+|---|---|
+| cooldown back to read-then-set | burst spec red — `Expected 1, Received 5` |
+| compare eagerly, increment after | burst spec red — `Expected 5, Received 50` *(green before M2)* |
+| `burn()` deletes the attempts counter | straggler spec red — `Expected 5, Received 6` |
+| drop the release on SMS failure | outage spec red |
+| drop the release on the hourly cap | hourly-cap spec red |
+
+**L1/L2 — logged on #35, not fixed here.** The `resend_too_soon` rejection precedes the rate increment, so
+probing is uncounted and distinguishes "this number requested a code in the last 60 s" — though probing a
+*quiet* number sends a real SMS, so it mostly confirms what the probe itself caused. And the verify path
+costs 1 KV round trip for a missing code against 3 for a wrong one. Neither is a merge gate; both belong with
+the `ThrottlerGuard`. Round 3 confirmed the round-2 verdicts otherwise: the Lua script is correct for both
+callers, `burn()`'s reasoning is sound, the cooldown genuinely cannot be cleared without the correct code,
+`PausableKv` is a legitimate construction, and the realtime slice's handshake-auth and no-client-joins
+invariants both hold.
+
 ## Validation
 
 `pnpm turbo run typecheck lint test build --force` from a cleared `dist`, with
@@ -127,7 +183,7 @@ remediation as worth having regardless, it fell between "fixed" and "deferred" w
 |---|---|
 | typecheck · lint · test · build | **18/18 turbo tasks, 0 cached** |
 | lint | 0 errors, 1 warning — the pre-existing `no-unsafe-argument` on supertest |
-| api tests | **43 passed, 8 suites** (was 34 / 7) |
+| api tests | **45 passed, 8 suites** (was 43 after round 2; 34 / 7 before any) |
 | GitHub Actions on `cbc9f61` | **pass** — run [30946982601](https://github.com/linardsb/taxi/actions/runs/30946982601), 39 tests, 0 skipped |
 
 **A coverage gap, found and closed here.** `.github/workflows/ci.yml` provided no Redis and set no
