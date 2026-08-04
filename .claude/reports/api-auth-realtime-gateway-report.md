@@ -68,6 +68,7 @@ Both slices carry ≥1 expected + 1 edge + 1 failure case, named in the titles (
 | 2 | `pnpm --filter @taxi/shared test` | **pass** — 85 tests (74 pre-existing + 11 new) |
 | 2 | `pnpm turbo run test --filter @taxi/api` | **pass** — 32 tests, Redis suite skipped, no open handles |
 | 3 | `pnpm check` | **pass — 15/15 tasks**, after fixing a pre-existing `@taxi/db` clock bug in a separate commit (see Issues 1) |
+| 3b | `pnpm turbo run typecheck lint test build --force` (cold `dist` — **true CI parity**) | **pass — 18/18 tasks**. `pnpm check` alone is weaker: it omits `build` and rides a warm `dist` (see Issues 5) |
 | 4 | live server | **pass** — `/health` 200 under the global guard; request → `{"expiresInSeconds":300,"resendAfterSeconds":60}`; resend → 429; verify → full session; socket no-token → `unauthorized`, authed → socket id; log shows `rooms_joined ["user:<id>","driver:<id>"]` with **no** `dispatch:` room; phone masked `+371*****001` |
 | 5 | `REDIS_TEST_URL=… pnpm turbo run test --filter @taxi/api` | **pass** — 34 tests, `RedisIoAdapter` green rather than skipped |
 | 5 | `redis-cli KEYS 'otp:*'` | **pass** — `otp:code:` present after request, gone after verify; `otp:rate:` survives (by design) |
@@ -156,7 +157,21 @@ Both slices carry ≥1 expected + 1 edge + 1 failure case, named in the titles (
 4. **Redis runs on 6381**, per the plan (`REDIS_PORT=6381 docker compose up -d --wait redis`).
    Root `.env` was not edited — a pre-tool hook blocks access to it — so both Level 4 and Level 5 were
    driven with inline env vars, which `@nestjs/config` honours over the file anyway.
-5. **`test:e2e` still prints "Jest did not exit one second after the test run".** The suite passes.
+5. **CI caught a lint failure my local gate could not — `turbo.json`'s `lint` task lacked `dependsOn: ["^build"]`.**
+   `typecheck` and `test` both declare it; `lint` did not. On a warm `dist` that is invisible, which is
+   why every local run was green. On CI's cold checkout, `@taxi/api`'s lint ran before `@taxi/shared`
+   and `@taxi/db` were built, so every workspace import resolved to `error` and typescript-eslint
+   reported ~40 `no-unsafe-*` violations against code that is fine. Only surfaced now because
+   `@taxi/api` is the first package that both has a lint script and imports workspace types.
+   Fixed in its own commit.
+
+   **Two process gaps this exposes, worth carrying into the next ticket:** (a) the plan's validation
+   levels stop at `pnpm check` (`typecheck lint test`), but CI runs `typecheck lint test build` — I
+   never ran `build` at all until CI failed; (b) a warm `dist` makes the local gate strictly weaker
+   than CI's. The parity command is
+   `pnpm turbo run typecheck lint test build --force` **from a cleared `dist`** — now verified at
+   18/18, and what Level 3 should be in future plans.
+6. **`test:e2e` still prints "Jest did not exit one second after the test run".** The suite passes.
    `--detectOpenHandles` reports no leaked handle, and a probe confirmed the KV destroy hook fires and
    `quit()` resolves; the message only appears when Redis is actually reachable (a dead port exits
    clean), so it is the graceful close's socket teardown tripping jest's one-second timer. Cosmetic,
