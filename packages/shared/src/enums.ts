@@ -20,6 +20,16 @@ export const DRIVER_STATUSES = ["offline", "online", "on_ride"] as const;
 export type DriverStatus = (typeof DRIVER_STATUSES)[number];
 
 /**
+ * What a driver may set for THEMSELVES. `on_ride` is deliberately absent: it is
+ * written only by the ride lifecycle (#11) when a ride is accepted, and a driver
+ * who could set it by hand could hide from dispatch while idle — or clear it
+ * mid-ride and take a second offer. Written out rather than filtered from
+ * `DRIVER_STATUSES`, because a filter loses the literal tuple `z.enum()` needs.
+ */
+export const DRIVER_PRESENCE_STATUSES = ["offline", "online"] as const;
+export type DriverPresenceStatus = (typeof DRIVER_PRESENCE_STATUSES)[number];
+
+/**
  * The four evidenced pilot hotspots (S5-2, S7-2). Geozones themselves are data
  * (#6 seeds them) — this is the stable slug set for the pilot, not a closed
  * universe of zones; `geozone.slug` stays a free-form string.

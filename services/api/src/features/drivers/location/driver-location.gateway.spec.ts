@@ -1,0 +1,208 @@
+import {
+  RT,
+  type DriverLocationEvent,
+  type DriverLocationPing,
+  type JwtClaims,
+} from '@taxi/shared';
+import type { AddressInfo } from 'node:net';
+import type { Socket } from 'socket.io-client';
+import {
+  closeClients,
+  connectClient,
+  createTestApp,
+  type TestApp,
+} from '../../../../test/harness';
+import { APP_ENV, type Env } from '../../../common/config/env.schema';
+import { AuthTokenService } from '../../auth/auth-token.service';
+import type { AuthedSocket } from '../../realtime';
+import { DriverLocationGateway } from './driver-location.gateway';
+import type { DriverLocationService } from './driver-location.service';
+
+const DRIVER_ID = 'aa1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e11';
+const RIDER_ID = 'bb1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e12';
+const DISPATCHER_ID = 'cc1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e13';
+const RIGA = { lat: 56.9512, lng: 24.1136 };
+
+const validPing = () => ({ location: RIGA, at: new Date().toISOString() });
+
+describe('driver location gateway (integration)', () => {
+  let ctx: TestApp;
+  let port: number;
+  let cityId: string;
+  let tokens: AuthTokenService;
+
+  beforeAll(async () => {
+    ctx = await createTestApp();
+    await ctx.app.listen(0);
+    const http = ctx.app.getHttpServer() as { address(): AddressInfo | null };
+    port = http.address()!.port;
+    tokens = ctx.app.get(AuthTokenService);
+    cityId = ctx.app.get<Env>(APP_ENV).DEFAULT_CITY_ID;
+  });
+
+  // Order matters: clients first, app second, or jest hangs on open handles.
+  afterEach(closeClients);
+  afterAll(async () => {
+    await ctx.app.close();
+  });
+
+  beforeEach(() => {
+    ctx.locations.recorded.length = 0;
+  });
+
+  const tokenFor = async (
+    id: string,
+    role: 'driver' | 'rider' | 'dispatcher',
+  ) => (await tokens.issue({ id, role })).accessToken;
+
+  /**
+   * The driver is marked online directly in the store: going through
+   * PUT /drivers/me/status would drag Postgres and a vehicle into a socket test.
+   */
+  const onlineDriver = async (id = DRIVER_ID): Promise<Socket> => {
+    await ctx.locations.markOnline(cityId, id);
+    return connectClient(port, await tokenFor(id, 'driver'));
+  };
+
+  /**
+   * THE load-bearing case for the whole slice. `DriverLocationGateway` declares
+   * `@WebSocketGateway()` with no options, which Nest resolves to the server
+   * `RealtimeGateway` already created — handshake middleware and all. If it
+   * ever forked its own server instead, that server would have NO
+   * authentication and this connection would succeed. Do not delete this test.
+   */
+  it('refuses an unauthenticated handshake on the shared server (failure)', async () => {
+    await expect(connectClient(port)).rejects.toThrow('unauthorized');
+  });
+
+  it("records an online driver's ping and fans it to the dispatch board (expected)", async () => {
+    // End-to-end proof that the second gateway shares the first's
+    // authenticated server: identity comes from the JWT the handshake verified.
+    const dispatcher = await connectClient(
+      port,
+      await tokenFor(DISPATCHER_ID, 'dispatcher'),
+    );
+    const received = new Promise<DriverLocationEvent>((resolve) => {
+      dispatcher.once(RT.driverLocation, resolve);
+    });
+
+    const driver = await onlineDriver();
+    driver.emit(RT.driverLocation, validPing());
+
+    const payload = await received;
+    expect(payload.driverId).toBe(DRIVER_ID);
+    expect(payload.location).toEqual(RIGA);
+    expect(ctx.locations.recorded).toHaveLength(1);
+    expect(ctx.locations.recorded[0]!.driverId).toBe(DRIVER_ID);
+  });
+
+  /**
+   * The class's stated contract, and the one path that can break it: `ingest`
+   * rejects when Redis is unreachable, and an unhandled rejection is an
+   * `exception` frame per ping. Asserted at the socket because the frame is
+   * what the driver app would actually see.
+   */
+  it('sends no exception frame when the store fails, and keeps the socket up (failure)', async () => {
+    const driver = await onlineDriver();
+    const frames: unknown[] = [];
+    driver.on('exception', (frame: unknown) => frames.push(frame));
+
+    // `spyOn` keeps the original as the fallback, so only the FIRST ping fails.
+    const spy = jest
+      .spyOn(ctx.locations, 'record')
+      .mockRejectedValueOnce(new Error('redis down'));
+    try {
+      driver.emit(RT.driverLocation, validPing()); // rejects inside ingest
+      // Same socket, and `record` is reached with no await before it, so the
+      // failing ping is call 1 — a recorded second ping means it was handled.
+      driver.emit(RT.driverLocation, validPing());
+
+      await waitFor(() => ctx.locations.recorded.length > 0);
+      expect(frames).toEqual([]);
+      expect(driver.connected).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('ignores a malformed ping and keeps the socket up (failure)', async () => {
+    const driver = await onlineDriver();
+
+    driver.emit(RT.driverLocation, {
+      location: { lat: 999, lng: 0 },
+      at: 'nope',
+    });
+    // Same socket, so ordering is guaranteed — and the rejection path returns
+    // before any await, so a recorded second ping means the first was handled.
+    driver.emit(RT.driverLocation, validPing());
+
+    await waitFor(() => ctx.locations.recorded.length > 0);
+    expect(ctx.locations.recorded).toHaveLength(1);
+    expect(ctx.locations.recorded[0]!.location).toEqual(RIGA);
+    expect(driver.connected).toBe(true);
+  });
+});
+
+/**
+ * The two branches that assert an ABSENCE — the store was not written — are
+ * unit tests on purpose. The role check used to be a socket test that emitted
+ * from a rider and a driver on two connections and then waited only for the
+ * driver's ping: nothing ordered the rider's frame before the assertion, so
+ * deleting the role check left it green. A direct call cannot race.
+ */
+describe('driver location gateway (unit)', () => {
+  const claims = (role: 'driver' | 'rider'): JwtClaims => ({
+    sub: RIDER_ID,
+    role,
+    iat: 0,
+    exp: 0,
+  });
+  const socketWith = (user?: JwtClaims): AuthedSocket =>
+    ({ data: { user } }) as AuthedSocket;
+
+  const build = () => {
+    const ingest = jest.fn<Promise<void>, [string, DriverLocationPing]>();
+    ingest.mockResolvedValue(undefined);
+    const gateway = new DriverLocationGateway({
+      ingest,
+    } as unknown as DriverLocationService);
+    return { gateway, ingest };
+  };
+
+  it('never reaches the store from a rider-role socket (edge)', async () => {
+    const { gateway, ingest } = build();
+
+    await gateway.handleLocation(socketWith(claims('rider')), validPing());
+
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it('never reaches the store from a socket with no claims at all (edge)', async () => {
+    const { gateway, ingest } = build();
+
+    await gateway.handleLocation(socketWith(undefined), validPing());
+
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it('resolves rather than rejecting when ingest fails (failure — the NEVER throws contract)', async () => {
+    const { gateway, ingest } = build();
+    ingest.mockRejectedValue(new Error('redis down'));
+
+    // `rejects` here is what Nest turns into an `exception` frame.
+    await expect(
+      gateway.handleLocation(socketWith(claims('driver')), validPing()),
+    ).resolves.toBeUndefined();
+    expect(ingest).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Polls `check` up to `timeoutMs`; the handler is async relative to emit. */
+async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() > deadline)
+      throw new Error(`timed out waiting for: ${check.toString()}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}

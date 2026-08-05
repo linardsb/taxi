@@ -1,12 +1,17 @@
 import { INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { users, type Db } from '@taxi/db';
-import type { SmsProvider, UserRole } from '@taxi/shared';
+import type { LatLng, SmsProvider, UserRole } from '@taxi/shared';
 import { io, type Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
 import { DRIZZLE } from '../src/common/db/db.module';
 import { KV_STORE, type KeyValueStore } from '../src/common/kv/kv.store';
 import { SMS_PROVIDER } from '../src/features/auth';
+import {
+  DRIVER_LOCATION_STORE,
+  type DriverLocationStore,
+  type NearbyDriver,
+} from '../src/features/drivers';
 
 /**
  * The KeyValueStore port, in memory. `advance()` expires a code without
@@ -72,6 +77,109 @@ export class InMemoryKeyValueStore implements KeyValueStore {
   }
 }
 
+/**
+ * Test-only great-circle distance. The production path never computes one —
+ * Redis does, from its geohash — and this exists purely so the fake can order
+ * results the same way. The two disagree by a few metres, which is why the
+ * store contract asserts ORDER and MEMBERSHIP, never absolute distances.
+ */
+export function haversineMeters(a: LatLng, b: LatLng): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * The DriverLocationStore port, in memory. Holds no clock — `record()` takes
+ * `atMs` and `findNearby()` takes `freshSinceMs` — so staleness is tested by
+ * passing numbers rather than by sleeping, the same trick as
+ * `InMemoryKeyValueStore.advance()`.
+ */
+export class InMemoryDriverLocationStore implements DriverLocationStore {
+  /** cityId → driverIds. */
+  private readonly online = new Map<string, Set<string>>();
+  private readonly positions = new Map<
+    string,
+    Map<string, { location: LatLng; atMs: number }>
+  >();
+
+  /** Test observability: every accepted write, in order. */
+  readonly recorded: {
+    cityId: string;
+    driverId: string;
+    location: LatLng;
+    atMs: number;
+  }[] = [];
+
+  /** Test-only assertion helper — specs read presence through this, not the Maps. */
+  isOnline(cityId: string, driverId: string): boolean {
+    return this.online.get(cityId)?.has(driverId) ?? false;
+  }
+
+  /** Test-only assertion helper. */
+  positionOf(
+    cityId: string,
+    driverId: string,
+  ): { location: LatLng; atMs: number } | undefined {
+    return this.positions.get(cityId)?.get(driverId);
+  }
+
+  markOnline(cityId: string, driverId: string): Promise<void> {
+    const set = this.online.get(cityId) ?? new Set<string>();
+    set.add(driverId);
+    this.online.set(cityId, set);
+    return Promise.resolve();
+  }
+
+  markOffline(cityId: string, driverId: string): Promise<void> {
+    this.online.get(cityId)?.delete(driverId);
+    this.positions.get(cityId)?.delete(driverId);
+    return Promise.resolve();
+  }
+
+  /**
+   * Refuses a position for a driver who is not in the online set. The fake must
+   * model the Lua gate EXACTLY, or the exclusion and ordering tests prove
+   * nothing about the real store.
+   */
+  record(
+    cityId: string,
+    driverId: string,
+    location: LatLng,
+    atMs: number,
+  ): Promise<boolean> {
+    if (!this.isOnline(cityId, driverId)) return Promise.resolve(false);
+    const city =
+      this.positions.get(cityId) ??
+      new Map<string, { location: LatLng; atMs: number }>();
+    city.set(driverId, { location, atMs });
+    this.positions.set(cityId, city);
+    this.recorded.push({ cityId, driverId, location, atMs });
+    return Promise.resolve(true);
+  }
+
+  findNearby(
+    cityId: string,
+    centre: LatLng,
+    opts: { radiusMeters: number; limit: number; freshSinceMs: number },
+  ): Promise<NearbyDriver[]> {
+    const nearby: NearbyDriver[] = [];
+    for (const [driverId, pos] of this.positions.get(cityId) ?? []) {
+      if (pos.atMs < opts.freshSinceMs) continue;
+      const distanceMeters = haversineMeters(centre, pos.location);
+      if (distanceMeters > opts.radiusMeters) continue;
+      nearby.push({ driverId, location: pos.location, distanceMeters });
+    }
+    nearby.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    return Promise.resolve(nearby.slice(0, opts.limit));
+  }
+}
+
 /** Captures what the stub would have texted, so tests can read the code. */
 export class RecordingSmsProvider implements SmsProvider {
   readonly sent: { phone: string; code: string }[] = [];
@@ -90,13 +198,15 @@ export interface TestApp {
   app: INestApplication;
   kv: InMemoryKeyValueStore;
   sms: RecordingSmsProvider;
+  locations: InMemoryDriverLocationStore;
   db: Db;
 }
 
 /**
- * The production module graph with exactly two providers swapped: KV_STORE
- * (so no ioredis client is ever constructed) and SMS_PROVIDER. Guards, pipes,
- * JWT and Drizzle are all the real wiring.
+ * The production module graph with exactly three providers swapped: KV_STORE
+ * and DRIVER_LOCATION_STORE (between them, no ioredis client is ever
+ * constructed — both are `useFactory` providers that would dial Redis) and
+ * SMS_PROVIDER. Guards, pipes, JWT and Drizzle are all the real wiring.
  *
  * `controllers` mounts extra test-only controllers alongside the real ones —
  * the app has no non-@Public() route yet, so probing the global guards needs
@@ -110,6 +220,7 @@ export async function createTestApp(options?: {
 }): Promise<TestApp> {
   const kv = new InMemoryKeyValueStore();
   const sms = new RecordingSmsProvider();
+  const locations = new InMemoryDriverLocationStore();
 
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
@@ -119,13 +230,15 @@ export async function createTestApp(options?: {
     .useValue(kv)
     .overrideProvider(SMS_PROVIDER)
     .useValue(sms)
+    .overrideProvider(DRIVER_LOCATION_STORE)
+    .useValue(locations)
     .compile();
 
   const app = moduleRef.createNestApplication();
   await options?.configure?.(app);
   await app.init();
 
-  return { app, kv, sms, db: app.get<Db>(DRIZZLE) };
+  return { app, kv, sms, locations, db: app.get<Db>(DRIZZLE) };
 }
 
 /**
