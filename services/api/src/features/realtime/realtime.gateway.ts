@@ -1,4 +1,4 @@
-import { Inject, Logger } from '@nestjs/common';
+import { Inject, Logger, type OnModuleDestroy } from '@nestjs/common';
 import {
   OnGatewayConnection,
   OnGatewayInit,
@@ -42,9 +42,18 @@ function bearerFrom(header: string | undefined): string | undefined {
  * has no inbound surface at all in #7. #8 adds the first one and must
  * authorize from `socket.data.user`, not from the HTTP JwtAuthGuard.
  */
+/**
+ * How often expired sockets are swept off. A socket outlives its token by at
+ * most this long, which is the price of not paying for a per-socket timer.
+ */
+const TOKEN_SWEEP_INTERVAL_MS = 60_000;
+
 @WebSocketGateway()
-export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
+export class RealtimeGateway
+  implements OnGatewayInit, OnGatewayConnection, OnModuleDestroy
+{
   private readonly logger = new Logger(RealtimeGateway.name);
+  private sweep?: NodeJS.Timeout;
 
   @WebSocketServer() server!: RealtimeServer;
 
@@ -52,6 +61,43 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     private readonly tokens: AuthTokenService,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
+
+  onModuleDestroy(): void {
+    if (this.sweep) clearInterval(this.sweep);
+  }
+
+  /**
+   * Disconnects every LOCAL socket whose token has expired (#37).
+   *
+   * The JWT is verified once, in the handshake, and `client.data.user` is never
+   * re-checked afterwards. `JWT_EXPIRES_IN` defaults to 30d and there is no
+   * revocation list, so without this a continuously-connected socket keeps its
+   * `role` claim indefinitely — and #8's location gateway makes an
+   * authorization decision from exactly that claim.
+   *
+   * Local only: every node sweeps its own sockets, so a cluster-wide fetch
+   * would just have each node racing to disconnect the others' sockets.
+   *
+   * `nowMs` is a parameter so the behaviour can be tested against a real socket
+   * without waiting 30 days or forging a token.
+   */
+  async disconnectExpiredSockets(nowMs: number = Date.now()): Promise<void> {
+    const nowSeconds = Math.floor(nowMs / 1000);
+
+    for (const socket of await this.server.local.fetchSockets()) {
+      const user = socket.data.user;
+      // Fail closed: claims absent (which the middleware should make
+      // impossible) is treated the same as claims expired.
+      if (user && user.exp > nowSeconds) continue;
+
+      this.logger.warn({
+        event: 'realtime.gateway.token_expired',
+        userId: user?.sub ?? null,
+        at: new Date(nowMs).toISOString(),
+      });
+      socket.disconnect(true);
+    }
+  }
 
   /**
    * JWT is verified in the handshake, so a rejected connection never reaches
@@ -78,6 +124,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
           next(new Error('unauthorized'));
         });
     });
+
+    // A sweep rather than a per-socket `setTimeout(msUntilExpiry)`: with the
+    // 30d default that delay exceeds setTimeout's 2^31-1 ms ceiling, where Node
+    // silently fires the timer IMMEDIATELY — every socket would be disconnected
+    // the moment it connected.
+    this.sweep = setInterval(
+      () => void this.disconnectExpiredSockets(),
+      TOKEN_SWEEP_INTERVAL_MS,
+    );
+    // Never a reason to hold the process open — or to keep jest alive.
+    this.sweep.unref();
   }
 
   async handleConnection(client: AuthedSocket): Promise<void> {

@@ -12,7 +12,7 @@ import {
   DRIVER_LOCATION_STORE,
   type DriverLocationStore,
 } from './location/driver-location.store';
-import { VehiclesRepository } from './vehicles.repository';
+import { isPlateConflict, VehiclesRepository } from './vehicles.repository';
 
 @Injectable()
 export class VehiclesService {
@@ -31,13 +31,34 @@ export class VehiclesService {
   }
 
   /**
+   * The plate is unique platform-wide (migration 0004, on `upper(plate)`), so
+   * both write paths can lose that race. Enforced in the database rather than
+   * by a SELECT-then-INSERT, which two concurrent registrations walk straight
+   * through — the check is only worth having if it is atomic.
+   *
+   * 409 `plate_taken` deliberately says nothing about WHO holds it: the same
+   * reason vehicle routes answer 404 instead of 403, since confirming a plate
+   * exists tells a driver which cars are on the platform.
+   */
+  private async translatingPlateConflict<T>(op: () => Promise<T>): Promise<T> {
+    try {
+      return await op();
+    } catch (err) {
+      if (isPlateConflict(err)) throw new ConflictException('plate_taken');
+      throw err;
+    }
+  }
+
+  /**
    * `findOrCreate` first: `vehicles.driver_id` FKs `drivers.user_id`, so an
    * insert for a driver who has never called GET /drivers/me would fail with a
    * raw FK violation (a 500 for a perfectly valid request).
    */
   async create(userId: string, input: VehicleCreate): Promise<Vehicle> {
     await this.drivers.findOrCreate(userId);
-    return this.vehicles.create(userId, input);
+    return this.translatingPlateConflict(() =>
+      this.vehicles.create(userId, input),
+    );
   }
 
   async update(
@@ -45,7 +66,9 @@ export class VehiclesService {
     vehicleId: string,
     patch: VehicleUpdate,
   ): Promise<Vehicle> {
-    const updated = await this.vehicles.update(userId, vehicleId, patch);
+    const updated = await this.translatingPlateConflict(() =>
+      this.vehicles.update(userId, vehicleId, patch),
+    );
     // 404, never 403: the repository scopes by owner in SQL, so someone else's
     // vehicle is indistinguishable from one that does not exist.
     if (!updated) throw new NotFoundException('vehicle_not_found');

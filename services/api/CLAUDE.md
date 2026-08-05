@@ -4,11 +4,12 @@ NestJS backend: REST + Socket.IO gateway + dispatch engine. Read the root `CLAUD
 
 - Vertical slices under `src/features/<name>/` (auth, users, drivers, rides, dispatch, pricing, payments, ledger, geo, geozones, notifications, support, stats). Each slice: `<name>.module.ts`, controller, service, schemas (zod from `@taxi/shared` where cross-surface), tests.
 - **Vehicles are not a slice of their own** — they live inside `features/drivers/`. A vehicle belongs to a driver (`vehicles.driver_id` FKs `drivers.user_id`), and splitting them would force a cross-slice import for the child-seat/category filters dispatch runs.
+- `vehicles.plate` is unique platform-wide, on `upper(plate)` (migration `0004`) — it is the identity a rider matches at the kerb. A collision is a 409 `plate_taken` on every write path, never a raw constraint 500.
 - Ride status writes ONLY via `assertTransition()` from `@taxi/shared`. Money ONLY in integer cents.
 - Provider SDKs (Google Maps, Twilio, Stripe) are imported ONLY inside the slice implementing the corresponding seam interface from `@taxi/shared/seams`; everything else injects the interface.
 - A dev-only seam stub must THROW at boot under `NODE_ENV=production` rather than serve silently — see the `SMS_PROVIDER` factory in `features/auth/auth.module.ts`. Secrets are validated the same way: production refuses the values committed to `.env.example` and anything too short (`common/config/env.schema.ts`), so a new secret belongs in that check.
 - Live driver locations live in Redis (GEO sets); PostGIS/Drizzle for persistent data (geozones, recorded tracks). Drizzle migrations in `db/`.
-- Live positions go through `DRIVER_LOCATION_STORE` (a Redis GEO port in the drivers slice). **The location ping path must never inject `DRIZZLE`** — presence lives in the Redis online set precisely so it doesn't have to, and a spec boots that path with a `DRIZZLE` provider that throws on any access.
+- Live positions go through `DRIVER_LOCATION_STORE` (a Redis GEO port in the drivers slice). **The location ping path must never reach `DRIZZLE`** — presence lives in the Redis online set precisely so it doesn't have to, and a spec boots that path with a `DRIZZLE` provider that throws on any access. The gateway's `handleDisconnect` is a different path and deliberately does write Postgres, so the rule is about the ping, not the class.
 - `drivers.status = 'on_ride'` is written only by the ride lifecycle (#11); the driver-facing presence route accepts `online`/`offline` only (`DRIVER_PRESENCE_STATUSES`).
 - Socket event names/payloads come from `RT` in `@taxi/shared` — never string literals.
 - Cross-cutting Nest plumbing (env config, Drizzle, Redis KV, the zod pipe) lives in `src/common/`; `src/features/` stays feature-vertical.

@@ -1,20 +1,27 @@
+import { drivers } from '@taxi/db';
 import {
+  driverRoom,
   RT,
   type DriverLocationEvent,
   type DriverLocationPing,
   type JwtClaims,
 } from '@taxi/shared';
+import { eq } from 'drizzle-orm';
 import type { AddressInfo } from 'node:net';
 import type { Socket } from 'socket.io-client';
 import {
   closeClients,
   connectClient,
   createTestApp,
+  insertUser,
+  phoneFor,
   type TestApp,
 } from '../../../../test/harness';
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
 import { AuthTokenService } from '../../auth/auth-token.service';
 import type { AuthedSocket } from '../../realtime';
+import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import type { DriversService } from '../drivers.service';
 import { DriverLocationGateway } from './driver-location.gateway';
 import type { DriverLocationService } from './driver-location.service';
 
@@ -125,6 +132,83 @@ describe('driver location gateway (integration)', () => {
     }
   });
 
+  /**
+   * #38's cases need the Postgres row as well as the store, because the ghost
+   * this fixes was `status = 'online'` in BOTH. Provisioned directly rather
+   * than through PUT /drivers/me/status, which would drag a vehicle and the
+   * whole HTTP surface into a socket test.
+   */
+  const dbDriver = async (n: number) => {
+    const user = await insertUser(ctx.db, {
+      phone: phoneFor('+371230', n),
+      role: 'driver',
+    });
+    await ctx.db
+      .insert(drivers)
+      .values({ userId: user.id, status: 'online' })
+      .onConflictDoNothing();
+    await ctx.locations.markOnline(cityId, user.id);
+    return {
+      id: user.id,
+      connect: async () =>
+        connectClient(port, await tokenFor(user.id, 'driver')),
+      status: async () =>
+        (
+          await ctx.db.select().from(drivers).where(eq(drivers.userId, user.id))
+        )[0]?.status,
+      socketsInRoom: async () =>
+        (
+          await ctx.app
+            .get(RealtimeGateway)
+            .server.in(driverRoom(user.id))
+            .fetchSockets()
+        ).length,
+    };
+  };
+
+  it('takes a driver offline when their last socket goes away (expected)', async () => {
+    const d = await dbDriver(1);
+    const socket = await d.connect();
+
+    socket.close();
+
+    await waitFor(async () => (await d.status()) === 'offline');
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+  });
+
+  it('keeps a driver online while another of their sockets survives (edge — the multi-socket wrinkle)', async () => {
+    const d = await dbDriver(2);
+    const first = await d.connect();
+    await d.connect(); // a second device, or a reconnect racing its predecessor
+    expect(await d.socketsInRoom()).toBe(2);
+
+    first.close();
+
+    // Waiting on the ROOM, not on a timer: once the count is 1 the server has
+    // finished processing that disconnect, so a presence clear would already
+    // have happened. This is also the socket.io behaviour the last-socket check
+    // rests on — that rooms are left BEFORE `disconnect` fires — so assert it
+    // directly rather than letting a change there make the check vacuous.
+    await waitFor(async () => (await d.socketsInRoom()) === 1);
+    expect(await d.status()).toBe('online');
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
+  });
+
+  it('leaves an on_ride driver alone when their socket drops (edge — #11 owns that status)', async () => {
+    const d = await dbDriver(3);
+    await ctx.db
+      .update(drivers)
+      .set({ status: 'on_ride' })
+      .where(eq(drivers.userId, d.id));
+    const socket = await d.connect();
+
+    socket.close();
+
+    await waitFor(async () => (await d.socketsInRoom()) === 0);
+    // A driver whose app crashes mid-ride must not be dropped off the ride.
+    expect(await d.status()).toBe('on_ride');
+  });
+
   it('ignores a malformed ping and keeps the socket up (failure)', async () => {
     const driver = await onlineDriver();
 
@@ -163,10 +247,15 @@ describe('driver location gateway (unit)', () => {
   const build = () => {
     const ingest = jest.fn<Promise<void>, [string, DriverLocationPing]>();
     ingest.mockResolvedValue(undefined);
-    const gateway = new DriverLocationGateway({
-      ingest,
-    } as unknown as DriverLocationService);
-    return { gateway, ingest };
+    const clearPresence = jest.fn<Promise<void>, [string]>();
+    clearPresence.mockResolvedValue(undefined);
+    const gateway = new DriverLocationGateway(
+      { ingest } as unknown as DriverLocationService,
+      {
+        clearPresenceOnDisconnect: clearPresence,
+      } as unknown as DriversService,
+    );
+    return { gateway, ingest, clearPresence };
   };
 
   it('never reaches the store from a rider-role socket (edge)', async () => {
@@ -185,6 +274,18 @@ describe('driver location gateway (unit)', () => {
     expect(ingest).not.toHaveBeenCalled();
   });
 
+  it('never clears presence for a non-driver disconnect (edge)', async () => {
+    const { gateway, clearPresence } = build();
+
+    // A rider or dispatcher hanging up must not touch driver presence — and
+    // the role check has to come FIRST, before the room lookup, or this would
+    // dereference the server that only exists once Nest has wired the gateway.
+    await gateway.handleDisconnect(socketWith(claims('rider')));
+    await gateway.handleDisconnect(socketWith(undefined));
+
+    expect(clearPresence).not.toHaveBeenCalled();
+  });
+
   it('resolves rather than rejecting when ingest fails (failure — the NEVER throws contract)', async () => {
     const { gateway, ingest } = build();
     ingest.mockRejectedValue(new Error('redis down'));
@@ -198,9 +299,12 @@ describe('driver location gateway (unit)', () => {
 });
 
 /** Polls `check` up to `timeoutMs`; the handler is async relative to emit. */
-async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
+async function waitFor(
+  check: () => boolean | Promise<boolean>,
+  timeoutMs = 2000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!check()) {
+  while (!(await check())) {
     if (Date.now() > deadline)
       throw new Error(`timed out waiting for: ${check.toString()}`);
     await new Promise((r) => setTimeout(r, 10));

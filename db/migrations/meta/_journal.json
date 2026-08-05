@@ -29,6 +29,13 @@
       "when": 1785861500000,
       "tag": "0003_updated_at_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785927366573,
+      "tag": "0004_vehicle_plate_unique",
+      "breakpoints": true
     }
   ]
 }
