@@ -32,7 +32,13 @@ const quote = (totalCents: number): FareQuote => ({
   },
 });
 
-function build(options: { commissionPct?: number; quote?: FareQuote } = {}): {
+function build(
+  options: {
+    commissionPct?: number;
+    quote?: FareQuote;
+    configMissing?: boolean;
+  } = {},
+): {
   service: PricingService;
   routeCalls: () => number;
 } {
@@ -56,9 +62,11 @@ function build(options: { commissionPct?: number; quote?: FareQuote } = {}): {
 
   const platformConfig = {
     forCity: () =>
-      Promise.resolve({
-        commissionPct: options.commissionPct ?? 15,
-      } as PlatformConfig),
+      options.configMissing
+        ? Promise.reject(new Error('No platform_config row for city'))
+        : Promise.resolve({
+            commissionPct: options.commissionPct ?? 15,
+          } as PlatformConfig),
   } as unknown as PlatformConfigService;
 
   return {
@@ -122,5 +130,15 @@ describe('PricingService', () => {
     await expect(service.quote(request)).rejects.toThrow(
       /does not sum to totalCents/,
     );
+  });
+
+  it('spends no route call when the city has no config row (failure)', async () => {
+    // Both DB reads throw hard with no fallback, by design. On an unseeded
+    // environment that has to cost nothing: a paid Routes call followed by a
+    // 500 is the worst of both outcomes.
+    const { service, routeCalls } = build({ configMissing: true });
+
+    await expect(service.quote(request)).rejects.toThrow(/platform_config/);
+    expect(routeCalls()).toBe(0);
   });
 });

@@ -15,5 +15,5 @@
  *   `AddressPoint`s, so nothing needs them yet; address search (#16) must bind
  *   the Google implementation first.
  */
-export { GeoModule, mapsProviderSourceFactory } from './geo.module';
+export { GeoModule } from './geo.module';
 export { MAPS_PROVIDER, MAPS_PROVIDER_SOURCE } from './maps.tokens';

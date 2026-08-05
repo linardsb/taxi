@@ -5,10 +5,9 @@ import {
   type FareQuote,
   type Ride,
   type RideRequest,
-  type RideStatus,
 } from '@taxi/shared';
 import { DRIZZLE } from '../../common/db/db.module';
-import { assertEntryStatus } from './ride-entry';
+import { assertEntryStatus, type RideEntryStatus } from './ride-entry';
 
 type RideRow = typeof rides.$inferSelect;
 /** The ride id is added once the insert returns it. */
@@ -16,7 +15,13 @@ type FareLineDraft = Omit<typeof rideFareLines.$inferInsert, 'rideId'>;
 
 export interface CreateRideInput {
   orderId: string;
-  status: RideStatus;
+  /**
+   * Narrower than `RideStatus` on purpose: `entryStatusFor` already returns
+   * this, so a mid-lifecycle status is rejected by the COMPILER at the call
+   * site. `assertEntryStatus` still guards at runtime, for callers TypeScript
+   * does not see.
+   */
+  status: RideEntryStatus;
   request: RideRequest;
   quote: FareQuote;
 }
