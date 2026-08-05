@@ -154,11 +154,20 @@ const openClients: Socket[] = [];
  * Connects and resolves only once the server has run handleConnection, so room
  * assertions immediately after are never racy. Rejects on connect_error so a
  * failed handshake is an explicit test outcome.
+ *
+ * `transports` defaults to websocket only — faster, fewer handles — but that
+ * transport is exempt from CORS, so a suite pinned to it is blind to a missing
+ * CORS config by construction. Pass `['polling']` to exercise what a browser
+ * actually starts with.
  */
-export function connectClient(port: number, token?: string): Promise<Socket> {
+export function connectClient(
+  port: number,
+  token?: string,
+  transports: ('websocket' | 'polling')[] = ['websocket'],
+): Promise<Socket> {
   const client = io(`http://localhost:${port}`, {
     auth: token ? { token } : {},
-    transports: ['websocket'], // skip the polling upgrade — faster, fewer handles
+    transports,
     reconnection: false, // a rejected handshake must not retry forever
   });
   openClients.push(client);
