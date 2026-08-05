@@ -52,11 +52,10 @@ Redis-backed suites are **opt-in**: without `REDIS_TEST_URL` they `describe.skip
 - Every cross-surface contract (schema, socket event, enum) lives in `packages/shared` — never duplicate a type an app can import.
 - Ride status changes go through `assertTransition()` — no direct status writes.
 - Provider calls (maps, SMS, payments) go through the seam interfaces in `packages/shared/src/seams/` — no direct SDK imports outside the implementing feature slice.
-- i18n: user-facing strings in LV/RU/EN catalogs, never hardcoded. Accessibility: every rider-app screen must be fully usable with VoiceOver/TalkBack (screen-reader-excellent is a launch differentiator).
+- Nothing user-facing is hardcoded: strings come from the LV/RU/EN catalogs, colors/spacing/radii/font sizes from the `@taxi/shared` theme's semantic names. The theme's values are neutral placeholders — the brand-identity epic lands by editing that one file. Every rider-app screen must be fully usable with VoiceOver/TalkBack; screen-reader-excellent is a launch differentiator.
+- Every feature plan's UX section uses breadboard notation (place → [affordance] → place), lists loading/empty/error/offline states, and requires minimum 44px touch targets plus visible focus states on every interactive element. Cosmetic questions that come up mid-feature are not debated — log them in `.claude/references/ui-decisions.md`.
 - Vertical Slice Architecture inside every app/service: one folder per feature owning routes/service/schemas/tests; `index.ts` is the slice's public API. Max ~500 lines per file.
 - Tests mirror slices; each feature ships ≥1 expected + 1 edge + 1 failure case. Done = `pnpm turbo run typecheck lint test build --force` green, never say-so.
-- UI: components never hardcode colors/spacing — everything comes from the shared theme's semantic names. Visual identity is undecided; the theme's neutral values are placeholders until the brand-identity epic edits them.
-- Every feature plan's UX section uses breadboard notation (place → [affordance] → place), lists loading/empty/error/offline states, and requires minimum 44px touch targets plus visible focus states on every interactive element. Cosmetic questions that come up mid-feature are not debated — log them in `.claude/references/ui-decisions.md`.
 
 ## Workflow (PIV loop)
 
