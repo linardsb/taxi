@@ -43,6 +43,17 @@ export const envSchema = z
     API_PORT: z.coerce.number().int().positive().default(3001),
     /** Single-city pilot; dispatchers join dispatch:<DEFAULT_CITY_ID>. */
     DEFAULT_CITY_ID: z.string().uuid().default(RIGA_CITY_ID),
+    /**
+     * How long a routed leg stays cached. Routes barely change; durations do —
+     * and upfront_fixed prices off a flat estimate anyway, so a stale duration
+     * costs cents while an uncached Routes call costs money. This is THE knob
+     * behind the <€100/mo guardrail.
+     */
+    MAPS_ROUTE_CACHE_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(86_400),
     CORS_ORIGINS: z
       .string()
       .default('http://localhost:3000,http://localhost:3002')

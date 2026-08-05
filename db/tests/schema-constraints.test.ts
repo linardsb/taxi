@@ -1,6 +1,8 @@
+import { RIDE_CATEGORIES } from "@taxi/shared";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import { drivers, ledgerAccounts, rideFareLines, rides, users } from "../src/schema";
+import { drivers, ledgerAccounts, rideFareLines, rides, rideTariffs, users } from "../src/schema";
+import { RIGA_CITY_ID } from "../src/seed/riga";
 import { closeTestDb, getTestDb } from "./helpers";
 
 afterAll(closeTestDb);
@@ -107,6 +109,40 @@ describe("schema constraints", () => {
     );
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]!.indexdef).toMatch(/\(driver_id, status\)/);
+  });
+
+  it("the seed produced exactly one Rīga tariff per ride category (expected)", async () => {
+    const db = getTestDb();
+    const rows = await db.select().from(rideTariffs).where(eq(rideTariffs.cityId, RIGA_CITY_ID));
+    expect(rows).toHaveLength(RIDE_CATEGORIES.length);
+    expect(rows.map((r) => r.category).sort()).toEqual([...RIDE_CATEGORIES].sort());
+    // Rates are config rows, never constants — the standard card is the one
+    // fitted to S5-1's real €13 centre→RIX fare.
+    const standard = rows.find((r) => r.category === "standard");
+    expect(standard).toMatchObject({
+      baseCents: 200,
+      perKmCents: 80,
+      perMinuteCents: 15,
+      minimumFareCents: 350,
+    });
+  });
+
+  it("a second tariff for the same city and category is rejected (failure)", async () => {
+    const db = getTestDb();
+    const err: unknown = await db
+      .insert(rideTariffs)
+      .values({
+        cityId: RIGA_CITY_ID,
+        category: "standard",
+        baseCents: 999,
+        perKmCents: 999,
+        perMinuteCents: 999,
+        minimumFareCents: 999,
+      })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(String((err as Error).cause)).toMatch(/ride_tariffs_city_category_uix/);
   });
 
   it("rejects a ride status outside the shared state machine (failure)", async () => {
