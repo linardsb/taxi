@@ -189,5 +189,18 @@ describe('RedisIoAdapter CORS', () => {
 
     expect(client.connected).toBe(true);
     expect(client.io.engine.transport.name).toBe('polling');
+
+    // Closed HERE, and awaited, rather than left to afterEach. A polling client
+    // always holds a long-poll request open; if one is still in flight when
+    // jest tears the environment down, engine.io-client's error path lazily
+    // `require`s a module and jest fails the RUN — every test green, exit 1.
+    // CI caught this and the local run did not, because it is a timing race
+    // against teardown. websocket clients do not have the problem.
+    await new Promise<void>((resolve) => {
+      client.once('disconnect', () => resolve());
+      client.close();
+    });
+    // One more turn, so the aborted poll's callbacks land inside the test.
+    await new Promise((resolve) => setTimeout(resolve, 50));
   });
 });
