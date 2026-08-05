@@ -64,6 +64,40 @@ describe('realtime gateway (integration)', () => {
     );
   });
 
+  /**
+   * #37. The handshake verifies a token once and `client.data.user` is never
+   * re-checked, so before the sweep a socket kept its `role` claim for the
+   * token's whole 30-day life — and #8's location gateway makes an
+   * authorization decision from exactly that claim.
+   *
+   * Driven by passing `nowMs` rather than by waiting on the 60s interval or
+   * forging an expired token: the assertion is about the socket, and this is
+   * the only way to make it deterministic.
+   */
+  it('disconnects a socket once its token has expired (expected)', async () => {
+    const client = await connectClient(port, await tokenFor(RIDER_ID, 'rider'));
+    expect(client.connected).toBe(true);
+
+    // One second past the 30-day default expiry.
+    await gateway.disconnectExpiredSockets(
+      Date.now() + 30 * 24 * 60 * 60 * 1000 + 1000,
+    );
+
+    await waitFor(() => !client.connected);
+    expect(client.connected).toBe(false);
+  });
+
+  it('leaves a socket whose token is still valid (edge)', async () => {
+    const client = await connectClient(port, await tokenFor(RIDER_ID, 'rider'));
+
+    // The half that stops "disconnect everything" passing as a fix — a sweep
+    // that hung up on live sockets would satisfy the case above just as well.
+    await gateway.disconnectExpiredSockets(Date.now());
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(client.connected).toBe(true);
+  });
+
   it('places an authenticated driver in its own driver room (expected)', async () => {
     await connectClient(port, await tokenFor(DRIVER_ID, 'driver'));
 
@@ -129,3 +163,13 @@ describe('realtime gateway (integration)', () => {
     ).toThrow();
   });
 });
+
+/** Polls `check` up to `timeoutMs`; a server-side disconnect reaches the client asynchronously. */
+async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() > deadline)
+      throw new Error(`timed out waiting for: ${check.toString()}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}

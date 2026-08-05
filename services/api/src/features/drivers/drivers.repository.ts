@@ -67,6 +67,21 @@ export class DriversRepository {
   }
 
   /**
+   * A READ, deliberately — the disconnect path calls this on every socket
+   * close, and `findOrCreate` would both provision a row for a driver who
+   * never had one and write a dead tuple (its no-op `SET` is still an UPDATE)
+   * on the highest-frequency event in the slice. `undefined` means no row,
+   * which is already the state a disconnect would be trying to reach.
+   */
+  async findStatus(userId: string): Promise<DriverStatus | undefined> {
+    const [row] = await this.db
+      .select({ status: drivers.status })
+      .from(drivers)
+      .where(eq(drivers.userId, userId));
+    return row?.status;
+  }
+
+  /**
    * The `set` object is an explicit two-column ALLOWLIST, and the omission is
    * the point: `balanceCents`, `commissionPctOverride`, `rating`, `fleetId` and
    * `status` are never in it, so no request shape can reach them. This is the

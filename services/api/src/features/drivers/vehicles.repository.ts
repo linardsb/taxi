@@ -6,6 +6,32 @@ import { DRIZZLE } from '../../common/db/db.module';
 
 type VehicleRow = typeof vehicles.$inferSelect;
 
+/** Postgres `unique_violation`. */
+const UNIQUE_VIOLATION = '23505';
+/** The index from migration 0004, on `upper(plate)`. */
+const PLATE_INDEX = 'vehicles_plate_uix';
+
+/**
+ * A plate collision surfaces as a driver error (409), not a 500. Matched on the
+ * CONSTRAINT NAME rather than the bare SQLSTATE: `vehicles` gains more unique
+ * indexes eventually, and a second one reported as `plate_taken` would send a
+ * driver chasing the wrong field.
+ */
+export function isPlateConflict(err: unknown): boolean {
+  // Walks `cause`, because Drizzle 0.44 wraps driver errors in a
+  // DrizzleQueryError and the pg fields live one level down. Reading only the
+  // top-level object silently matches nothing, which surfaces as the 500 this
+  // exists to replace — and the tests would still pass on the happy path.
+  for (let e: unknown = err, depth = 0; e !== null && depth < 5; depth++) {
+    if (typeof e !== 'object') return false;
+    const pg = e as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (pg.code === UNIQUE_VIOLATION && pg.constraint === PLATE_INDEX)
+      return true;
+    e = pg.cause;
+  }
+  return false;
+}
+
 function toVehicle(row: VehicleRow): Vehicle {
   return {
     id: row.id,

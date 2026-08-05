@@ -4,9 +4,12 @@ import {
   MessageBody,
   SubscribeMessage,
   WebSocketGateway,
+  WebSocketServer,
+  type OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { driverLocationPingSchema, RT } from '@taxi/shared';
-import type { AuthedSocket } from '../../realtime';
+import { driverLocationPingSchema, driverRoom, RT } from '@taxi/shared';
+import type { AuthedSocket, RealtimeServer } from '../../realtime';
+import { DriversService } from '../drivers.service';
 import { DriverLocationService } from './driver-location.service';
 
 /**
@@ -22,12 +25,59 @@ import { DriverLocationService } from './driver-location.service';
  * `@WebSocketGateway({...options})`. Any of the three either double-registers
  * middleware on the shared server or forks a second server with NO
  * authentication at all.
+ *
+ * `handleDisconnect` is NOT in that prohibition: it registers a per-socket
+ * listener rather than server-wide middleware, and this is the only gateway
+ * that declares one, so nothing fires twice.
  */
 @WebSocketGateway()
-export class DriverLocationGateway {
+export class DriverLocationGateway implements OnGatewayDisconnect {
   private readonly logger = new Logger(DriverLocationGateway.name);
 
-  constructor(private readonly locations: DriverLocationService) {}
+  /** The shared server — the same instance RealtimeGateway holds. */
+  @WebSocketServer() private readonly server!: RealtimeServer;
+
+  constructor(
+    private readonly locations: DriverLocationService,
+    private readonly drivers: DriversService,
+  ) {}
+
+  /**
+   * Clears presence when a driver's last socket goes away (#38). Without it a
+   * force-quit left a ghost `online` in Postgres and in the three
+   * `drivers:*:<city>` keys indefinitely — invisible to dispatch thanks to the
+   * freshness filter, but wrong on #18's board and in #20's stats, and the keys
+   * grew monotonically with driver churn.
+   *
+   * The last-socket check is the whole difficulty: a driver legitimately holds
+   * several sockets (two devices, or a reconnect racing its predecessor), and
+   * clearing on the first close would knock them offline mid-shift.
+   * socket.io removes a socket from its rooms BEFORE emitting `disconnect` —
+   * that is precisely what `disconnecting` exists for — so this counts only the
+   * driver's OTHER sockets. `fetchSockets()` is cluster-wide under the Redis
+   * adapter, so a second socket on another node still counts.
+   */
+  async handleDisconnect(client: AuthedSocket): Promise<void> {
+    const user = client.data.user;
+    if (user?.role !== 'driver') return;
+
+    // Nothing here may throw: a rejection on a disconnect handler is an
+    // unhandled rejection with no socket left to report it to. Same call as
+    // `handleLocation` makes, for the same reason.
+    try {
+      const others = await this.server.in(driverRoom(user.sub)).fetchSockets();
+      if (others.length > 0) return;
+
+      await this.drivers.clearPresenceOnDisconnect(user.sub);
+    } catch (err) {
+      this.logger.error({
+        event: 'driver.presence.disconnect_cleanup_failed',
+        driverId: user.sub,
+        reason: err instanceof Error ? err.message : 'unknown',
+        at: new Date().toISOString(),
+      });
+    }
+  }
 
   /**
    * NEVER throws. A `WsException` emits an `exception` frame and a raw zod
@@ -36,10 +86,9 @@ export class DriverLocationGateway {
    *
    * The global `JwtAuthGuard` cannot help here: it refuses non-HTTP contexts by
    * design, so `client.data.user` (set by the handshake) is the only identity
-   * source. The middleware guarantees it is present and was verified AT CONNECT
-   * — not that it is still valid: nothing re-checks `exp` over a socket's
-   * lifetime, so a long-lived connection keeps its claims past token expiry
-   * (issue #37).
+   * source. It was verified AT CONNECT, and `RealtimeGateway`'s expiry sweep
+   * (#37) disconnects the socket once that token expires — so the claims below
+   * are behind a token that is still valid to within one sweep interval.
    */
   @SubscribeMessage(RT.driverLocation)
   async handleLocation(

@@ -98,6 +98,38 @@ export class DriversService {
     return updated;
   }
 
+  /**
+   * Clears presence when a driver's LAST socket goes away (#38). Before this,
+   * a force-quit left them `online` in Postgres and in all three
+   * `drivers:*:<city>` keys forever: dispatch was safe, because the freshness
+   * filter drops a stale position from `findNearest`, but #18's board and #20's
+   * stats would both have read a ghost as available.
+   *
+   * Same Redis-then-Postgres order as `setPresence`'s offline branch, and for
+   * the same reason — a failure between the two must leave the driver
+   * undispatchable, never the reverse.
+   */
+  async clearPresenceOnDisconnect(userId: string): Promise<void> {
+    const status = await this.drivers.findStatus(userId);
+
+    // Only `online` is this path's to clear. `on_ride` belongs to #11 — a
+    // driver whose app crashes mid-ride must not be dropped off the ride by a
+    // lost socket — and `offline`/no row is already where this would land.
+    if (status !== 'online') return;
+
+    await this.locations.markOffline(this.env.DEFAULT_CITY_ID, userId);
+    await this.drivers.setStatus(userId, 'offline');
+
+    this.logger.log({
+      event: 'driver.presence.status_changed',
+      driverId: userId,
+      from: 'online',
+      to: 'offline',
+      reason: 'socket_disconnected',
+      at: new Date().toISOString(),
+    });
+  }
+
   /** #10's entry point: the attributes it filters a proximity list by. */
   findMatchAttributes(driverIds: string[]): Promise<DriverMatchAttributes[]> {
     return this.drivers.findMatchAttributes(driverIds);

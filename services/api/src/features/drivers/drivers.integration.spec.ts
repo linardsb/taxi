@@ -67,11 +67,19 @@ describe('drivers (integration)', () => {
     };
   }
 
+  /**
+   * A fresh plate per car. `vehicles_plate_uix` (migration 0004) is unique
+   * platform-wide, so the one shared fixture plate would 409 for the second
+   * driver in this file — which is the constraint working, not a broken test.
+   */
+  let plateSeq = 0;
+  const nextPlate = () => `TS${String(++plateSeq).padStart(4, '0')}`;
+
   const addCar = async (auth: string) => {
     const res = await http
       .post('/drivers/me/vehicles')
       .set('authorization', auth)
-      .send(CAR)
+      .send({ ...CAR, plate: nextPlate() })
       .expect(201);
     return vehicleSchema.parse(res.body);
   };
@@ -108,6 +116,77 @@ describe('drivers (integration)', () => {
       .set('authorization', d.auth)
       .expect(200);
     expect(vehicleSchema.array().parse(listed.body)).toEqual([created]);
+  });
+
+  it("refuses a plate another driver already registered (failure — it's the kerbside identity)", async () => {
+    const owner = await driver(23);
+    const impostor = await driver(24);
+    const car = await addCar(owner.auth);
+
+    await http
+      .post('/drivers/me/vehicles')
+      .set('authorization', impostor.auth)
+      .send({ ...CAR, plate: car.plate })
+      .expect(409); // not a raw 23505 surfacing as a 500
+
+    // The impostor gets no car, and the owner's is untouched.
+    const listed = await http
+      .get('/drivers/me/vehicles')
+      .set('authorization', impostor.auth)
+      .expect(200);
+    expect(listed.body).toEqual([]);
+  });
+
+  it('refuses a case-variant of a taken plate (edge — one lowercase letter must not defeat it)', async () => {
+    const owner = await driver(25);
+    const impostor = await driver(26);
+    const car = await addCar(owner.auth);
+
+    // The index is on `upper(plate)` precisely for this: a plain unique index
+    // on the raw column leaves the constraint in place and the guarantee gone.
+    await http
+      .post('/drivers/me/vehicles')
+      .set('authorization', impostor.auth)
+      .send({ ...CAR, plate: car.plate.toLowerCase() })
+      .expect(409);
+  });
+
+  it('refuses a PATCH onto a taken plate, not just a POST (failure)', async () => {
+    const owner = await driver(27);
+    const other = await driver(28);
+    const taken = await addCar(owner.auth);
+    const mine = await addCar(other.auth);
+
+    await http
+      .patch(`/drivers/me/vehicles/${mine.id}`)
+      .set('authorization', other.auth)
+      .send({ plate: taken.plate })
+      .expect(409);
+
+    // The update rolled back whole — no partial write.
+    const [row] = await ctx.db
+      .select()
+      .from(vehicles)
+      .where(eq(vehicles.id, mine.id));
+    expect(row!.plate).toBe(mine.plate);
+  });
+
+  it('lets a driver re-register a plate they just deleted (edge — uniqueness is not a tombstone)', async () => {
+    const d = await driver(29);
+    const car = await addCar(d.auth);
+
+    await http
+      .delete(`/drivers/me/vehicles/${car.id}`)
+      .set('authorization', d.auth)
+      .expect(204);
+
+    // A deleted row frees the plate: a driver swapping a car back must not be
+    // locked out by their own history.
+    await http
+      .post('/drivers/me/vehicles')
+      .set('authorization', d.auth)
+      .send({ ...CAR, plate: car.plate })
+      .expect(201);
   });
 
   it("updates a driver's own vehicle without resetting defaulted fields (expected)", async () => {
@@ -222,7 +301,7 @@ describe('drivers (integration)', () => {
       .select()
       .from(vehicles)
       .where(eq(vehicles.id, car.id));
-    expect(row!.plate).toBe(CAR.plate);
+    expect(row!.plate).toBe(car.plate);
   });
 
   it('cannot re-parent a car even when the patch names another driver (edge — the second layer)', async () => {
