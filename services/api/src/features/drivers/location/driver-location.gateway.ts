@@ -36,7 +36,10 @@ export class DriverLocationGateway {
    *
    * The global `JwtAuthGuard` cannot help here: it refuses non-HTTP contexts by
    * design, so `client.data.user` (set by the handshake) is the only identity
-   * source. It is optional in the type even though the middleware guarantees it.
+   * source. The middleware guarantees it is present and was verified AT CONNECT
+   * — not that it is still valid: nothing re-checks `exp` over a socket's
+   * lifetime, so a long-lived connection keeps its claims past token expiry
+   * (issue #37).
    */
   @SubscribeMessage(RT.driverLocation)
   async handleLocation(
@@ -65,6 +68,24 @@ export class DriverLocationGateway {
       return;
     }
 
-    await this.locations.ingest(user.sub, parsed.data);
+    // The third path that must not throw, and the only one that can: `ingest`
+    // rejects whenever Redis is unreachable, and an unhandled rejection here
+    // becomes an `exception` frame per ping — a frame storm aimed at every
+    // driver mid-shift precisely when the system is already unwell.
+    //
+    // Deliberately the OPPOSITE call from `findNearest`, which lets a store
+    // failure propagate so dispatch never reads an outage as "no drivers in
+    // Rīga". Swallowing is right here (one driver's position, self-healing on
+    // the next ping) and wrong there. Do not unify them.
+    try {
+      await this.locations.ingest(user.sub, parsed.data);
+    } catch (err) {
+      this.logger.error({
+        event: 'driver.location.ingest_failed',
+        driverId: user.sub,
+        reason: err instanceof Error ? err.message : 'unknown',
+        at: new Date().toISOString(),
+      });
+    }
   }
 }

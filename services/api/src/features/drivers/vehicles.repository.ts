@@ -46,7 +46,15 @@ export class VehiclesRepository {
     return toVehicle(row!);
   }
 
-  /** `undefined` means "not yours, or not there" — the caller must not distinguish. */
+  /**
+   * `undefined` means "not yours, or not there" — the caller must not distinguish.
+   *
+   * The `set` object is an explicit ALLOWLIST, exactly as
+   * `DriversRepository.updateProfile` is — `id` and `driverId` are never in it,
+   * so no request shape can re-parent a car onto another driver. Today
+   * `vehicleUpdateSchema` also omits them, but that is one `.omit()` away in a
+   * different package; do not replace this with a spread of the patch.
+   */
   async update(
     driverId: string,
     vehicleId: string,
@@ -54,7 +62,19 @@ export class VehiclesRepository {
   ): Promise<Vehicle | undefined> {
     const [row] = await this.db
       .update(vehicles)
-      .set(patch)
+      .set({
+        ...(patch.plate === undefined ? {} : { plate: patch.plate }),
+        ...(patch.make === undefined ? {} : { make: patch.make }),
+        ...(patch.model === undefined ? {} : { model: patch.model }),
+        ...(patch.year === undefined ? {} : { year: patch.year }),
+        ...(patch.category === undefined ? {} : { category: patch.category }),
+        ...(patch.passengerSeats === undefined
+          ? {}
+          : { passengerSeats: patch.passengerSeats }),
+        ...(patch.hasChildSeat === undefined
+          ? {}
+          : { hasChildSeat: patch.hasChildSeat }),
+      })
       .where(and(eq(vehicles.id, vehicleId), eq(vehicles.driverId, driverId)))
       .returning();
     return row ? toVehicle(row) : undefined;

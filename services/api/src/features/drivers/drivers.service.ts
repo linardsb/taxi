@@ -89,7 +89,7 @@ export class DriversService {
     }
 
     this.logger.log({
-      event: 'driver.presence.changed',
+      event: 'driver.presence.status_changed',
       driverId: userId,
       from: profile.status,
       to: updated.status,

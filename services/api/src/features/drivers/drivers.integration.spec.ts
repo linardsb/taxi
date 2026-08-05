@@ -4,12 +4,14 @@ import {
   driverMeSchema,
   driverProfileSchema,
   vehicleSchema,
+  type VehicleUpdate,
 } from '@taxi/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { createTestApp, phoneFor, type TestApp } from '../../../test/harness';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { DriversService } from './drivers.service';
+import { VehiclesRepository } from './vehicles.repository';
 
 /** `+371220` is this spec file's E.164 range — see phoneFor(). */
 const p = (n: number) => phoneFor('+371220', n);
@@ -108,6 +110,27 @@ describe('drivers (integration)', () => {
     expect(vehicleSchema.array().parse(listed.body)).toEqual([created]);
   });
 
+  it("updates a driver's own vehicle without resetting defaulted fields (expected)", async () => {
+    const d = await driver(17);
+    const car = await addCar(d.auth); // category standard · hasChildSeat true
+
+    const res = await http
+      .patch(`/drivers/me/vehicles/${car.id}`)
+      .set('authorization', d.auth)
+      .send({ plate: 'XY9999' })
+      .expect(200);
+
+    const updated = vehicleSchema.parse(res.body);
+    expect(updated.plate).toBe('XY9999');
+    // `.partial()` over the defaulted fields, not `.default()` — a PATCH that
+    // names neither must not silently reset the two filters #10 matches on.
+    expect(updated.hasChildSeat).toBe(true);
+    expect(updated.category).toBe('standard');
+    // And the patch reaches only the allowlisted columns.
+    expect(updated.driverId).toBe(d.id);
+    expect(updated.id).toBe(car.id);
+  });
+
   it('ignores the fields a driver may not write (edge — the privilege boundary)', async () => {
     const d = await driver(3);
 
@@ -162,6 +185,28 @@ describe('drivers (integration)', () => {
     expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
   });
 
+  it('takes a driver offline in both stores (expected)', async () => {
+    const d = await driver(16);
+    await addCar(d.auth);
+    await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(200);
+
+    // The offline branch writes the two stores in the OPPOSITE order to the
+    // online one, deliberately — this is the case that exercises it.
+    const res = await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'offline' })
+      .expect(200);
+
+    expect(driverProfileSchema.parse(res.body).status).toBe('offline');
+    expect((await d.row())!.status).toBe('offline');
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+  });
+
   it("404s on another driver's vehicle and leaves it untouched (edge — no existence oracle)", async () => {
     const owner = await driver(6);
     const other = await driver(7);
@@ -178,6 +223,30 @@ describe('drivers (integration)', () => {
       .from(vehicles)
       .where(eq(vehicles.id, car.id));
     expect(row!.plate).toBe(CAR.plate);
+  });
+
+  it('cannot re-parent a car even when the patch names another driver (edge — the second layer)', async () => {
+    const owner = await driver(21);
+    const other = await driver(22);
+    const car = await addCar(owner.auth);
+
+    // Deliberately bypasses zod. `vehicleUpdateSchema` strips `driverId` and
+    // `id` today, so the route cannot carry them — this asserts the
+    // repository's allowlist stands on its own if that ever changes, which is
+    // the whole reason it is not a spread of the patch.
+    const rogue = {
+      plate: 'ZZ0001',
+      driverId: other.id,
+      id: crypto.randomUUID(),
+    } as unknown as VehicleUpdate;
+
+    const updated = await ctx.app
+      .get(VehiclesRepository)
+      .update(owner.id, car.id, rogue);
+
+    expect(updated!.plate).toBe('ZZ0001'); // the allowlisted key still lands
+    expect(updated!.driverId).toBe(owner.id);
+    expect(updated!.id).toBe(car.id);
   });
 
   it('rejects a non-UUID vehicle id at the contract, not in Postgres (failure)', async () => {
@@ -298,5 +367,63 @@ describe('drivers (integration)', () => {
 
     expect((await d.row())!.status).toBe('offline');
     expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+  });
+
+  it('keeps a driver online when a vehicle that is not their last is deleted (edge)', async () => {
+    const d = await driver(19);
+    const first = await addCar(d.auth);
+    await http
+      .post('/drivers/me/vehicles')
+      .set('authorization', d.auth)
+      .send({ ...CAR, plate: 'SPARE1' })
+      .expect(201);
+    await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(200);
+
+    await http
+      .delete(`/drivers/me/vehicles/${first.id}`)
+      .set('authorization', d.auth)
+      .expect(204);
+
+    // The forced-offline rule must not over-trigger: they still have a car.
+    expect((await d.row())!.status).toBe('online');
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
+  });
+
+  it('refuses to delete a vehicle while on_ride (edge — #11 owns that transition)', async () => {
+    const d = await driver(20);
+    const car = await addCar(d.auth);
+    // Same trick as the presence case: no route can write `on_ride`.
+    await ctx.db
+      .update(drivers)
+      .set({ status: 'on_ride' })
+      .where(eq(drivers.userId, d.id));
+
+    const res = await http
+      .delete(`/drivers/me/vehicles/${car.id}`)
+      .set('authorization', d.auth)
+      .expect(409);
+    expect((res.body as { message: string }).message).toBe('driver_on_ride');
+
+    // Nothing deleted — otherwise #11 restores them to `online` with no vehicle,
+    // which is exactly the state `vehicle_required` exists to prevent.
+    const [row] = await ctx.db
+      .select()
+      .from(vehicles)
+      .where(eq(vehicles.id, car.id));
+    expect(row).toBeDefined();
+  });
+
+  it('404s when deleting a vehicle that is not there (failure)', async () => {
+    const d = await driver(18);
+    await http.get('/drivers/me').set('authorization', d.auth).expect(200);
+
+    await http
+      .delete(`/drivers/me/vehicles/${crypto.randomUUID()}`)
+      .set('authorization', d.auth)
+      .expect(404);
   });
 });

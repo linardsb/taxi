@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Vehicle, VehicleCreate, VehicleUpdate } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { DriversRepository } from './drivers.repository';
@@ -52,12 +58,18 @@ export class VehiclesService {
    * take, and unfilterable by #10.
    */
   async remove(userId: string, vehicleId: string): Promise<void> {
+    // Read BEFORE the delete: forcing offline only covers `online`, so an
+    // `on_ride` driver deleting their last car would slip through untouched and
+    // break the online ⟹ has-a-vehicle invariant the moment #11 restores them.
+    // Refusing is also the better product answer — that is the car they are in.
+    const profile = await this.drivers.findOrCreate(userId);
+    if (profile.status === 'on_ride')
+      throw new ConflictException('driver_on_ride');
+
     if (!(await this.vehicles.remove(userId, vehicleId)))
       throw new NotFoundException('vehicle_not_found');
 
     if ((await this.vehicles.countForDriver(userId)) > 0) return;
-
-    const profile = await this.drivers.findOrCreate(userId);
     if (profile.status !== 'online') return;
 
     await this.locations.markOffline(this.env.DEFAULT_CITY_ID, userId);

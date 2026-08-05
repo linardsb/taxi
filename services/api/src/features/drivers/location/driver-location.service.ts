@@ -75,13 +75,10 @@ export class DriverLocationService {
    * driver, positive balance) is `auto_match`'s job in #10, composed from this
    * plus `DriversService.findMatchAttributes`.
    */
-  findNearest(
-    centre: LatLng,
-    opts?: { radiusMeters?: number; limit?: number },
-  ): Promise<NearbyDriver[]> {
+  findNearest(centre: LatLng): Promise<NearbyDriver[]> {
     return this.store.findNearby(this.env.DEFAULT_CITY_ID, centre, {
-      radiusMeters: opts?.radiusMeters ?? NEAREST_DEFAULT_RADIUS_METERS,
-      limit: opts?.limit ?? NEAREST_DEFAULT_LIMIT,
+      radiusMeters: NEAREST_DEFAULT_RADIUS_METERS,
+      limit: NEAREST_DEFAULT_LIMIT,
       freshSinceMs: Date.now() - DRIVER_LOCATION_TTL_SECONDS * 1000,
     });
   }
