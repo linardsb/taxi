@@ -1,7 +1,14 @@
 import { INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { users, type Db } from '@taxi/db';
-import type { LatLng, SmsProvider, UserRole } from '@taxi/shared';
+import type {
+  GeocodeResult,
+  LatLng,
+  MapsProvider,
+  RouteResult,
+  SmsProvider,
+  UserRole,
+} from '@taxi/shared';
 import { io, type Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
 import { DRIZZLE } from '../src/common/db/db.module';
@@ -12,6 +19,10 @@ import {
   type DriverLocationStore,
   type NearbyDriver,
 } from '../src/features/drivers';
+import { MAPS_PROVIDER_SOURCE } from '../src/features/geo';
+// Deep import on purpose: the geo barrel deliberately does not export the class
+// — production code injects the token, never the implementation.
+import { StubMapsProvider } from '../src/features/geo/stub-maps.provider';
 
 /**
  * The KeyValueStore port, in memory. `advance()` expires a code without
@@ -194,19 +205,53 @@ export class RecordingSmsProvider implements SmsProvider {
   }
 }
 
+/**
+ * Counts what a real (paid) Routes call would have cost. Stands in for
+ * `MAPS_PROVIDER_SOURCE`, NOT for `MAPS_PROVIDER` — the real
+ * `CachingMapsProvider` stays in the graph and wraps this, which is the only
+ * arrangement where "cache hit on a repeated route" means anything.
+ */
+export class CountingMapsProvider implements MapsProvider {
+  routeCalls = 0;
+  readonly routed: { from: LatLng; to: LatLng; stops: LatLng[] }[] = [];
+  private readonly inner = new StubMapsProvider();
+
+  route(from: LatLng, to: LatLng, stops: LatLng[] = []): Promise<RouteResult> {
+    this.routeCalls += 1;
+    this.routed.push({ from, to, stops });
+    return this.inner.route(from, to, stops);
+  }
+
+  // Narrow signatures, like the stub they delegate to: both throw, and nothing
+  // in this slice geocodes yet (#16 binds a provider that can).
+  geocode(): Promise<GeocodeResult[]> {
+    return this.inner.geocode();
+  }
+
+  reverseGeocode(): Promise<GeocodeResult | null> {
+    return this.inner.reverseGeocode();
+  }
+}
+
 export interface TestApp {
   app: INestApplication;
   kv: InMemoryKeyValueStore;
   sms: RecordingSmsProvider;
   locations: InMemoryDriverLocationStore;
+  maps: CountingMapsProvider;
   db: Db;
 }
 
 /**
- * The production module graph with exactly three providers swapped: KV_STORE
+ * The production module graph with exactly four providers swapped: KV_STORE
  * and DRIVER_LOCATION_STORE (between them, no ioredis client is ever
- * constructed — both are `useFactory` providers that would dial Redis) and
- * SMS_PROVIDER. Guards, pipes, JWT and Drizzle are all the real wiring.
+ * constructed — both are `useFactory` providers that would dial Redis),
+ * SMS_PROVIDER and MAPS_PROVIDER_SOURCE. Guards, pipes, JWT, Drizzle and the
+ * caching maps decorator are all the real wiring.
+ *
+ * The maps override targets the SOURCE, deliberately: `CachingMapsProvider`
+ * stays in the graph, so the integration suite exercises the real cache against
+ * a counted fake rather than stubbing the cache away.
  *
  * `controllers` mounts extra test-only controllers alongside the real ones —
  * the app has no non-@Public() route yet, so probing the global guards needs
@@ -221,6 +266,7 @@ export async function createTestApp(options?: {
   const kv = new InMemoryKeyValueStore();
   const sms = new RecordingSmsProvider();
   const locations = new InMemoryDriverLocationStore();
+  const maps = new CountingMapsProvider();
 
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
@@ -232,13 +278,18 @@ export async function createTestApp(options?: {
     .useValue(sms)
     .overrideProvider(DRIVER_LOCATION_STORE)
     .useValue(locations)
+    // Resolves by token across the whole compiled graph, including providers a
+    // module does not export — GeoModule exports MAPS_PROVIDER_SOURCE anyway,
+    // which documents this swap as sanctioned.
+    .overrideProvider(MAPS_PROVIDER_SOURCE)
+    .useValue(maps)
     .compile();
 
   const app = moduleRef.createNestApplication();
   await options?.configure?.(app);
   await app.init();
 
-  return { app, kv, sms, locations, db: app.get<Db>(DRIZZLE) };
+  return { app, kv, sms, locations, maps, db: app.get<Db>(DRIZZLE) };
 }
 
 /**

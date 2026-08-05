@@ -36,6 +36,13 @@
       "when": 1785927366573,
       "tag": "0004_vehicle_plate_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785936765925,
+      "tag": "0005_redundant_stature",
+      "breakpoints": true
     }
   ]
 }

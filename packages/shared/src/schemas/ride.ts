@@ -87,6 +87,20 @@ export const rideRequestSchema = z.object({
 export type RideRequest = z.infer<typeof rideRequestSchema>;
 
 /**
+ * What a rider may put on the wire. `riderId` is omitted by construction, for
+ * the same reason `driverLocationPingSchema` refuses to carry a `driverId`: the
+ * identity comes from the JWT, and a body-supplied `riderId` would let any
+ * authenticated rider book on someone else's account.
+ *
+ * `.omit()` keeps this a plain `ZodObject`, so it carries every default
+ * (`stops: []`, `category: "standard"`, `options`, `vehicleCount: 1`) — which
+ * is why the server can re-parse `{ ...body, riderId }` through the full
+ * `rideRequestSchema` and get an identical, fully-defaulted `RideRequest`.
+ */
+export const rideRequestBodySchema = rideRequestSchema.omit({ riderId: true });
+export type RideRequestBody = z.infer<typeof rideRequestBodySchema>;
+
+/**
  * How a ride got its driver, with the audit trail for manual overrides.
  * Dina's force-assign is the anketa's most-cited human-in-the-loop feature
  * (S9-2, S9-4), and an override without an actor is an unauditable one.
@@ -227,3 +241,22 @@ export function assertRideSplitConsistent(ride: Ride): void {
     );
   }
 }
+
+/**
+ * The `POST /rides` response (#9).
+ *
+ * `split` here is the PLATFORM-BASE preview (`commissionSource:
+ * "platform_base"`), computed with NO driver because no driver exists at
+ * request time. It is returned and persisted nowhere. #10 re-resolves it per
+ * driver for the offer card — a `commissionPctOverride` changes it, so reusing
+ * this one would show the wrong number on the card the whole pitch rests on —
+ * and #11 writes the settled split to `rides.commission_*`.
+ *
+ * Not to be confused with `rideSchema.split`, which stays `null` until
+ * completion.
+ */
+export const rideCreatedSchema = z.object({
+  ride: rideSchema,
+  split: fareSplitSchema,
+});
+export type RideCreated = z.infer<typeof rideCreatedSchema>;

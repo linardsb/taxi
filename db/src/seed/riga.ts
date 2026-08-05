@@ -1,12 +1,19 @@
-import type { LatLng, RigaPilotDistrict } from "@taxi/shared";
-import { RIGA_PILOT_DISTRICTS } from "@taxi/shared";
+import type { LatLng, RideCategory, RigaPilotDistrict } from "@taxi/shared";
+import { RIDE_CATEGORIES, RIGA_PILOT_DISTRICTS } from "@taxi/shared";
 import type { Db } from "../client";
 import { polygonToEwkt } from "../postgis";
-import { cities, geozones, platformConfig } from "../schema";
+import { cities, geozones, platformConfig, rideTariffs } from "../schema";
 
 /** Fixed UUIDs — deterministic, so the seed is re-runnable and referenceable in tests. */
 export const RIGA_CITY_ID = "00000000-0000-4000-8000-000000000001";
 export const RIGA_CONFIG_ID = "00000000-0000-4000-8000-000000000002";
+
+export const RIGA_TARIFF_IDS: Record<RideCategory, string> = {
+  standard: "00000000-0000-4000-8000-000000000201",
+  fastest: "00000000-0000-4000-8000-000000000202",
+  limo: "00000000-0000-4000-8000-000000000203",
+  vip: "00000000-0000-4000-8000-000000000204",
+};
 
 export const RIGA_ZONE_IDS: Record<RigaPilotDistrict, string> = {
   centre: "00000000-0000-4000-8000-000000000101",
@@ -68,6 +75,26 @@ const ZONES: Record<
 };
 
 /**
+ * PLACEHOLDER RATES, fitted — not researched. The only real fare data that
+ * exists is S5-1 (`centre → RIX €13`, `RIX → Teika €22`): €2.00 + €0.80/km +
+ * €0.15/min reproduces the €13 centre→RIX trip at ~10.5 km / ~18 min. Only
+ * `standard` has any evidence behind it; the other three are proportional
+ * placeholders awaiting Atis's real numbers before any pilot.
+ *
+ * They live here, as rows, so #20 edits them without a deploy — nothing in
+ * code may hardcode a rate. Same treatment as `commissionPct` below.
+ */
+const TARIFFS: Record<
+  RideCategory,
+  { baseCents: number; perKmCents: number; perMinuteCents: number; minimumFareCents: number }
+> = {
+  standard: { baseCents: 200, perKmCents: 80, perMinuteCents: 15, minimumFareCents: 350 },
+  fastest: { baseCents: 250, perKmCents: 95, perMinuteCents: 18, minimumFareCents: 400 },
+  limo: { baseCents: 400, perKmCents: 140, perMinuteCents: 25, minimumFareCents: 700 },
+  vip: { baseCents: 500, perKmCents: 175, perMinuteCents: 30, minimumFareCents: 900 },
+};
+
+/**
  * Idempotent: upserts keyed on the natural uniques, so re-runs converge instead
  * of duplicating. Caveat: only for seed-owned rows — if a same-name city or
  * same-slug zone pre-exists under a different id (e.g. created via the admin
@@ -110,4 +137,18 @@ export async function seedRiga(db: Db): Promise<void> {
       target: platformConfig.cityId,
       set: { commissionPct: 15 },
     });
+
+  // Iterating RIDE_CATEGORIES (the shared const array) rather than the keys of
+  // TARIFFS: adding a category to the enum without adding a rate card then
+  // fails to TYPECHECK, instead of silently seeding one city three tariffs.
+  for (const category of RIDE_CATEGORIES) {
+    const tariff = TARIFFS[category];
+    await db
+      .insert(rideTariffs)
+      .values({ id: RIGA_TARIFF_IDS[category], cityId: RIGA_CITY_ID, category, ...tariff })
+      .onConflictDoUpdate({
+        target: [rideTariffs.cityId, rideTariffs.category],
+        set: tariff,
+      });
+  }
 }

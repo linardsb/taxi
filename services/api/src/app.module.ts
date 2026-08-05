@@ -8,6 +8,7 @@ import { KvModule } from './common/kv/kv.module';
 import { AuthModule, JwtAuthGuard, RolesGuard } from './features/auth';
 import { DriversModule } from './features/drivers';
 import { RealtimeModule } from './features/realtime';
+import { RidesModule } from './features/rides';
 
 @Module({
   imports: [
@@ -17,6 +18,8 @@ import { RealtimeModule } from './features/realtime';
     AuthModule,
     RealtimeModule,
     DriversModule,
+    // GeoModule, PlatformConfigModule and PricingModule arrive transitively.
+    RidesModule,
   ],
   controllers: [AppController],
   providers: [

@@ -12,7 +12,9 @@ import {
   isRideAssignmentConsistent,
   isRideSplitConsistent,
   rideAssignmentSchema,
+  rideCreatedSchema,
   rideOfferSchema,
+  rideRequestBodySchema,
   rideRequestSchema,
   rideSchema,
 } from "../src/schemas/ride";
@@ -357,5 +359,71 @@ describe("rideSchema", () => {
     });
     expect(isRideAssignmentConsistent(ride)).toBe(false);
     expect(() => assertRideAssignmentConsistent(ride)).toThrow(/does not match assignment/);
+  });
+});
+
+describe("rideRequestBodySchema", () => {
+  const body = {
+    pickup: { location: riga, address: "Brīvības iela 1, Rīga" },
+    destination: { location: { lat: 56.9236, lng: 23.9711 }, address: "Lidosta RIX" },
+    paymentMethod: "cash",
+  };
+
+  it("applies every default without a riderId (expected)", () => {
+    const parsed = rideRequestBodySchema.parse(body);
+    expect(parsed.stops).toEqual([]);
+    expect(parsed.category).toBe("standard");
+    expect(parsed.options).toEqual({ childSeat: false, femaleDriver: false });
+    expect(parsed.vehicleCount).toBe(1);
+  });
+
+  it("re-parses into a full RideRequest once the server adds its own riderId (edge)", () => {
+    const parsed = rideRequestSchema.parse({ ...rideRequestBodySchema.parse(body), riderId: uuid });
+    expect(parsed.riderId).toBe(uuid);
+    expect(parsed.vehicleCount).toBe(1);
+  });
+
+  it("strips a smuggled riderId rather than trusting it (failure)", () => {
+    // The identity comes from the JWT. zod strips unknown keys silently under
+    // its default `strip` mode, so this does NOT throw — it drops the key, and
+    // the server's own riderId is the only one that ever reaches the request.
+    const parsed = rideRequestBodySchema.parse({ ...body, riderId: otherUuid });
+    expect("riderId" in parsed).toBe(false);
+  });
+});
+
+describe("rideCreatedSchema", () => {
+  const ride = {
+    id: uuid,
+    orderId: otherUuid,
+    status: "requested",
+    riderId: uuid,
+    driverId: null,
+    request: {
+      riderId: uuid,
+      pickup: { location: riga, address: "Brīvības iela 1, Rīga" },
+      destination: { location: { lat: 56.9236, lng: 23.9711 }, address: "Lidosta RIX" },
+      paymentMethod: "cash",
+    },
+    quote,
+    createdAt: "2026-08-03T10:00:00.000Z",
+    updatedAt: "2026-08-03T10:00:00.000Z",
+  };
+
+  it("parses a ride with its platform-base split (expected)", () => {
+    const parsed = rideCreatedSchema.parse({
+      ride,
+      split: splitFare(quote.totalCents, { pct: 15, source: "platform_base" }),
+    });
+    expect(parsed.ride.status).toBe("requested");
+    // The preview split is NOT persisted on the ride — that field stays null
+    // until #11 settles.
+    expect(parsed.ride.split).toBeNull();
+    expect(parsed.split.commissionSource).toBe("platform_base");
+    expect(parsed.split.commissionCents + parsed.split.driverNetCents).toBe(quote.totalCents);
+  });
+
+  it("requires the split — a created ride always carries its preview (failure)", () => {
+    expect(rideCreatedSchema.safeParse({ ride }).success).toBe(false);
   });
 });
