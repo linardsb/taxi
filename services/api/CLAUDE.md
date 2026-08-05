@@ -5,6 +5,7 @@ NestJS backend: REST + Socket.IO gateway + dispatch engine. Read the root `CLAUD
 - Vertical slices under `src/features/<name>/` (auth, users, drivers, vehicles, rides, dispatch, pricing, payments, ledger, geo, geozones, notifications, support, stats). Each slice: `<name>.module.ts`, controller, service, schemas (zod from `@taxi/shared` where cross-surface), tests.
 - Ride status writes ONLY via `assertTransition()` from `@taxi/shared`. Money ONLY in integer cents.
 - Provider SDKs (Google Maps, Twilio, Stripe) are imported ONLY inside the slice implementing the corresponding seam interface from `@taxi/shared/seams`; everything else injects the interface.
+- A dev-only seam stub must THROW at boot under `NODE_ENV=production` rather than serve silently — see the `SMS_PROVIDER` factory in `features/auth/auth.module.ts`. Secrets are validated the same way: production refuses the values committed to `.env.example` and anything too short (`common/config/env.schema.ts`), so a new secret belongs in that check.
 - Live driver locations live in Redis (GEO sets); PostGIS/Drizzle for persistent data (geozones, recorded tracks). Drizzle migrations in `db/`.
 - Socket event names/payloads come from `RT` in `@taxi/shared` — never string literals.
 - Cross-cutting Nest plumbing (env config, Drizzle, Redis KV, the zod pipe) lives in `src/common/`; `src/features/` stays feature-vertical.
