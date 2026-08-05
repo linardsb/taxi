@@ -28,9 +28,10 @@ import { OTP_MAX_VERIFY_ATTEMPTS, OTP_TTL_SECONDS } from './otp.policy';
 const USER_ID = '8d1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e5f';
 const PHONE = '+37121000001';
 const SECRET = 'unit-test-secret-at-least-16';
+const PEPPER = 'unit-test-pepper-at-least-16';
 
-/** Only the two fields AuthService reads off the env. */
-const env = { JWT_SECRET: SECRET } as Env;
+/** Only the fields AuthService reads off the env. */
+const env = { JWT_SECRET: SECRET, OTP_PEPPER: PEPPER } as Env;
 
 /** `storedRole` is what the repository reports back — a provisioned dispatcher
  *  is the case that matters, so it is a UserRole, not a SignupRole. */
@@ -62,10 +63,15 @@ class PausableKv extends InMemoryKeyValueStore {
 function build(
   storedRole: UserRole = 'driver',
   kv: InMemoryKeyValueStore = new InMemoryKeyValueStore(),
+  envOverrides: Partial<Env> = {},
 ) {
+  const serviceEnv = { ...env, ...envOverrides };
   const sms = new RecordingSmsProvider();
   const tokens = new AuthTokenService(
-    new JwtService({ secret: SECRET, signOptions: { expiresIn: '30d' } }),
+    new JwtService({
+      secret: serviceEnv.JWT_SECRET,
+      signOptions: { expiresIn: '30d' },
+    }),
   );
 
   const created: { role: SignupRole }[] = [];
@@ -87,7 +93,7 @@ function build(
   } as unknown as AuthRepository;
 
   return {
-    service: new AuthService(kv, sms, env, repo, tokens),
+    service: new AuthService(kv, sms, serviceEnv, repo, tokens),
     kv,
     sms,
     tokens,
@@ -416,6 +422,42 @@ describe('AuthService.verifyOtp', () => {
 
     const session = await service.verifyOtp({ phone: PHONE, code });
     expect(session.user.id).toBe(USER_ID);
+  });
+
+  it('accepts a code in flight across a JWT_SECRET rotation (failure)', async () => {
+    const kv = new InMemoryKeyValueStore();
+    const before = build('driver', kv);
+    await before.service.requestOtp({ phone: PHONE, role: 'driver' });
+    const code = before.sms.lastCodeFor(PHONE)!;
+
+    // The same store and the same pepper, a rotated signing key — which is
+    // exactly what remediating a leaked JWT_SECRET does. Hashing
+    // `code + JWT_SECRET` made every user mid-login fail with
+    // `invalid_or_expired_code`, a message that by design says nothing, so a
+    // rotation-induced outage was indistinguishable from a wave of wrong codes.
+    const after = build('driver', kv, {
+      JWT_SECRET: 'rotated-secret-at-least-16-chars',
+    });
+
+    const session = await after.service.verifyOtp({ phone: PHONE, code });
+    expect(session.user.id).toBe(USER_ID);
+  });
+
+  it('rejects a code in flight across an OTP_PEPPER rotation (edge)', async () => {
+    const kv = new InMemoryKeyValueStore();
+    const before = build('driver', kv);
+    await before.service.requestOtp({ phone: PHONE, role: 'driver' });
+    const code = before.sms.lastCodeFor(PHONE)!;
+
+    // The other half of the separation, and the reason the pepper is worth
+    // rotating on its own: its blast radius is one 5-minute window of codes,
+    // never a session token. A test asserting only the JWT half would pass
+    // against a hash that ignored both secrets entirely.
+    const after = build('driver', kv, {
+      OTP_PEPPER: 'rotated-pepper-at-least-16-chars',
+    });
+
+    await rejection(after.service.verifyOtp({ phone: PHONE, code }));
   });
 
   it('makes a wrong code and an expired code indistinguishable (failure)', async () => {

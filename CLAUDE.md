@@ -34,7 +34,8 @@ Contracts flow one way: apps and `services/api` import from `packages/shared`; *
 ```bash
 docker compose up -d          # postgres+postgis, redis
 pnpm install                  # root, once
-pnpm check                    # turbo: typecheck + lint + test  ← the validation gate
+pnpm turbo run typecheck lint test build --force   # ← the validation gate (CI parity)
+pnpm check                    # typecheck + lint + test — quick loop, NOT the gate: no build
 pnpm dev                      # all dev servers (or: pnpm --filter @taxi/api dev)
 pnpm --filter @taxi/shared test   # one package
 ```
@@ -48,7 +49,7 @@ pnpm --filter @taxi/shared test   # one package
 - Provider calls (maps, SMS, payments) go through the seam interfaces in `packages/shared/src/seams/` — no direct SDK imports outside the implementing feature slice.
 - i18n: user-facing strings in LV/RU/EN catalogs, never hardcoded. Accessibility: every rider-app screen must be fully usable with VoiceOver/TalkBack (screen-reader-excellent is a launch differentiator).
 - Vertical Slice Architecture inside every app/service: one folder per feature owning routes/service/schemas/tests; `index.ts` is the slice's public API. Max ~500 lines per file.
-- Tests mirror slices; each feature ships ≥1 expected + 1 edge + 1 failure case. Done = `pnpm check` green, never say-so.
+- Tests mirror slices; each feature ships ≥1 expected + 1 edge + 1 failure case. Done = `pnpm turbo run typecheck lint test build --force` green, never say-so.
 
 ## Workflow (PIV loop)
 
