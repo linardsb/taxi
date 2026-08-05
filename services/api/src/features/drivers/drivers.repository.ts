@@ -22,6 +22,13 @@ export interface DriverMatchAttributes {
   status: DriverStatus;
   isFemale: boolean | null;
   balanceCents: number;
+  /**
+   * Why the per-driver split can differ from #9's platform-base preview. The
+   * offer card shows what THIS driver keeps; without this field every card
+   * silently shows the platform base and the S2-5 transparency wedge — the
+   * whole pitch — is quietly wrong for any driver on an override.
+   */
+  commissionPctOverride: number | null;
   /** Distinct categories across the driver's vehicles. */
   categories: RideCategory[];
   /** True when ANY of the driver's vehicles has one. */
@@ -219,6 +226,7 @@ export class DriversRepository {
           status: driver.status,
           isFemale: driver.isFemale,
           balanceCents: driver.balanceCents,
+          commissionPctOverride: driver.commissionPctOverride,
           categories: [],
           hasChildSeat: false,
           maxPassengerSeats: 0,

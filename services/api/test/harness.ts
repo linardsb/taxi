@@ -15,6 +15,11 @@ import { DRIZZLE } from '../src/common/db/db.module';
 import { KV_STORE, type KeyValueStore } from '../src/common/kv/kv.store';
 import { SMS_PROVIDER } from '../src/features/auth';
 import {
+  DISPATCH_QUEUE_STORE,
+  type DispatchQueueStore,
+} from '../src/features/dispatch';
+import { InMemoryDispatchQueueStore } from '../src/features/dispatch/queue/in-memory-dispatch-queue.store';
+import {
   DRIVER_LOCATION_STORE,
   type DriverLocationStore,
   type NearbyDriver,
@@ -239,6 +244,8 @@ export interface TestApp {
   sms: RecordingSmsProvider;
   locations: InMemoryDriverLocationStore;
   maps: CountingMapsProvider;
+  /** The SAME instance the app resolves — verified in `createTestApp`. */
+  queue: InMemoryDispatchQueueStore;
   db: Db;
 }
 
@@ -267,6 +274,7 @@ export async function createTestApp(options?: {
   const sms = new RecordingSmsProvider();
   const locations = new InMemoryDriverLocationStore();
   const maps = new CountingMapsProvider();
+  const queue = new InMemoryDispatchQueueStore();
 
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
@@ -274,6 +282,11 @@ export async function createTestApp(options?: {
   })
     .overrideProvider(KV_STORE)
     .useValue(kv)
+    // Like DRIVER_LOCATION_STORE: a `useFactory` provider that would otherwise
+    // dial Redis. Overriding it here is what keeps the integration suite
+    // Redis-free.
+    .overrideProvider(DISPATCH_QUEUE_STORE)
+    .useValue(queue)
     .overrideProvider(SMS_PROVIDER)
     .useValue(sms)
     .overrideProvider(DRIVER_LOCATION_STORE)
@@ -289,7 +302,19 @@ export async function createTestApp(options?: {
   await options?.configure?.(app);
   await app.init();
 
-  return { app, kv, sms, locations, maps, db: app.get<Db>(DRIZZLE) };
+  // THE SELF-CHECK. Seeding a queue the strategy never reads would leave it
+  // empty at dispatch time, the strategy would fall back to proximity order,
+  // and the queue-fairness case would pass FOR THE AUTO-MATCH REASON — a green
+  // test asserting the opposite of what it claims. Assert the container hands
+  // back the very object this harness seeds.
+  const resolvedQueue = app.get<DispatchQueueStore>(DISPATCH_QUEUE_STORE);
+  if (resolvedQueue !== queue) {
+    throw new Error(
+      'DISPATCH_QUEUE_STORE override did not take: the app resolved a different instance than the harness seeds. Any queue-fairness assertion built on this app would be meaningless.',
+    );
+  }
+
+  return { app, kv, sms, locations, maps, queue, db: app.get<Db>(DRIZZLE) };
 }
 
 /**
