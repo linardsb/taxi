@@ -6,10 +6,18 @@ import { AppConfigModule } from './common/config/app-config.module';
 import { DbModule } from './common/db/db.module';
 import { KvModule } from './common/kv/kv.module';
 import { AuthModule, JwtAuthGuard, RolesGuard } from './features/auth';
+import { DriversModule } from './features/drivers';
 import { RealtimeModule } from './features/realtime';
 
 @Module({
-  imports: [AppConfigModule, DbModule, KvModule, AuthModule, RealtimeModule],
+  imports: [
+    AppConfigModule,
+    DbModule,
+    KvModule,
+    AuthModule,
+    RealtimeModule,
+    DriversModule,
+  ],
   controllers: [AppController],
   providers: [
     AppService,
