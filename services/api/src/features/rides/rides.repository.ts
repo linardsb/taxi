@@ -1,15 +1,49 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { rideFareLines, rides, type Db } from '@taxi/db';
 import {
+  assertFareQuoteConsistent,
+  fareQuoteSchema,
+  rideRequestSchema,
   rideSchema,
   type FareQuote,
   type Ride,
   type RideRequest,
 } from '@taxi/shared';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 import { assertEntryStatus, type RideEntryStatus } from './ride-entry';
+import type { DbTx } from './ride-transition.service';
 
 type RideRow = typeof rides.$inferSelect;
+
+/**
+ * What the sweeper needs to dispatch a ride, in one read.
+ *
+ * Carries `request` and `createdAt` because the unclaimed alert
+ * (`dispatchUnclaimedEventSchema`) needs `pickup` and an elapsed-seconds count,
+ * and `TransitionedRide` deliberately omits both — without them `raiseUnclaimed`
+ * would need a second read per ride per tick.
+ */
+export interface AwaitingRide {
+  id: string;
+  orderId: string;
+  riderId: string;
+  geozoneId: string | null;
+  request: RideRequest;
+  createdAt: Date;
+}
+
+/** `request` round-trips through jsonb, so it is parsed rather than cast. */
+function toAwaiting(row: RideRow): AwaitingRide {
+  return {
+    id: row.id,
+    orderId: row.orderId,
+    riderId: row.riderId,
+    geozoneId: row.geozoneId,
+    request: rideRequestSchema.parse(row.request),
+    createdAt: row.createdAt,
+  };
+}
 /** The ride id is added once the insert returns it. */
 type FareLineDraft = Omit<typeof rideFareLines.$inferInsert, 'rideId'>;
 
@@ -108,5 +142,132 @@ export class RidesRepository {
 
       return toRide(row, input.quote);
     });
+  }
+
+  /**
+   * The sweeper's work queue: rides waiting for a driver, oldest first.
+   * Runs every tick; `rides_status_idx` already covers the predicate.
+   */
+  async findAwaitingDispatch(limit: number): Promise<AwaitingRide[]> {
+    const rows = await this.db
+      .select()
+      .from(rides)
+      .where(and(eq(rides.status, 'requested'), isNull(rides.driverId)))
+      .orderBy(asc(rides.createdAt))
+      .limit(limit);
+    return rows.map(toAwaiting);
+  }
+
+  /**
+   * Reads a ride back WITH its fare quote, reassembled from `total_cents` plus
+   * the `ride_fare_lines` rows.
+   *
+   * This is the codebase's first reader of `ride_fare_lines` — `create()` writes
+   * them and `toRide` takes the quote as an argument because the write path
+   * already held it. The offer card cannot be built without it: the driver sees
+   * the full fare the RIDER pays (S2-5), and re-quoting mid-cascade would spend
+   * a paid Routes call per offer and could change the price after the rider
+   * already agreed to it.
+   *
+   * `undefined` for a ride that was never quoted — not dispatchable, and a
+   * half-built quote would land on a driver's card.
+   *
+   * The quote is returned alongside the `Ride` rather than read off `ride.quote`
+   * because `rideSchema` types that field `FareQuote | null`; handing callers a
+   * non-nullable quote is what keeps `buildOffer` free of a `!`.
+   */
+  async findWithQuote(
+    rideId: string,
+  ): Promise<{ ride: Ride; quote: FareQuote } | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(rides)
+      .where(eq(rides.id, rideId))
+      .limit(1);
+    if (!row) return undefined;
+    if (row.pricingModel === null || row.totalCents === null) return undefined;
+
+    const lines = await this.db
+      .select()
+      .from(rideFareLines)
+      .where(eq(rideFareLines.rideId, rideId));
+
+    // `create()` deliberately omits a zero discount line ("noise in #11's
+    // settlement read"), so an absent line is 0 — expecting a row here would
+    // make every ordinary ride fail to dispatch.
+    const amountOf = (lineType: (typeof lines)[number]['lineType']): number =>
+      lines.find((line) => line.lineType === lineType)?.amountCents ?? 0;
+
+    const quote = fareQuoteSchema.parse({
+      model: row.pricingModel,
+      currency: 'EUR',
+      totalCents: row.totalCents,
+      breakdown: {
+        baseCents: amountOf('base'),
+        distanceCents: amountOf('distance'),
+        timeCents: amountOf('time'),
+        discountCents: amountOf('discount'),
+      },
+    });
+
+    // Only where the model says it must hold: for `rider_bid` the total is the
+    // rider's own offer and the breakdown is an estimate, so requiring them to
+    // agree "would make an honest bid unrepresentable"
+    // (`isFareQuoteConsistent`). For every other model a mismatch is a real
+    // data bug and must fail here, not on a driver's offer card.
+    if (quote.model !== 'rider_bid') assertFareQuoteConsistent(quote);
+
+    return { ride: toRide(row, quote), quote };
+  }
+
+  /**
+   * Claims the ride for a driver, but ONLY while it has none — the race-safe
+   * conditional UPDATE the whole cascade depends on. `false` means someone else
+   * won, which is a 409 and never a 500.
+   *
+   * `tx` composes this into the accept path's transaction, where the offer
+   * accept, the status change, this write and the audit row must commit or roll
+   * back together. Without it this would silently commit outside the caller's
+   * transaction and defeat that atomicity.
+   */
+  async assignDriver(
+    rideId: string,
+    driverId: string,
+    tx?: DbTx,
+  ): Promise<boolean> {
+    const [row] = await (tx ?? this.db)
+      .update(rides)
+      .set({ driverId })
+      .where(and(eq(rides.id, rideId), isNull(rides.driverId)))
+      .returning({ id: rides.id });
+    return row !== undefined;
+  }
+
+  /**
+   * The pickup zone alone.
+   *
+   * Deliberately NOT `findWithQuote`: the decline path needs one nullable uuid,
+   * and reassembling a `FareQuote` for it would read `ride_fare_lines` and run
+   * `assertFareQuoteConsistent` — which THROWS on an inconsistent quote. That
+   * throw would land after the offer row was already flipped to `declined`,
+   * leaving the ride at `offered` with no pending offer: invisible to
+   * `dispatchAwaitingRides`, which filters on `requested`, so the cascade would
+   * die silently.
+   */
+  async findGeozoneId(rideId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ geozoneId: rides.geozoneId })
+      .from(rides)
+      .where(eq(rides.id, rideId))
+      .limit(1);
+    return row?.geozoneId ?? null;
+  }
+
+  /** Persists the resolved pickup zone; only ever written once, from null. */
+  async setGeozone(rideId: string, geozoneId: string): Promise<void> {
+    await this.db
+      .update(rides)
+      .set({ geozoneId })
+      .where(and(eq(rides.id, rideId), isNull(rides.geozoneId)));
   }
 }

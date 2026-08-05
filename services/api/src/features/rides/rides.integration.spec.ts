@@ -7,6 +7,7 @@ import {
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { createTestApp, phoneFor, type TestApp } from '../../../test/harness';
+import { RidesRepository } from './rides.repository';
 
 /**
  * `+371240` is this spec file's E.164 range — see phoneFor(). `+371210`
@@ -253,5 +254,76 @@ describe('rides (integration)', () => {
       .expect(403);
 
     await http.post('/rides').send(body).expect(401);
+  });
+
+  /**
+   * `findWithQuote` is the codebase's FIRST reader of `ride_fare_lines` — the
+   * write path always held the quote in hand, so nothing ever reversed it.
+   * Every offer card depends on this reconstruction being exact.
+   */
+  describe('findWithQuote (the quote reconstructor)', () => {
+    const repo = () => ctx.app.get(RidesRepository);
+
+    async function createRide(n: number) {
+      const r = await rider(n);
+      const res = await http
+        .post('/rides')
+        .set('authorization', r.auth)
+        .send({ pickup: CENTRE, destination: RIX, paymentMethod: 'cash' })
+        .expect(201);
+      return rideCreatedSchema.parse(res.body).ride;
+    }
+
+    it('round-trips a quote WITH a discount line back to an identical FareQuote (expected)', async () => {
+      const ride = await createRide(20);
+
+      // The seeded pricing path never produces a discount, so the discount line
+      // is written directly — this is the only way to exercise the branch.
+      const discountCents = -150;
+      await ctx.db.insert(rideFareLines).values({
+        rideId: ride.id,
+        lineType: 'discount',
+        amountCents: discountCents,
+        sort: 3,
+      });
+      await ctx.db
+        .update(rides)
+        .set({ totalCents: ride.quote!.totalCents + discountCents })
+        .where(eq(rides.id, ride.id));
+
+      const found = await repo().findWithQuote(ride.id);
+
+      // The WHOLE object, not just totalCents: a swapped distance/time mapping
+      // sums identically and would pass every narrower assertion.
+      expect(found?.quote).toEqual({
+        ...ride.quote!,
+        totalCents: ride.quote!.totalCents + discountCents,
+        breakdown: { ...ride.quote!.breakdown, discountCents },
+      });
+      expect(found?.ride.id).toBe(ride.id);
+    });
+
+    it('reconstructs a ride with NO discount line as discountCents 0 (edge)', async () => {
+      const ride = await createRide(21);
+
+      const found = await repo().findWithQuote(ride.id);
+
+      // `create()` omits a zero discount line, so expecting a row here would
+      // make every ordinary ride fail to dispatch.
+      expect(found?.quote.breakdown.discountCents).toBe(0);
+      expect(found?.quote).toEqual(ride.quote);
+      expect(isFareQuoteConsistent(found!.quote)).toBe(true);
+    });
+
+    it('returns undefined for a ride that was never quoted (failure)', async () => {
+      const ride = await createRide(22);
+      await ctx.db
+        .update(rides)
+        .set({ pricingModel: null, totalCents: null })
+        .where(eq(rides.id, ride.id));
+
+      // A half-built quote would land on a driver's offer card.
+      await expect(repo().findWithQuote(ride.id)).resolves.toBeUndefined();
+    });
   });
 });
