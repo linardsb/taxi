@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import {
   RT,
   type FareQuote,
@@ -53,7 +53,9 @@ const split = {
   driverNetCents: 1_105,
 } as FareSplit;
 
-function build(options: { realtimeThrows?: boolean } = {}) {
+function build(
+  options: { realtimeThrows?: boolean; pricingThrows?: boolean } = {},
+) {
   /** One shared log, so ORDER is assertable and not just occurrence. */
   const calls: string[] = [];
   const emitted: { event: string; payload: Record<string, unknown> }[] = [];
@@ -62,6 +64,9 @@ function build(options: { realtimeThrows?: boolean } = {}) {
   const pricing = {
     quote: () => {
       calls.push('pricing.quote');
+      if (options.pricingThrows) {
+        return Promise.reject(new Error('maps provider is down'));
+      }
       return Promise.resolve({ quote, split });
     },
   } as unknown as PricingService;
@@ -197,6 +202,27 @@ describe('RidesService', () => {
     kv.advance(RIDE_REQUEST_WINDOW_SECONDS + 1);
 
     await expect(service.request(RIDER_ID, body)).resolves.toBeDefined();
+  });
+
+  it('logs ride.request.failed when the spending path throws (failure)', async () => {
+    // Without this the only trace of a 500 on POST /rides is Nest's default
+    // exception log — no riderId, no category, nothing to tell "one rider, one
+    // corridor" from "maps is down".
+    const { service } = build({ pricingThrows: true });
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+    await expect(service.request(RIDER_ID, body)).rejects.toThrow(
+      /maps provider is down/,
+    );
+
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'ride.request.failed',
+        riderId: RIDER_ID,
+        reason: 'maps provider is down',
+      }),
+    );
+    logged.mockRestore();
   });
 
   it('returns the committed ride even when the socket emit fails (failure)', async () => {
