@@ -12,4 +12,4 @@ Airport-rank fairness: drivers join a per-geozone FIFO queue when entering the z
 Privileged commands available under both modes, used from the dispatch portal: `assign(rideId, driverId)`, `reassign`, `cancel`. They bypass candidate selection but still go through `assertTransition()` — never bypass the state machine.
 
 ## Phase notes
-Phase 1 ships auto_match only; geozone_queue lands Phase 4 (decision 2026-07-06). Keep the seam honest: the engine must never import a concrete strategy directly.
+Both strategies shipped together in #10, ahead of the original plan (which held geozone_queue back to Phase 4, decision 2026-07-06) — S7-2 made queue fairness a launch concern, not a later one. Keep the seam honest: the engine must never import a concrete strategy directly.
