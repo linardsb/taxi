@@ -4,6 +4,7 @@
     "DATABASE_URL",
     "REDIS_URL",
     "JWT_SECRET",
+    "OTP_PEPPER",
     "API_PORT",
     "REDIS_TEST_URL"
   ],
