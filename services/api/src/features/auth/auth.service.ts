@@ -16,7 +16,7 @@ import {
   type SmsProvider,
 } from '@taxi/shared';
 import { z } from 'zod';
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { KV_STORE, type KeyValueStore } from '../../common/kv/kv.store';
 import { AuthRepository } from './auth.repository';
@@ -103,10 +103,23 @@ export class AuthService {
     await this.kv.del(codeKey(phone));
   }
 
+  /**
+   * HMAC keyed with OTP_PEPPER — never `sha256(code + JWT_SECRET)`. Two
+   * separate reasons, and the second is the one that bites:
+   *
+   * - A keyed MAC is the construction for "prove this came from us"; hashing a
+   *   secret by concatenation is not, and the digest length still leaks nothing
+   *   only because it never leaves the server.
+   * - Sharing the signing key made rotating it invalidate every OTP in flight.
+   *   Those users get `invalid_or_expired_code`, which correctly says nothing —
+   *   so the outage looks exactly like a wave of wrong codes, precisely when a
+   *   suspected leak means you least want an unexplained sign-in failure.
+   *
+   * Rotating OTP_PEPPER still invalidates codes in flight, but its blast radius
+   * is one 5-minute window rather than every session token.
+   */
   private hash(code: string): string {
-    return createHash('sha256')
-      .update(`${code}${this.env.JWT_SECRET}`)
-      .digest('hex');
+    return createHmac('sha256', this.env.OTP_PEPPER).update(code).digest('hex');
   }
 
   async requestOtp(input: OtpRequest): Promise<OtpRequestResponse> {
