@@ -7,9 +7,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const env = app.get<Env>(APP_ENV);
 
+  // REST only — engine.io intercepts /socket.io/* before Express middleware,
+  // so the gateway's CORS is the adapter's job, from the same env value.
   app.enableCors({ origin: env.CORS_ORIGINS });
 
-  const adapter = new RedisIoAdapter(app);
+  const adapter = new RedisIoAdapter(app, env.CORS_ORIGINS);
   await adapter.connectToRedis(env.REDIS_URL);
   app.useWebSocketAdapter(adapter);
 
