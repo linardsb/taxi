@@ -7,7 +7,7 @@ import type {
   Language,
   RideCategory,
 } from '@taxi/shared';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, exists, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 
 type DriverRow = typeof drivers.$inferSelect;
@@ -27,6 +27,24 @@ export interface DriverMatchAttributes {
   /** True when ANY of the driver's vehicles has one. */
   hasChildSeat: boolean;
   maxPassengerSeats: number;
+}
+
+/**
+ * An UPDATE whose WHERE matched nothing returns no row, and `toProfile(row!)`
+ * made that a bare "cannot read properties of undefined" 500 (L7). Unreachable
+ * today — every caller runs `findOrCreate` first and `drivers` has no delete
+ * path — so this is about what the 500 SAYS when something upstream changes.
+ */
+function requireRow(
+  row: DriverRow | undefined,
+  userId: string,
+  operation: string,
+): DriverRow {
+  if (!row)
+    throw new Error(
+      `drivers row for ${userId} vanished during ${operation} — a caller reached a write without findOrCreate, or the row was deleted`,
+    );
+  return row;
 }
 
 /** The row's nullable columns are optional in the shared domain shape. */
@@ -63,22 +81,29 @@ export class DriversRepository {
       .values({ userId })
       .onConflictDoUpdate({ target: drivers.userId, set: { userId } })
       .returning();
-    return toProfile(row!);
+    return toProfile(requireRow(row, userId, 'findOrCreate'));
   }
 
   /**
-   * A READ, deliberately — the disconnect path calls this on every socket
-   * close, and `findOrCreate` would both provision a row for a driver who
-   * never had one and write a dead tuple (its no-op `SET` is still an UPDATE)
-   * on the highest-frequency event in the slice. `undefined` means no row,
-   * which is already the state a disconnect would be trying to reach.
+   * A pure READ — `undefined` when there is no row yet.
+   *
+   * `findOrCreate`'s `ON CONFLICT DO UPDATE SET user_id = user_id` is still an
+   * UPDATE, so every call through it writes a dead tuple. That form is right
+   * for the WRITE paths, which need the row back either way; it is wrong for
+   * the two hot read paths that only look:
+   *
+   * - `GET /drivers/me`, the driver app's bootstrap call, on every app open (L5)
+   * - the socket disconnect path, on every socket close (#38) — where it would
+   *   also provision a row for a driver who never had one, as a side effect of
+   *   hanging up
    */
-  async findStatus(userId: string): Promise<DriverStatus | undefined> {
+  async find(userId: string): Promise<DriverProfile | undefined> {
     const [row] = await this.db
-      .select({ status: drivers.status })
+      .select()
       .from(drivers)
-      .where(eq(drivers.userId, userId));
-    return row?.status;
+      .where(eq(drivers.userId, userId))
+      .limit(1);
+    return row ? toProfile(row) : undefined;
   }
 
   /**
@@ -102,7 +127,57 @@ export class DriversRepository {
       })
       .where(eq(drivers.userId, userId))
       .returning();
-    return toProfile(row!);
+    return toProfile(requireRow(row, userId, 'updateProfile'));
+  }
+
+  /**
+   * Goes online ONLY if the driver still has a vehicle, as one statement.
+   * `undefined` means the precondition failed — a 409, not a 500.
+   *
+   * The check has to live inside the UPDATE (L8). Counting vehicles and then
+   * setting the status leaves a window: a concurrent DELETE of the last vehicle
+   * lands between the two and the driver ends up online with no car — online
+   * and unable to be matched, which is the exact disagreement between "you are
+   * online" and "you can be offered a ride" that `vehicle_required` exists to
+   * prevent. No transaction needed; one statement cannot interleave.
+   */
+  async setOnlineIfHasVehicle(
+    userId: string,
+  ): Promise<DriverProfile | undefined> {
+    const [row] = await this.db
+      .update(drivers)
+      .set({ status: 'online' })
+      .where(
+        and(
+          eq(drivers.userId, userId),
+          exists(
+            this.db
+              .select({ one: sql`1` })
+              .from(vehicles)
+              .where(eq(vehicles.driverId, userId)),
+          ),
+        ),
+      )
+      .returning();
+    return row ? toProfile(row) : undefined;
+  }
+
+  /**
+   * The mirror of the above, for the delete path: forces offline only if the
+   * driver is currently online, in one statement. `undefined` means they were
+   * not online, so nothing happened and nothing should be logged.
+   *
+   * Also L8: the caller used to decide this from a `status` it had read BEFORE
+   * deleting the vehicle, so a `PUT status=online` that landed in between was
+   * invisible and the driver stayed online with zero cars.
+   */
+  async setOfflineIfOnline(userId: string): Promise<DriverProfile | undefined> {
+    const [row] = await this.db
+      .update(drivers)
+      .set({ status: 'offline' })
+      .where(and(eq(drivers.userId, userId), eq(drivers.status, 'online')))
+      .returning();
+    return row ? toProfile(row) : undefined;
   }
 
   async setStatus(
@@ -114,7 +189,7 @@ export class DriversRepository {
       .set({ status })
       .where(eq(drivers.userId, userId))
       .returning();
-    return toProfile(row!);
+    return toProfile(requireRow(row, userId, 'setStatus'));
   }
 
   /**

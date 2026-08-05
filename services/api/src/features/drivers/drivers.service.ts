@@ -28,9 +28,20 @@ export class DriversService {
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
-  /** The driver app's whole bootstrap. The first call provisions the `drivers` row. */
+  /**
+   * The driver app's whole bootstrap. The FIRST call provisions the `drivers`
+   * row; every later one only reads it.
+   *
+   * Read-then-provision rather than a straight `findOrCreate` (L5): the latter
+   * is an UPDATE even when nothing changes, so this call — which runs on every
+   * app open — left a dead tuple behind each time. Still race-safe, because the
+   * fallback is the same atomic upsert: two concurrent first calls both miss
+   * the SELECT and both land on `findOrCreate`, which is built for exactly that.
+   */
   async getMe(userId: string): Promise<DriverMe> {
-    const profile = await this.drivers.findOrCreate(userId);
+    const profile =
+      (await this.drivers.find(userId)) ??
+      (await this.drivers.findOrCreate(userId));
     return { profile, vehicles: await this.vehicles.listForDriver(userId) };
   }
 
@@ -79,9 +90,13 @@ export class DriversService {
       // `auto_match` filters on `category` and `hasChildSeat`, both vehicle
       // attributes — an online driver with no vehicle is a candidate #10 can
       // only ever discard.
-      if ((await this.vehicles.countForDriver(userId)) === 0)
-        throw new ConflictException('vehicle_required');
-      updated = await this.drivers.setStatus(userId, 'online');
+      //
+      // The vehicle check is INSIDE the update (L8). Counting first and setting
+      // after left a window for a concurrent delete of the last vehicle to slip
+      // between them, which is how a driver ended up online with no car.
+      const online = await this.drivers.setOnlineIfHasVehicle(userId);
+      if (!online) throw new ConflictException('vehicle_required');
+      updated = online;
       await this.locations.markOnline(cityId, userId);
     } else {
       await this.locations.markOffline(cityId, userId);
@@ -110,7 +125,7 @@ export class DriversService {
    * undispatchable, never the reverse.
    */
   async clearPresenceOnDisconnect(userId: string): Promise<void> {
-    const status = await this.drivers.findStatus(userId);
+    const status = (await this.drivers.find(userId))?.status;
 
     // Only `online` is this path's to clear. `on_ride` belongs to #11 — a
     // driver whose app crashes mid-ride must not be dropped off the ride by a

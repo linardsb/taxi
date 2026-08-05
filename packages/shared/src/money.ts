@@ -17,6 +17,13 @@ export const nonNegativeCentsSchema = z.number().int().nonnegative();
 export const nonPositiveCentsSchema = z.number().int().nonpositive();
 
 /**
+ * Strictly positive — an amount that exists at all, like a rider's own bid.
+ * Distinct from `nonNegativeCentsSchema` on purpose: a €0 bid is not a cheap
+ * ride, it is a missing one, and the two differ only at that single value.
+ */
+export const positiveCentsSchema = z.number().int().positive();
+
+/**
  * A percent (0–100), not basis points, per the architecture decision
  * (2026-08-03). `0` is valid and load-bearing: S6-7 has Atis driving at 0%
  * commission plus an hourly guarantee.

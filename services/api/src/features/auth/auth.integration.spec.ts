@@ -169,6 +169,21 @@ describe('auth (integration)', () => {
       .expect(400);
   });
 
+  it('signs in a user whose stored language is off-enum (failure — a 500 on the one screen that cannot take one)', async () => {
+    const phone = p(8);
+    // `users.language` is plain `text` with no pg enum and no CHECK, so the
+    // column genuinely permits this. Written directly because nothing in the
+    // app can produce it — which is exactly why the cast went unnoticed.
+    await ctx.db.insert(users).values({ phone, role: 'rider', language: 'xx' });
+
+    const session = await signIn(phone, 'rider');
+
+    // Parsed through the shared schema, so an unparsed value would have thrown
+    // a ZodError inside the service and surfaced as a 500 rather than this.
+    expect(session.user.language).toBe('lv');
+    expect(session.user.phone).toBe(phone);
+  });
+
   it('refuses a guarded route without a token, and with a junk one (failure — fail-closed)', async () => {
     await http.get('/probe/me').expect(401);
     await http

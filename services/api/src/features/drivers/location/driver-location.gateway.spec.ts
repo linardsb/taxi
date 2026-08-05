@@ -18,7 +18,7 @@ import {
   type TestApp,
 } from '../../../../test/harness';
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
-import { AuthTokenService } from '../../auth/auth-token.service';
+import { AuthTokenService } from '../../auth';
 import type { AuthedSocket } from '../../realtime';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import type { DriversService } from '../drivers.service';

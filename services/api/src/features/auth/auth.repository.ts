@@ -1,10 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { users, type Db } from '@taxi/db';
-import type { Language, SignupRole, User } from '@taxi/shared';
+import { LANGUAGES, type SignupRole, type User } from '@taxi/shared';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { DRIZZLE } from '../../common/db/db.module';
 
 type UserRow = typeof users.$inferSelect;
+
+/**
+ * `users.language` is plain `text` with a `'lv'` default — no pg enum, no
+ * CHECK — so the column cannot guarantee the union it is typed as. Parsed
+ * rather than cast: an off-enum value used to reach `authSessionSchema.parse`
+ * and surface as a 500 on SIGN-IN, the one screen that cannot afford one.
+ * `.catch` falls back to the column's own default instead of throwing, because
+ * a stray language is not a reason to refuse someone their session.
+ */
+const languageSchema = z.enum(LANGUAGES).catch('lv');
 
 /** The row's nullable columns are optional in the shared domain shape. */
 function toUser(row: UserRow): User {
@@ -12,7 +23,7 @@ function toUser(row: UserRow): User {
     id: row.id,
     phone: row.phone,
     role: row.role,
-    language: row.language as Language,
+    language: languageSchema.parse(row.language),
     createdAt: row.createdAt,
     ...(row.email ? { email: row.email } : {}),
     ...(row.displayName ? { displayName: row.displayName } : {}),

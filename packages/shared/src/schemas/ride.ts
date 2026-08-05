@@ -7,7 +7,12 @@ import {
   RIDE_CATEGORIES,
 } from "../enums";
 import { fareSplitSchema } from "../commission";
-import { eurCurrencySchema, nonNegativeCentsSchema, nonPositiveCentsSchema } from "../money";
+import {
+  eurCurrencySchema,
+  nonNegativeCentsSchema,
+  nonPositiveCentsSchema,
+  positiveCentsSchema,
+} from "../money";
 import { RIDE_STATUSES } from "../ride-state-machine";
 import { addressPointSchema } from "./geo";
 
@@ -31,6 +36,38 @@ export const fareQuoteSchema = z.object({
 });
 export type FareQuote = z.infer<typeof fareQuoteSchema>;
 
+/**
+ * Whether a quote's breakdown reconciles to its total (#29).
+ *
+ * NOT enforced by the schema, and the asymmetry is the decision: for
+ * `upfront_fixed` the breakdown IS the total, decomposed — #11 settles and #20
+ * reports off these numbers, so a quote whose parts do not sum is a bug. For
+ * `rider_bid` the total is the rider's own offer and the breakdown is an
+ * estimate of what the ride is worth; requiring those to agree would make an
+ * honest bid unrepresentable.
+ *
+ * A predicate rather than a `.refine()`, for the same reason as
+ * `isOfferSplitConsistent`: `fareQuoteSchema` must stay a plain `ZodObject` so
+ * #6 can derive Drizzle insert shapes from it with `.omit()`/`.extend()`, which
+ * a `ZodEffects` does not carry. Call it where the model says it must hold.
+ */
+export function isFareQuoteConsistent(quote: FareQuote): boolean {
+  const b = quote.breakdown;
+  return (
+    b.baseCents + b.distanceCents + b.timeCents + b.discountCents ===
+    quote.totalCents
+  );
+}
+
+export function assertFareQuoteConsistent(quote: FareQuote): void {
+  if (!isFareQuoteConsistent(quote)) {
+    const b = quote.breakdown;
+    throw new Error(
+      `Quote breakdown ${b.baseCents}+${b.distanceCents}+${b.timeCents}${b.discountCents} does not sum to totalCents ${quote.totalCents}`,
+    );
+  }
+}
+
 export const rideRequestSchema = z.object({
   riderId: z.string().uuid(),
   pickup: addressPointSchema,
@@ -45,7 +82,7 @@ export const rideRequestSchema = z.object({
   /** Multi-taxi orders (transfers): how many cars this order needs. Each becomes its own ride. */
   vehicleCount: z.number().int().min(1).max(5).default(1),
   /** Rider's own price offer in cents (rider_bid pricing model only). */
-  offeredPriceCents: z.number().int().positive().optional(),
+  offeredPriceCents: positiveCentsSchema.optional(),
 });
 export type RideRequest = z.infer<typeof rideRequestSchema>;
 
