@@ -93,10 +93,18 @@ export class VehiclesService {
       throw new NotFoundException('vehicle_not_found');
 
     if ((await this.vehicles.countForDriver(userId)) > 0) return;
-    if (profile.status !== 'online') return;
 
+    // Redis first, then Postgres — the same "fail toward not dispatchable"
+    // order `setPresence` documents.
     await this.locations.markOffline(this.env.DEFAULT_CITY_ID, userId);
-    await this.drivers.setStatus(userId, 'offline');
+
+    // A conditional UPDATE, not `profile.status !== 'online'` (L8). That status
+    // was read BEFORE the delete, so a `PUT status=online` landing in between
+    // was invisible: the early return left a driver online with zero cars.
+    // `undefined` means they were not online, so nothing changed to report.
+    const forcedOffline = await this.drivers.setOfflineIfOnline(userId);
+    if (!forcedOffline) return;
+
     this.logger.log({
       event: 'driver.presence.forced_offline',
       driverId: userId,

@@ -7,7 +7,7 @@ import {
   createTestApp,
   type TestApp,
 } from '../../../test/harness';
-import { AuthTokenService } from '../auth/auth-token.service';
+import { AuthTokenService } from '../auth';
 import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeService } from './realtime.service';
 import { RedisIoAdapter } from './redis-io.adapter';

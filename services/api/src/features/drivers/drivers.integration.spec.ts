@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { createTestApp, phoneFor, type TestApp } from '../../../test/harness';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
+import { DriversRepository } from './drivers.repository';
 import { DriversService } from './drivers.service';
 import { VehiclesRepository } from './vehicles.repository';
 
@@ -116,6 +117,27 @@ describe('drivers (integration)', () => {
       .set('authorization', d.auth)
       .expect(200);
     expect(vehicleSchema.array().parse(listed.body)).toEqual([created]);
+  });
+
+  it('reads /drivers/me without an upsert once the row exists (edge — L5)', async () => {
+    const d = await driver(30);
+    await http.get('/drivers/me').set('authorization', d.auth).expect(200);
+
+    // `findOrCreate` is `ON CONFLICT DO UPDATE SET user_id = user_id` — still
+    // an UPDATE, so a dead tuple per call on the driver app's bootstrap. Once
+    // the row is there, this route must only read.
+    const spy = jest.spyOn(ctx.app.get(DriversRepository), 'findOrCreate');
+    try {
+      const res = await http
+        .get('/drivers/me')
+        .set('authorization', d.auth)
+        .expect(200);
+
+      expect(driverMeSchema.parse(res.body).profile.userId).toBe(d.id);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("refuses a plate another driver already registered (failure — it's the kerbside identity)", async () => {

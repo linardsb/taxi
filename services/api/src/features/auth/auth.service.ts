@@ -8,13 +8,14 @@ import {
 } from '@nestjs/common';
 import {
   authSessionSchema,
+  SIGNUP_ROLES,
   type AuthSession,
   type OtpRequest,
   type OtpRequestResponse,
   type OtpVerify,
-  type SignupRole,
   type SmsProvider,
 } from '@taxi/shared';
+import { z } from 'zod';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { KV_STORE, type KeyValueStore } from '../../common/kv/kv.store';
@@ -31,10 +32,27 @@ import {
 import { maskPhone } from './phone-mask';
 import { SMS_PROVIDER } from './sms/sms.tokens';
 
-/** What lives under `otp:code:<phone>` for the life of one code. */
-interface OtpRecord {
-  hash: string;
-  role: SignupRole;
+/**
+ * What lives under `otp:code:<phone>` for the life of one code.
+ *
+ * Parsed, not cast. A truncated write or a foreign value under this key used to
+ * make `record.hash` undefined and `Buffer.from(undefined, 'hex')` throw a
+ * TypeError — a 500 on verify where the whole endpoint is built to answer 401.
+ */
+const otpRecordSchema = z.object({
+  hash: z.string(),
+  role: z.enum(SIGNUP_ROLES),
+});
+type OtpRecord = z.infer<typeof otpRecordSchema>;
+
+/** Never throws: a record we cannot read is a record that cannot verify. */
+function parseOtpRecord(raw: string): OtpRecord | undefined {
+  try {
+    const parsed = otpRecordSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined; // not even JSON
+  }
 }
 
 const codeKey = (phone: string) => `otp:code:${phone}`;
@@ -125,7 +143,7 @@ export class AuthService {
     if (count > OTP_MAX_REQUESTS_PER_HOUR) {
       await this.kv.del(cooldownKey(phone)); // nothing was sent
       this.logger.warn({
-        event: 'auth.otp.throttled',
+        event: 'auth.otp.request_throttled',
         phone: masked,
         count,
         at: new Date().toISOString(),
@@ -167,7 +185,7 @@ export class AuthService {
     }
 
     this.logger.log({
-      event: 'auth.otp.requested',
+      event: 'auth.otp.request_completed',
       phone: masked,
       at: new Date().toISOString(),
     });
@@ -193,7 +211,18 @@ export class AuthService {
       });
       throw new UnauthorizedException(REJECTED);
     }
-    const record = JSON.parse(raw) as OtpRecord;
+    const record = parseOtpRecord(raw);
+    if (!record) {
+      // Same rejection as a missing key: an unreadable record is a code that
+      // cannot be verified, and nothing about it should reach the caller.
+      this.logger.warn({
+        event: 'auth.otp.verify_rejected',
+        phone: masked,
+        reason: 'unreadable_record',
+        at,
+      });
+      throw new UnauthorizedException(REJECTED);
+    }
 
     // The counter carries the code's REMAINING life, never a fresh window, so
     // it dies with the code it belongs to. A code that expired between the read

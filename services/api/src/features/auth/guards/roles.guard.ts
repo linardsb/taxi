@@ -23,6 +23,15 @@ export class RolesGuard implements CanActivate {
     ]);
     if (!roles?.length) return true;
 
+    // `switchToHttp()` on a ws/rpc context yields undefined, and reading
+    // `.user` off it is a TypeError, not a refusal. Safe today only because
+    // JwtAuthGuard rejects non-HTTP first — but its @Public() early return
+    // comes BEFORE that check, so a @Public() + @Roles() socket handler would
+    // arrive here and crash. Fail closed instead: a role requirement this
+    // guard cannot evaluate is a role requirement that is not met.
+    if (ctx.getType() !== 'http')
+      throw new ForbiddenException('insufficient_role');
+
     const user = ctx.switchToHttp().getRequest<{ user?: JwtClaims }>().user;
     if (!user || !roles.includes(user.role))
       throw new ForbiddenException('insufficient_role');

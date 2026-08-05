@@ -13,7 +13,7 @@ import {
   type TestApp,
 } from '../../../test/harness';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
-import { AuthTokenService } from '../auth/auth-token.service';
+import { AuthTokenService } from '../auth';
 import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeService } from './realtime.service';
 

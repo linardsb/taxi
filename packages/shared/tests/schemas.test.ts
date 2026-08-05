@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { splitFare } from "../src/commission";
 import { phoneSchema } from "../src/schemas/user";
 import {
+  assertFareQuoteConsistent,
   assertOfferSplitConsistent,
   assertRideAssignmentConsistent,
   assertRideSplitConsistent,
+  fareQuoteSchema,
+  isFareQuoteConsistent,
   isOfferSplitConsistent,
   isRideAssignmentConsistent,
   isRideSplitConsistent,
@@ -60,6 +63,74 @@ describe("rideRequestSchema", () => {
 
   it("rejects an unknown payment method (failure)", () => {
     expect(rideRequestSchema.safeParse({ ...base, paymentMethod: "crypto" }).success).toBe(false);
+  });
+
+  it("takes a rider's bid through the cents primitive, zero included (failure — #30)", () => {
+    expect(rideRequestSchema.parse({ ...base, offeredPriceCents: 1500 }).offeredPriceCents).toBe(1500);
+
+    // A €0 bid is not a cheap ride, it is a missing one — which is why this
+    // uses `positiveCentsSchema` and not `nonNegativeCentsSchema`. Zero is the
+    // single value the two disagree on, so it is the one worth pinning.
+    expect(rideRequestSchema.safeParse({ ...base, offeredPriceCents: 0 }).success).toBe(false);
+    expect(rideRequestSchema.safeParse({ ...base, offeredPriceCents: -100 }).success).toBe(false);
+    // The whole point of the money primitives: no float reaches an amount.
+    expect(rideRequestSchema.safeParse({ ...base, offeredPriceCents: 15.5 }).success).toBe(false);
+  });
+});
+
+/**
+ * #29, settled: the breakdown must reconcile for the models where the total is
+ * derived from it, and is free not to for `rider_bid`, where the total is the
+ * rider's own offer. Encoded as a predicate rather than a `.refine()` so
+ * `fareQuoteSchema` stays a plain ZodObject for #6's Drizzle insert shapes.
+ */
+describe("isFareQuoteConsistent", () => {
+  const quote = (over: Record<string, unknown> = {}) => ({
+    model: "upfront_fixed",
+    currency: "EUR",
+    totalCents: 2000,
+    breakdown: { baseCents: 300, distanceCents: 1400, timeCents: 300, discountCents: 0 },
+    ...over,
+  });
+
+  it("accepts a breakdown that sums to the total (expected)", () => {
+    expect(isFareQuoteConsistent(fareQuoteSchema.parse(quote()))).toBe(true);
+  });
+
+  it("counts a discount toward the total (edge — the one negative term)", () => {
+    const parsed = fareQuoteSchema.parse(
+      quote({
+        totalCents: 1800,
+        breakdown: { baseCents: 300, distanceCents: 1400, timeCents: 300, discountCents: -200 },
+      }),
+    );
+    expect(isFareQuoteConsistent(parsed)).toBe(true);
+  });
+
+  it("catches the breakdown that parses clean but does not reconcile (failure)", () => {
+    // The exact shape from #29: schema-valid, and €20.00 of nothing.
+    const parsed = fareQuoteSchema.parse(
+      quote({
+        breakdown: { baseCents: 1, distanceCents: 1, timeCents: 1, discountCents: -9000 },
+      }),
+    );
+
+    // It still PARSES — that is the decision, not an oversight. The schema
+    // cannot enforce this without becoming a ZodEffects, so the predicate is
+    // what the write and emit boundaries call.
+    expect(parsed.totalCents).toBe(2000);
+    expect(isFareQuoteConsistent(parsed)).toBe(false);
+    expect(() => assertFareQuoteConsistent(parsed)).toThrow(/does not sum to totalCents/);
+  });
+
+  it("leaves a rider_bid quote free not to reconcile (edge — why this is not a refine)", () => {
+    // The total is the rider's own offer; the breakdown is an estimate of what
+    // the ride is worth. A `.refine()` on the schema would make this
+    // unrepresentable rather than merely inconsistent.
+    const bid = fareQuoteSchema.parse(quote({ model: "rider_bid", totalCents: 2500 }));
+
+    expect(bid.model).toBe("rider_bid");
+    expect(isFareQuoteConsistent(bid)).toBe(false); // and that is allowed
   });
 });
 

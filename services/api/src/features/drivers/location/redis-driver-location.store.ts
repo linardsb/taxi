@@ -13,8 +13,36 @@ const geoKey = (cityId: string) => `drivers:geo:${cityId}`;
 /** Its own key because a GEO member cannot carry a last-seen score of its own. */
 const seenKey = (cityId: string) => `drivers:seen:${cityId}`;
 
-/** GEOSEARCH … WITHDIST WITHCOORD → [member, distance, [lng, lat]]; every leaf is a STRING. */
+/**
+ * GEOSEARCH … WITHDIST WITHCOORD → [member, distance, [lng, lat]]; every leaf
+ * is a STRING.
+ *
+ * Validated rather than cast (L6). ioredis types every reply as `unknown`, and
+ * a cast over a shape change yields `{lat: NaN, lng: NaN}` typed as a `LatLng`
+ * that was never parsed — a driver at the origin, silently, in the data
+ * dispatch picks from. A malformed row is dropped, never guessed at.
+ */
 type GeoSearchRow = [string, string, [string, string]];
+
+const isNumeric = (v: unknown): v is string =>
+  typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v));
+
+/** Exported for its spec — a malformed reply must be provable, not assumed. */
+export function asGeoSearchRow(value: unknown): GeoSearchRow | undefined {
+  if (!Array.isArray(value) || value.length < 3) return undefined;
+  const [member, distance, coord] = value as unknown[];
+  if (typeof member !== 'string' || !isNumeric(distance)) return undefined;
+  if (!Array.isArray(coord) || coord.length < 2) return undefined;
+  const [lng, lat] = coord as unknown[];
+  if (!isNumeric(lng) || !isNumeric(lat)) return undefined;
+  return [member, distance, [lng, lat]];
+}
+
+/** ZRANGEBYSCORE returns a flat array of members; anything else is not usable. */
+export function asMemberSet(value: unknown): Set<string> {
+  if (!Array.isArray(value)) return new Set();
+  return new Set(value.filter((v): v is string => typeof v === 'string'));
+}
 
 @Injectable()
 export class RedisDriverLocationStore
@@ -24,6 +52,14 @@ export class RedisDriverLocationStore
 
   constructor(url: string) {
     this.redis = new Redis(url);
+    // EVALSHA with an automatic NOSCRIPT fallback, instead of shipping the Lua
+    // source on every ping (L4). ioredis caches the SHA and re-sends the body
+    // only if the server has forgotten it — a restart or SCRIPT FLUSH — so the
+    // atomicity argument below is unchanged; only the bytes on the wire shrink.
+    this.redis.defineCommand('recordDriverPosition', {
+      numberOfKeys: 3,
+      lua: RedisDriverLocationStore.RECORD,
+    });
   }
 
   async markOnline(cityId: string, driverId: string): Promise<void> {
@@ -57,15 +93,26 @@ export class RedisDriverLocationStore
     return 1
   `;
 
+  /**
+   * `defineCommand` attaches the command to the client at runtime, so it needs
+   * its own type — and it must stay BOUND to the client, or ioredis's generated
+   * function loses the `this` it sends on.
+   */
+  private get recordCommand(): (...args: string[]) => Promise<unknown> {
+    const client = this.redis as unknown as Record<
+      string,
+      (...a: string[]) => Promise<unknown>
+    >;
+    return client.recordDriverPosition!.bind(this.redis);
+  }
+
   async record(
     cityId: string,
     driverId: string,
     location: LatLng,
     atMs: number,
   ): Promise<boolean> {
-    const result = await this.redis.eval(
-      RedisDriverLocationStore.RECORD,
-      3,
+    const result = await this.recordCommand(
       onlineKey(cityId),
       geoKey(cityId),
       seenKey(cityId),
@@ -110,11 +157,14 @@ export class RedisDriverLocationStore
     if (geoReply?.[0]) throw geoReply[0];
     if (freshReply?.[0]) throw freshReply[0];
 
-    const fresh = new Set((freshReply?.[1] ?? []) as string[]);
-    const rows = (geoReply?.[1] ?? []) as GeoSearchRow[];
+    const fresh = asMemberSet(freshReply?.[1]);
+    const rawRows = Array.isArray(geoReply?.[1]) ? geoReply[1] : [];
 
     const nearby: NearbyDriver[] = [];
-    for (const [driverId, distance, coord] of rows) {
+    for (const raw of rawRows) {
+      const row = asGeoSearchRow(raw);
+      if (!row) continue; // unreadable beats a driver at {NaN, NaN}
+      const [driverId, distance, coord] = row;
       if (!fresh.has(driverId)) continue; // socket went away without going offline
       nearby.push({
         driverId,

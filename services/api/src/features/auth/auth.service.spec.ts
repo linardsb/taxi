@@ -418,6 +418,27 @@ describe('AuthService.verifyOtp', () => {
     expect(session.user.id).toBe(USER_ID);
   });
 
+  it('answers 401 for an unreadable record, never a 500 (failure)', async () => {
+    const { service, kv } = build();
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+
+    // `rejection()` insists on an UnauthorizedException, so the TypeError this
+    // used to throw — `Buffer.from(undefined, 'hex')` on a record with no
+    // `hash` — fails the test rather than passing as "it rejected".
+    await kv.setWithTtl(`otp:code:${PHONE}`, 'not-json-at-all', 300);
+    await rejection(service.verifyOtp({ phone: PHONE, code: '000000' }));
+
+    await kv.setWithTtl(
+      `otp:code:${PHONE}`,
+      JSON.stringify({ role: 'driver' }), // valid JSON, no hash
+      300,
+    );
+    await rejection(service.verifyOtp({ phone: PHONE, code: '000000' }));
+
+    await kv.setWithTtl(`otp:code:${PHONE}`, JSON.stringify(['nope']), 300);
+    await rejection(service.verifyOtp({ phone: PHONE, code: '000000' }));
+  });
+
   it('makes a wrong code and an expired code indistinguishable (failure)', async () => {
     const wrong = build();
     await wrong.service.requestOtp({ phone: PHONE, role: 'driver' });
