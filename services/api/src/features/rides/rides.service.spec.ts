@@ -204,6 +204,24 @@ describe('RidesService', () => {
     await expect(service.request(RIDER_ID, body)).resolves.toBeDefined();
   });
 
+  it('does not charge quota for a request rejected at the boundary (edge)', async () => {
+    // The cap bounds paid Routes calls, and a rejected request never reaches
+    // one. Charging it quota would lock out a rider whose app sends a bad body
+    // while buying nothing against an attacker — whose invalid requests already
+    // cost nothing. Pins the ordering: with the cap at the top of `request`,
+    // the valid request below is throttled instead of served.
+    const { service, calls } = build();
+
+    for (let i = 0; i <= RIDE_REQUEST_MAX_PER_WINDOW; i += 1) {
+      await expect(
+        service.request(RIDER_ID, { ...body, vehicleCount: 3 }),
+      ).rejects.toThrow(BadRequestException);
+    }
+
+    expect(calls).toEqual([]);
+    await expect(service.request(RIDER_ID, body)).resolves.toBeDefined();
+  });
+
   it('logs ride.request.failed when the spending path throws (failure)', async () => {
     // Without this the only trace of a 500 on POST /rides is Nest's default
     // exception log — no riderId, no category, nothing to tell "one rider, one
