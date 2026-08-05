@@ -6,8 +6,13 @@ import {
   type Ride,
   type RideRequestBody,
 } from '@taxi/shared';
+import { InMemoryKeyValueStore } from '../../../test/harness';
 import type { PricingService } from '../pricing';
 import type { RealtimeService } from '../realtime';
+import {
+  RIDE_REQUEST_MAX_PER_WINDOW,
+  RIDE_REQUEST_WINDOW_SECONDS,
+} from './rides.policy';
 import { RidesService } from './rides.service';
 import type { RidesRepository } from './rides.repository';
 
@@ -48,7 +53,7 @@ const split = {
   driverNetCents: 1_105,
 } as FareSplit;
 
-function build() {
+function build(options: { realtimeThrows?: boolean } = {}) {
   /** One shared log, so ORDER is assertable and not just occurrence. */
   const calls: string[] = [];
   const emitted: { event: string; payload: Record<string, unknown> }[] = [];
@@ -77,6 +82,7 @@ function build() {
   const realtime = {
     joinRideRoom: () => {
       calls.push('joinRideRoom');
+      if (options.realtimeThrows) throw new Error('socket server is gone');
     },
     emitToRide: (
       _rideId: string,
@@ -88,10 +94,13 @@ function build() {
     },
   } as unknown as RealtimeService;
 
+  const kv = new InMemoryKeyValueStore();
+
   return {
-    service: new RidesService(pricing, rides, realtime),
+    service: new RidesService(pricing, rides, realtime, kv),
     calls,
     emitted,
+    kv,
     createdStatus: () => created?.status,
   };
 }
@@ -155,5 +164,49 @@ describe('RidesService', () => {
     ).rejects.toThrow(/scheduled_in_past/);
 
     expect(calls).toEqual([]);
+  });
+
+  it('throttles a rider past the window cap without spending a maps call (failure)', async () => {
+    // The <€100/mo guardrail: the route cache does NOT save you here, because a
+    // caller varying coordinates by >~11 m gets a fresh paid call every time.
+    const { service, calls } = build();
+
+    for (let i = 0; i < RIDE_REQUEST_MAX_PER_WINDOW; i += 1) {
+      await service.request(RIDER_ID, body);
+    }
+    const spentWhileAllowed = calls.length;
+
+    await expect(service.request(RIDER_ID, body)).rejects.toThrow(
+      /too_many_requests/,
+    );
+
+    // The rejected request cost nothing — no quote, no row.
+    expect(calls.length).toBe(spentWhileAllowed);
+  });
+
+  it('lets the same rider through once the window rolls over (edge)', async () => {
+    const { service, kv } = build();
+
+    for (let i = 0; i < RIDE_REQUEST_MAX_PER_WINDOW; i += 1) {
+      await service.request(RIDER_ID, body);
+    }
+    await expect(service.request(RIDER_ID, body)).rejects.toThrow(
+      /too_many_requests/,
+    );
+
+    kv.advance(RIDE_REQUEST_WINDOW_SECONDS + 1);
+
+    await expect(service.request(RIDER_ID, body)).resolves.toBeDefined();
+  });
+
+  it('returns the committed ride even when the socket emit fails (failure)', async () => {
+    // The ride is already committed. A 500 here would send the rider back to
+    // tap Book again — which books a second car to the same kerb.
+    const { service, calls } = build({ realtimeThrows: true });
+
+    const result = await service.request(RIDER_ID, body);
+
+    expect(result.ride.id).toBe(RIDE_ID);
+    expect(calls).toContain('rides.create');
   });
 });

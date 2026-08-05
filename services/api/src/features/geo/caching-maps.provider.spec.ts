@@ -65,16 +65,55 @@ describe('CachingMapsProvider', () => {
     expect(source.routeCalls).toBe(2);
   });
 
-  it('throws on a corrupt cache entry rather than returning garbage (failure)', async () => {
-    const { kv, maps } = build();
-    // A cache entry is untrusted input like any other boundary. Casting instead
-    // of parsing would feed `NaN` cents into a fare.
+  it('drops a corrupt cache entry and re-routes rather than returning garbage (failure)', async () => {
+    const { kv, source, maps } = build();
+    // A cache entry is untrusted input like any other boundary — casting
+    // instead of parsing would feed `NaN` cents into a fare. Rejecting it is
+    // not enough on its own, though: throwing pinned the corridor to a 500
+    // until the TTL expired, so the entry is dropped and re-fetched instead.
     await kv.setWithTtl(
       routeCacheKey(CENTRE, RIX),
       '{"distanceMeters":"nope"}',
       60,
     );
 
+    const route = await maps.route(CENTRE, RIX);
+
+    expect(source.routeCalls).toBe(1);
+    expect(route.distanceMeters).toBeGreaterThan(0);
+    expect(await kv.get(routeCacheKey(CENTRE, RIX))).toBe(
+      JSON.stringify(route),
+    );
+  });
+
+  it('recovers from cache bytes JSON.parse cannot read (failure)', async () => {
+    const { kv, source, maps } = build();
+    await kv.setWithTtl(routeCacheKey(CENTRE, RIX), 'not json at all', 60);
+
+    const route = await maps.route(CENTRE, RIX);
+
+    expect(source.routeCalls).toBe(1);
+    expect(route.distanceMeters).toBeGreaterThan(0);
+  });
+
+  it('refuses to cache a result that breaks the seam contract (failure)', async () => {
+    // Fractional metres are what a real Routes response produces. Written
+    // unparsed, they served the first caller and threw for every one after,
+    // for the whole 24h TTL — so the write is parsed and nothing is stored.
+    const kv = new InMemoryKeyValueStore();
+    const fractional: MapsProvider = {
+      route: () =>
+        Promise.resolve({
+          distanceMeters: 10234.5,
+          durationSeconds: 1187.4,
+          polyline: 'abc',
+        }),
+      geocode: jest.fn(),
+      reverseGeocode: jest.fn(),
+    };
+    const maps = new CachingMapsProvider(fractional, kv, 3600);
+
     await expect(maps.route(CENTRE, RIX)).rejects.toThrow();
+    expect(await kv.get(routeCacheKey(CENTRE, RIX))).toBeNull();
   });
 });

@@ -33,6 +33,11 @@ export class PricingService {
   async quote(
     request: RideRequest,
   ): Promise<{ quote: FareQuote; split: FareSplit }> {
+    // Read BEFORE the maps call: this throws hard on a missing row (the
+    // config-not-constant rule), and an unseeded environment should not spend
+    // a paid route call only to 500 three lines later.
+    const config = await this.platformConfig.forCity(this.env.DEFAULT_CITY_ID);
+
     // `request.stops` are AddressPoints; the seam takes LatLngs.
     const route = await this.maps.route(
       request.pickup.location,
@@ -42,8 +47,6 @@ export class PricingService {
 
     const quote = await this.strategy.quote(request, route);
     assertFareQuoteConsistent(quote);
-
-    const config = await this.platformConfig.forCity(this.env.DEFAULT_CITY_ID);
 
     // No driver exists at quote time, so the resolution can only be the
     // platform base — `CommissionDriverInput` is structural precisely so
