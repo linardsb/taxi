@@ -47,8 +47,6 @@ export class RidesService {
   ) {}
 
   async request(riderId: string, body: RideRequestBody): Promise<RideCreated> {
-    await this.assertWithinRateLimit(riderId);
-
     // The server's identity wins. A body-supplied `riderId` was already
     // stripped by `.omit()` — this re-parse is what makes that structural.
     const request = rideRequestSchema.parse({ ...body, riderId });
@@ -64,6 +62,13 @@ export class RidesService {
     if (request.scheduledFor && request.scheduledFor.getTime() <= Date.now()) {
       throw new BadRequestException('scheduled_in_past');
     }
+
+    // AFTER the rejections above and BEFORE the quote. The cap exists to bound
+    // paid Routes calls, and a rejected request never reaches one — charging it
+    // quota would only lock out a rider whose app sends a bad body, while
+    // buying nothing against an attacker whose invalid requests already cost
+    // nothing.
+    await this.assertWithinRateLimit(riderId);
 
     try {
       const { quote, split } = await this.pricing.quote(request);

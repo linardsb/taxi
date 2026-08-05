@@ -6,6 +6,10 @@
  * is ~11 m, so a caller varying them by more than that gets a fresh cache key,
  * hence a fresh paid Routes call, every single request. The cache bounds the
  * cost of ordinary traffic; this cap is what bounds the hostile case.
+ *
+ * The numbers themselves are a guess: there is no traffic yet, and a real
+ * rider re-quotes a handful of times at most. Tune them when the first Google
+ * bill exists — the same trigger `COORD_PRECISION` carries.
  */
 export const RIDE_REQUEST_MAX_PER_WINDOW = 20;
 export const RIDE_REQUEST_WINDOW_SECONDS = 600; // 10 min
