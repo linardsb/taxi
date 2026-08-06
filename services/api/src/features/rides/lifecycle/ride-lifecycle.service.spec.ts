@@ -573,6 +573,7 @@ describe('RideLifecycleService', () => {
 
     it('records WHICH dispatcher, and never the free text they typed (failure — PII)', async () => {
       const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       const { service } = build({ ride: lifecycleRide({ status: 'arrived' }) });
 
       await service.cancel({
@@ -592,11 +593,19 @@ describe('RideLifecycleService', () => {
         to: 'cancelled_by_dispatcher',
         hasReason: true,
       });
-      // An address and an unmasked phone number, both forbidden. The whole
-      // payload is searched, not just the field the text used to live in.
       expect(applied).not.toHaveProperty('reason');
-      expect(JSON.stringify(applied)).not.toContain('26123456');
-      expect(JSON.stringify(applied)).not.toContain('Brīvības');
+
+      // EVERY payload from EVERY logger this flow touches, not just the field
+      // the text used to live in: the standard forbids the address and the
+      // unmasked phone number reaching a log at all, so renaming one field is
+      // not what is under test. The reason still travels on `ride:status` to
+      // the phones, which is where it belongs.
+      const everything = JSON.stringify([
+        ...payloadsOf(log),
+        ...payloadsOf(warn),
+      ]);
+      expect(everything).not.toContain('26123456');
+      expect(everything).not.toContain('Brīvības');
     });
 
     it('reports hasReason: false when no reason was given (edge)', async () => {

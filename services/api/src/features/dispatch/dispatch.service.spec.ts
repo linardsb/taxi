@@ -186,6 +186,10 @@ function build(
 }
 
 describe('DispatchService', () => {
+  // A logger spy left installed by a throwing test would silence every suite
+  // after it, so restoring is the suite's job rather than each test's.
+  afterEach(() => jest.restoreAllMocks());
+
   describe('accept', () => {
     it('writes the audit row, revokes siblings and emits ride:assigned (expected)', async () => {
       const { service, insertAudit, assignDriver, emitToRide, emitToDriver } =
@@ -286,8 +290,6 @@ describe('DispatchService', () => {
         driverId: DRIVER_ID,
         offerId: OFFER_ID,
       });
-
-      warn.mockRestore();
     });
 
     it('409s and transitions nothing when another driver already took it (edge)', async () => {
