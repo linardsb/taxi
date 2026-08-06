@@ -14,8 +14,9 @@ export default tseslint.config(
   {
     languageOptions: {
       globals: {
+        // No test globals: this package runs vitest, and vitest.config.ts does
+        // not set `globals: true` — every test imports from "vitest" directly.
         ...globals.node,
-        ...globals.jest,
       },
       sourceType: 'commonjs',
       parserOptions: {

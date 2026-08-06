@@ -316,7 +316,7 @@ describe('event typing', () => {
       payload,
     ) => {
       // @ts-expect-error — untrusted: parse with driverLocationPingSchema first
-      payload.location;
+      void payload.location;
       expect(driverLocationPingSchema.parse(payload).location).toEqual(riga);
     };
     handler({ location: riga, at });
