@@ -33,7 +33,8 @@ Contracts flow one way: apps and `services/api` import from `packages/shared`; *
 ## Commands
 
 ```bash
-docker compose up -d          # postgres+postgis, redis
+cp .env.example .env          # first — compose reads REDIS_PORT from it (set 6381 if 6379 is taken)
+docker compose up -d --wait   # postgres+postgis, redis — blocks until both are healthy
 pnpm install                  # root, once
 pnpm turbo run typecheck lint test build --force   # ← the validation gate (CI parity)
 pnpm check                    # typecheck + lint + test — quick loop, NOT the gate: no build

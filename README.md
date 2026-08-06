@@ -9,9 +9,9 @@ Taxi booking platform for Latvia — driver-first Bolt competitor. Rider + drive
 ## Quick start
 
 ```bash
-docker compose up -d     # postgres+postgis :5432, redis :6379
+cp .env.example .env     # first — compose reads REDIS_PORT from it; set 6381 if 6379 is taken
+docker compose up -d --wait   # postgres+postgis :5432, redis :$REDIS_PORT — blocks until healthy
 pnpm install
-cp .env.example .env     # fill in keys as needed; empty works for dev
 pnpm check               # typecheck + lint + test everywhere
 pnpm --filter @taxi/api dev        # API on :3001
 pnpm --filter @taxi/dispatch dev   # dispatcher portal on :3000

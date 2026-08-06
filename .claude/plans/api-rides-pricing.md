@@ -857,7 +857,7 @@ Execute every command to ensure zero regressions and 100% feature correctness. R
 ### Level 0: Prerequisites (once, before Task 5)
 
 ```bash
-docker compose up -d          # postgis + redis
+docker compose up -d --wait   # postgis + redis — needs .env for REDIS_PORT
 docker ps                     # both healthy
 pnpm install
 ```

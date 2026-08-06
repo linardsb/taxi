@@ -510,7 +510,7 @@ The one that matters. **This exact sequence was executed during planning and cam
 "Dry-run verification" in NOTES.
 
 ```bash
-docker compose up -d
+docker compose up -d --wait   # needs .env for REDIS_PORT
 git clean -xdf -- packages/shared/dist db/dist services/api/dist   # cold — this is the point
 DATABASE_URL=postgres://taxi:taxi@192.168.1.11:5432/taxi \
 pnpm turbo run typecheck lint test build --force
