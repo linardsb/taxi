@@ -1,3 +1,7 @@
 # style: adopt the root prettier config across shared and db (#50)
 # Mechanical reformat of packages/shared and db — no behavior change.
 ca4f698121018eb1231c78388384801e423a7b76
+
+# style: adopt the root prettier config across the four apps (#54)
+# Mechanical reformat of apps/admin and apps/dispatch — no behavior change.
+a2dda32a7c46b4508cc57985d53e86fba91bff0d
