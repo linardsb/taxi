@@ -11,8 +11,8 @@
 | # | Action | Who | Check |
 |---|---|---|---|
 | 0.1 | Paste `backend/Code.flat.gs` into script.google.com → Deploy → **New version** (fixes digest recipients + email deep links) | Linards | Send yourself a test digest; Dina's address receives it |
-| 0.2 | `docker compose up -d` | either | `docker ps` shows postgis + redis |
-| 0.3 | `cp .env.example .env` (fill values) | Linards | `pnpm --filter @taxi/api dev` boots, `curl localhost:3001/health` → 200 |
+| 0.2 | `cp .env.example .env` (fill values; set `REDIS_PORT=6381` if 6379 is taken) | Linards | `pnpm --filter @taxi/api dev` boots, `curl localhost:3001/health` → 200 |
+| 0.3 | `docker compose up -d --wait` — after 0.2, compose reads `REDIS_PORT` from `.env` | either | `docker ps` shows postgis + redis |
 | 0.4 | `pnpm install && pnpm check` | either | 12/12 turbo tasks green (baseline) |
 
 ## Step 1 — Slice the epic into tickets (one session, new tab)

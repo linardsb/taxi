@@ -36,7 +36,7 @@ export default async function setup(): Promise<void> {
     await adminPool.query(`CREATE DATABASE ${TEST_DB_NAME}`);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ECONNREFUSED') {
-      throw new Error('Postgres is not up — run: docker compose up -d');
+      throw new Error('Postgres is not up — run: docker compose up -d --wait');
     }
     throw err;
   } finally {

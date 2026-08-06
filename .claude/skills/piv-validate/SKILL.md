@@ -13,7 +13,7 @@ This is a pnpm/turbo monorepo. **One command is the gate** — `pnpm check` at t
 **Prerequisite:** integration tests (e.g. `@taxi/db` against Postgres/PostGIS) need the docker services up:
 
 ```bash
-docker compose up -d          # postgres+postgis, redis — idempotent, safe to re-run
+docker compose up -d --wait   # postgres+postgis, redis — idempotent, safe to re-run; needs .env for REDIS_PORT
 ```
 
 Run the checks in order. Keep going after a failure so the report covers everything, and capture the

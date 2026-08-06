@@ -1028,7 +1028,7 @@ pnpm --filter @taxi/api exec jest src/features/geozones src/features/rides src/f
 ### Level 3: Integration Tests
 
 ```bash
-docker compose up -d
+docker compose up -d --wait   # needs .env for REDIS_PORT
 pnpm --filter @taxi/db migrate && pnpm --filter @taxi/db seed
 pnpm --filter @taxi/api exec jest src/features/dispatch/dispatch.integration.spec.ts
 REDIS_TEST_URL=redis://127.0.0.1:6381 pnpm --filter @taxi/api test   # no suite may skip
