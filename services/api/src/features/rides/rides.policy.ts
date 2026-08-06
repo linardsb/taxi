@@ -35,6 +35,11 @@ export const RIDE_IDEMPOTENCY_TTL_SECONDS = 86_400; // 24 h
  * one reserve, which is #46 back again; that constraint sets the floor, and the
  * value above it is deliberately the smallest one that clears it.
  *
+ * NOTHING ENFORCES THAT CEILING YET: no maps call carries a timeout, so a hang
+ * past this window would reopen #46 by a new door. Unreachable today — the only
+ * provider is `StubMapsProvider` — but a real Routes client needs a timeout
+ * well under this value, not a longer window here.
+ *
  * Short because a `pending` marker is the one state nothing can clear on its
  * own: a process death between the commit and `recordIdempotency` leaves it
  * behind, and the rider — who never got a 201, so holds no ride id — 409s on
