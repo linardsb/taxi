@@ -1,13 +1,13 @@
-import { z } from "zod";
-import { DRIVER_PRESENCE_STATUSES, DRIVER_STATUSES, LANGUAGES } from "../enums";
-import { centsSchema, commissionPctSchema } from "../money";
-import { vehicleSchema } from "./vehicle";
+import { z } from 'zod';
+import { DRIVER_PRESENCE_STATUSES, DRIVER_STATUSES, LANGUAGES } from '../enums';
+import { centsSchema, commissionPctSchema } from '../money';
+import { vehicleSchema } from './vehicle';
 
 export const driverProfileSchema = z.object({
   userId: z.string().uuid(),
-  status: z.enum(DRIVER_STATUSES).default("offline"),
+  status: z.enum(DRIVER_STATUSES).default('offline'),
   /** Languages the driver speaks — shown as badges to riders (outline: RU/LV/EN/IT…). */
-  spokenLanguages: z.array(z.enum(LANGUAGES)).default(["lv"]),
+  spokenLanguages: z.array(z.enum(LANGUAGES)).default(['lv']),
   /** Used only for the rider's female-driver preference filter. */
   isFemale: z.boolean().optional(),
   /**
@@ -41,7 +41,7 @@ export const driverProfileUpdateSchema = z
     spokenLanguages: z.array(z.enum(LANGUAGES)).min(1).optional(),
     isFemale: z.boolean().optional(),
   })
-  .refine((p) => Object.keys(p).length > 0, { message: "empty update" });
+  .refine((p) => Object.keys(p).length > 0, { message: 'empty update' });
 export type DriverProfileUpdate = z.infer<typeof driverProfileUpdateSchema>;
 
 /** Presence toggle. `on_ride` is not a value a driver may send — see DRIVER_PRESENCE_STATUSES. */

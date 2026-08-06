@@ -1,6 +1,6 @@
-import type { DispatchMode, DriverStatus } from "../enums";
-import type { LatLng } from "../schemas/geo";
-import type { RideRequest } from "../schemas/ride";
+import type { DispatchMode, DriverStatus } from '../enums';
+import type { LatLng } from '../schemas/geo';
+import type { RideRequest } from '../schemas/ride';
 
 export interface DriverCandidate {
   driverId: string;
@@ -24,5 +24,8 @@ export interface DispatchContext {
  */
 export interface DispatchStrategy {
   readonly mode: DispatchMode;
-  findCandidates(request: RideRequest, ctx: DispatchContext): Promise<DriverCandidate[]>;
+  findCandidates(
+    request: RideRequest,
+    ctx: DispatchContext,
+  ): Promise<DriverCandidate[]>;
 }

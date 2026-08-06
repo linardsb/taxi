@@ -1,8 +1,8 @@
-import { z } from "zod";
-import { ASSIGNMENT_SOURCES, DRIVER_STATUSES } from "./enums";
-import { RIDE_STATUSES } from "./ride-state-machine";
-import { addressPointSchema, latLngSchema } from "./schemas/geo";
-import { rideOfferSchema } from "./schemas/ride";
+import { z } from 'zod';
+import { ASSIGNMENT_SOURCES, DRIVER_STATUSES } from './enums';
+import { RIDE_STATUSES } from './ride-state-machine';
+import { addressPointSchema, latLngSchema } from './schemas/geo';
+import { rideOfferSchema } from './schemas/ride';
 
 /**
  * Socket.IO event names and zod payload schemas shared by api, rider, driver,
@@ -20,14 +20,14 @@ import { rideOfferSchema } from "./schemas/ride";
  * from here.
  */
 export const RT = {
-  driverLocation: "driver:location",
-  driverQueue: "driver:queue",
-  rideStatus: "ride:status",
-  rideOffer: "ride:offer",
-  rideOfferRevoked: "ride:offer_revoked",
-  rideAssigned: "ride:assigned",
-  dispatchBoard: "dispatch:board",
-  dispatchUnclaimed: "dispatch:unclaimed",
+  driverLocation: 'driver:location',
+  driverQueue: 'driver:queue',
+  rideStatus: 'ride:status',
+  rideOffer: 'ride:offer',
+  rideOfferRevoked: 'ride:offer_revoked',
+  rideAssigned: 'ride:assigned',
+  dispatchBoard: 'dispatch:board',
+  dispatchUnclaimed: 'dispatch:unclaimed',
 } as const;
 
 /**
@@ -96,7 +96,7 @@ export type RideOfferEvent = z.infer<typeof rideOfferEventSchema>;
 export const rideOfferRevokedEventSchema = z.object({
   offerId: z.string().uuid(),
   rideId: z.string().uuid(),
-  reason: z.enum(["expired", "taken", "cancelled"]),
+  reason: z.enum(['expired', 'taken', 'cancelled']),
   at: z.string().datetime(),
 });
 export type RideOfferRevokedEvent = z.infer<typeof rideOfferRevokedEventSchema>;
@@ -118,9 +118,9 @@ export const rideAssignedEventSchema = z
     dispatcherId: z.string().uuid().nullable().default(null),
     at: z.string().datetime(),
   })
-  .refine((a) => a.source !== "dispatcher" || a.dispatcherId !== null, {
-    message: "dispatcher assignments require dispatcherId (audit trail)",
-    path: ["dispatcherId"],
+  .refine((a) => a.source !== 'dispatcher' || a.dispatcherId !== null, {
+    message: 'dispatcher assignments require dispatcherId (audit trail)',
+    path: ['dispatcherId'],
   });
 export type RideAssignedEvent = z.infer<typeof rideAssignedEventSchema>;
 
@@ -159,7 +159,9 @@ export const dispatchUnclaimedEventSchema = z.object({
   unclaimedSeconds: z.number().int().nonnegative(),
   offerAttempts: z.number().int().nonnegative(),
 });
-export type DispatchUnclaimedEvent = z.infer<typeof dispatchUnclaimedEventSchema>;
+export type DispatchUnclaimedEvent = z.infer<
+  typeof dispatchUnclaimedEventSchema
+>;
 
 /** Room names per .claude/references/realtime-events.md — never build these strings by hand. */
 export const rideRoom = (rideId: string) => `ride:${rideId}` as const;

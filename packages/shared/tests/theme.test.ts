@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { colors } from "../src/theme";
-import { themeCssVars } from "../src/theme-css";
+import { describe, expect, it } from 'vitest';
+import { colors } from '../src/theme';
+import { themeCssVars } from '../src/theme-css';
 
 // Hand-written WCAG 2.x relative-luminance / contrast math (no dependency),
 // per https://www.w3.org/TR/WCAG21/#dfn-contrast-ratio.
@@ -27,28 +27,28 @@ function contrastRatio(a: string, b: string): number {
 
 const AA_NORMAL_TEXT = 4.5;
 
-describe("theme contrast", () => {
-  it("sanity-checks the hand-rolled math at the extremes (edge)", () => {
-    expect(contrastRatio("#ffffff", "#000000")).toBeCloseTo(21, 5);
-    expect(contrastRatio("#ffffff", "#ffffff")).toBeCloseTo(1, 5);
+describe('theme contrast', () => {
+  it('sanity-checks the hand-rolled math at the extremes (edge)', () => {
+    expect(contrastRatio('#ffffff', '#000000')).toBeCloseTo(21, 5);
+    expect(contrastRatio('#ffffff', '#ffffff')).toBeCloseTo(1, 5);
   });
 
-  it("meaningful fg/bg pairs meet WCAG AA for normal text (expected)", () => {
+  it('meaningful fg/bg pairs meet WCAG AA for normal text (expected)', () => {
     expect(contrastRatio(colors.fg, colors.bg)).toBeGreaterThanOrEqual(
       AA_NORMAL_TEXT,
     );
     expect(contrastRatio(colors.fgMuted, colors.bg)).toBeGreaterThanOrEqual(
       AA_NORMAL_TEXT,
     );
-    expect(contrastRatio(colors.accentFg, colors.accent)).toBeGreaterThanOrEqual(
-      AA_NORMAL_TEXT,
-    );
+    expect(
+      contrastRatio(colors.accentFg, colors.accent),
+    ).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
     expect(contrastRatio(colors.danger, colors.bg)).toBeGreaterThanOrEqual(
       AA_NORMAL_TEXT,
     );
   });
 
-  it("the math actually fails an inaccessible pair (failure)", () => {
+  it('the math actually fails an inaccessible pair (failure)', () => {
     // bgSurface-on-bg is a surface distinction, never a text pair — it must
     // NOT pass, or the assertion above would be vacuous.
     expect(contrastRatio(colors.bgSurface, colors.bg)).toBeLessThan(
@@ -57,14 +57,14 @@ describe("theme contrast", () => {
   });
 });
 
-describe("themeCssVars", () => {
-  it("renders every theme group as :root custom properties (expected)", () => {
+describe('themeCssVars', () => {
+  it('renders every theme group as :root custom properties (expected)', () => {
     const css = themeCssVars();
-    expect(css.startsWith(":root {")).toBe(true);
-    expect(css.endsWith("}")).toBe(true);
+    expect(css.startsWith(':root {')).toBe(true);
+    expect(css.endsWith('}')).toBe(true);
     expect(css).toContain(`  --color-bg-surface: ${colors.bgSurface};`);
-    expect(css).toContain("  --spacing-xs: 4px;");
-    expect(css).toContain("  --radius-md: 8px;");
-    expect(css).toContain("  --font-size-xl: 24px;");
+    expect(css).toContain('  --spacing-xs: 4px;');
+    expect(css).toContain('  --radius-md: 8px;');
+    expect(css).toContain('  --font-size-xl: 24px;');
   });
 });

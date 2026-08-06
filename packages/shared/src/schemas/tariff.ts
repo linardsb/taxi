@@ -1,6 +1,6 @@
-import { z } from "zod";
-import { RIDE_CATEGORIES } from "../enums";
-import { nonNegativeCentsSchema } from "../money";
+import { z } from 'zod';
+import { RIDE_CATEGORIES } from '../enums';
+import { nonNegativeCentsSchema } from '../money';
 
 /**
  * The rate card one city charges for one ride category. #6's table holds one

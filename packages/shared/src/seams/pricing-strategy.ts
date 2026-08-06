@@ -1,6 +1,6 @@
-import type { PricingModel } from "../enums";
-import type { FareQuote, RideRequest } from "../schemas/ride";
-import type { RouteResult } from "./maps-provider";
+import type { PricingModel } from '../enums';
+import type { FareQuote, RideRequest } from '../schemas/ride';
+import type { RouteResult } from './maps-provider';
 
 /**
  * Seam for the three pricing models (decided 2026-07-06): upfront_fixed

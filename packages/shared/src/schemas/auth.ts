@@ -1,13 +1,13 @@
-import { z } from "zod";
-import { USER_ROLES } from "../enums";
-import { phoneSchema, userSchema } from "./user";
+import { z } from 'zod';
+import { USER_ROLES } from '../enums';
+import { phoneSchema, userSchema } from './user';
 
 /**
  * The roles a phone number may claim for itself. `dispatcher` and `admin`
  * accounts are provisioned (#20) — they still sign in by OTP, but only
  * because their user row already exists.
  */
-export const SIGNUP_ROLES = ["rider", "driver"] as const;
+export const SIGNUP_ROLES = ['rider', 'driver'] as const;
 export type SignupRole = (typeof SIGNUP_ROLES)[number];
 
 export const otpRequestSchema = z.object({
@@ -24,9 +24,14 @@ export const otpRequestResponseSchema = z.object({
 });
 export type OtpRequestResponse = z.infer<typeof otpRequestResponseSchema>;
 
-export const otpCodeSchema = z.string().regex(/^\d{6}$/, "expected a 6-digit code");
+export const otpCodeSchema = z
+  .string()
+  .regex(/^\d{6}$/, 'expected a 6-digit code');
 
-export const otpVerifySchema = z.object({ phone: phoneSchema, code: otpCodeSchema });
+export const otpVerifySchema = z.object({
+  phone: phoneSchema,
+  code: otpCodeSchema,
+});
 export type OtpVerify = z.infer<typeof otpVerifySchema>;
 
 /**

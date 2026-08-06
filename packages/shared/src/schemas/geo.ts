@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const latLngSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -16,8 +16,8 @@ export type AddressPoint = z.infer<typeof addressPointSchema>;
 export const citySchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
-  countryCode: z.literal("LV"),
-  timezone: z.string().default("Europe/Riga"),
+  countryCode: z.literal('LV'),
+  timezone: z.string().default('Europe/Riga'),
 });
 export type City = z.infer<typeof citySchema>;
 

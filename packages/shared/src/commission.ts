@@ -1,13 +1,13 @@
-import { z } from "zod";
-import { COMMISSION_SOURCES } from "./enums";
-import type { CommissionSource } from "./enums";
+import { z } from 'zod';
+import { COMMISSION_SOURCES } from './enums';
+import type { CommissionSource } from './enums';
 import {
   commissionCentsFor,
   commissionPctSchema,
   eurCurrencySchema,
   nonNegativeCentsSchema,
-} from "./money";
-import type { PlatformConfig } from "./schemas/platform-config";
+} from './money';
+import type { PlatformConfig } from './schemas/platform-config';
 
 /**
  * Structural input, deliberately NOT `DriverProfile`: the resolver reads only
@@ -35,9 +35,9 @@ export function resolveCommissionPct(
 ): CommissionResolution {
   // `!= null`, never truthiness: a 0% override (the evidenced S6-7 pilot) is real.
   if (driver.commissionPctOverride != null) {
-    return { pct: driver.commissionPctOverride, source: "driver_override" };
+    return { pct: driver.commissionPctOverride, source: 'driver_override' };
   }
-  return { pct: config.commissionPct, source: "platform_base" };
+  return { pct: config.commissionPct, source: 'platform_base' };
 }
 
 /**
@@ -59,7 +59,7 @@ export const fareSplitSchema = z
     driverNetCents: nonNegativeCentsSchema,
   })
   .refine((s) => s.commissionCents + s.driverNetCents === s.totalCents, {
-    message: "fare split must sum to totalCents (integer cents, no leak)",
+    message: 'fare split must sum to totalCents (integer cents, no leak)',
   });
 export type FareSplit = z.infer<typeof fareSplitSchema>;
 
@@ -75,10 +75,13 @@ export type FareSplit = z.infer<typeof fareSplitSchema>;
  * driver paying the platform. The parse costs one pass per offer and turns that
  * into a loud failure at the source instead of a silent one on the offer card.
  */
-export function splitFare(totalCents: number, resolution: CommissionResolution): FareSplit {
+export function splitFare(
+  totalCents: number,
+  resolution: CommissionResolution,
+): FareSplit {
   const commissionCents = commissionCentsFor(totalCents, resolution.pct);
   return fareSplitSchema.parse({
-    currency: "EUR",
+    currency: 'EUR',
     totalCents,
     commissionPct: resolution.pct,
     commissionSource: resolution.source,
