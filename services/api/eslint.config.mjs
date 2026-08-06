@@ -33,7 +33,7 @@ export default tseslint.config(
       // legitimate; the base-ESLint default for this option is `false`, which
       // flags it.
       '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
 );

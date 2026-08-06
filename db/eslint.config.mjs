@@ -27,14 +27,13 @@ export default tseslint.config(
   },
   {
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
       // The omit-by-rest idiom (`const { x: _drop, ...rest } = obj`) is
       // legitimate; the base-ESLint default for this option is `false`, which
       // flags it.
       '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
 );

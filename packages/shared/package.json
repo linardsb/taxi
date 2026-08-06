@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint \"{src,tests}/**/*.ts\"",
+    "lint": "eslint \"{src,tests}/**/*.ts\" vitest.config.ts --max-warnings 0",
     "test": "vitest run"
   },
   "dependencies": {
