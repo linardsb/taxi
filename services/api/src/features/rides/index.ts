@@ -12,13 +12,20 @@
  *   because nothing would ever pick it up.
  * - `vehicleCount > 1` is rejected. #22 deletes that guard and fans one order
  *   into N rides sharing an `orderId`.
+ * - A REPLAY IS UNTHROTTLED. The idempotency reservation sits ABOVE the rate
+ *   limit deliberately — the cap bounds paid Routes calls and a replay reaches
+ *   none, so charging it would throttle exactly the rider this protects. The
+ *   consequence, and there is no global throttler to catch it: a repeated key
+ *   costs unbounded Postgres reads (`rides`, `ride_fare_lines`, and an uncached
+ *   `platform_config` via `previewSplit`). Accepted for the pilot — it needs a
+ *   valid rider JWT and buys an attacker nothing a fresh key would not. If that
+ *   stops holding under load the escalation is a separate, much larger replay
+ *   cap, NOT a reordering.
  * - Pickup and destination are UNBOUNDED. `latLngSchema` only checks the
  *   coordinates are valid on Earth, so a Rīga rider can book Sydney →
  *   Reykjavík and the stub will happily quote it. A service-area rejection is
  *   cheaper than, and separate from, #10's zone resolution — it just isn't
  *   this slice's.
- * - The request is NOT IDEMPOTENT. A double-tapped "Book" creates two rides
- *   (#46); the rate limit bounds the cost but does not deduplicate.
  */
 export { RidesModule } from './rides.module';
 export { RidesService } from './rides.service';

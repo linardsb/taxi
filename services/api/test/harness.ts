@@ -68,6 +68,18 @@ export class InMemoryKeyValueStore implements KeyValueStore {
     return Promise.resolve();
   }
 
+  setIfAbsent(
+    key: string,
+    value: string,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    // `live()`, not `store.has()` — an EXPIRED key must be reservable again,
+    // which is the whole "outside the window" behaviour.
+    if (this.live(key)) return Promise.resolve(false);
+    this.store.set(key, { value, expiresAt: this.now() + ttlSeconds * 1000 });
+    return Promise.resolve(true);
+  }
+
   del(key: string): Promise<void> {
     this.store.delete(key);
     return Promise.resolve();

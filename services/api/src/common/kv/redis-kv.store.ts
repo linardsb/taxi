@@ -22,6 +22,21 @@ export class RedisKeyValueStore implements KeyValueStore, OnModuleDestroy {
     await this.redis.set(key, value, 'EX', ttlSeconds);
   }
 
+  async setIfAbsent(
+    key: string,
+    value: string,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    // One round trip, atomic in the server: SET NX EX either creates the key
+    // with its expiry or does nothing at all. No Lua needed — unlike
+    // INCR_WITH_TTL, there is no window here for a crash to leave a key
+    // without a TTL.
+    //
+    // ioredis resolves to `null`, not `false`, when NX declines.
+    const result = await this.redis.set(key, value, 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
   async del(key: string): Promise<void> {
     await this.redis.del(key);
   }

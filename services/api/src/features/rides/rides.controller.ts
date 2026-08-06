@@ -1,5 +1,6 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import {
+  idempotencyKeySchema,
   rideRequestBodySchema,
   type JwtClaims,
   type RideCreated,
@@ -7,6 +8,7 @@ import {
 } from '@taxi/shared';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
+import { IdempotencyKeyHeader } from './idempotency-key.decorator';
 import { RidesService } from './rides.service';
 
 /**
@@ -22,11 +24,18 @@ import { RidesService } from './rides.service';
 export class RidesController {
   constructor(private readonly rides: RidesService) {}
 
+  /**
+   * `Idempotency-Key` is REQUIRED: a missing header is a 400, not a pass. An
+   * optional one would leave "the request is not idempotent" true for any client
+   * that omits it, which is the gap #46 closes.
+   */
   @Post()
   create(
     @CurrentUser() user: JwtClaims,
+    @IdempotencyKeyHeader(new ZodValidationPipe(idempotencyKeySchema))
+    idempotencyKey: string,
     @Body(new ZodValidationPipe(rideRequestBodySchema)) body: RideRequestBody,
   ): Promise<RideCreated> {
-    return this.rides.request(user.sub, body);
+    return this.rides.request(user.sub, idempotencyKey, body);
   }
 }

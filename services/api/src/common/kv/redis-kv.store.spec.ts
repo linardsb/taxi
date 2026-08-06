@@ -54,3 +54,43 @@ describeWithRedis('RedisKeyValueStore.incrWithTtl', () => {
     expect(await store.ttl(key)).toBeGreaterThan(0);
   });
 });
+
+describeWithRedis('RedisKeyValueStore.setIfAbsent', () => {
+  // Per-pid, like the counter suite above: jest workers share the one Redis
+  // and it is never flushed between runs.
+  const key = `test:kv:setnx:${process.pid}`;
+  let store: RedisKeyValueStore;
+
+  beforeAll(() => {
+    store = new RedisKeyValueStore(REDIS_TEST_URL!);
+  });
+  beforeEach(() => store.del(key));
+  afterAll(async () => {
+    await store.del(key);
+    await store.onModuleDestroy();
+  });
+
+  it('reserves once and refuses to overwrite (expected)', async () => {
+    expect(await store.setIfAbsent(key, 'first', 60)).toBe(true);
+
+    // The declined call must change NOTHING. An implementation that returned
+    // false while still writing would hand the second caller's ride id to the
+    // first caller's key — the double-book with extra steps.
+    expect(await store.setIfAbsent(key, 'second', 60)).toBe(false);
+    expect(await store.get(key)).toBe('first');
+
+    // Proves `EX` applied: without it the reservation never expires and the
+    // rider's key is burned for good.
+    expect(await store.ttl(key)).toBeGreaterThan(0);
+  });
+
+  it('reserves again once the key has expired (edge)', async () => {
+    // A 1s window is the only way to observe expiry against a real server —
+    // the in-memory fake fast-forwards, Redis does not.
+    expect(await store.setIfAbsent(key, 'first', 1)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    expect(await store.setIfAbsent(key, 'second', 60)).toBe(true);
+    expect(await store.get(key)).toBe('second');
+  });
+});
