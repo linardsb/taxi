@@ -63,7 +63,7 @@ export function assertFareQuoteConsistent(quote: FareQuote): void {
   if (!isFareQuoteConsistent(quote)) {
     const b = quote.breakdown;
     throw new Error(
-      `Quote breakdown ${b.baseCents}+${b.distanceCents}+${b.timeCents}${b.discountCents} does not sum to totalCents ${quote.totalCents}`,
+      `Quote breakdown ${b.baseCents}+${b.distanceCents}+${b.timeCents}+${b.discountCents} does not sum to totalCents ${quote.totalCents}`,
     );
   }
 }
