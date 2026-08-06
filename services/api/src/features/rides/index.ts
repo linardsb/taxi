@@ -17,8 +17,6 @@
  *   Reykjavík and the stub will happily quote it. A service-area rejection is
  *   cheaper than, and separate from, #10's zone resolution — it just isn't
  *   this slice's.
- * - The request is NOT IDEMPOTENT. A double-tapped "Book" creates two rides
- *   (#46); the rate limit bounds the cost but does not deduplicate.
  */
 export { RidesModule } from './rides.module';
 export { RidesService } from './rides.service';

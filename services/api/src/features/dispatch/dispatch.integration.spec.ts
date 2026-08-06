@@ -1,6 +1,7 @@
 import { RIGA_ZONE_IDS, dispatchAuditLog, rideOffers, rides } from '@taxi/db';
 import {
   authSessionSchema,
+  IDEMPOTENCY_KEY_HEADER,
   rideCreatedSchema,
   RT,
   type LatLng,
@@ -9,6 +10,7 @@ import {
   type DispatchUnclaimedEvent,
 } from '@taxi/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { Socket } from 'socket.io-client';
 import request from 'supertest';
@@ -160,6 +162,7 @@ describe('dispatch (integration)', () => {
     const res = await http
       .post('/rides')
       .set('authorization', `Bearer ${session.accessToken}`)
+      .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
       .send({
         pickup,
         destination: DESTINATION,

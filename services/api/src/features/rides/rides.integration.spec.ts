@@ -1,13 +1,22 @@
 import { rideFareLines, rides } from '@taxi/db';
 import {
   authSessionSchema,
+  IDEMPOTENCY_KEY_HEADER,
   isFareQuoteConsistent,
   rideCreatedSchema,
 } from '@taxi/shared';
 import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { createTestApp, phoneFor, type TestApp } from '../../../test/harness';
 import { RidesRepository } from './rides.repository';
+
+/**
+ * A fresh booking-attempt key. FRESH per call by default: reuse one across two
+ * `POST /rides` and the second replays rather than books, which silently guts
+ * any test measuring what the second call did.
+ */
+const idem = () => randomUUID();
 
 /**
  * `+371240` is this spec file's E.164 range — see phoneFor(). `+371210`
@@ -80,6 +89,7 @@ describe('rides (integration)', () => {
     const res = await http
       .post('/rides')
       .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send({ pickup: CENTRE, destination: RIX, paymentMethod: 'card' })
       .expect(201);
 
@@ -141,14 +151,19 @@ describe('rides (integration)', () => {
       destination: KENGARAGS,
       paymentMethod: 'cash',
     };
+    // DISTINCT keys, all three calls. Share one and the second request replays
+    // without ever reaching PricingService — the delta below is still 1 and the
+    // test passes while proving nothing about the cache.
     const first = await http
       .post('/rides')
       .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send(body)
       .expect(201);
     const second = await http
       .post('/rides')
       .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send(body)
       .expect(201);
 
@@ -162,6 +177,7 @@ describe('rides (integration)', () => {
     await http
       .post('/rides')
       .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send({ ...body, destination: PURVCIEMS })
       .expect(201);
     expect(ctx.maps.routeCalls - before).toBe(2);
@@ -174,6 +190,7 @@ describe('rides (integration)', () => {
     const res = await http
       .post('/rides')
       .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send({
         pickup: CENTRE,
         destination: RIX,
@@ -200,6 +217,7 @@ describe('rides (integration)', () => {
     const res = await http
       .post('/rides')
       .set('authorization', attacker.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send({
         pickup: CENTRE,
         destination: RIX,
@@ -220,9 +238,14 @@ describe('rides (integration)', () => {
     const codeOf = (res: { body: unknown }) =>
       (res.body as { message: string }).message;
 
+    // A VALID key on all three. The header pipe is declared before `@Body` and
+    // so runs first: omit it and the `malformed` case still returns
+    // `validation_failed` — from the HEADER — and the body assertion it was
+    // written for never runs.
     const multi = await http
       .post('/rides')
       .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send({ ...base, vehicleCount: 3 })
       .expect(400);
     expect(codeOf(multi)).toBe('multi_taxi_not_supported');
@@ -230,6 +253,7 @@ describe('rides (integration)', () => {
     const past = await http
       .post('/rides')
       .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send({ ...base, scheduledFor: new Date(Date.now() - 60_000) })
       .expect(400);
     expect(codeOf(past)).toBe('scheduled_in_past');
@@ -237,9 +261,101 @@ describe('rides (integration)', () => {
     const malformed = await http
       .post('/rides')
       .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send({ pickup: CENTRE, paymentMethod: 'cash' })
       .expect(400);
     expect(codeOf(malformed)).toBe('validation_failed');
+  });
+
+  it('returns the same ride — and writes ONE row — for a repeated key (expected)', async () => {
+    // The acceptance criterion end-to-end, and the one assertion that would
+    // have caught #46: before this, a double-tapped "Book" left two `requested`
+    // rows, and #10's sweeper sent two cars to one kerb.
+    const r = await rider(30);
+    const key = idem();
+    const payload = { pickup: CENTRE, destination: RIX, paymentMethod: 'cash' };
+
+    const first = await http
+      .post('/rides')
+      .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, key)
+      .send(payload)
+      .expect(201);
+    const second = await http
+      .post('/rides')
+      .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, key)
+      .send(payload)
+      .expect(201);
+
+    const one = rideCreatedSchema.parse(first.body);
+    const two = rideCreatedSchema.parse(second.body);
+    expect(two.ride.id).toBe(one.ride.id);
+    // The replay recomputes the split rather than re-reading a snapshot, so it
+    // must still come out identical.
+    expect(two.split).toEqual(one.split);
+
+    // Scoped to THIS rider: the row count is the only assertion that truly
+    // proves "one ride", and earlier tests' rides would pollute a global count.
+    const rows = await ctx.db
+      .select()
+      .from(rides)
+      .where(eq(rides.riderId, r.id));
+    expect(rows).toHaveLength(1);
+  });
+
+  it('rejects a booking with no idempotency key and with a non-uuid one (failure)', async () => {
+    const r = await rider(31);
+    const payload = { pickup: CENTRE, destination: RIX, paymentMethod: 'cash' };
+
+    // Required, not optional: an optional header would leave "the request is
+    // not idempotent" true for any client that omits it.
+    await http
+      .post('/rides')
+      .set('authorization', r.auth)
+      .send(payload)
+      .expect(400);
+
+    await http
+      .post('/rides')
+      .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, 'not-a-uuid')
+      .send(payload)
+      .expect(400);
+
+    // Neither reached the service, so neither booked.
+    const rows = await ctx.db
+      .select()
+      .from(rides)
+      .where(eq(rides.riderId, r.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('keeps one rider’s key from returning another rider’s ride (edge)', async () => {
+    // The key is rider-scoped, so a guessed uuid cannot reach someone else's
+    // ride — and two riders colliding on one key still get two cars.
+    const a = await rider(32);
+    const b = await rider(33);
+    const key = idem();
+    const payload = { pickup: CENTRE, destination: RIX, paymentMethod: 'cash' };
+
+    const first = await http
+      .post('/rides')
+      .set('authorization', a.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, key)
+      .send(payload)
+      .expect(201);
+    const second = await http
+      .post('/rides')
+      .set('authorization', b.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, key)
+      .send(payload)
+      .expect(201);
+
+    const one = rideCreatedSchema.parse(first.body);
+    const two = rideCreatedSchema.parse(second.body);
+    expect(two.ride.id).not.toBe(one.ride.id);
+    expect(two.ride.riderId).toBe(b.id);
   });
 
   it('refuses a driver token and an anonymous request (failure)', async () => {
@@ -250,9 +366,12 @@ describe('rides (integration)', () => {
     await http
       .post('/rides')
       .set('authorization', `Bearer ${driverSession.accessToken}`)
+      .set(IDEMPOTENCY_KEY_HEADER, idem())
       .send(body)
       .expect(403);
 
+    // No header here on purpose: the guard rejects before any handler pipe
+    // runs, so an anonymous request never reaches the header validation.
     await http.post('/rides').send(body).expect(401);
   });
 
@@ -269,6 +388,7 @@ describe('rides (integration)', () => {
       const res = await http
         .post('/rides')
         .set('authorization', r.auth)
+        .set(IDEMPOTENCY_KEY_HEADER, idem())
         .send({ pickup: CENTRE, destination: RIX, paymentMethod: 'cash' })
         .expect(201);
       return rideCreatedSchema.parse(res.body).ride;

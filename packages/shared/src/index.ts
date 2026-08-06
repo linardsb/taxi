@@ -3,6 +3,7 @@ export * from './money';
 export * from './ride-state-machine';
 export * from './schemas/platform-config';
 export * from './commission';
+export * from './idempotency';
 export * from './realtime-events';
 export * from './schemas/geo';
 export * from './schemas/user';

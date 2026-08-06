@@ -9,6 +9,13 @@ export const KV_STORE = 'KV_STORE';
 export interface KeyValueStore {
   get(key: string): Promise<string | null>;
   setWithTtl(key: string, value: string, ttlSeconds: number): Promise<void>;
+  /**
+   * Atomic reserve: writes only when the key is absent, and reports which
+   * happened. A `get` followed by a `setWithTtl` is NOT equivalent — two callers
+   * racing both read null and both "win", which is precisely the double-book
+   * this exists to stop.
+   */
+  setIfAbsent(key: string, value: string, ttlSeconds: number): Promise<boolean>;
   del(key: string): Promise<void>;
   /** Atomic increment; sets the expiry only when the key has none. */
   incrWithTtl(key: string, ttlSeconds: number): Promise<number>;

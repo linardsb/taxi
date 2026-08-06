@@ -16,3 +16,30 @@ export const RIDE_REQUEST_WINDOW_SECONDS = 600; // 10 min
 
 export const rideRequestRateKey = (riderId: string): string =>
   `rides:rate:${riderId}`;
+
+/**
+ * A booking attempt's key outlives the attempt by a day.
+ *
+ * Long is safe here in a way it would NOT be for server-side dedupe: the client
+ * mints a fresh uuid per attempt, so a wide window never merges two bookings the
+ * rider meant to be separate — it only catches a retry. Matches the de-facto
+ * standard (Stripe's is 24h), which is what a client library author will assume.
+ */
+export const RIDE_IDEMPOTENCY_TTL_SECONDS = 86_400; // 24 h
+
+/**
+ * Reserved, not yet resolved to a ride — see `RidesService.request`.
+ *
+ * Deliberately NOT a uuid: the replay path tells a marker from a ride id by
+ * comparing against this value, and a uuid-shaped marker would be indexed as a
+ * ride that does not exist.
+ */
+export const RIDE_IDEMPOTENCY_PENDING = 'pending';
+
+/**
+ * Scoped by rider, deliberately. Two riders colliding on a key must not share a
+ * ride, and an unscoped key would let a guessed uuid return someone else's ride
+ * id.
+ */
+export const rideIdempotencyKey = (riderId: string, key: string): string =>
+  `rides:idem:${riderId}:${key}`;

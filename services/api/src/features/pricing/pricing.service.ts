@@ -74,4 +74,23 @@ export class PricingService {
 
     return { quote, split };
   }
+
+  /**
+   * The platform-base preview split for a total, with no driver in the picture.
+   *
+   * Public because the idempotent replay path needs it: a replayed request must
+   * return the same shape as the original WITHOUT spending a route call, and the
+   * split is computed, never persisted (see `rideCreatedSchema`).
+   *
+   * The two lines below are duplicated from `quote()` rather than shared with
+   * it, on purpose. `PlatformConfigService.forCity` does not cache — its
+   * docstring forbids adding one, because "a stale commission is a money bug" —
+   * so routing `quote()` through here would double the config read on the hot
+   * path to save three lines on the cold one.
+   */
+  async previewSplit(totalCents: number): Promise<FareSplit> {
+    const config = await this.platformConfig.forCity(this.env.DEFAULT_CITY_ID);
+    const NO_DRIVER_YET: CommissionDriverInput = {};
+    return splitFare(totalCents, resolveCommissionPct(NO_DRIVER_YET, config));
+  }
 }
