@@ -1,25 +1,25 @@
-import type { LatLng, RideCategory, RigaPilotDistrict } from "@taxi/shared";
-import { RIDE_CATEGORIES, RIGA_PILOT_DISTRICTS } from "@taxi/shared";
-import type { Db } from "../client";
-import { polygonToEwkt } from "../postgis";
-import { cities, geozones, platformConfig, rideTariffs } from "../schema";
+import type { LatLng, RideCategory, RigaPilotDistrict } from '@taxi/shared';
+import { RIDE_CATEGORIES, RIGA_PILOT_DISTRICTS } from '@taxi/shared';
+import type { Db } from '../client';
+import { polygonToEwkt } from '../postgis';
+import { cities, geozones, platformConfig, rideTariffs } from '../schema';
 
 /** Fixed UUIDs — deterministic, so the seed is re-runnable and referenceable in tests. */
-export const RIGA_CITY_ID = "00000000-0000-4000-8000-000000000001";
-export const RIGA_CONFIG_ID = "00000000-0000-4000-8000-000000000002";
+export const RIGA_CITY_ID = '00000000-0000-4000-8000-000000000001';
+export const RIGA_CONFIG_ID = '00000000-0000-4000-8000-000000000002';
 
 export const RIGA_TARIFF_IDS: Record<RideCategory, string> = {
-  standard: "00000000-0000-4000-8000-000000000201",
-  fastest: "00000000-0000-4000-8000-000000000202",
-  limo: "00000000-0000-4000-8000-000000000203",
-  vip: "00000000-0000-4000-8000-000000000204",
+  standard: '00000000-0000-4000-8000-000000000201',
+  fastest: '00000000-0000-4000-8000-000000000202',
+  limo: '00000000-0000-4000-8000-000000000203',
+  vip: '00000000-0000-4000-8000-000000000204',
 };
 
 export const RIGA_ZONE_IDS: Record<RigaPilotDistrict, string> = {
-  centre: "00000000-0000-4000-8000-000000000101",
-  rix: "00000000-0000-4000-8000-000000000102",
-  autoosta: "00000000-0000-4000-8000-000000000103",
-  old_town: "00000000-0000-4000-8000-000000000104",
+  centre: '00000000-0000-4000-8000-000000000101',
+  rix: '00000000-0000-4000-8000-000000000102',
+  autoosta: '00000000-0000-4000-8000-000000000103',
+  old_town: '00000000-0000-4000-8000-000000000104',
 };
 
 /**
@@ -33,7 +33,7 @@ const ZONES: Record<
   { name: string; ring: LatLng[]; queueModeEnabled: boolean }
 > = {
   centre: {
-    name: "Rīgas centrs",
+    name: 'Rīgas centrs',
     ring: [
       { lat: 56.936, lng: 24.075 },
       { lat: 56.936, lng: 24.135 },
@@ -43,7 +43,7 @@ const ZONES: Record<
     queueModeEnabled: false,
   },
   rix: {
-    name: "Lidosta RIX",
+    name: 'Lidosta RIX',
     ring: [
       { lat: 56.908, lng: 23.95 },
       { lat: 56.908, lng: 23.995 },
@@ -53,7 +53,7 @@ const ZONES: Record<
     queueModeEnabled: true,
   },
   autoosta: {
-    name: "Rīgas autoosta",
+    name: 'Rīgas autoosta',
     ring: [
       { lat: 56.941, lng: 24.108 },
       { lat: 56.941, lng: 24.122 },
@@ -63,7 +63,7 @@ const ZONES: Record<
     queueModeEnabled: true,
   },
   old_town: {
-    name: "Vecrīga",
+    name: 'Vecrīga',
     ring: [
       { lat: 56.943, lng: 24.095 },
       { lat: 56.943, lng: 24.115 },
@@ -86,12 +86,37 @@ const ZONES: Record<
  */
 const TARIFFS: Record<
   RideCategory,
-  { baseCents: number; perKmCents: number; perMinuteCents: number; minimumFareCents: number }
+  {
+    baseCents: number;
+    perKmCents: number;
+    perMinuteCents: number;
+    minimumFareCents: number;
+  }
 > = {
-  standard: { baseCents: 200, perKmCents: 80, perMinuteCents: 15, minimumFareCents: 350 },
-  fastest: { baseCents: 250, perKmCents: 95, perMinuteCents: 18, minimumFareCents: 400 },
-  limo: { baseCents: 400, perKmCents: 140, perMinuteCents: 25, minimumFareCents: 700 },
-  vip: { baseCents: 500, perKmCents: 175, perMinuteCents: 30, minimumFareCents: 900 },
+  standard: {
+    baseCents: 200,
+    perKmCents: 80,
+    perMinuteCents: 15,
+    minimumFareCents: 350,
+  },
+  fastest: {
+    baseCents: 250,
+    perKmCents: 95,
+    perMinuteCents: 18,
+    minimumFareCents: 400,
+  },
+  limo: {
+    baseCents: 400,
+    perKmCents: 140,
+    perMinuteCents: 25,
+    minimumFareCents: 700,
+  },
+  vip: {
+    baseCents: 500,
+    perKmCents: 175,
+    perMinuteCents: 30,
+    minimumFareCents: 900,
+  },
 };
 
 /**
@@ -103,10 +128,10 @@ const TARIFFS: Record<
 export async function seedRiga(db: Db): Promise<void> {
   await db
     .insert(cities)
-    .values({ id: RIGA_CITY_ID, name: "Rīga" })
+    .values({ id: RIGA_CITY_ID, name: 'Rīga' })
     .onConflictDoUpdate({
       target: cities.name,
-      set: { countryCode: "LV", timezone: "Europe/Riga" },
+      set: { countryCode: 'LV', timezone: 'Europe/Riga' },
     });
 
   for (const slug of RIGA_PILOT_DISTRICTS) {
@@ -124,7 +149,11 @@ export async function seedRiga(db: Db): Promise<void> {
       })
       .onConflictDoUpdate({
         target: [geozones.cityId, geozones.slug],
-        set: { name: zone.name, polygon, queueModeEnabled: zone.queueModeEnabled },
+        set: {
+          name: zone.name,
+          polygon,
+          queueModeEnabled: zone.queueModeEnabled,
+        },
       });
   }
 
@@ -145,7 +174,12 @@ export async function seedRiga(db: Db): Promise<void> {
     const tariff = TARIFFS[category];
     await db
       .insert(rideTariffs)
-      .values({ id: RIGA_TARIFF_IDS[category], cityId: RIGA_CITY_ID, category, ...tariff })
+      .values({
+        id: RIGA_TARIFF_IDS[category],
+        cityId: RIGA_CITY_ID,
+        category,
+        ...tariff,
+      })
       .onConflictDoUpdate({
         target: [rideTariffs.cityId, rideTariffs.category],
         set: tariff,

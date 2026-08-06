@@ -1,5 +1,5 @@
-import type { Language } from "../enums";
-import type { AddressPoint, LatLng } from "../schemas/geo";
+import type { Language } from '../enums';
+import type { AddressPoint, LatLng } from '../schemas/geo';
 
 export interface GeocodeResult {
   point: AddressPoint;
@@ -21,6 +21,9 @@ export interface RouteResult {
  */
 export interface MapsProvider {
   geocode(query: string, language: Language): Promise<GeocodeResult[]>;
-  reverseGeocode(location: LatLng, language: Language): Promise<GeocodeResult | null>;
+  reverseGeocode(
+    location: LatLng,
+    language: Language,
+  ): Promise<GeocodeResult | null>;
   route(from: LatLng, to: LatLng, stops?: LatLng[]): Promise<RouteResult>;
 }

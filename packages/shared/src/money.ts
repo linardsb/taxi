@@ -4,9 +4,9 @@
  * re-typing `z.number().int()`, so the rule is enforced in one place and a
  * float is rejected at every boundary that parses.
  */
-import { z } from "zod";
+import { z } from 'zod';
 
-export const eurCurrencySchema = z.literal("EUR");
+export const eurCurrencySchema = z.literal('EUR');
 
 /** Signed — the ledger (#12) and `driverProfile.balanceCents` go negative. */
 export const centsSchema = z.number().int();

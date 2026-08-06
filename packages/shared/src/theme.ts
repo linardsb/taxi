@@ -11,16 +11,16 @@
  */
 
 export const colors = {
-  bg: "#ffffff",
-  bgSurface: "#f4f4f5",
-  fg: "#18181b",
-  fgMuted: "#52525b",
-  border: "#d4d4d8",
-  accent: "#2563eb",
-  accentFg: "#ffffff",
-  danger: "#dc2626",
-  success: "#16a34a",
-  warning: "#d97706",
+  bg: '#ffffff',
+  bgSurface: '#f4f4f5',
+  fg: '#18181b',
+  fgMuted: '#52525b',
+  border: '#d4d4d8',
+  accent: '#2563eb',
+  accentFg: '#ffffff',
+  danger: '#dc2626',
+  success: '#16a34a',
+  warning: '#d97706',
 } as const;
 
 /** 4px scale. Numbers, not strings — RN wants numbers; web adds `px`. */

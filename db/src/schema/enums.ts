@@ -1,4 +1,4 @@
-import { pgEnum } from "drizzle-orm/pg-core";
+import { pgEnum } from 'drizzle-orm/pg-core';
 import {
   ASSIGNMENT_SOURCES,
   COMMISSION_SOURCES,
@@ -10,32 +10,50 @@ import {
   RIDE_CATEGORIES,
   RIDE_STATUSES,
   USER_ROLES,
-} from "@taxi/shared";
+} from '@taxi/shared';
 
 // Every value list below comes FROM @taxi/shared — never retyped here (AC:
 // "all enums derive from shared const arrays"). The three db-local enums at
 // the bottom have no shared counterpart by design.
 
-export const userRoleEnum = pgEnum("user_role", USER_ROLES);
-export const driverStatusEnum = pgEnum("driver_status", DRIVER_STATUSES);
-export const rideStatusEnum = pgEnum("ride_status", RIDE_STATUSES);
-export const rideCategoryEnum = pgEnum("ride_category", RIDE_CATEGORIES);
-export const paymentMethodTypeEnum = pgEnum("payment_method_type", PAYMENT_METHOD_TYPES);
-export const dispatchModeEnum = pgEnum("dispatch_mode", DISPATCH_MODES);
-export const pricingModelEnum = pgEnum("pricing_model", PRICING_MODELS);
-export const offerStatusEnum = pgEnum("offer_status", OFFER_STATUSES);
-export const assignmentSourceEnum = pgEnum("assignment_source", ASSIGNMENT_SOURCES);
-export const commissionSourceEnum = pgEnum("commission_source", COMMISSION_SOURCES);
+export const userRoleEnum = pgEnum('user_role', USER_ROLES);
+export const driverStatusEnum = pgEnum('driver_status', DRIVER_STATUSES);
+export const rideStatusEnum = pgEnum('ride_status', RIDE_STATUSES);
+export const rideCategoryEnum = pgEnum('ride_category', RIDE_CATEGORIES);
+export const paymentMethodTypeEnum = pgEnum(
+  'payment_method_type',
+  PAYMENT_METHOD_TYPES,
+);
+export const dispatchModeEnum = pgEnum('dispatch_mode', DISPATCH_MODES);
+export const pricingModelEnum = pgEnum('pricing_model', PRICING_MODELS);
+export const offerStatusEnum = pgEnum('offer_status', OFFER_STATUSES);
+export const assignmentSourceEnum = pgEnum(
+  'assignment_source',
+  ASSIGNMENT_SOURCES,
+);
+export const commissionSourceEnum = pgEnum(
+  'commission_source',
+  COMMISSION_SOURCES,
+);
 
 /** Mirrors `fareQuoteSchema.breakdown` keys — the normalized fare-lines table (#11/#12 consume). */
-export const fareLineTypeEnum = pgEnum("fare_line_type", ["base", "distance", "time", "discount"]);
+export const fareLineTypeEnum = pgEnum('fare_line_type', [
+  'base',
+  'distance',
+  'time',
+  'discount',
+]);
 
 /** Shape-level only; #12 owns ledger semantics. */
-export const ledgerOwnerTypeEnum = pgEnum("ledger_owner_type", ["platform", "driver", "rider"]);
-export const ledgerEntryTypeEnum = pgEnum("ledger_entry_type", [
-  "ride_fare",
-  "commission",
-  "cash_settlement",
-  "payout",
-  "adjustment",
+export const ledgerOwnerTypeEnum = pgEnum('ledger_owner_type', [
+  'platform',
+  'driver',
+  'rider',
+]);
+export const ledgerEntryTypeEnum = pgEnum('ledger_entry_type', [
+  'ride_fare',
+  'commission',
+  'cash_settlement',
+  'payout',
+  'adjustment',
 ]);

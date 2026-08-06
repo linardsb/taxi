@@ -1,27 +1,27 @@
 export const RIDE_STATUSES = [
-  "scheduled",
-  "requested",
-  "offered",
-  "queued",
-  "accepted",
-  "arriving",
-  "arrived",
-  "in_progress",
-  "completed",
-  "settled",
-  "cancelled_by_rider",
-  "cancelled_by_driver",
-  "cancelled_by_dispatcher",
-  "cancelled_by_system",
+  'scheduled',
+  'requested',
+  'offered',
+  'queued',
+  'accepted',
+  'arriving',
+  'arrived',
+  'in_progress',
+  'completed',
+  'settled',
+  'cancelled_by_rider',
+  'cancelled_by_driver',
+  'cancelled_by_dispatcher',
+  'cancelled_by_system',
 ] as const;
 
 export type RideStatus = (typeof RIDE_STATUSES)[number];
 
 export const CANCELLED_STATUSES = [
-  "cancelled_by_rider",
-  "cancelled_by_driver",
-  "cancelled_by_dispatcher",
-  "cancelled_by_system",
+  'cancelled_by_rider',
+  'cancelled_by_driver',
+  'cancelled_by_dispatcher',
+  'cancelled_by_system',
 ] as const satisfies readonly RideStatus[];
 
 /**
@@ -29,16 +29,55 @@ export const CANCELLED_STATUSES = [
  * surfaces. "offered → requested" is the re-offer loop after a driver
  * declines or times out; "queued" is the geozone-queue dispatch mode.
  */
-export const ALLOWED_TRANSITIONS: Readonly<Record<RideStatus, readonly RideStatus[]>> = {
-  scheduled: ["requested", "cancelled_by_rider", "cancelled_by_dispatcher", "cancelled_by_system"],
-  requested: ["offered", "queued", "cancelled_by_rider", "cancelled_by_dispatcher", "cancelled_by_system"],
-  offered: ["accepted", "requested", "cancelled_by_rider", "cancelled_by_dispatcher", "cancelled_by_system"],
-  queued: ["offered", "cancelled_by_rider", "cancelled_by_dispatcher", "cancelled_by_system"],
-  accepted: ["arriving", "cancelled_by_rider", "cancelled_by_driver", "cancelled_by_dispatcher"],
-  arriving: ["arrived", "cancelled_by_rider", "cancelled_by_driver", "cancelled_by_dispatcher"],
-  arrived: ["in_progress", "cancelled_by_rider", "cancelled_by_driver", "cancelled_by_dispatcher"],
-  in_progress: ["completed", "cancelled_by_dispatcher"],
-  completed: ["settled"],
+export const ALLOWED_TRANSITIONS: Readonly<
+  Record<RideStatus, readonly RideStatus[]>
+> = {
+  scheduled: [
+    'requested',
+    'cancelled_by_rider',
+    'cancelled_by_dispatcher',
+    'cancelled_by_system',
+  ],
+  requested: [
+    'offered',
+    'queued',
+    'cancelled_by_rider',
+    'cancelled_by_dispatcher',
+    'cancelled_by_system',
+  ],
+  offered: [
+    'accepted',
+    'requested',
+    'cancelled_by_rider',
+    'cancelled_by_dispatcher',
+    'cancelled_by_system',
+  ],
+  queued: [
+    'offered',
+    'cancelled_by_rider',
+    'cancelled_by_dispatcher',
+    'cancelled_by_system',
+  ],
+  accepted: [
+    'arriving',
+    'cancelled_by_rider',
+    'cancelled_by_driver',
+    'cancelled_by_dispatcher',
+  ],
+  arriving: [
+    'arrived',
+    'cancelled_by_rider',
+    'cancelled_by_driver',
+    'cancelled_by_dispatcher',
+  ],
+  arrived: [
+    'in_progress',
+    'cancelled_by_rider',
+    'cancelled_by_driver',
+    'cancelled_by_dispatcher',
+  ],
+  in_progress: ['completed', 'cancelled_by_dispatcher'],
+  completed: ['settled'],
   settled: [],
   cancelled_by_rider: [],
   cancelled_by_driver: [],
@@ -56,7 +95,7 @@ export class InvalidRideTransitionError extends Error {
     public readonly to: RideStatus,
   ) {
     super(`Invalid ride transition: ${from} -> ${to}`);
-    this.name = "InvalidRideTransitionError";
+    this.name = 'InvalidRideTransitionError';
   }
 }
 
@@ -78,12 +117,12 @@ export function isCancelled(status: RideStatus): boolean {
  */
 export function isPaymentMethodLocked(status: RideStatus): boolean {
   const lockedFrom: readonly RideStatus[] = [
-    "accepted",
-    "arriving",
-    "arrived",
-    "in_progress",
-    "completed",
-    "settled",
+    'accepted',
+    'arriving',
+    'arrived',
+    'in_progress',
+    'completed',
+    'settled',
   ];
   return lockedFrom.includes(status);
 }

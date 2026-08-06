@@ -14,8 +14,9 @@ export default tseslint.config(
   {
     languageOptions: {
       globals: {
+        // No test globals: this package runs vitest, and vitest.config.ts does
+        // not set `globals: true` — every test imports from "vitest" directly.
         ...globals.node,
-        ...globals.jest,
       },
       sourceType: 'commonjs',
       parserOptions: {
@@ -26,7 +27,6 @@ export default tseslint.config(
   },
   {
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
       // The omit-by-rest idiom (`const { x: _drop, ...rest } = obj`) is

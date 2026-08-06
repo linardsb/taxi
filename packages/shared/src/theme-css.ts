@@ -4,7 +4,7 @@
  * reference `var(--color-accent)` etc. — so the brand-identity epic still only
  * edits ./theme. RN apps import the TS object directly and never touch this.
  */
-import { colors, fontSize, radius, spacing } from "./theme";
+import { colors, fontSize, radius, spacing } from './theme';
 
 const kebab = (name: string) =>
   name.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`);
@@ -16,5 +16,5 @@ export function themeCssVars(): string {
     ...Object.entries(radius).map(([k, v]) => `  --radius-${k}: ${v}px;`),
     ...Object.entries(fontSize).map(([k, v]) => `  --font-size-${k}: ${v}px;`),
   ];
-  return `:root {\n${lines.join("\n")}\n}`;
+  return `:root {\n${lines.join('\n')}\n}`;
 }

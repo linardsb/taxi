@@ -1,6 +1,12 @@
-import { integer, pgTable, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import { rideCategoryEnum } from "./enums";
-import { cities } from "./geo";
+import {
+  integer,
+  pgTable,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { rideCategoryEnum } from './enums';
+import { cities } from './geo';
 
 /**
  * Mirrors `rideTariffSchema` (@taxi/shared). One row per city × ride category;
@@ -15,20 +21,24 @@ import { cities } from "./geo";
  * card for one city impossible.
  */
 export const rideTariffs = pgTable(
-  "ride_tariffs",
+  'ride_tariffs',
   {
-    id: uuid("id").primaryKey().defaultRandom(),
-    cityId: uuid("city_id")
+    id: uuid('id').primaryKey().defaultRandom(),
+    cityId: uuid('city_id')
       .notNull()
       .references(() => cities.id),
-    category: rideCategoryEnum("category").notNull(),
-    baseCents: integer("base_cents").notNull(),
+    category: rideCategoryEnum('category').notNull(),
+    baseCents: integer('base_cents').notNull(),
     /** Cents per WHOLE kilometre — applied to fractional distance by the strategy. */
-    perKmCents: integer("per_km_cents").notNull(),
+    perKmCents: integer('per_km_cents').notNull(),
     /** Cents per WHOLE minute — applied to fractional duration by the strategy. */
-    perMinuteCents: integer("per_minute_cents").notNull(),
-    minimumFareCents: integer("minimum_fare_cents").notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    perMinuteCents: integer('per_minute_cents').notNull(),
+    minimumFareCents: integer('minimum_fare_cents').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
-  (t) => [uniqueIndex("ride_tariffs_city_category_uix").on(t.cityId, t.category)],
+  (t) => [
+    uniqueIndex('ride_tariffs_city_category_uix').on(t.cityId, t.category),
+  ],
 );

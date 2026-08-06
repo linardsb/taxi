@@ -1,20 +1,20 @@
-import { z } from "zod";
+import { z } from 'zod';
 import {
   ASSIGNMENT_SOURCES,
   OFFER_STATUSES,
   PAYMENT_METHOD_TYPES,
   PRICING_MODELS,
   RIDE_CATEGORIES,
-} from "../enums";
-import { fareSplitSchema } from "../commission";
+} from '../enums';
+import { fareSplitSchema } from '../commission';
 import {
   eurCurrencySchema,
   nonNegativeCentsSchema,
   nonPositiveCentsSchema,
   positiveCentsSchema,
-} from "../money";
-import { RIDE_STATUSES } from "../ride-state-machine";
-import { addressPointSchema } from "./geo";
+} from '../money';
+import { RIDE_STATUSES } from '../ride-state-machine';
+import { addressPointSchema } from './geo';
 
 export const rideOptionsSchema = z.object({
   childSeat: z.boolean().default(false),
@@ -74,7 +74,7 @@ export const rideRequestSchema = z.object({
   /** Intermediate stops (outline §8: "gala adrese vai starp adrese"). */
   stops: z.array(addressPointSchema).max(5).default([]),
   destination: addressPointSchema,
-  category: z.enum(RIDE_CATEGORIES).default("standard"),
+  category: z.enum(RIDE_CATEGORIES).default('standard'),
   options: rideOptionsSchema.default({ childSeat: false, femaleDriver: false }),
   paymentMethod: z.enum(PAYMENT_METHOD_TYPES),
   /** Set for "izsaukumi uz laiku" — scheduled rides enter the machine as `scheduled`. */
@@ -116,9 +116,9 @@ export const rideAssignmentSchema = z
     reason: z.string().max(280).nullable().default(null),
     assignedAt: z.coerce.date(),
   })
-  .refine((a) => a.source !== "dispatcher" || a.dispatcherId !== null, {
-    message: "dispatcher assignments require dispatcherId (audit trail)",
-    path: ["dispatcherId"],
+  .refine((a) => a.source !== 'dispatcher' || a.dispatcherId !== null, {
+    message: 'dispatcher assignments require dispatcherId (audit trail)',
+    path: ['dispatcherId'],
   });
 export type RideAssignment = z.infer<typeof rideAssignmentSchema>;
 
@@ -228,7 +228,9 @@ export function assertRideAssignmentConsistent(ride: Ride): void {
  */
 export function isRideSplitConsistent(ride: Ride): boolean {
   return (
-    ride.quote === null || ride.split === null || ride.quote.totalCents === ride.split.totalCents
+    ride.quote === null ||
+    ride.split === null ||
+    ride.quote.totalCents === ride.split.totalCents
   );
 }
 

@@ -1,6 +1,6 @@
-import path from "node:path";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import type { Db } from "./client";
+import path from 'node:path';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import type { Db } from './client';
 
 /**
  * Package-relative, so any consumer can migrate without knowing where `db/`
@@ -8,7 +8,7 @@ import type { Db } from "./client";
  * `db/migrations` — the same folder drizzle-kit writes to. `__dirname` is
  * correct because this package builds to CJS; do not rewrite as import.meta.
  */
-export const MIGRATIONS_DIR = path.join(__dirname, "..", "migrations");
+export const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 export async function migrateDb(db: Db): Promise<void> {
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });

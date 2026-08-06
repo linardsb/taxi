@@ -1,6 +1,6 @@
-import { z } from "zod";
-import { DISPATCH_MODES } from "../enums";
-import { commissionPctSchema, nonNegativeCentsSchema } from "../money";
+import { z } from 'zod';
+import { DISPATCH_MODES } from '../enums';
+import { commissionPctSchema, nonNegativeCentsSchema } from '../money';
 
 /**
  * The per-city knobs the platform runs on. One row per city; #6 owns the table
@@ -20,7 +20,7 @@ export const platformConfigSchema = z.object({
   hourlyGuaranteeCents: nonNegativeCentsSchema.nullable().default(null),
   weeklyGuaranteeCents: nonNegativeCentsSchema.nullable().default(null),
   /** Fallback when a geozone does not set `queueModeEnabled` (dispatch-strategies.md). */
-  defaultDispatchMode: z.enum(DISPATCH_MODES).default("auto_match"),
+  defaultDispatchMode: z.enum(DISPATCH_MODES).default('auto_match'),
   /** How long a driver has to accept before the cascade re-offers (`offered → requested`). */
   offerTimeoutSeconds: z.number().int().positive().default(20),
   /** Unclaimed-order alert threshold to Dina's board (S9-4). */
