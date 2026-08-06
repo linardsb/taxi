@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 /**
  * Lowercase by construction. Express normalises every inbound header name to
@@ -10,7 +10,7 @@ import { z } from "zod";
  * OLD body created; the key is the whole contract, and the server does not
  * re-read the body to second-guess it.
  */
-export const IDEMPOTENCY_KEY_HEADER = "idempotency-key";
+export const IDEMPOTENCY_KEY_HEADER = 'idempotency-key';
 
 /**
  * A uuid, not an opaque string. Entropy is the point: a client that sent a
