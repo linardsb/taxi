@@ -17,6 +17,23 @@
  * - NO CANCELLATION FEE, no no-show flow, no free-cancellation window. There is
  *   no evidence for a policy yet, and every one of them is a money movement,
  *   i.e. #12.
+ * - THE CANCELLATION `reason` IS EPHEMERAL. It reaches the rider's and driver's
+ *   phones on `ride:status` and is then gone: no column holds it, and the log
+ *   records only `hasReason`, because the text is author-written free text and
+ *   `.claude/references/logging-standard.md` forbids the address and phone
+ *   number a rider will put in it. So "why was this ride cancelled" has no
+ *   durable answer — only WHO, via `actorId` on the transition log.
+ *   `dispatch_audit_log` is shaped for assignments and is the wrong home; a
+ *   cancellation audit is its own ticket.
+ * - A DRIVER STRANDED ON `in_progress` HAS NO SELF-SERVICE EXIT.
+ *   `ALLOWED_TRANSITIONS.in_progress` is `['completed', 'cancelled_by_dispatcher']`,
+ *   so they cannot cancel; and `setPresence` refuses BOTH `online` and
+ *   `offline` while `on_ride`, so they cannot end their shift either. Their
+ *   only exits are tapping Complete — settling a fare for a ride that may not
+ *   have happened — or phoning a dispatcher. Deliberate: at
+ *   `accepted`/`arriving`/`arrived` the driver CAN self-cancel and be released,
+ *   and no sweeper timeout was invented here. The escalation is a driver-side
+ *   `in_progress` cancellation with a reason, which is a money question (#12).
  * - A `scheduled` ride is INERT. Nothing promotes it to `requested`; the timer
  *   is #21's. A past `scheduledFor` is rejected at the boundary precisely
  *   because nothing would ever pick it up.

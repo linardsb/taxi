@@ -19,9 +19,22 @@
  *   own ticket.
  * - `driver:queue` IS NEVER EMITTED. A driver cannot see their own place in the
  *   rank; the schema is typed and unused until #14/#19 draw a queue view.
- * - `drivers.status` NEVER BECOMES `on_ride` — that write belongs to #11. A
- *   driver who accepts here stays `online`, so until #11 lands they remain an
- *   eligible candidate for a SECOND ride. Known and accepted, not an oversight.
+ * - THE `on_ride` CLAIM NARROWS DOUBLE-ASSIGNMENT BUT DOES NOT CLOSE IT. #11
+ *   made `accept` claim the driver, so the ordinary path no longer leaves them
+ *   `online` for the next tick to offer a second car. Two holes remain, both
+ *   reachable: (a) a driver whose socket drops mid-offer is written `offline`
+ *   by `clearPresenceOnDisconnect`, so the claim — conditional on
+ *   `status = 'online'` — matches nothing, and the `driver_on_ride` guard in
+ *   `setPresence` then cannot stop them going `online` again mid-ride; (b)
+ *   nothing excludes a driver who already holds a pending offer on a DIFFERENT
+ *   ride, so one driver can be offered and accept two. `accept` logs
+ *   `dispatch.assign.driver_not_claimed` when the claim misses, so (a) is at
+ *   least observable. Widening the claim's WHERE to `status <> 'on_ride'` is
+ *   NOT the fix — `releaseFromRide` would then put a force-assigned offline
+ *   driver `online` at completion, which is the case the guard exists for. The
+ *   real fix gates `setPresence('online')` on "no active post-acceptance ride"
+ *   and stops offering a second card; it belongs to this slice's offer model
+ *   and is #61.
  * - NO `reassign` AND NO `cancel`. `dispatch-strategies.md` lists all three
  *   privileged dispatcher commands; #10's AC names only force-assign, and
  *   `reassign` needs a cancellation path (#11) to be coherent. Force-assigning a

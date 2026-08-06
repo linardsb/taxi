@@ -1,4 +1,9 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Db } from '@taxi/db';
 import type { FareSplit, Ride, RideStatus } from '@taxi/shared';
 import type { DriversService } from '../../drivers';
@@ -17,6 +22,10 @@ const RIDER_ID = '99999999-8888-4777-8666-555555555555';
 const DRIVER_ID = 'd0000000-0000-4000-8000-000000000001';
 const OTHER_DRIVER = 'd0000000-0000-4000-8000-000000000002';
 const OFFER_ID = '7c6b5a49-3827-4160-9504-3f2e1d0c9b8a';
+const DISPATCHER_ID = 'a1111111-2222-4333-8444-555555555555';
+
+/** What a rider actually types into a cancellation box. */
+const PII_REASON = 'waiting at Brīvības iela 42, call me on 26123456';
 
 const TOTAL_CENTS = 1_000;
 
@@ -486,6 +495,27 @@ describe('RideLifecycleService', () => {
       );
     });
 
+    /**
+     * The masking is the load-bearing behaviour of the rejection branch, and
+     * the ride here is BOTH somebody else's AND locked: a `payment_method_locked`
+     * 409 would confirm the id exists just as loudly as a 403 would.
+     */
+    it('404s rather than 403s on somebody else’s ride — no id confirmation (failure)', async () => {
+      const { service } = build({
+        paymentUpdated: false,
+        ride: lifecycleRide({ status: 'accepted', riderId: OTHER_DRIVER }),
+      });
+
+      const thrown = await service
+        .changePaymentMethod(RIDE_ID, RIDER_ID, 'card')
+        .catch((error: unknown) => error);
+
+      expect(thrown).toBeInstanceOf(NotFoundException);
+      expect(thrown).not.toBeInstanceOf(ForbiddenException);
+      expect(thrown).not.toBeInstanceOf(ConflictException);
+      expect((thrown as Error).message).toBe('ride_not_found');
+    });
+
     it('409s ride_not_editable on a cancelled ride — over, not locked (edge)', async () => {
       const { service } = build({
         paymentUpdated: false,
@@ -522,6 +552,108 @@ describe('RideLifecycleService', () => {
 
       await expect(service.claimDriver(tx, DRIVER_ID)).resolves.toBe(true);
       expect(claimForRide).toHaveBeenCalledWith(DRIVER_ID, tx);
+    });
+  });
+
+  /**
+   * The log payloads themselves, asserted rather than reviewed. Every rule
+   * checked here is a line in `.claude/references/logging-standard.md`.
+   */
+  describe('logging', () => {
+    /** Nest's logger is per-instance but shares the prototype methods. */
+    const payloadsOf = (spy: jest.SpyInstance): Record<string, unknown>[] =>
+      (spy.mock.calls as unknown as [Record<string, unknown>][]).map(
+        ([payload]) => payload,
+      );
+
+    const find = (spy: jest.SpyInstance, event: string) =>
+      payloadsOf(spy).find((payload) => payload.event === event);
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('records WHICH dispatcher, and never the free text they typed (failure — PII)', async () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const { service } = build({ ride: lifecycleRide({ status: 'arrived' }) });
+
+      await service.cancel({
+        rideId: RIDE_ID,
+        actor: 'dispatcher',
+        actorId: DISPATCHER_ID,
+        reason: PII_REASON,
+      });
+
+      const applied = find(log, 'ride.lifecycle.transition_applied');
+      // `actor: 'dispatcher'` alone does not say which of two on shift killed
+      // a ride under way — the one ownership-bypassing action in this slice.
+      expect(applied).toMatchObject({
+        actor: 'dispatcher',
+        actorId: DISPATCHER_ID,
+        from: 'arrived',
+        to: 'cancelled_by_dispatcher',
+        hasReason: true,
+      });
+      // An address and an unmasked phone number, both forbidden. The whole
+      // payload is searched, not just the field the text used to live in.
+      expect(applied).not.toHaveProperty('reason');
+      expect(JSON.stringify(applied)).not.toContain('26123456');
+      expect(JSON.stringify(applied)).not.toContain('Brīvības');
+    });
+
+    it('reports hasReason: false when no reason was given (edge)', async () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const { service } = build({ ride: lifecycleRide({ status: 'arrived' }) });
+
+      await service.cancel({
+        rideId: RIDE_ID,
+        actor: 'driver',
+        actorId: DRIVER_ID,
+        reason: null,
+      });
+
+      expect(find(log, 'ride.lifecycle.transition_applied')).toMatchObject({
+        actorId: DRIVER_ID,
+        hasReason: false,
+      });
+    });
+
+    it('logs the rejection when the conditional UPDATE loses the race (failure)', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const { service } = build({
+        ride: lifecycleRide({ status: 'in_progress' }),
+        transitioned: undefined, // the UPDATE matched no row
+      });
+
+      await expect(service.complete(DRIVER_ID, RIDE_ID)).rejects.toThrow(
+        'ride_transition_conflict',
+      );
+
+      // A lost race IS a state-machine rejection: without this the loser gets
+      // a typed 409 and leaves no trace at all.
+      expect(find(warn, 'ride.lifecycle.transition_rejected')).toMatchObject({
+        actor: 'driver',
+        actorId: DRIVER_ID,
+        from: 'in_progress',
+        to: 'completed',
+        cause: 'lost_race',
+      });
+    });
+
+    it('distinguishes a stale read from a lost race (edge)', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const { service } = build({
+        ride: lifecycleRide({ status: 'accepted' }),
+      });
+
+      await expect(
+        service.driverStep('start', DRIVER_ID, RIDE_ID),
+      ).rejects.toThrow('ride_not_arrived');
+
+      // Same event, different cause — the guard saw the wrong status, rather
+      // than the write losing to somebody faster.
+      expect(find(warn, 'ride.lifecycle.transition_rejected')).toMatchObject({
+        cause: 'not_in_expected_status',
+        from: 'accepted',
+      });
     });
   });
 });

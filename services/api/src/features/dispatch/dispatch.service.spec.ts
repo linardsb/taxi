@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import type { Db } from '@taxi/db';
 import type { Env } from '../../common/config/env.schema';
 import type { KeyValueStore } from '../../common/kv/kv.store';
@@ -69,11 +69,23 @@ function build(
     claimDriver?: boolean;
   } = {},
 ) {
-  // A transaction that simply runs the callback: every write below is a fake,
-  // so there is nothing to roll back — what matters is WHICH calls happen and
-  // in what order relative to the emits.
+  /**
+   * `events` is the ORDERING LEDGER, the same mechanism the lifecycle spec
+   * uses: the transaction fake brackets the callback and the writes append to
+   * it, so "inside the transaction" is a position in an array rather than an
+   * `expect.anything()` that a tx object and a stray `{}` both satisfy.
+   */
+  const events: string[] = [];
+
+  // Every write below is a fake, so there is nothing to roll back — what
+  // matters is WHICH calls happen and in what order relative to the emits.
   const db = {
-    transaction: (fn: (tx: unknown) => Promise<unknown>) => fn({}),
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+      events.push('tx:begin');
+      const result = await fn({});
+      events.push('tx:commit');
+      return result;
+    },
   } as unknown as Db;
 
   const insertAudit = jest.fn(() => Promise.resolve());
@@ -114,10 +126,15 @@ function build(
     emitStatus,
   } as unknown as RideTransitionService;
 
-  const claimDriver = jest.fn(() => Promise.resolve(over.claimDriver ?? true));
+  const claimDriver = jest.fn(() => {
+    events.push('claim');
+    return Promise.resolve(over.claimDriver ?? true);
+  });
   const lifecycle = { claimDriver } as unknown as RideLifecycleService;
 
-  const emitToRide = jest.fn();
+  const emitToRide = jest.fn(() => {
+    events.push('emit:assigned');
+  });
   const emitToDriver = jest.fn();
   const emitToDispatch = jest.fn();
   const realtime = {
@@ -152,6 +169,7 @@ function build(
 
   return {
     service,
+    events,
     offers,
     insertAudit,
     revokePendingForRide,
@@ -211,17 +229,26 @@ describe('DispatchService', () => {
     });
 
     it('claims the driver on_ride inside the transaction (expected)', async () => {
-      const { service, claimDriver } = build();
+      const { service, claimDriver, events } = build();
 
       await service.accept(DRIVER_ID, OFFER_ID);
 
       // Without this the driver stays `online`, `candidate-filter.ts` keeps
       // them in the pool, and the next tick offers them a second car.
       expect(claimDriver).toHaveBeenCalledWith(expect.anything(), DRIVER_ID);
+      // INSIDE, asserted by position: the claim must roll back with the
+      // assignment. `expect.anything()` on the tx argument would pass just as
+      // happily with the claim moved out of the transaction entirely.
+      expect(events).toEqual([
+        'tx:begin',
+        'claim',
+        'tx:commit',
+        'emit:assigned',
+      ]);
     });
 
     it('still assigns when the claim matches no online driver (edge)', async () => {
-      const { service, insertAudit } = build({ claimDriver: false });
+      const { service, insertAudit, events } = build({ claimDriver: false });
 
       // The ordinary outcome for a driver Dina overrode onto a ride while
       // offline. Throwing here would break the S9-2 override.
@@ -229,6 +256,38 @@ describe('DispatchService', () => {
         rideId: RIDE_ID,
       });
       expect(insertAudit).toHaveBeenCalled();
+      // Still committed, still emitted — a missed claim is logged, not fatal.
+      expect(events).toEqual([
+        'tx:begin',
+        'claim',
+        'tx:commit',
+        'emit:assigned',
+      ]);
+    });
+
+    it('warns when the claim misses, so the hole is observable (edge)', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const { service } = build({ claimDriver: false });
+
+      await service.accept(DRIVER_ID, OFFER_ID);
+
+      // A driver whose socket dropped mid-offer accepts without ever being
+      // marked `on_ride`, and can then go `online` again mid-ride. Not closed
+      // here — see the dispatch KNOWN GAPS — but no longer silent.
+      const payloads = (
+        warn.mock.calls as unknown as [Record<string, unknown>][]
+      ).map(([payload]) => payload);
+      expect(
+        payloads.find(
+          (payload) => payload.event === 'dispatch.assign.driver_not_claimed',
+        ),
+      ).toMatchObject({
+        rideId: RIDE_ID,
+        driverId: DRIVER_ID,
+        offerId: OFFER_ID,
+      });
+
+      warn.mockRestore();
     });
 
     it('409s and transitions nothing when another driver already took it (edge)', async () => {

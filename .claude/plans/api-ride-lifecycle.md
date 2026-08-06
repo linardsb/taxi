@@ -780,6 +780,14 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
   break the S9-2 override that "deliberately is NOT filtered through the eligibility rules".
 - **GOTCHA**: this call goes **inside** the transaction, above the `── committed ──` marker. Nothing
   about it may emit.
+- **CORRECTION (PR #60 review)**: "in `accept` it cannot realistically be false (the driver was
+  `online` to be offered)" is **wrong**, and the assumption is left here rather than edited away so
+  the next reader does not re-derive it. A driver whose socket drops between the offer and the tap is
+  written `offline` by `clearPresenceOnDisconnect`; `acceptOffer` checks `pending` + `driverId` +
+  `expiresAt` and nothing about presence, so the accept succeeds and the claim silently matches no
+  row. `accept` therefore captures the boolean and logs `dispatch.assign.driver_not_claimed`. The
+  residual hole — `setPresence` cannot refuse an `offline` driver going `online` mid-ride — is
+  recorded in the dispatch slice's KNOWN GAPS.
 - **VALIDATE**: `pnpm --filter @taxi/api test -- dispatch`
 - **SATISFIES**: AC #1
 

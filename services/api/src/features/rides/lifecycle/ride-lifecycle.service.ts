@@ -35,6 +35,15 @@ import {
 /** What a revoked offer needs for its `ride:offer_revoked`. */
 type RevokedRef = { offerId: string; driverId: string };
 
+/**
+ * Why the machine said no. A CLOSED set, deliberately: the cancellation
+ * `reason` beside it is rider-authored free text and must never reach a log
+ * (`.claude/references/logging-standard.md`), so making this a union rather
+ * than a `string` turns that mistake into a compiler error.
+ */
+type RejectionCause =
+  'not_in_expected_status' | 'illegal_transition' | 'lost_race';
+
 /** Anything this slice logs about. Both ride shapes satisfy it structurally. */
 type LoggableRide = { id: string; orderId: string; driverId: string | null };
 
@@ -87,15 +96,22 @@ export class RideLifecycleService {
     driverId: string,
     rideId: string,
   ): Promise<void> {
-    const { from, to } = await this.guardDriverStep(step, driverId, rideId);
+    const { ride, from, to } = await this.guardDriverStep(
+      step,
+      driverId,
+      rideId,
+    );
 
     // The convenience form is safe here: genuinely one statement, nothing else
     // in flight. `complete` composes `transitionInTx` instead, because it also
     // writes the split and releases the driver.
     const moved = await this.transitions.transition(rideId, from, to);
-    if (!moved) throw new ConflictException('ride_transition_conflict');
+    if (!moved) {
+      this.logRejected(ride, 'driver', driverId, to, 'lost_race');
+      throw new ConflictException('ride_transition_conflict');
+    }
 
-    this.logApplied(moved, 'driver', from, to);
+    this.logApplied(moved, 'driver', driverId, from, to);
   }
 
   /**
@@ -133,7 +149,10 @@ export class RideLifecycleService {
 
     const moved = await this.db.transaction(async (tx) => {
       const moved = await this.transitions.transitionInTx(tx, rideId, from, to);
-      if (!moved) throw new ConflictException('ride_transition_conflict');
+      if (!moved) {
+        this.logRejected(ride, 'driver', driverId, to, 'lost_race');
+        throw new ConflictException('ride_transition_conflict');
+      }
 
       await this.lifecycle.writeSettledSplit(tx, rideId, split);
       await this.drivers.releaseFromRide(driverId, tx);
@@ -142,7 +161,7 @@ export class RideLifecycleService {
 
     // ── committed ──
     this.transitions.emitStatus(moved, from);
-    this.logApplied(moved, 'driver', from, to);
+    this.logApplied(moved, 'driver', driverId, from, to);
     this.logger.log({
       event: 'ride.lifecycle.settlement_written',
       rideId,
@@ -188,7 +207,13 @@ export class RideLifecycleService {
     // Load-bearing here in a way it is not in `driverStep`: `to` varies by
     // actor, so the machine — not a fixed step table — decides legality.
     if (!canTransition(from, to)) {
-      this.logRejected(ride, input.actor, to);
+      this.logRejected(
+        ride,
+        input.actor,
+        input.actorId,
+        to,
+        'illegal_transition',
+      );
       throw new ConflictException('ride_not_cancellable');
     }
 
@@ -199,7 +224,10 @@ export class RideLifecycleService {
         from,
         to,
       );
-      if (!moved) throw new ConflictException('ride_transition_conflict');
+      if (!moved) {
+        this.logRejected(ride, input.actor, input.actorId, to, 'lost_race');
+        throw new ConflictException('ride_transition_conflict');
+      }
 
       const revoked = await this.lifecycle.revokePendingOffers(
         tx,
@@ -220,7 +248,7 @@ export class RideLifecycleService {
     // ── committed ──
     this.transitions.emitStatus(moved, from, input.reason);
     this.emitRevoked(input.rideId, revoked);
-    this.logApplied(moved, input.actor, from, to, input.reason);
+    this.logApplied(moved, input.actor, input.actorId, from, to, input.reason);
   }
 
   /**
@@ -295,7 +323,7 @@ export class RideLifecycleService {
 
     const { from, to } = DRIVER_STEPS[step];
     if (ride.status !== from) {
-      this.logRejected(ride, 'driver', to);
+      this.logRejected(ride, 'driver', driverId, to, 'not_in_expected_status');
       throw new ConflictException(`ride_not_${from}`);
     }
 
@@ -355,9 +383,20 @@ export class RideLifecycleService {
     }
   }
 
+  /**
+   * `actorId` is WHICH person, not just which role: a dispatcher cancelling a
+   * moving ride is the one ownership-bypassing action here, and `actor:
+   * 'dispatcher'` alone does not say which of them did it.
+   *
+   * `reason` is rider/driver/dispatcher-authored free text (280 chars,
+   * `rideCancelSchema`) and is therefore reduced to a BOOLEAN. "Waiting at
+   * Brīvības iela 42, call me on 26123456" is an address and an unmasked phone
+   * number, both of which `.claude/references/logging-standard.md` forbids.
+   */
   private logApplied(
     ride: LoggableRide,
     actor: LifecycleActor,
+    actorId: string,
     from: RideStatus,
     to: RideStatus,
     reason: string | null = null,
@@ -368,22 +407,29 @@ export class RideLifecycleService {
       orderId: ride.orderId,
       driverId: ride.driverId,
       actor,
+      actorId,
       from,
       to,
-      reason,
+      hasReason: reason !== null,
       at: new Date().toISOString(),
     });
   }
 
   /**
-   * `from` is the ride's ACTUAL status, never the one the step expected —
-   * logging the expected one would claim the ride was in the state we wanted it
-   * to be in, which is the opposite of useful at 02:00.
+   * `from` is the ride's ACTUAL status as last read, never the one the step
+   * expected — logging the expected one would claim the ride was in the state
+   * we wanted it to be in, which is the opposite of useful at 02:00.
+   *
+   * On `lost_race` that read is by definition already stale: the conditional
+   * UPDATE matched no row precisely because somebody else moved the ride
+   * between the read and the write. `from` is what we saw, and `cause` says so.
    */
   private logRejected(
     ride: LifecycleRide,
     actor: LifecycleActor,
+    actorId: string,
     to: RideStatus,
+    cause: RejectionCause,
   ): void {
     this.logger.warn({
       event: 'ride.lifecycle.transition_rejected',
@@ -391,8 +437,10 @@ export class RideLifecycleService {
       orderId: ride.orderId,
       driverId: ride.driverId,
       actor,
+      actorId,
       from: ride.status,
       to,
+      cause,
       at: new Date().toISOString(),
     });
   }
