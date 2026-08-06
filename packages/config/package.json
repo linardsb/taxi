@@ -2,5 +2,19 @@
   "name": "@taxi/config",
   "version": "0.0.1",
   "private": true,
-  "description": "Shared tsconfig presets for the Sakta Cab monorepo"
+  "description": "Shared tsconfig and eslint presets for the Sakta Cab monorepo",
+  "exports": {
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./eslint/base.mjs": "./eslint/base.mjs"
+  },
+  "dependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-prettier": "^5.2.2",
+    "prettier": "^3.4.2",
+    "typescript-eslint": "^8.20.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.18.0"
+  }
 }

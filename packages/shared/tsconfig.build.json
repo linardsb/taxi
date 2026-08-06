@@ -1,7 +1,19 @@
 {
+  // The isomorphic fence (#56). `src` is imported by React Native and browser
+  // code, so a Node global here builds fine and dies on a device. `types: []`
+  // closes that hole ONLY in a program that excludes `tests`: one test file
+  // importing vitest pulls in vite's `/// <reference types="node" />`, which
+  // injects @types/node globals into the whole program and `types` cannot
+  // override a triple-slash reference. So the src-only program the build
+  // already needs is also what enforces the constraint, and `typecheck` runs
+  // it as a second pass.
+  //
+  // Trade-off: editors load tsconfig.json, so a Node global in `src` surfaces
+  // at typecheck/build rather than inline while typing.
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": "src"
+    "rootDir": "src",
+    "types": []
   },
   "include": ["src"]
 }

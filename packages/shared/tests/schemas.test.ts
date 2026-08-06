@@ -160,6 +160,26 @@ describe('isFareQuoteConsistent', () => {
     );
   });
 
+  it('renders every breakdown term as its own addend (#55)', () => {
+    // The message is what a fare mismatch is debugged from, so assert the
+    // whole string: a missing separator ran `timeCents` and `discountCents`
+    // together into one number that was never in the breakdown.
+    const parsed = fareQuoteSchema.parse(
+      quote({
+        breakdown: {
+          baseCents: 200,
+          distanceCents: 80,
+          timeCents: 150,
+          discountCents: 0,
+        },
+      }),
+    );
+
+    expect(() => assertFareQuoteConsistent(parsed)).toThrow(
+      'Quote breakdown 200+80+150+0 does not sum to totalCents 2000',
+    );
+  });
+
   it('leaves a rider_bid quote free not to reconcile (edge — why this is not a refine)', () => {
     // The total is the rider's own offer; the breakdown is an estimate of what
     // the ride is worth. A `.refine()` on the schema would make this
