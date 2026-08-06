@@ -48,6 +48,7 @@ Redis-backed suites are **opt-in**: without `REDIS_TEST_URL` they `describe.skip
 ## Hard rules
 
 - **Payment method locks at ride acceptance** — enforced by `isPaymentMethodLocked()` in `@taxi/shared`; never bypass it.
+- Read the payment method from `ride.paymentMethod` (operative), never `ride.request.paymentMethod` (the immutable request snapshot) — the two legitimately diverge once a rider switches before acceptance.
 - All money is **integer cents, EUR**. Never floats.
 - Commission % is a `platform_config` row resolved by `resolveCommissionPct()` — never a literal, never a silent default (seed data aside).
 - Every cross-surface contract (schema, socket event, enum) lives in `packages/shared` — never duplicate a type an app can import.
