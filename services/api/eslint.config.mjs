@@ -1,39 +1,23 @@
 // @ts-check
-import eslint from '@eslint/js';
-import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
+import base from '@taxi/config/eslint/base.mjs';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
-  {
-    ignores: ['eslint.config.mjs'],
-  },
-  eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
-  eslintPluginPrettierRecommended,
-  {
-    languageOptions: {
-      globals: {
-        ...globals.node,
-        ...globals.jest,
-      },
-      sourceType: 'commonjs',
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
+export default tseslint.config(...base, {
+  languageOptions: {
+    globals: {
+      ...globals.node,
+      ...globals.jest,
+    },
+    sourceType: 'commonjs',
+    parserOptions: {
+      projectService: true,
+      tsconfigRootDir: import.meta.dirname,
     },
   },
-  {
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn',
-      // The omit-by-rest idiom (`const { x: _drop, ...rest } = obj`) is
-      // legitimate; the base-ESLint default for this option is `false`, which
-      // flags it.
-      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
-      'prettier/prettier': ['error', { endOfLine: 'auto' }],
-    },
+  rules: {
+    // Nest's testing utilities and the Drizzle query builders are typed loosely
+    // enough that the escape hatch stays open here, and only here.
+    '@typescript-eslint/no-explicit-any': 'off',
   },
-);
+});
