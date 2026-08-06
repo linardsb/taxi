@@ -20,6 +20,7 @@ import { GeozonesService } from '../geozones';
 import { PlatformConfigService } from '../platform-config';
 import { RealtimeService } from '../realtime';
 import {
+  RideLifecycleService,
   RidesRepository,
   RideTransitionService,
   type AwaitingRide,
@@ -50,6 +51,7 @@ export class DispatchService {
     private readonly offers: DispatchRepository,
     private readonly rides: RidesRepository,
     private readonly transitions: RideTransitionService,
+    private readonly lifecycle: RideLifecycleService,
     private readonly geozones: GeozonesService,
     private readonly config: PlatformConfigService,
     private readonly resolver: DispatchStrategyResolver,
@@ -201,6 +203,12 @@ export class DispatchService {
         throw new ConflictException('ride_already_assigned');
       }
 
+      // `online → on_ride`, or `candidate-filter.ts` keeps this driver in the
+      // pool and the next tick offers them a SECOND car. The return value is
+      // deliberately ignored: `false` is ordinary, never an error — see
+      // `RideLifecycleService.claimDriver`.
+      await this.lifecycle.claimDriver(tx, driverId);
+
       await this.offers.insertAudit(
         { rideId, driverId, source: offer.source },
         tx,
@@ -347,6 +355,12 @@ export class DispatchService {
       if (!(await this.rides.assignDriver(input.rideId, input.driverId, tx))) {
         throw new ConflictException('ride_already_assigned');
       }
+
+      // `false` here is the ORDINARY outcome for a driver Dina overrode onto
+      // the ride while offline — the override is "deliberately NOT filtered
+      // through the eligibility rules", so throwing would break S9-2. They stay
+      // offline for the whole ride and the release correctly does nothing.
+      await this.lifecycle.claimDriver(tx, input.driverId);
 
       await this.offers.insertAudit(
         {

@@ -12,8 +12,10 @@ import {
   isRideAssignmentConsistent,
   isRideSplitConsistent,
   rideAssignmentSchema,
+  rideCancelSchema,
   rideCreatedSchema,
   rideOfferSchema,
+  ridePaymentMethodUpdateSchema,
   rideRequestBodySchema,
   rideRequestSchema,
   rideSchema,
@@ -393,6 +395,7 @@ describe('rideSchema', () => {
     status: 'requested',
     riderId: uuid,
     driverId: null,
+    paymentMethod: 'cash',
     request: {
       riderId: uuid,
       pickup: { location: riga, address: 'Brīvības iela 1, Rīga' },
@@ -499,6 +502,28 @@ describe('rideRequestBodySchema', () => {
   });
 });
 
+describe('ridePaymentMethodUpdateSchema', () => {
+  it('accepts a switch to card (expected)', () => {
+    expect(
+      ridePaymentMethodUpdateSchema.parse({ paymentMethod: 'card' })
+        .paymentMethod,
+    ).toBe('card');
+  });
+
+  it('rejects a method the platform does not take (failure)', () => {
+    expect(
+      ridePaymentMethodUpdateSchema.safeParse({ paymentMethod: 'crypto' })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe('rideCancelSchema', () => {
+  it('defaults reason to null — a cancel need not explain itself (edge)', () => {
+    expect(rideCancelSchema.parse({}).reason).toBeNull();
+  });
+});
+
 describe('rideCreatedSchema', () => {
   const ride = {
     id: uuid,
@@ -506,6 +531,7 @@ describe('rideCreatedSchema', () => {
     status: 'requested',
     riderId: uuid,
     driverId: null,
+    paymentMethod: 'cash',
     request: {
       riderId: uuid,
       pickup: { location: riga, address: 'Brīvības iela 1, Rīga' },

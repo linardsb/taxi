@@ -3,10 +3,20 @@
  *
  * KNOWN GAPS — seen and accepted for the pilot, not overlooked:
  *
- * - #11 OWNS EVERY TRANSITION FROM `accepted` ONWARD. This slice performs none
- *   itself: it exposes `RideTransitionService` as the one guarded writer, #10
- *   drives the dispatch transitions through it, and no arrive/start/complete or
- *   cancellation route exists yet.
+ * - THE RIDE ENDS AT `completed`. `completed → settled` is #12's, together with
+ *   the ledger entries that give it meaning: `settled` means "money movement
+ *   finished" (`.claude/references/ride-state-machine.md`), and a `settled`
+ *   status with no ledger rows is a status that lies. No payment capture, no
+ *   cash netting, no driver balance movement here either.
+ * - THERE IS NO `GET /rides/:rideId`. `POST /rides/:rideId/complete` returns the
+ *   settled ride, which is what a driver needs at the moment they need it. The
+ *   general ride read belongs to #16/#17, which know what they want on it.
+ * - `cancelled_by_system` HAS NO PRODUCTION TRIGGER. The actor is supported end
+ *   to end and covered by a spec, but the caller that will use it is #12's
+ *   payment-preauth failure. No sweeper timeout was invented for it here.
+ * - NO CANCELLATION FEE, no no-show flow, no free-cancellation window. There is
+ *   no evidence for a policy yet, and every one of them is a money movement,
+ *   i.e. #12.
  * - A `scheduled` ride is INERT. Nothing promotes it to `requested`; the timer
  *   is #21's. A past `scheduledFor` is rejected at the boundary precisely
  *   because nothing would ever pick it up.
@@ -42,3 +52,10 @@ export { RidesRepository } from './rides.repository';
 export type { AwaitingRide } from './rides.repository';
 export { RideTransitionService } from './ride-transition.service';
 export type { DbTx, TransitionedRide } from './ride-transition.service';
+/**
+ * Same exception, one more consumer: `drivers.status = 'on_ride'` is written
+ * only by the ride lifecycle, so dispatch composes `claimDriver` into its
+ * accept and force-assign transactions rather than reaching into the drivers
+ * slice itself. One owner for the status, one place to read how it is claimed.
+ */
+export { RideLifecycleService } from './lifecycle/ride-lifecycle.service';

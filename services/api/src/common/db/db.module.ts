@@ -11,6 +11,17 @@ import { APP_ENV, type Env } from '../config/env.schema';
 export const DRIZZLE = 'DRIZZLE';
 
 /**
+ * Drizzle's transaction handle, derived so it never drifts from `Db`. Deriving
+ * from `Db` needs no type arguments and cannot drift when the schema or driver
+ * changes — do not reach for a `PgTransaction<...>` generic.
+ *
+ * Lives beside the `DRIZZLE` token because Drizzle plumbing is cross-cutting:
+ * three slices now compose transactions, and homing this in one of them would
+ * make the other two depend on that slice for a type.
+ */
+export type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/**
  * Owns the pg pool so it can be closed on shutdown — without `pool.end()`
  * jest hangs after the suite with open handles. The pool is typed off
  * createDb's return so the api needs no direct `pg` dependency.

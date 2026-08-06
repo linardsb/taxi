@@ -8,6 +8,7 @@ import type { PlatformConfigService } from '../platform-config';
 import type { RealtimeService } from '../realtime';
 import type {
   AwaitingRide,
+  RideLifecycleService,
   RidesRepository,
   RideTransitionService,
   TransitionedRide,
@@ -64,6 +65,8 @@ function build(
     assignDriver?: boolean;
     revoked?: { offerId: string; driverId: string }[];
     incrResult?: number;
+    /** `false` models a force-assigned OFFLINE driver: ordinary, never a throw. */
+    claimDriver?: boolean;
   } = {},
 ) {
   // A transaction that simply runs the callback: every write below is a fake,
@@ -111,6 +114,9 @@ function build(
     emitStatus,
   } as unknown as RideTransitionService;
 
+  const claimDriver = jest.fn(() => Promise.resolve(over.claimDriver ?? true));
+  const lifecycle = { claimDriver } as unknown as RideLifecycleService;
+
   const emitToRide = jest.fn();
   const emitToDriver = jest.fn();
   const emitToDispatch = jest.fn();
@@ -129,6 +135,7 @@ function build(
     offers,
     rides,
     transitions,
+    lifecycle,
     {
       resolveForPoint: () => Promise.resolve(undefined),
     } as unknown as GeozonesService,
@@ -149,6 +156,7 @@ function build(
     insertAudit,
     revokePendingForRide,
     assignDriver,
+    claimDriver,
     transitionInTx,
     transition,
     emitStatus,
@@ -200,6 +208,27 @@ describe('DispatchService', () => {
         'ride:offer_revoked',
         expect.objectContaining({ offerId: OTHER_OFFER, reason: 'taken' }),
       );
+    });
+
+    it('claims the driver on_ride inside the transaction (expected)', async () => {
+      const { service, claimDriver } = build();
+
+      await service.accept(DRIVER_ID, OFFER_ID);
+
+      // Without this the driver stays `online`, `candidate-filter.ts` keeps
+      // them in the pool, and the next tick offers them a second car.
+      expect(claimDriver).toHaveBeenCalledWith(expect.anything(), DRIVER_ID);
+    });
+
+    it('still assigns when the claim matches no online driver (edge)', async () => {
+      const { service, insertAudit } = build({ claimDriver: false });
+
+      // The ordinary outcome for a driver Dina overrode onto a ride while
+      // offline. Throwing here would break the S9-2 override.
+      await expect(service.accept(DRIVER_ID, OFFER_ID)).resolves.toEqual({
+        rideId: RIDE_ID,
+      });
+      expect(insertAudit).toHaveBeenCalled();
     });
 
     it('409s and transitions nothing when another driver already took it (edge)', async () => {

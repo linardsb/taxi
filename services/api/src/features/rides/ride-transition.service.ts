@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { rides, type Db } from '@taxi/db';
 import { assertTransition, RT, type RideStatus } from '@taxi/shared';
 import { and, eq } from 'drizzle-orm';
-import { DRIZZLE } from '../../common/db/db.module';
+import { DRIZZLE, type DbTx } from '../../common/db/db.module';
 import { RealtimeService } from '../realtime';
 
 /**
@@ -24,11 +24,11 @@ export interface TransitionedRide {
 }
 
 /**
- * Drizzle's transaction handle, derived so it never drifts from `Db`. Deriving
- * from `Db` needs no type arguments and cannot drift when the schema or driver
- * changes — do not reach for a `PgTransaction<...>` generic.
+ * Re-exported, not defined here: `DbTx` moved to `common/db` when the drivers
+ * slice needed it too. The re-export keeps `dispatch.repository.ts` and the
+ * rides barrel importing it from `'../rides'` exactly as before.
  */
-export type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+export type { DbTx } from '../../common/db/db.module';
 
 /** `RETURNING *` gives every column; this narrows to what callers use. */
 type RideRow = typeof rides.$inferSelect;

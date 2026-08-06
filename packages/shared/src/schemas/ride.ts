@@ -184,6 +184,15 @@ export const rideSchema = z.object({
   driverId: z.string().uuid().nullable(),
   /** Pickup zone — drives queue mode and the district stats Dina asked for (S7-2). */
   geozoneId: z.string().uuid().nullable().default(null),
+  /**
+   * The OPERATIVE, mutable payment method (`rides.payment_method`) — the rider
+   * may change it until `isPaymentMethodLocked()` turns true at `accepted`.
+   *
+   * Deliberately distinct from `request.paymentMethod`, which is the immutable
+   * wire snapshot of "what was asked" and must NEVER be rewritten: rewriting it
+   * would destroy the audit record the table docblock describes.
+   */
+  paymentMethod: z.enum(PAYMENT_METHOD_TYPES),
   request: rideRequestSchema,
   quote: fareQuoteSchema.nullable(),
   /** How this ride got its driver. null until a driver is assigned. */
@@ -243,6 +252,33 @@ export function assertRideSplitConsistent(ride: Ride): void {
     );
   }
 }
+
+/**
+ * The `PATCH /rides/:rideId/payment-method` body (#11).
+ *
+ * Lives here rather than beside the controller — unlike #10's local
+ * `forceAssignBodySchema` — because it has a named cross-surface consumer
+ * today: #17's rider app is the only thing that ever sends it.
+ */
+export const ridePaymentMethodUpdateSchema = z.object({
+  paymentMethod: z.enum(PAYMENT_METHOD_TYPES),
+});
+export type RidePaymentMethodUpdate = z.infer<
+  typeof ridePaymentMethodUpdateSchema
+>;
+
+/**
+ * The `POST /rides/:rideId/cancel` body (#11). The ACTOR is deliberately absent:
+ * it comes from the JWT role, the same rule that keeps `riderId` off
+ * `rideRequestBodySchema` and `dispatcherId` off the force-assign body.
+ *
+ * `max(280)` matches `rideAssignmentSchema.reason` and
+ * `rideStatusEventSchema.reason` — the reason travels straight onto the wire.
+ */
+export const rideCancelSchema = z.object({
+  reason: z.string().max(280).nullable().default(null),
+});
+export type RideCancel = z.infer<typeof rideCancelSchema>;
 
 /**
  * The `POST /rides` response (#9).

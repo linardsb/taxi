@@ -6,6 +6,7 @@ import type {
   DriverProfileUpdate,
 } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
+import type { DbTx } from '../../common/db/db.module';
 import {
   DriversRepository,
   type DriverMatchAttributes,
@@ -143,6 +144,48 @@ export class DriversService {
       reason: 'socket_disconnected',
       at: new Date().toISOString(),
     });
+  }
+
+  /**
+   * `on_ride` claim and release — the ONLY two writers of that status, both
+   * reached through #11's lifecycle (`services/api/CLAUDE.md`). Without the
+   * claim, `candidate-filter.ts` still sees an accepted driver as `online` and
+   * the very next sweeper tick offers them a second car.
+   *
+   * `false` means the conditional UPDATE matched nothing, which is ordinary —
+   * see `DriversRepository.claimForRide`. Neither method throws.
+   *
+   * Both run INSIDE the caller's transaction, so the log line is deliberately
+   * modest: it records that the statement matched, not that the ride moved.
+   * The caller's post-commit `ride.lifecycle.transition_applied` is the
+   * authoritative record, and a rollback would make anything stronger a lie.
+   */
+  async claimForRide(driverId: string, tx?: DbTx): Promise<boolean> {
+    const claimed = await this.drivers.claimForRide(driverId, tx);
+    if (claimed) {
+      this.logger.log({
+        event: 'driver.presence.claimed_for_ride',
+        driverId,
+        from: 'online',
+        to: 'on_ride',
+        at: new Date().toISOString(),
+      });
+    }
+    return claimed;
+  }
+
+  async releaseFromRide(driverId: string, tx?: DbTx): Promise<boolean> {
+    const released = await this.drivers.releaseFromRide(driverId, tx);
+    if (released) {
+      this.logger.log({
+        event: 'driver.presence.released_from_ride',
+        driverId,
+        from: 'on_ride',
+        to: 'online',
+        at: new Date().toISOString(),
+      });
+    }
+    return released;
   }
 
   /** #10's entry point: the attributes it filters a proximity list by. */
