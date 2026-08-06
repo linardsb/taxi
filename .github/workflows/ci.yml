@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual escape hatch. PR events are the only way a branch gets tested here,
+  # and when one silently fails to fire there is otherwise nothing to pull —
+  # #52 sat with zero check runs on its head commit and neither a push nor a
+  # close/reopen produced a run. GitHub only offers this trigger for workflows
+  # on the default branch, and dispatching against a ref needs the file present
+  # on that ref too, so a branch cut before this merged still cannot use it.
+  workflow_dispatch:
 
 jobs:
   check:
