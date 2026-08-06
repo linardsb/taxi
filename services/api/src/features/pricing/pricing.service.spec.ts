@@ -104,6 +104,23 @@ describe('PricingService', () => {
     expect(split.commissionCents + split.driverNetCents).toBe(1_300);
   });
 
+  it('resolves the preview split from the config row too, not a constant (edge)', async () => {
+    // `previewSplit` re-implements `quote()`'s three commission lines on
+    // purpose, and inherited none of its guard. Nothing else would catch a
+    // hardcode: `rides.service.spec.ts` fakes this method outright, and the
+    // integration spec compares it against `quote()` on a row seeded at 15 —
+    // which a `previewSplit` hardcoded to 15 passes identically.
+    const { service, routeCalls } = build({ commissionPct: 12 });
+
+    const split = await service.previewSplit(1_300);
+
+    expect(split.commissionPct).toBe(12);
+    expect(split.commissionCents).toBe(156); // 12% of 1300
+    expect(split.commissionCents + split.driverNetCents).toBe(1_300);
+    // The other reason this method exists: a replay spends no paid Routes call.
+    expect(routeCalls()).toBe(0);
+  });
+
   it('carries a 0% commission through to a full driver net (edge)', async () => {
     const { service } = build({ commissionPct: 0 });
 

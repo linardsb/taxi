@@ -28,6 +28,24 @@ export const rideRequestRateKey = (riderId: string): string =>
 export const RIDE_IDEMPOTENCY_TTL_SECONDS = 86_400; // 24 h
 
 /**
+ * The IN-FLIGHT reservation's window, not the settled key's.
+ *
+ * Must comfortably exceed the worst-case first request — config read, Routes
+ * call, two-table transaction. Too short and a slow first request lets a second
+ * one reserve, which is #46 back again; that constraint sets the floor, and the
+ * value above it is deliberately the smallest one that clears it.
+ *
+ * Short because a `pending` marker is the one state nothing can clear on its
+ * own: a process death between the commit and `recordIdempotency` leaves it
+ * behind, and the rider — who never got a 201, so holds no ride id — 409s on
+ * every retry until it expires while a car is already on its way. That residue
+ * is two minutes here instead of a day. A key that settles is promoted to
+ * `RIDE_IDEMPOTENCY_TTL_SECONDS` by `recordIdempotency`, so the retry window a
+ * client actually relies on is unaffected.
+ */
+export const RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS = 120; // 2 min
+
+/**
  * Reserved, not yet resolved to a ride — see `RidesService.request`.
  *
  * Deliberately NOT a uuid: the replay path tells a marker from a ride id by

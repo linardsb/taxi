@@ -89,7 +89,7 @@ pnpm turbo run typecheck lint test build --force
 | | result |
 |---|---|
 | typecheck | pass (all packages) |
-| lint | pass — 0 errors, 4 warnings, all pre-existing `getHttpServer()` `no-unsafe-argument` in four integration specs, untouched by this ticket |
+| lint | pass — 0 errors, 4 warnings, all pre-existing `getHttpServer()` `no-unsafe-argument` in four integration specs. Two of those files (`rides.integration.spec.ts`, `dispatch.integration.spec.ts`) ARE edited here, but the warning lines are not: `getHttpServer` appears nowhere in the diff, so this ticket adds no new warning |
 | test — `@taxi/shared` | 11 files pass (118 tests, +3) |
 | test — `@taxi/db` | 3 files pass |
 | test — `@taxi/api` | 39 suites / **262 tests** pass, Redis suites live (not skipped) |

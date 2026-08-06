@@ -11,6 +11,7 @@ import { InMemoryKeyValueStore } from '../../../test/harness';
 import type { PricingService } from '../pricing';
 import type { RealtimeService } from '../realtime';
 import {
+  RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS,
   RIDE_IDEMPOTENCY_TTL_SECONDS,
   RIDE_REQUEST_MAX_PER_WINDOW,
   RIDE_REQUEST_WINDOW_SECONDS,
@@ -374,6 +375,51 @@ describe('RidesService', () => {
       const healthy = build({ kv: failing.kv });
       await expect(req(healthy.service, body, key)).resolves.toBeDefined();
       expect(healthy.countOf('rides.create')).toBe(1);
+    });
+
+    it('expires a stranded pending marker in minutes, not a day (failure)', async () => {
+      // A process death between `rides.create` committing and
+      // `recordIdempotency` running leaves the key at `pending` with nobody to
+      // clear it. On the settled key's 24 h window the rider — who never got a
+      // 201, so holds no ride id — would 409 for a day while the sweeper puts a
+      // car on their kerb. The parked request below IS that window held open.
+      const { service, kv, releaseQuote } = build({ deferQuote: true });
+      const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const key = randomUUID();
+      const stored = rideIdempotencyKey(RIDER_ID, key);
+
+      const inFlight = req(service, body, key);
+      await expect(req(service, body, key)).rejects.toThrow(
+        /idempotent_request_in_progress/,
+      );
+
+      // The TTL assertion is the one that bites: without it a marker written
+      // with the settled window still 409s here and the test passes on the bug.
+      expect(await kv.ttl(stored)).toBeLessThanOrEqual(
+        RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS,
+      );
+      kv.advance(RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS + 1);
+      expect(await kv.get(stored)).toBeNull();
+
+      releaseQuote();
+      await expect(inFlight).resolves.toBeDefined();
+      warned.mockRestore();
+    });
+
+    it('keeps replaying a settled key past the pending window (edge)', async () => {
+      // The other half of the short marker: `recordIdempotency` promotes a key
+      // that settled to the full window. Shortening BOTH would be the tempting
+      // simplification, and it would silently cut the rider's retry window from
+      // a day to two minutes.
+      const { service, kv, countOf } = build();
+      const key = randomUUID();
+
+      const first = await req(service, body, key);
+      kv.advance(RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS + 1);
+      const second = await req(service, body, key);
+
+      expect(second.ride.id).toBe(first.ride.id);
+      expect(countOf('rides.create')).toBe(1);
     });
 
     it('does not charge rate-limit quota for a replay (edge)', async () => {

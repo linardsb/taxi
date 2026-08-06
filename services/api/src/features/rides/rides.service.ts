@@ -21,6 +21,7 @@ import { RealtimeService } from '../realtime';
 import { entryStatusFor } from './ride-entry';
 import {
   RIDE_IDEMPOTENCY_PENDING,
+  RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS,
   RIDE_IDEMPOTENCY_TTL_SECONDS,
   RIDE_REQUEST_MAX_PER_WINDOW,
   RIDE_REQUEST_WINDOW_SECONDS,
@@ -78,11 +79,15 @@ export class RidesService {
     //
     // `setIfAbsent`, never get-then-set: two taps racing would both read null,
     // both "win", and both book a car — the bug this exists to close.
+    //
+    // The SHORT window, not the settled one: a marker nobody promotes is a key
+    // no rider can clear, so it gets the shortest life that still covers a slow
+    // first request. `recordIdempotency` promotes it on the way out.
     const key = rideIdempotencyKey(riderId, idempotencyKey);
     const reserved = await this.kv.setIfAbsent(
       key,
       RIDE_IDEMPOTENCY_PENDING,
-      RIDE_IDEMPOTENCY_TTL_SECONDS,
+      RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS,
     );
     if (!reserved) {
       const replayed = await this.replay(key, riderId);
@@ -183,7 +188,7 @@ export class RidesService {
     // reopen the very race the reservation closes.
     if (stored === null || stored === RIDE_IDEMPOTENCY_PENDING) {
       this.logger.warn({
-        event: 'ride.request.in_progress',
+        event: 'ride.request.replay_conflicted',
         riderId,
         at: new Date().toISOString(),
       });
@@ -235,14 +240,18 @@ export class RidesService {
   }
 
   /**
+   * Promotes the reservation to the ride id AND to the full window — the marker
+   * was written with the short in-flight one.
+   *
    * Swallows, for exactly the reason `notifyRider` does: the ride is already
    * committed. Letting a Redis blip here throw would run the caller's release,
    * delete the reservation, and hand the rider a 500 — so their retry reserves
    * a FREE key and books the second car this whole feature exists to prevent.
    *
-   * The residue when it fails is a key stuck at `pending` for the window, so
-   * that attempt's retries get 409. The rider already has the ride id from the
-   * 201, and a 409 is strictly better than a duplicate car.
+   * The residue when it fails — or when the process dies before this runs — is
+   * a key stuck at `pending`, so that attempt's retries get 409 until it
+   * expires. Bounded to `RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS` rather than a
+   * day, which is the whole reason the two windows are separate constants.
    */
   private async recordIdempotency(key: string, rideId: string): Promise<void> {
     try {
