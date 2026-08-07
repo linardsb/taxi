@@ -44,16 +44,24 @@ export const fareLineTypeEnum = pgEnum('fare_line_type', [
   'discount',
 ]);
 
-/** Shape-level only; #12 owns ledger semantics. */
+/** #6 shipped the shape; #12 gave it semantics (`features/ledger/`). */
 export const ledgerOwnerTypeEnum = pgEnum('ledger_owner_type', [
   'platform',
   'driver',
   'rider',
 ]);
+/**
+ * `card_settlement` is `cash_settlement`'s SIBLING: both record who physically
+ * collected the passenger's money — the driver at the kerb, or the platform
+ * through Stripe. Without it a card ride leaves the rider's account permanently
+ * negative and the rider account stops being a balance, which is what prepaid
+ * balance and corporate invoicing both need it to be (#12).
+ */
 export const ledgerEntryTypeEnum = pgEnum('ledger_entry_type', [
   'ride_fare',
   'commission',
   'cash_settlement',
+  'card_settlement',
   'payout',
   'adjustment',
 ]);

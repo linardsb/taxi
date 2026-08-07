@@ -4,6 +4,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  text,
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -53,6 +54,15 @@ export const rides = pgTable(
     commissionSource: commissionSourceEnum('commission_source'),
     commissionCents: integer('commission_cents'),
     driverNetCents: integer('driver_net_cents'),
+    /**
+     * The charge that settled this ride (Stripe PaymentIntent id in test mode)
+     * — NULL for cash and for anything unsettled. The reconciliation handle:
+     * spike #5 requires every money movement to carry a platform-visible
+     * provider reference. One column, not a `ride_payments` table: a ride has
+     * at most one charge here (no refunds, no partial captures, and the derived
+     * idempotency key rules out a second intent on retry).
+     */
+    paymentProviderRef: text('payment_provider_ref'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

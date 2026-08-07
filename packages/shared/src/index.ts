@@ -18,3 +18,4 @@ export * from './seams/maps-provider';
 export * from './seams/dispatch-strategy';
 export * from './seams/pricing-strategy';
 export * from './seams/sms-provider';
+export * from './seams/payments-provider';

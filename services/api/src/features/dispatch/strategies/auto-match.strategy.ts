@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  DispatchContext,
   DispatchStrategy,
   DriverCandidate,
   RideRequest,
@@ -23,10 +24,16 @@ export class AutoMatchStrategy implements DispatchStrategy {
   ) {}
 
   /**
-   * Takes no `DispatchContext`: proximity mode has no use for the zone, and a
-   * method with fewer parameters still satisfies `DispatchStrategy`.
+   * Uses the `DispatchContext` for the debt limit ONLY — proximity mode still
+   * has no use for the zone. The limit cannot be dropped the way `geozoneId`
+   * is: eligibility is shared with the queue strategy through `toCandidates`,
+   * and a mode that quietly kept the old `< 0` rule would block cash-carrying
+   * drivers under auto-match and not under queue mode (#12).
    */
-  async findCandidates(request: RideRequest): Promise<DriverCandidate[]> {
+  async findCandidates(
+    request: RideRequest,
+    ctx: DispatchContext,
+  ): Promise<DriverCandidate[]> {
     const nearby = await this.locations.findNearest(request.pickup.location);
     // `findMatchAttributes` short-circuits on [] anyway, but this round trip is
     // on the tick loop.
@@ -37,6 +44,6 @@ export class AutoMatchStrategy implements DispatchStrategy {
     );
 
     // `findNearest` already returns nearest-first — do NOT re-sort.
-    return toCandidates(nearby, attrs, request);
+    return toCandidates(nearby, attrs, request, ctx.driverDebtLimitCents);
   }
 }

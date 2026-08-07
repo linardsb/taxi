@@ -12,6 +12,7 @@ const config15 = platformConfigSchema.parse({
   id: '8d1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e5f',
   cityId: '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
   commissionPct: 15,
+  driverDebtLimitCents: 5000,
   updatedAt: '2026-08-03T09:00:00.000Z',
 });
 

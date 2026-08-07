@@ -157,14 +157,26 @@ export async function seedRiga(db: Db): Promise<void> {
       });
   }
 
-  // commissionPct 15 lives HERE, not as a column default — config, not constant
-  // (launch decision 2026-08-03). Guarantees stay NULL until a pilot needs them.
+  // commissionPct 15 and the €50 debt limit live HERE, not as column defaults —
+  // config, not constants (launch decision 2026-08-03; the limit 2026-08-07).
+  // Guarantees stay NULL until a pilot needs them.
+  //
+  // 5000 is €50 IN CENTS: at 15% that is ~€333 of cash fares (~33 rides at a €10
+  // fare) before dispatch stops offering to a driver — comfortably more than a
+  // day, less than an unbounded credit line, and re-openable in #20 without a
+  // deploy. Both values are re-asserted in the conflict set so a re-seed
+  // corrects a hand-edited row.
   await db
     .insert(platformConfig)
-    .values({ id: RIGA_CONFIG_ID, cityId: RIGA_CITY_ID, commissionPct: 15 })
+    .values({
+      id: RIGA_CONFIG_ID,
+      cityId: RIGA_CITY_ID,
+      commissionPct: 15,
+      driverDebtLimitCents: 5000,
+    })
     .onConflictDoUpdate({
       target: platformConfig.cityId,
-      set: { commissionPct: 15 },
+      set: { commissionPct: 15, driverDebtLimitCents: 5000 },
     });
 
   // Iterating RIDE_CATEGORIES (the shared const array) rather than the keys of

@@ -4,10 +4,15 @@ import { PlatformConfigService } from './platform-config.service';
 
 const CITY_ID = '00000000-0000-4000-8000-000000000001';
 
+// Crosses an `as unknown as Db` boundary, so TypeScript says nothing about a
+// missing field here — a config column added without a matching key fails at
+// RUNTIME, inside `platformConfigSchema.parse`, in a spec that has nothing to do
+// with the ticket that added it. Keep this row complete.
 const row = (commissionPct: number) => ({
   id: '00000000-0000-4000-8000-000000000002',
   cityId: CITY_ID,
   commissionPct,
+  driverDebtLimitCents: 5000,
   hourlyGuaranteeCents: null,
   weeklyGuaranteeCents: null,
   defaultDispatchMode: 'auto_match',
@@ -36,6 +41,10 @@ describe('PlatformConfigService', () => {
     expect(config.commissionPct).toBe(15);
     expect(config.defaultDispatchMode).toBe('auto_match');
     expect(config.updatedAt).toBeInstanceOf(Date);
+    // The only unit-level proof that the debt limit survives the read at all —
+    // `forCity` uses a bare `.select()`, so nothing else would notice if the
+    // column stopped arriving, and dispatch would silently block on `undefined`.
+    expect(config.driverDebtLimitCents).toBe(5000);
   });
 
   it('carries a 0% commission through as 0, not as a falsy default (edge)', async () => {

@@ -54,6 +54,29 @@ export const envSchema = z
       .int()
       .positive()
       .default(86_400),
+    /**
+     * TEST MODE ONLY, structurally. `sk_live_…` is refused at boot: the repo
+     * rule is "Stripe stays in test mode until the SIA exists", and spike #5
+     * confirms a live platform account needs a legal entity we do not have.
+     * Absent (or empty, as in `.env.example`) binds `StubPaymentsProvider`
+     * instead, which refuses to boot in production — the same arrangement as
+     * SMS and maps.
+     *
+     * `.optional().transform().refine()` IN THAT ORDER: the refine runs on the
+     * transformed value, so the empty string is already `undefined` by the time
+     * it is checked. Reordering breaks the `.env.example` case, which is the
+     * common one. Deliberately NOT in `SECRET_KEYS`/`PUBLISHED_SECRETS` — those
+     * guard length and published-value reuse for OUR secrets; a Stripe key is
+     * refused on its prefix instead, which is a stronger check.
+     */
+    STRIPE_SECRET_KEY: z
+      .string()
+      .optional()
+      .transform((v) => (v === undefined || v === '' ? undefined : v))
+      .refine((v) => v === undefined || v.startsWith('sk_test_'), {
+        message:
+          'STRIPE_SECRET_KEY must be a test-mode key (sk_test_…): Stripe stays in test mode until the SIA exists.',
+      }),
     CORS_ORIGINS: z
       .string()
       .default('http://localhost:3000,http://localhost:3002')

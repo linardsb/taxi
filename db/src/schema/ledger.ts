@@ -55,5 +55,9 @@ export const ledgerEntries = pgTable(
   (t) => [
     index('ledger_entries_account_idx').on(t.accountId),
     index('ledger_entries_transaction_idx').on(t.transactionId),
+    // The reconciliation read ("every entry for ride X") — deferred from PR #32
+    // and landed with its caller, `LedgerRepository.findByRide()` (#12). Without
+    // one the other, this is either a seq scan or an unused index.
+    index('ledger_entries_ride_idx').on(t.rideId),
   ],
 );

@@ -9,6 +9,8 @@ import { AuthModule, JwtAuthGuard, RolesGuard } from './features/auth';
 import { DispatchModule } from './features/dispatch';
 import { DriversModule } from './features/drivers';
 import { GeozonesModule } from './features/geozones';
+import { LedgerModule } from './features/ledger';
+import { PaymentsModule } from './features/payments';
 import { RealtimeModule } from './features/realtime';
 import { RidesModule } from './features/rides';
 
@@ -26,6 +28,11 @@ import { RidesModule } from './features/rides';
     // After RidesModule: dispatch consumes the rides slice's repository and
     // transition writer.
     DispatchModule,
+    LedgerModule,
+    // After RidesModule and LedgerModule: payments composes the rides slice's
+    // transition writer and repository with the ledger's posting engine. The
+    // dependency runs one way only — RidesModule must never import this.
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [

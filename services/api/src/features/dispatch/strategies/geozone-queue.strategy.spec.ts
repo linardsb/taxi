@@ -11,6 +11,8 @@ import { GeozoneQueueStrategy } from './geozone-queue.strategy';
 const RIDER_ID = '5a5a5a5a-1111-4222-8333-444444444444';
 const ZONE = '00000000-0000-4000-8000-000000000102'; // RIX
 const CITY = '00000000-0000-4000-8000-000000000001';
+/** The seeded pilot value; the boundary cases live in `candidate-filter.spec.ts`. */
+const DEBT_LIMIT = 5000;
 const id = (n: number) => `d0000000-0000-4000-8000-00000000000${n}`;
 
 const request = (over: Partial<RideRequest> = {}): RideRequest =>
@@ -89,6 +91,7 @@ describe('GeozoneQueueStrategy', () => {
     const found = await strategy.findCandidates(request(), {
       geozoneId: ZONE,
       cityId: CITY,
+      driverDebtLimitCents: DEBT_LIMIT,
     });
 
     expect(found.map((c) => c.driverId)).toEqual([id(2), id(1)]);
@@ -104,6 +107,7 @@ describe('GeozoneQueueStrategy', () => {
     const found = await strategy.findCandidates(request(), {
       geozoneId: ZONE,
       cityId: CITY,
+      driverDebtLimitCents: DEBT_LIMIT,
     });
 
     // Nobody was in the rank, so there was no order to honour — proximity
@@ -126,6 +130,7 @@ describe('GeozoneQueueStrategy', () => {
     const found = await strategy.findCandidates(request(), {
       geozoneId: ZONE,
       cityId: CITY,
+      driverDebtLimitCents: DEBT_LIMIT,
     });
 
     expect(found.map((c) => c.driverId)).toEqual([id(2), id(1)]);
@@ -138,6 +143,7 @@ describe('GeozoneQueueStrategy', () => {
     const found = await strategy.findCandidates(request(), {
       geozoneId: null,
       cityId: CITY,
+      driverDebtLimitCents: DEBT_LIMIT,
     });
 
     expect(found.map((c) => c.driverId)).toEqual([id(1), id(2)]);

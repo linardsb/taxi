@@ -2,6 +2,7 @@ import { RIDE_CATEGORIES } from '@taxi/shared';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  cities,
   drivers,
   ledgerAccounts,
   rideFareLines,
@@ -86,6 +87,32 @@ describe('schema constraints', () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect(String((err as Error).cause)).toMatch(/ledger_accounts_owner_uix/);
+  });
+
+  it('platform_config rejects a row with no driver_debt_limit_cents — config, not constant (failure)', async () => {
+    // The column is NOT NULL with NO default (the migration drops the backfill
+    // default immediately), so a new city row cannot be created without someone
+    // deciding a limit. If this test starts passing a row through, a
+    // `.default()` has crept back onto the column and dispatch would block — or
+    // fail to block — drivers on a number nobody set.
+    const db = getTestDb();
+    const [city] = await db
+      .insert(cities)
+      .values({ name: 'Liepāja (debt-limit constraint probe)' })
+      .returning();
+
+    const err: unknown = await db
+      .execute(
+        sql`INSERT INTO platform_config (city_id, commission_pct)
+            VALUES (${city!.id}, 15)`,
+      )
+      .then(() => null)
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(String((err as Error).cause)).toMatch(
+      /null value in column "driver_debt_limit_cents"/,
+    );
   });
 
   it('updated_at moves on UPDATE instead of staying frozen at insert (edge)', async () => {

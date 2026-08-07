@@ -1,4 +1,8 @@
-import { rideRequestSchema, type RideRequest } from '@taxi/shared';
+import {
+  rideRequestSchema,
+  type DispatchContext,
+  type RideRequest,
+} from '@taxi/shared';
 import type {
   DriversService,
   DriverLocationService,
@@ -9,6 +13,18 @@ import { AutoMatchStrategy } from './auto-match.strategy';
 
 const RIDER_ID = '5a5a5a5a-1111-4222-8333-444444444444';
 const id = (n: number) => `d0000000-0000-4000-8000-00000000000${n}`;
+
+/**
+ * Proximity mode ignores `geozoneId` but not `driverDebtLimitCents` — the
+ * eligibility filter is shared with the queue strategy, so the limit has to
+ * reach it identically under both modes (#12). Boundary cases live in
+ * `candidate-filter.spec.ts`; here the limit only has to be present and generous.
+ */
+const CTX: DispatchContext = {
+  geozoneId: null,
+  cityId: '00000000-0000-4000-8000-000000000001',
+  driverDebtLimitCents: 5000,
+};
 
 const request = (over: Partial<RideRequest> = {}): RideRequest =>
   rideRequestSchema.parse({
@@ -66,7 +82,7 @@ describe('AutoMatchStrategy', () => {
     ];
     const { strategy } = build(nearby, [attrs(1), attrs(2)]);
 
-    const found = await strategy.findCandidates(request());
+    const found = await strategy.findCandidates(request(), CTX);
 
     // `findNearest` is already nearest-first; re-sorting is the bug this asserts
     // against.
@@ -79,7 +95,7 @@ describe('AutoMatchStrategy', () => {
   it('skips the attributes round trip when nobody is nearby (edge)', async () => {
     const { strategy, findMatchAttributes } = build([], [attrs(1)]);
 
-    await expect(strategy.findCandidates(request())).resolves.toEqual([]);
+    await expect(strategy.findCandidates(request(), CTX)).resolves.toEqual([]);
     // The round trip is on the tick loop, once per awaiting ride per second.
     expect(findMatchAttributes).not.toHaveBeenCalled();
   });
@@ -94,6 +110,6 @@ describe('AutoMatchStrategy', () => {
     ];
     const { strategy } = build(nearby, [attrs(1, { status: 'offline' })]);
 
-    await expect(strategy.findCandidates(request())).resolves.toEqual([]);
+    await expect(strategy.findCandidates(request(), CTX)).resolves.toEqual([]);
   });
 });
