@@ -314,11 +314,15 @@ function selftest() {
   // must surface the inter-session gap (a dead task must not vanish into two
   // PASSes), the header date must be local (not UTC), and a mid-session battery
   // rise (partial charge) must come out "mixed", not "gated"
+  // Anchored at 00:30 *local* (not the shared UTC epoch): anywhere east of
+  // Greenwich the UTC date is still the previous day, so the header-date
+  // assertion below actually catches a regression back to toISOString().
+  const te = new Date(2025, 7, 7, 0, 30).getTime();
   const runA = [];
   for (let i = 0; i < 20; i++)
     runA.push(
       fix({
-        ts: t0 + i * 4000, recvTs: t0 + i * 4000 + 300, lat: 56.95 + i * 2e-4, lng: 24.1, speed: 8,
+        ts: te + i * 4000, recvTs: te + i * 4000 + 300, lat: 56.95 + i * 2e-4, lng: 24.1, speed: 8,
         battery: i < 10 ? 0.85 - i * 0.005 : 0.83 - (i - 10) * 0.005, // dips, jumps up at i=10, dips again
       }),
     );
