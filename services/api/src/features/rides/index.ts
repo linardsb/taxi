@@ -3,20 +3,27 @@
  *
  * KNOWN GAPS — seen and accepted for the pilot, not overlooked:
  *
- * - THE RIDE ENDS AT `completed`. `completed → settled` is #12's, together with
- *   the ledger entries that give it meaning: `settled` means "money movement
- *   finished" (`.claude/references/ride-state-machine.md`), and a `settled`
- *   status with no ledger rows is a status that lies. No payment capture, no
- *   cash netting, no driver balance movement here either.
+ * - THE RIDE ENDS AT `completed` *IN THIS SLICE*. `completed → settled` now
+ *   exists, but it belongs to `features/payments` (#12) — it charges, posts the
+ *   ledger entries that give `settled` its meaning, and moves the driver's
+ *   balance. This slice still performs no payment capture, no cash netting and
+ *   no balance movement, and must NOT import payments: the dependency runs
+ *   `PaymentsModule → RidesModule` only, which is why the transition writer and
+ *   the repository are exported below.
  * - THERE IS NO `GET /rides/:rideId`. `POST /rides/:rideId/complete` returns the
  *   settled ride, which is what a driver needs at the moment they need it. The
  *   general ride read belongs to #16/#17, which know what they want on it.
- * - `cancelled_by_system` HAS NO PRODUCTION TRIGGER. The actor is supported end
- *   to end and covered by a spec, but the caller that will use it is #12's
- *   payment-preauth failure. No sweeper timeout was invented for it here.
- * - NO CANCELLATION FEE, no no-show flow, no free-cancellation window. There is
- *   no evidence for a policy yet, and every one of them is a money movement,
- *   i.e. #12.
+ * - `cancelled_by_system` STILL HAS NO PRODUCTION TRIGGER. The actor is
+ *   supported end to end and covered by a spec. #12 was expected to be its
+ *   caller via a payment pre-authorization failure, and is NOT: that ticket
+ *   charges at settlement rather than pre-authorizing at booking, so the gap
+ *   survives and is now unassigned. Whether to pre-authorize at request time is
+ *   an open product question — it costs a provider call per booking and would
+ *   let the platform refuse a ride the rider cannot pay for.
+ * - NO CANCELLATION FEE, no no-show flow, no free-cancellation window. Still
+ *   open after #12, which deliberately scoped itself to settling a completed
+ *   ride: every one of these is a money movement with no evidenced policy, and
+ *   they need one before they need code.
  * - THE CANCELLATION `reason` IS EPHEMERAL. It reaches the rider's and driver's
  *   phones on `ride:status` and is then gone: no column holds it, and the log
  *   records only `hasReason`, because the text is author-written free text and
@@ -33,7 +40,9 @@
  *   have happened — or phoning a dispatcher. Deliberate: at
  *   `accepted`/`arriving`/`arrived` the driver CAN self-cancel and be released,
  *   and no sweeper timeout was invented here. The escalation is a driver-side
- *   `in_progress` cancellation with a reason, which is a money question (#12).
+ *   `in_progress` cancellation with a reason — a money question that #12 did
+ *   NOT answer: it settles completed rides and rules cancellation policy out of
+ *   scope, so this one is still unassigned.
  * - A `scheduled` ride is INERT. Nothing promotes it to `requested`; the timer
  *   is #21's. A past `scheduledFor` is rejected at the boundary precisely
  *   because nothing would ever pick it up.

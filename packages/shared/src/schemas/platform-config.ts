@@ -19,6 +19,20 @@ export const platformConfigSchema = z.object({
   /** Pilot guarantee placeholders — €15/h (S2-9d) and €500/week (S2-10). null = no guarantee in force. */
   hourlyGuaranteeCents: nonNegativeCentsSchema.nullable().default(null),
   weeklyGuaranteeCents: nonNegativeCentsSchema.nullable().default(null),
+  /**
+   * How much commission a driver may owe before dispatch stops offering them
+   * rides. A POSITIVE magnitude of allowed debt: a driver is blocked when
+   * `balanceCents < -driverDebtLimitCents`.
+   *
+   * Load-bearing, not a nicety. Cash rides debit commission (skeleton §5.3), so
+   * at zero grace one €10 cash ride (−150) makes a driver invisible to dispatch
+   * until they settle. Pilot value 5000 (€50 ≈ 33 cash rides at a €10 fare) —
+   * seeded in #6's seed, edited by #20, never a literal.
+   *
+   * No zod default, for `commissionPct`'s reason: every caller must read a real
+   * row.
+   */
+  driverDebtLimitCents: nonNegativeCentsSchema,
   /** Fallback when a geozone does not set `queueModeEnabled` (dispatch-strategies.md). */
   defaultDispatchMode: z.enum(DISPATCH_MODES).default('auto_match'),
   /** How long a driver has to accept before the cascade re-offers (`offered → requested`). */

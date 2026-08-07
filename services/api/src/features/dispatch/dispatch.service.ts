@@ -105,6 +105,7 @@ export class DispatchService {
     const candidates = await strategy.findCandidates(found.ride.request, {
       geozoneId: zone?.id ?? null,
       cityId,
+      driverDebtLimitCents: config.driverDebtLimitCents,
     });
 
     // One shot per driver per ride, or the cascade would re-offer to whoever

@@ -1,0 +1,338 @@
+import type { Db } from '@taxi/db';
+import type {
+  PaymentChargeRequest,
+  PaymentChargeResult,
+  PaymentFailureReason,
+  PaymentsProvider,
+  PaymentMethodType,
+  Ride,
+  RideStatus,
+} from '@taxi/shared';
+import type { DbTx } from '../../common/db/db.module';
+import type { LedgerService } from '../ledger';
+import type { RidesRepository, RideTransitionService } from '../rides';
+import { settlementIdempotencyKey } from './settlement.policy';
+import type {
+  SettlableRide,
+  SettlementRepository,
+} from './settlement.repository';
+import { SettlementService } from './settlement.service';
+
+const RIDE_ID = 'r0000000-0000-4000-8000-000000000001';
+const RIDER_ID = '5a5a5a5a-1111-4222-8333-444444444444';
+const DRIVER_ID = 'd0000000-0000-4000-8000-000000000001';
+const OTHER_DRIVER_ID = 'd0000000-0000-4000-8000-000000000009';
+const DISPATCHER_ID = 'a0000000-0000-4000-8000-000000000001';
+
+const settlable = (over: Partial<SettlableRide> = {}): SettlableRide => ({
+  id: RIDE_ID,
+  orderId: '10000000-0000-4000-8000-000000000001',
+  status: 'completed',
+  riderId: RIDER_ID,
+  driverId: DRIVER_ID,
+  paymentMethod: 'card',
+  totalCents: 1_000,
+  commissionPct: 15,
+  commissionSource: 'platform_base',
+  commissionCents: 150,
+  driverNetCents: 850,
+  riderCustomerRef: 'cus_test_123',
+  riderInstrumentRef: 'pm_test_456',
+  ...over,
+});
+
+class FakePaymentsProvider implements PaymentsProvider {
+  readonly calls: PaymentChargeRequest[] = [];
+  private nextFailure: PaymentFailureReason | null = null;
+
+  failNext(reason: PaymentFailureReason): void {
+    this.nextFailure = reason;
+  }
+
+  charge(request: PaymentChargeRequest): Promise<PaymentChargeResult> {
+    this.calls.push(request);
+    if (this.nextFailure) {
+      const reason = this.nextFailure;
+      this.nextFailure = null;
+      return Promise.resolve({
+        ok: false,
+        reason,
+        providerRef: null,
+        message: `fake ${reason}`,
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      providerRef: `pi_test_${this.calls.length}`,
+    });
+  }
+}
+
+const build = (
+  ride: SettlableRide | undefined,
+  options: { transitionWins?: boolean } = {},
+) => {
+  const payments = new FakePaymentsProvider();
+  const posted: unknown[] = [];
+  const paymentRefs: string[] = [];
+  let transactionsOpened = 0;
+
+  const settlements = {
+    findSettlable: () => Promise.resolve(ride),
+    writePaymentRef: (_tx: DbTx, _rideId: string, providerRef: string) => {
+      paymentRefs.push(providerRef);
+      return Promise.resolve();
+    },
+  } as unknown as SettlementRepository;
+
+  const ledger = {
+    postRideSettlement: (_tx: DbTx, input: unknown) => {
+      posted.push(input);
+      return Promise.resolve({
+        transactionId: 'txn_1',
+        balanceDeltaCents: 850,
+      });
+    },
+  } as unknown as LedgerService;
+
+  const transitions = {
+    transitionInTx: () =>
+      Promise.resolve(
+        options.transitionWins === false
+          ? undefined
+          : {
+              id: RIDE_ID,
+              orderId: '10000000-0000-4000-8000-000000000001',
+              status: 'settled' as RideStatus,
+              riderId: RIDER_ID,
+              driverId: DRIVER_ID,
+              geozoneId: null,
+              createdAt: new Date(),
+            },
+      ),
+    emitStatus: jest.fn(),
+  } as unknown as RideTransitionService;
+
+  // Carries `quote` and `split` because `readRide` runs
+  // `assertRideSplitConsistent`, which compares their totals — a thinner fixture
+  // would make this spec crash on a check the real repository always satisfies.
+  const settledRide = {
+    id: RIDE_ID,
+    status: 'settled',
+    quote: { totalCents: ride?.totalCents ?? 1_000 },
+    split: { totalCents: ride?.totalCents ?? 1_000 },
+  } as unknown as Ride;
+
+  const rides = {
+    findWithQuote: () =>
+      Promise.resolve({ ride: settledRide, quote: settledRide.quote }),
+  } as unknown as RidesRepository;
+
+  // The callback runs directly: this spec is about the ORDER of operations, and
+  // whether a real transaction commits is the integration spec's question.
+  const db = {
+    transaction: <T>(fn: (tx: DbTx) => Promise<T>) => {
+      transactionsOpened += 1;
+      return fn({} as DbTx);
+    },
+  } as unknown as Db;
+
+  return {
+    payments,
+    posted,
+    paymentRefs,
+    transactionsOpened: () => transactionsOpened,
+    service: new SettlementService(
+      db,
+      settlements,
+      ledger,
+      transitions,
+      rides,
+      payments,
+    ),
+  };
+};
+
+const settle = (service: SettlementService) =>
+  service.settle({ rideId: RIDE_ID, actor: 'driver', actorId: DRIVER_ID });
+
+describe('SettlementService.settle', () => {
+  it('charges a card ride exactly once with a ride-derived key, then posts (expected)', async () => {
+    const { service, payments, posted, paymentRefs } = build(settlable());
+
+    await settle(service);
+
+    // "Charged exactly once" is what this ticket is really about — a response
+    // assertion alone would pass while double-charging.
+    expect(payments.calls).toHaveLength(1);
+    expect(payments.calls[0]).toMatchObject({
+      idempotencyKey: settlementIdempotencyKey(RIDE_ID),
+      amountCents: 1_000,
+      currency: 'EUR',
+      customerRef: 'cus_test_123',
+      instrumentRef: 'pm_test_456',
+    });
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({
+      rideId: RIDE_ID,
+      riderId: RIDER_ID,
+      driverId: DRIVER_ID,
+      paymentMethod: 'card',
+    });
+    expect(paymentRefs).toEqual(['pi_test_1']);
+  });
+
+  it('never calls the provider for a cash ride but still posts the ledger (expected)', async () => {
+    // The whole reason the cash/card branch lives ABOVE the seam: the driver
+    // already took the money at the kerb, so there is nothing to charge.
+    const { service, payments, posted, paymentRefs } = build(
+      settlable({ paymentMethod: 'cash' }),
+    );
+
+    await settle(service);
+
+    expect(payments.calls).toEqual([]);
+    expect(posted).toHaveLength(1);
+    expect(paymentRefs).toEqual([]); // nothing to reference
+  });
+
+  it('answers 200 for an already-settled ride without charging or posting (edge)', async () => {
+    const { service, payments, posted, transactionsOpened } = build(
+      settlable({ status: 'settled' }),
+    );
+
+    await expect(settle(service)).resolves.toMatchObject({
+      ride: { status: 'settled' },
+    });
+    expect(payments.calls).toEqual([]);
+    expect(posted).toEqual([]);
+    expect(transactionsOpened()).toBe(0);
+  });
+
+  it('answers 200 when it loses the transition race, posting nothing (edge)', async () => {
+    // The loser's charge and the winner's charge are the SAME PaymentIntent
+    // (one derived key), so 200-with-the-settled-ride is true, not a papered-over
+    // conflict. A 409 here would make a retrying driver app treat success as failure.
+    const { service, payments, posted } = build(settlable(), {
+      transitionWins: false,
+    });
+
+    await expect(settle(service)).resolves.toMatchObject({
+      ride: { status: 'settled' },
+    });
+    expect(posted).toEqual([]);
+    // The charge already happened before the transaction — what must NOT happen
+    // is a second one after losing.
+    expect(payments.calls).toHaveLength(1);
+  });
+
+  it('skips the provider on a zero-amount card ride but still posts (edge)', async () => {
+    // Stripe rejects zero-amount intents, and there is nothing to collect.
+    const { service, payments, posted } = build(
+      settlable({ totalCents: 0, commissionCents: 0, driverNetCents: 0 }),
+    );
+
+    await settle(service);
+
+    expect(payments.calls).toEqual([]);
+    expect(posted).toHaveLength(1);
+  });
+
+  it.each(['balance', 'corporate'] as PaymentMethodType[])(
+    'refuses %s with 409 payment_method_unsupported, provider untouched (edge)',
+    async (paymentMethod) => {
+      const { service, payments, posted } = build(settlable({ paymentMethod }));
+
+      await expect(settle(service)).rejects.toThrow(
+        'payment_method_unsupported',
+      );
+      expect(payments.calls).toEqual([]);
+      expect(posted).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['customer', { riderCustomerRef: null }],
+    ['instrument', { riderInstrumentRef: null }],
+  ])(
+    'refuses a card ride whose rider has no %s ref, provider untouched (failure)',
+    async (_label, over) => {
+      const { service, payments, posted } = build(settlable(over));
+
+      await expect(settle(service)).rejects.toThrow(
+        'payment_instrument_missing',
+      );
+      expect(payments.calls).toEqual([]);
+      expect(posted).toEqual([]);
+    },
+  );
+
+  it('answers 402 on a decline, writing nothing and opening no transaction (failure)', async () => {
+    // The charge runs BEFORE the transaction precisely so a failure leaves no
+    // residue: no ledger entries, no status change, nothing to roll back.
+    const { service, payments, posted, transactionsOpened } =
+      build(settlable());
+    payments.failNext('declined');
+
+    await expect(settle(service)).rejects.toMatchObject({ status: 402 });
+    expect(posted).toEqual([]);
+    expect(transactionsOpened()).toBe(0);
+  });
+
+  it('answers 502 on a provider error, writing nothing (failure)', async () => {
+    const { service, payments, posted, transactionsOpened } =
+      build(settlable());
+    payments.failNext('provider_error');
+
+    await expect(settle(service)).rejects.toMatchObject({ status: 502 });
+    expect(posted).toEqual([]);
+    expect(transactionsOpened()).toBe(0);
+  });
+
+  it('refuses a ride that is not completed (failure)', async () => {
+    const { service, payments } = build(settlable({ status: 'in_progress' }));
+
+    await expect(settle(service)).rejects.toThrow('ride_not_completed');
+    expect(payments.calls).toEqual([]);
+  });
+
+  it('throws loudly on a completed ride with a missing split column (failure)', async () => {
+    // A data bug, not a case to handle: #11 writes all five columns in the same
+    // transaction as `in_progress → completed`.
+    const { service, payments } = build(settlable({ commissionCents: null }));
+
+    await expect(settle(service)).rejects.toThrow(
+      /missing a driver or part of the settled split/,
+    );
+    expect(payments.calls).toEqual([]);
+  });
+
+  it('forbids a driver settling someone else’s ride, allows a dispatcher (failure)', async () => {
+    const { service } = build(settlable({ driverId: OTHER_DRIVER_ID }));
+
+    await expect(
+      service.settle({ rideId: RIDE_ID, actor: 'driver', actorId: DRIVER_ID }),
+    ).rejects.toThrow('ride_not_yours');
+
+    // The override is what makes a stuck ride recoverable by the person on the
+    // phone with the driver — the same reasoning as `cancel`.
+    const { service: asDispatcher, payments } = build(
+      settlable({ driverId: OTHER_DRIVER_ID }),
+    );
+    await expect(
+      asDispatcher.settle({
+        rideId: RIDE_ID,
+        actor: 'dispatcher',
+        actorId: DISPATCHER_ID,
+      }),
+    ).resolves.toBeDefined();
+    expect(payments.calls).toHaveLength(1);
+  });
+
+  it('answers 404 for a ride that does not exist (failure)', async () => {
+    const { service, payments } = build(undefined);
+
+    await expect(settle(service)).rejects.toThrow('ride_not_found');
+    expect(payments.calls).toEqual([]);
+  });
+});

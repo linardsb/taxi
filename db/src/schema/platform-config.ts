@@ -27,6 +27,14 @@ export const platformConfig = pgTable('platform_config', {
   /** Pilot guarantee placeholders (S2-9d, S2-10). null = no guarantee in force. */
   hourlyGuaranteeCents: integer('hourly_guarantee_cents'),
   weeklyGuaranteeCents: integer('weekly_guarantee_cents'),
+  /**
+   * CONFIG, NOT CONSTANT: no column default — the SEED supplies 5000 (€50).
+   * Same reasoning as `commissionPct`, and a default here would additionally
+   * hand a limit nobody set to any future city row. See
+   * `platformConfigSchema.driverDebtLimitCents` (@taxi/shared) for what the
+   * number means and why it is a positive magnitude.
+   */
+  driverDebtLimitCents: integer('driver_debt_limit_cents').notNull(),
   defaultDispatchMode: dispatchModeEnum('default_dispatch_mode')
     .notNull()
     .default('auto_match'),

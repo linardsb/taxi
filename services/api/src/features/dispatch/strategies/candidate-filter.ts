@@ -14,6 +14,7 @@ export function toCandidates(
   nearby: NearbyDriver[],
   attrs: DriverMatchAttributes[],
   request: RideRequest,
+  driverDebtLimitCents: number,
 ): DriverCandidate[] {
   const byDriver = new Map(attrs.map((a) => [a.driverId, a]));
   const candidates: DriverCandidate[] = [];
@@ -36,10 +37,12 @@ export function toCandidates(
     // matched to an unknown.
     if (request.options.femaleDriver && a.isFemale !== true) continue;
 
-    // `>= 0` rather than `> 0`: until #12's ledger exists every driver sits at
-    // 0, and a strict check would match nobody. The negative-balance threshold
-    // is a product question for that ticket.
-    if (a.balanceCents < 0) continue;
+    // A driver carries commission owed between settlements — every cash ride
+    // debits it (#12, skeleton §5.3) — so the block is the LIMIT, not zero.
+    // Blocking at the first cent of debt would strand a cash-only driver after
+    // one €10 ride (−150). The limit is `platform_config.driver_debt_limit_cents`
+    // (€50 for the pilot), carried on the DispatchContext; never a literal.
+    if (a.balanceCents < -driverDebtLimitCents) continue;
 
     candidates.push({
       driverId: driver.driverId,

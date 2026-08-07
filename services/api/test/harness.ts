@@ -5,6 +5,10 @@ import type {
   GeocodeResult,
   LatLng,
   MapsProvider,
+  PaymentChargeRequest,
+  PaymentChargeResult,
+  PaymentFailureReason,
+  PaymentsProvider,
   RouteResult,
   SmsProvider,
   UserRole,
@@ -25,6 +29,7 @@ import {
   type NearbyDriver,
 } from '../src/features/drivers';
 import { MAPS_PROVIDER_SOURCE } from '../src/features/geo';
+import { PAYMENTS_PROVIDER } from '../src/features/payments';
 // Deep import on purpose: the geo barrel deliberately does not export the class
 // — production code injects the token, never the implementation.
 import { StubMapsProvider } from '../src/features/geo/stub-maps.provider';
@@ -250,6 +255,51 @@ export class CountingMapsProvider implements MapsProvider {
   }
 }
 
+/**
+ * Records every charge and can be made to fail on demand. Stands in for
+ * `PAYMENTS_PROVIDER` because `StubPaymentsProvider` ALWAYS SUCCEEDS: without
+ * this override the decline test would pass for the wrong reason, and "charged
+ * exactly once" would be unassertable.
+ */
+export class RecordingPaymentsProvider implements PaymentsProvider {
+  readonly calls: PaymentChargeRequest[] = [];
+  private nextFailure: PaymentFailureReason | null = null;
+
+  /** Fails the NEXT charge only, then reverts to succeeding. */
+  failNext(reason: PaymentFailureReason): void {
+    this.nextFailure = reason;
+  }
+
+  /**
+   * Clears BOTH the call log and any armed failure — one app per spec file, so
+   * state leaks between tests otherwise. Arming `failNext` on a path that never
+   * reaches the provider (an unsupported method, a missing instrument) would
+   * otherwise decline the *next* test's charge, silently and one case late.
+   */
+  reset(): void {
+    this.calls.splice(0);
+    this.nextFailure = null;
+  }
+
+  charge(request: PaymentChargeRequest): Promise<PaymentChargeResult> {
+    this.calls.push(request);
+    if (this.nextFailure) {
+      const reason = this.nextFailure;
+      this.nextFailure = null;
+      return Promise.resolve({
+        ok: false,
+        reason,
+        providerRef: null,
+        message: `test ${reason}`,
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      providerRef: `pi_test_${this.calls.length}`,
+    });
+  }
+}
+
 export interface TestApp {
   app: INestApplication;
   kv: InMemoryKeyValueStore;
@@ -258,15 +308,17 @@ export interface TestApp {
   maps: CountingMapsProvider;
   /** The SAME instance the app resolves — verified in `createTestApp`. */
   queue: InMemoryDispatchQueueStore;
+  /** The SAME instance the app resolves — verified in `createTestApp`. */
+  payments: RecordingPaymentsProvider;
   db: Db;
 }
 
 /**
- * The production module graph with exactly four providers swapped: KV_STORE
- * and DRIVER_LOCATION_STORE (between them, no ioredis client is ever
- * constructed — both are `useFactory` providers that would dial Redis),
- * SMS_PROVIDER and MAPS_PROVIDER_SOURCE. Guards, pipes, JWT, Drizzle and the
- * caching maps decorator are all the real wiring.
+ * The production module graph with exactly six providers swapped: KV_STORE,
+ * DISPATCH_QUEUE_STORE and DRIVER_LOCATION_STORE (between them, no ioredis
+ * client is ever constructed — all are `useFactory` providers that would dial
+ * Redis), SMS_PROVIDER, MAPS_PROVIDER_SOURCE and PAYMENTS_PROVIDER. Guards,
+ * pipes, JWT, Drizzle and the caching maps decorator are all the real wiring.
  *
  * The maps override targets the SOURCE, deliberately: `CachingMapsProvider`
  * stays in the graph, so the integration suite exercises the real cache against
@@ -287,6 +339,7 @@ export async function createTestApp(options?: {
   const locations = new InMemoryDriverLocationStore();
   const maps = new CountingMapsProvider();
   const queue = new InMemoryDispatchQueueStore();
+  const payments = new RecordingPaymentsProvider();
 
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
@@ -308,6 +361,12 @@ export async function createTestApp(options?: {
     // which documents this swap as sanctioned.
     .overrideProvider(MAPS_PROVIDER_SOURCE)
     .useValue(maps)
+    // Without this the suite binds StubPaymentsProvider, every charge silently
+    // succeeds, and the decline test passes for the wrong reason.
+    // `PaymentsModule` exports PAYMENTS_PROVIDER, which documents the swap as
+    // sanctioned rather than a reach-through.
+    .overrideProvider(PAYMENTS_PROVIDER)
+    .useValue(payments)
     .compile();
 
   const app = moduleRef.createNestApplication();
@@ -326,7 +385,27 @@ export async function createTestApp(options?: {
     );
   }
 
-  return { app, kv, sms, locations, maps, queue, db: app.get<Db>(DRIZZLE) };
+  // Same reasoning, higher stakes: a PAYMENTS_PROVIDER override that did not
+  // take leaves the always-succeeding stub bound, so `payments.calls` stays
+  // empty and `failNext` does nothing. "Charged exactly once" and "a decline
+  // writes no ledger entries" would then both pass without testing anything.
+  const resolvedPayments = app.get<PaymentsProvider>(PAYMENTS_PROVIDER);
+  if (resolvedPayments !== payments) {
+    throw new Error(
+      'PAYMENTS_PROVIDER override did not take: the app resolved a different instance than the harness records through. Any charge-count or decline assertion built on this app would be meaningless.',
+    );
+  }
+
+  return {
+    app,
+    kv,
+    sms,
+    locations,
+    maps,
+    queue,
+    payments,
+    db: app.get<Db>(DRIZZLE),
+  };
 }
 
 /**

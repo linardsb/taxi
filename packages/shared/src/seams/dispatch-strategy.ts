@@ -14,6 +14,13 @@ export interface DriverCandidate {
 export interface DispatchContext {
   geozoneId: string | null;
   cityId: string;
+  /**
+   * `platform_config.driver_debt_limit_cents`, carried to the eligibility
+   * filter. On the context rather than read inside a strategy because
+   * `DispatchService` already resolves the config row per tick and neither
+   * strategy may grow its own config read (#12).
+   */
+  driverDebtLimitCents: number;
 }
 
 /**

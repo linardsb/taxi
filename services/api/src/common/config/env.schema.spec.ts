@@ -78,3 +78,49 @@ describe('envSchema production secret rules', () => {
     }
   });
 });
+
+describe('envSchema STRIPE_SECRET_KEY', () => {
+  it('accepts a test-mode key (expected)', () => {
+    const env = envSchema.parse(prod({ STRIPE_SECRET_KEY: 'sk_test_abc123' }));
+
+    expect(env.STRIPE_SECRET_KEY).toBe('sk_test_abc123');
+  });
+
+  it.each([
+    ['absent', {}],
+    ['empty, as in .env.example', { STRIPE_SECRET_KEY: '' }],
+    // The empty-string case is the COMMON one: `.env.example` ships
+    // `STRIPE_SECRET_KEY=`, and a schema that rejected it would make a fresh
+    // checkout fail to boot.
+  ])(
+    'reads %s as undefined so the stub binds instead (edge)',
+    (_label, over) => {
+      const env = envSchema.parse({
+        ...base,
+        NODE_ENV: 'development',
+        JWT_SECRET: STRONG_JWT,
+        ...over,
+      });
+
+      expect(env.STRIPE_SECRET_KEY).toBeUndefined();
+    },
+  );
+
+  it.each(['production', 'development', 'test'])(
+    'refuses a live-mode key in %s (failure)',
+    (NODE_ENV) => {
+      // UNCONDITIONAL, unlike the secret-length checks: "Stripe stays in test
+      // mode until the SIA exists" is a legal-entity fact, not an environment
+      // convention, so there is no environment in which a live key is right.
+      expect(() =>
+        envSchema.parse({
+          ...base,
+          NODE_ENV,
+          JWT_SECRET: STRONG_JWT,
+          OTP_PEPPER: STRONG_PEPPER,
+          STRIPE_SECRET_KEY: 'sk_live_realmoney',
+        }),
+      ).toThrow(/must be a test-mode key/);
+    },
+  );
+});

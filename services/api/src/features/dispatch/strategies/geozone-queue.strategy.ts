@@ -40,7 +40,12 @@ export class GeozoneQueueStrategy implements DispatchStrategy {
     const attrs = await this.drivers.findMatchAttributes(
       nearby.map((d) => d.driverId),
     );
-    const eligible = toCandidates(nearby, attrs, request);
+    const eligible = toCandidates(
+      nearby,
+      attrs,
+      request,
+      ctx.driverDebtLimitCents,
+    );
 
     // A pickup in no zone has no queue to rank by; proximity order stands.
     if (ctx.geozoneId === null || eligible.length === 0) return eligible;
