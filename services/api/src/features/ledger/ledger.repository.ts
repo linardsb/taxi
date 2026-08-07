@@ -119,8 +119,8 @@ export class LedgerRepository {
    * Which is the point, and the whole of it: the sequence is ARBITRARY but
    * IDENTICAL across two reads of the same ride, instead of whatever order the
    * planner felt like. A LOGICAL sequence (fare → commission → collection) is a
-   * different thing — an explicit `ORDER BY entry_type` — and #20 is where it
-   * gets decided, if its rendering needs one.
+   * different thing — an explicit `ORDER BY entry_type` — and #71 decides
+   * whether anything (#20's rendering, most likely) actually needs one.
    */
   findByRide(rideId: string): Promise<LedgerEntryRow[]> {
     return this.db
