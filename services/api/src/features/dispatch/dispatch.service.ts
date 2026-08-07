@@ -20,6 +20,7 @@ import { GeozonesService } from '../geozones';
 import { PlatformConfigService } from '../platform-config';
 import { RealtimeService } from '../realtime';
 import {
+  RideLifecycleService,
   RidesRepository,
   RideTransitionService,
   type AwaitingRide,
@@ -50,6 +51,7 @@ export class DispatchService {
     private readonly offers: DispatchRepository,
     private readonly rides: RidesRepository,
     private readonly transitions: RideTransitionService,
+    private readonly lifecycle: RideLifecycleService,
     private readonly geozones: GeozonesService,
     private readonly config: PlatformConfigService,
     private readonly resolver: DispatchStrategyResolver,
@@ -180,43 +182,64 @@ export class DispatchService {
    * replaced.
    */
   async accept(driverId: string, offerId: string): Promise<{ rideId: string }> {
-    const { ride, revoked, source } = await this.db.transaction(async (tx) => {
-      const offer = await this.offers.acceptOffer(offerId, driverId, tx);
-      if (!offer) throw new ConflictException('offer_not_pending');
+    const { ride, revoked, source, claimed } = await this.db.transaction(
+      async (tx) => {
+        const offer = await this.offers.acceptOffer(offerId, driverId, tx);
+        if (!offer) throw new ConflictException('offer_not_pending');
 
-      // From the ROW, never the request: the route is /offers/:offerId/accept
-      // and carries no ride id — taking it from anywhere else would let a
-      // driver accept one offer onto a different ride.
-      const rideId = offer.rideId;
+        // From the ROW, never the request: the route is /offers/:offerId/accept
+        // and carries no ride id — taking it from anywhere else would let a
+        // driver accept one offer onto a different ride.
+        const rideId = offer.rideId;
 
-      const moved = await this.transitions.transitionInTx(
-        tx,
-        rideId,
-        'offered',
-        'accepted',
-      );
-      if (!moved) throw new ConflictException('ride_not_offered');
+        const moved = await this.transitions.transitionInTx(
+          tx,
+          rideId,
+          'offered',
+          'accepted',
+        );
+        if (!moved) throw new ConflictException('ride_not_offered');
 
-      if (!(await this.rides.assignDriver(rideId, driverId, tx))) {
-        throw new ConflictException('ride_already_assigned');
-      }
+        if (!(await this.rides.assignDriver(rideId, driverId, tx))) {
+          throw new ConflictException('ride_already_assigned');
+        }
 
-      await this.offers.insertAudit(
-        { rideId, driverId, source: offer.source },
-        tx,
-      );
+        // `online → on_ride`, or `candidate-filter.ts` keeps this driver in the
+        // pool and the next tick offers them a SECOND car. `false` is still not
+        // an error — see `RideLifecycleService.claimDriver` — but unlike
+        // force-assign, nobody chose it here, so it is worth a line in the log.
+        const claimed = await this.lifecycle.claimDriver(tx, driverId);
 
-      const revoked = await this.offers.revokePendingForRide(
-        rideId,
-        offerId,
-        tx,
-      );
+        await this.offers.insertAudit(
+          { rideId, driverId, source: offer.source },
+          tx,
+        );
 
-      return { ride: moved, revoked, source: offer.source };
-    });
+        const revoked = await this.offers.revokePendingForRide(
+          rideId,
+          offerId,
+          tx,
+        );
+
+        return { ride: moved, revoked, source: offer.source, claimed };
+      },
+    );
 
     // ── committed ──
     this.emitAssigned(ride, driverId, source, null, revoked, 'offered');
+    // The claim is conditional on `status = 'online'`, so a driver who dropped
+    // offline mid-offer accepts without ever being marked `on_ride` — and the
+    // `driver_on_ride` presence guard then cannot stop them going `online`
+    // again. Narrowed by this PR, not closed; see the dispatch KNOWN GAPS.
+    if (!claimed) {
+      this.logger.warn({
+        event: 'dispatch.assign.driver_not_claimed',
+        rideId: ride.id,
+        driverId,
+        offerId,
+        at: new Date().toISOString(),
+      });
+    }
     return { rideId: ride.id };
   }
 
@@ -347,6 +370,12 @@ export class DispatchService {
       if (!(await this.rides.assignDriver(input.rideId, input.driverId, tx))) {
         throw new ConflictException('ride_already_assigned');
       }
+
+      // `false` here is the ORDINARY outcome for a driver Dina overrode onto
+      // the ride while offline — the override is "deliberately NOT filtered
+      // through the eligibility rules", so throwing would break S9-2. They stay
+      // offline for the whole ride and the release correctly does nothing.
+      await this.lifecycle.claimDriver(tx, input.driverId);
 
       await this.offers.insertAudit(
         {

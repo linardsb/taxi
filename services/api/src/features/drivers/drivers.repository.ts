@@ -8,7 +8,7 @@ import type {
   RideCategory,
 } from '@taxi/shared';
 import { and, eq, exists, inArray, sql } from 'drizzle-orm';
-import { DRIZZLE } from '../../common/db/db.module';
+import { DRIZZLE, type DbTx } from '../../common/db/db.module';
 
 type DriverRow = typeof drivers.$inferSelect;
 
@@ -185,6 +185,43 @@ export class DriversRepository {
       .where(and(eq(drivers.userId, userId), eq(drivers.status, 'online')))
       .returning();
     return row ? toProfile(row) : undefined;
+  }
+
+  /**
+   * `online → on_ride`, only while the driver is still online. One statement,
+   * for the same reason as the two above: a status read followed by a write
+   * would let a concurrent `PUT /drivers/me/status` slip between them.
+   *
+   * Guarded on `online` DELIBERATELY. A force-assigned driver may be `offline`
+   * — overriding the eligibility rules is Dina's feature, not a hole in it —
+   * and claiming them would end the ride by putting an offline driver online.
+   * `false` is therefore an ordinary outcome, not an error: that driver stays
+   * offline for the whole ride and `releaseFromRide` correctly does nothing.
+   *
+   * `tx` composes this into the accept and force-assign transactions, where the
+   * claim must commit or roll back with the assignment.
+   */
+  async claimForRide(userId: string, tx?: DbTx): Promise<boolean> {
+    const [row] = await (tx ?? this.db)
+      .update(drivers)
+      .set({ status: 'on_ride' })
+      .where(and(eq(drivers.userId, userId), eq(drivers.status, 'online')))
+      .returning({ userId: drivers.userId });
+    return row !== undefined;
+  }
+
+  /**
+   * `on_ride → online`, only while the driver is actually on one. The mirror of
+   * `claimForRide`, and `false` is equally ordinary: a driver who was never
+   * claimed (force-assigned while offline) has nothing to release.
+   */
+  async releaseFromRide(userId: string, tx?: DbTx): Promise<boolean> {
+    const [row] = await (tx ?? this.db)
+      .update(drivers)
+      .set({ status: 'online' })
+      .where(and(eq(drivers.userId, userId), eq(drivers.status, 'on_ride')))
+      .returning({ userId: drivers.userId });
+    return row !== undefined;
   }
 
   async setStatus(

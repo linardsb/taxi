@@ -64,8 +64,21 @@ export interface CreateRideInput {
  * Parsed rather than cast: `request` round-trips through jsonb, so
  * `scheduledFor` comes back as an ISO STRING and `rideSchema`'s
  * `z.coerce.date()` is what re-hydrates it into a `Date`.
+ *
+ * The settled split is projected only when ALL FIVE money columns are set, so a
+ * half-written settlement can never be read back as a split. `rideSchema.parse`
+ * then runs `fareSplitSchema`'s sum refinement over it — a settled row that
+ * does not sum fails loudly on the READ, at the boundary, rather than reaching
+ * a driver's earnings screen.
  */
 function toRide(row: RideRow, quote: FareQuote): Ride {
+  const settled =
+    row.totalCents !== null &&
+    row.commissionPct !== null &&
+    row.commissionSource !== null &&
+    row.commissionCents !== null &&
+    row.driverNetCents !== null;
+
   return rideSchema.parse({
     id: row.id,
     orderId: row.orderId,
@@ -73,10 +86,22 @@ function toRide(row: RideRow, quote: FareQuote): Ride {
     riderId: row.riderId,
     driverId: row.driverId,
     geozoneId: row.geozoneId,
+    // The OPERATIVE method (`rides.payment_method`), not `request.paymentMethod`
+    // — the rider may have changed it before the lock closed at `accepted`.
+    paymentMethod: row.paymentMethod,
     request: row.request,
     quote,
     assignment: null,
-    split: null,
+    split: settled
+      ? {
+          currency: 'EUR',
+          totalCents: row.totalCents,
+          commissionPct: row.commissionPct,
+          commissionSource: row.commissionSource,
+          commissionCents: row.commissionCents,
+          driverNetCents: row.driverNetCents,
+        }
+      : null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
