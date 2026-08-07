@@ -1,6 +1,6 @@
 # GPS testa instrukcija (Sakta Cab, spike #4)
 
-Paldies, Atis! Vajadzīgi **divi parasti braucieni pa Rīgu (~30–45 min katrs)** ar telefonu kabatā vai turētājā, **ekrāns bloķēts**. Lietotne klusībā pieraksta GPS punktus failā — pēc katra brauciena atsūti failu atpakaļ Linardam. Baterijas līmenis pierakstās automātiski, nekas nav jāpiefiksē.
+Paldies, Atis! Vajadzīgi **divi parasti braucieni pa Rīgu (~30–45 min katrs)** ar telefonu kabatā vai turētājā, **ekrāns bloķēts**. Svarīgi: brauciena laikā telefonu **neturi pie lādētāja** — tests mēra arī baterijas patēriņu, un lādēšana sabojā mērījumu. Lietotne klusībā pieraksta GPS punktus failā — pēc katra brauciena atsūti failu atpakaļ Linardam. Baterijas līmenis pierakstās automātiski, nekas nav jāpiefiksē.
 
 ## 1. Instalēšana
 
@@ -20,11 +20,12 @@ Paldies, Atis! Vajadzīgi **divi parasti braucieni pa Rīgu (~30–45 min katrs)
 2. Brauc kā parasti ~30–45 min (centrs, tilti, šaurās ieliņas — jo dažādāka vide, jo labāk). Ekrānu pa ceļam neslēdz vaļā.
 3. Pēc brauciena: atver lietotni → **Export** → nosūti failu Linardam (WhatsApp / e-pasts).
 4. Tad nospied **Clear**.
+5. Beigās nospied sarkano pogu **Go offline**, lai lietotne līdz nākamajam braucienam neko neraksta. (Pogai jāpaliek zaļai ar uzrakstu "Go online".)
 
 ## 4. Otrais brauciens (bez baterijas ierobežojumiem)
 
 1. Telefona Iestatījumi → Lietotnes → **GPS Spike** → Baterija → izvēlies **"Neierobežots" / "Unrestricted"**.
-2. Atkārto to pašu: **Go online** → lietotne fonā, ekrāns bloķēts → ~30–45 min → **Export** → nosūti.
+2. Atkārto to pašu: **Go online** → pārbaudi, ka atkal tek rindiņas ar koordinātām (kā 2. sadaļā) → lietotne fonā, ekrāns bloķēts → ~30–45 min → **Export** → nosūti.
 
 ## 5. Beigās
 

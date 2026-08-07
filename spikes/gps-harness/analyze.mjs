@@ -104,14 +104,22 @@ function analyzeSession(fixes) {
   const delays = fixes.map((f) => (f.recvTs - f.ts) / 1000).sort((x, y) => x - y);
 
   const withBat = fixes.filter((f) => typeof f.battery === 'number' && f.battery >= 0);
-  let battery = { status: 'n/a', pctHr: null }; // gated | charging | n/a — only "gated" enters the verdict
+  let battery = { status: 'n/a', pctHr: null }; // gated | mixed | charging | n/a — only "gated" enters the verdict
   if (withBat.length >= 2) {
     const first = withBat[0];
     const last = withBat[withBat.length - 1];
     const hrs = (last.ts - first.ts) / 3600000;
     if (hrs > 0) {
       const pctHr = ((first.battery - last.battery) * 100) / hrs;
-      battery = pctHr < 0 ? { status: 'charging', pctHr } : { status: 'gated', pctHr };
+      // A rise anywhere mid-session means a partial charge: first/last %/hr looks
+      // deceptively good, so refuse to gate it ("mixed") instead of reporting it.
+      const rose = withBat.some((f, i) => i > 0 && f.battery > withBat[i - 1].battery + 0.005);
+      battery =
+        pctHr < 0
+          ? { status: 'charging', pctHr }
+          : rose
+            ? { status: 'mixed', pctHr }
+            : { status: 'gated', pctHr };
     }
   }
 
@@ -168,15 +176,23 @@ function verdictOf(m) {
   return { verdict: 'PASS', reasons: [] };
 }
 
-function renderSession(m, idx, total) {
+function renderSession(m, idx, total, prevEndTs) {
   const v = verdictOf(m);
-  const date = new Date(m.startTs).toISOString().slice(0, 10);
+  const d = new Date(m.startTs);
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const batteryCell =
     m.battery.status === 'gated'
       ? `${m.battery.pctHr.toFixed(1)} %/hr`
       : `${m.battery.status} (not gated)`;
   const lines = [
     `#### Session ${idx + 1}/${total} — ${date} ${fmtT(m.startTs)}–${fmtT(m.endTs)} local (${m.durationMin.toFixed(1)} min, ${m.fixes.length} fixes)`,
+  ];
+  if (prevEndTs != null)
+    lines.push(
+      '',
+      `⚠️ starts ${((m.startTs - prevEndTs) / 60000).toFixed(1)} min after the previous session — separate run (forgotten Clear) or dead task? Dead task = FAIL per protocol ("task dies until relaunch"); this gap is in no gated table.`,
+    );
+  lines.push(
     '',
     '| Gap (consecutive `ts`) | Moving (gated) | All | PASS |',
     '|---|---|---|---|',
@@ -192,7 +208,7 @@ function renderSession(m, idx, total) {
     `| Battery | ${batteryCell} | PASS ≤ ${PASS.batteryPctHr}, FAIL > ${FAIL.batteryPctHr} %/hr |`,
     '',
     `Gaps > ${REPORT_GAP_S} s (local time · length · class · bounding speeds · distance):`,
-  ];
+  );
   const big = m.gaps.filter((g) => g.s > REPORT_GAP_S);
   if (!big.length) lines.push('- none');
   for (const g of big)
@@ -275,11 +291,59 @@ function selftest() {
   assertEq(cv.verdict, 'FAIL', '(c) Doze verdict');
   assertEq(cv.reasons.some((r) => r.includes('moving gap')), true, '(c) 130 s gap is a FAIL reason');
 
+  // (d) borderline: a 90 s moving gap lands in (60, 120] -> INCONCLUSIVE with an
+  // explicit reason, never silently rounded into PASS
+  const border = [];
+  for (let i = 0; i < 30; i++)
+    border.push(
+      fix({ ts: t0 + i * 4000, recvTs: t0 + i * 4000 + 300, lat: 56.95 + i * 2e-4, lng: 24.1, speed: 8 }),
+    );
+  const preBorder = border[border.length - 1];
+  border.push(
+    fix({ ts: preBorder.ts + 90000, recvTs: preBorder.ts + 90300, lat: preBorder.lat + 0.005, lng: 24.1, speed: 8 }),
+  );
+  const dv = verdictOf(analyzeText(toText(border)).sessions[0]);
+  assertEq(dv.verdict, 'INCONCLUSIVE', '(d) 90 s moving gap verdict');
+  assertEq(
+    dv.reasons.some((r) => r.includes(`moving gap max 90.0 s in (${PASS.maxS}, ${FAIL.movingGapS}] s`)),
+    true,
+    '(d) INCONCLUSIVE reason names the borderline gap',
+  );
+
+  // (e) split file: >10 min ts jump -> two sessions; the second session's render
+  // must surface the inter-session gap (a dead task must not vanish into two
+  // PASSes), the header date must be local (not UTC), and a mid-session battery
+  // rise (partial charge) must come out "mixed", not "gated"
+  const runA = [];
+  for (let i = 0; i < 20; i++)
+    runA.push(
+      fix({
+        ts: t0 + i * 4000, recvTs: t0 + i * 4000 + 300, lat: 56.95 + i * 2e-4, lng: 24.1, speed: 8,
+        battery: i < 10 ? 0.85 - i * 0.005 : 0.83 - (i - 10) * 0.005, // dips, jumps up at i=10, dips again
+      }),
+    );
+  const runBStart = runA[runA.length - 1].ts + 14 * 60000;
+  const runB = [];
+  for (let i = 0; i < 20; i++)
+    runB.push(
+      fix({ ts: runBStart + i * 4000, recvTs: runBStart + i * 4000 + 300, lat: 56.96 + i * 2e-4, lng: 24.1, speed: 8 }),
+    );
+  const e = analyzeText(toText([...runA, ...runB]));
+  assertEq(e.sessions.length, 2, '(e) split into two sessions');
+  assertEq(e.sessions[0].battery.status, 'mixed', '(e) mid-session battery rise not gated');
+  const render2 = renderSession(e.sessions[1], 1, 2, e.sessions[0].endTs);
+  assertEq(render2.includes('starts 14.0 min after the previous session'), true, '(e) inter-session gap surfaced');
+  assertEq(render2.includes('Dead task = FAIL per protocol'), true, '(e) dead-task warning present');
+  const localDate = new Date(runBStart).toLocaleDateString('en-CA'); // YYYY-MM-DD in local tz, independent of render
+  assertEq(render2.includes(`— ${localDate} `), true, '(e) header date is local, not UTC');
+
   if (failures) {
     console.error(`selftest: ${failures} assertion(s) failed`);
     process.exit(1);
   }
-  console.log('selftest OK — 3 scenarios (clean PASS / stationary-gap edge / Doze FAIL) passed');
+  console.log(
+    'selftest OK — 5 scenarios (clean PASS / stationary-gap edge / Doze FAIL / borderline INCONCLUSIVE / split-session render) passed',
+  );
 }
 
 // --- main ---
@@ -312,7 +376,13 @@ if (argv[0] === '--selftest') {
     console.log(
       `\n<!-- analyze.mjs · ${basename(path)} · ${r.count} fixes · ${r.sessions.length} session(s)${r.malformed ? ` · ${r.malformed} malformed line(s) skipped` : ''} -->\n`,
     );
-    r.sessions.forEach((m, i) => console.log(renderSession(m, i, r.sessions.length) + '\n'));
+    if (r.sessions.length > 1)
+      console.log(
+        `**⚠️ ${r.sessions.length} sessions in one file** — if this was one continuous drive, the tracking task died and relaunched: FAIL per protocol ("task dies until relaunch"). The outage shows up only as the inter-session gap warnings below, never in a gated table.\n`,
+      );
+    r.sessions.forEach((m, i) =>
+      console.log(renderSession(m, i, r.sessions.length, i ? r.sessions[i - 1].endTs : null) + '\n'),
+    );
   }
   if (anyError) process.exit(1);
 }
