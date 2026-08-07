@@ -1,0 +1,7 @@
+{
+  "name": "gps-spike",
+  "main": "worker.js",
+  "compatibility_date": "2026-07-15",
+  "assets": { "directory": "./public" },
+  "r2_buckets": [{ "binding": "APK", "bucket_name": "gps-spike" }]
+}

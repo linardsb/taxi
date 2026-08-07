@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPS testa instrukcija — Sakta Cab</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 16px;
+         background: #f7f7f5; color: #1a1a1a; font-size: 17px; line-height: 1.55; }
+  main { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 1.3em; margin: 0 0 12px; }
+  section { background: #fff; border: 1px solid #e3e3df; border-radius: 10px;
+            padding: 14px 16px; margin-bottom: 12px; }
+  h2 { font-size: 1.05em; margin: 0 0 8px; }
+  ol { margin: 0; padding-left: 22px; }
+  li { margin-bottom: 9px; }
+  li:last-child { margin-bottom: 0; }
+  .note { background: #fff8e6; border: 1px solid #eadfb8; border-radius: 10px;
+          padding: 10px 16px; margin-bottom: 12px; }
+  .btn { display: inline-block; padding: 1px 10px; border-radius: 6px; color: #fff;
+         font-weight: 600; font-size: .9em; white-space: nowrap; }
+  .go { background: #2a7; }
+  .stop { background: #c33; }
+  .aux { background: #345; }
+  .muted { color: #666; font-size: .9em; }
+  a.download { display: block; text-align: center; background: #2a7; color: #fff;
+               font-size: 1.15em; font-weight: 700; text-decoration: none;
+               padding: 16px 12px; border-radius: 12px; margin: 2px 0 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>GPS tests — 2 parasti braucieni 🚕</h1>
+
+  <p>Paldies, Atis! Vajadzīgi divi parasti braucieni pa Rīgu, <strong>~30–45 min katrs</strong>, telefons kabatā vai turētājā, <strong>ekrāns bloķēts</strong>. Lietotne pati visu pieraksta — pēc katra brauciena tikai atsūti failu Linardam.</p>
+
+  <div class="note">⚡ Brauciena laikā telefonu <strong>neturi pie lādētāja</strong> — tests mēra arī baterijas patēriņu. Starp braucieniem lādēt drīkst.</div>
+
+  <section>
+    <h2>1. Uzstādi (vienreiz, ~3 min)</h2>
+    <a class="download" href="/gps-spike.apk">⬇️ Lejupielādēt GPS Spike</a>
+    <ol>
+      <li>Nospied zaļo pogu un atver lejupielādēto failu (paziņojumā vai mapē <strong>Lejupielādes</strong>).</li>
+      <li>Instalē. Ja telefons pa ceļam brīdina — spied <strong>“Lejupielādēt tik un tā”</strong>, <strong>“Atļaut no šī avota”</strong> vai <strong>“Instalēt tik un tā”</strong>: tas ir mūsu testa fails, viss kārtībā.</li>
+      <li>Atver lietotni <strong>GPS Spike</strong> un spied <span class="btn go">Go online</span>.</li>
+      <li>Kad prasa atrašanās vietas atļauju: <strong>“Kamēr tiek izmantota lietotne”</strong>, un nākamajā logā — <strong>“Vienmēr atļaut”</strong> ⟵ pats svarīgākais solis, citādi GPS apstāsies, kad ekrāns bloķēts.</li>
+      <li>Ekrānā ik pa brīdim parādās jaunas rindiņas ar koordinātām? Gatavs. ✅</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>2. Pirmais brauciens</h2>
+    <ol>
+      <li>Noliec lietotni fonā, nobloķē ekrānu un brauc kā parasti ~30–45 min. Pa ceļam telefonu neaiztiec.</li>
+      <li>Pēc brauciena atver lietotni: <span class="btn aux">Export</span> → nosūti failu Linardam WhatsApp.</li>
+      <li>Spied <span class="btn stop">Go offline</span>, lai lietotne pa nakti neko neraksta, un tad <span class="btn aux">Clear</span>.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>3. Otrais brauciens (nākamajā dienā)</h2>
+    <ol>
+      <li>Telefona Iestatījumi → Lietotnes → <strong>GPS Spike</strong> → Baterija → izvēlies <strong>“Neierobežota” / “Unrestricted”</strong>.</li>
+      <li>Atver lietotni, spied <span class="btn go">Go online</span> un pārbaudi, ka rindiņas atkal tek.</li>
+      <li>Brauc tāpat kā vakar, pēc brauciena: <span class="btn aux">Export</span> → nosūti Linardam.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>4. Beigās</h2>
+    <ol>
+      <li>Atsūti <strong>telefona modeli un Android versiju</strong> (Iestatījumi → Par tālruni).</li>
+      <li>Lietotni vari izdzēst. Paldies! 🙌</li>
+    </ol>
+  </section>
+
+  <p class="muted">Ja kaut kas neiet — rindiņas neparādās, lietotne izmet kļūdu — uztaisi ekrānšāviņu un uzraksti Linardam. Neko nelabo pats.</p>
+</main>
+</body>
+</html>
