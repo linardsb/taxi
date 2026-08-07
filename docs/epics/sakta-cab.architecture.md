@@ -31,6 +31,17 @@ Continue on the existing Phase 0 scaffold exactly as laid out in the skeleton pr
 - **Boundaries & contracts** — unchanged hard rules: providers only via `packages/shared/src/seams/` (maps, SMS, payments, telephony, + new `DemandSignalProvider`); payment method locks at acceptance; status changes via `assertTransition`; Stripe test mode until SIA; integer cents EUR; contracts only in `@taxi/shared`.
 - **Skipped** — auth posture, i18n/a11y policy, dispatch strategy plugin design: all decided in the skeleton and unchanged.
 
+## UI surface decisions (2026-08-07)
+
+Decided by Linards in the surface-consolidation grilling session; research + evidence in `docs/research/` (`ui-surface-consolidation.md` + three evidence reports). Functionality preservation tracked in `mvp-traceability.md`.
+
+- **Why two mobile apps** (rider+driver merge rejected): app-store permissions are declared per app at build time, not per user role — the driver app's `ACCESS_BACKGROUND_LOCATION` + foreground service + iOS "Always" mode must never ship in the rider install (Play policy review judged against the rider majority, privacy optics, OEM battery baggage). Also: release decoupling, and the driver app's store-free APK/internal-track distribution (proven by the GPS spike kit) dies in a single binary. Industry default (Bolt/Uber/Lyft: two apps) exists for these reasons.
+- **One web app, not two**: `apps/dispatch` and `apps/admin` merge into a single Next.js app with role-gated route groups `/dispatch` and `/admin` — one shell, one auth, one deploy. The manifest-permission argument doesn't exist on web. CLAUDE.md's separation intent holds as route/role boundaries (stats/config/legal never render in the operational console). `apps/admin` workspace retires.
+- **Rider app ships native** (Expo → TestFlight + Play internal/APK; EAS Update for OTA pilot iteration). PWA-first rejected on evidence: iOS web push requires add-to-home-screen (the exact users who won't), react-native-web has open ARIA gaps vs the screen-reader-first launch requirement, and no major operator went PWA 2022–2026. The no-install job is done better by the **SMS + no-login live-tracking web page** (token URL: driver, plate, live position, ETA, dispatch phone) which also serves share-trip and phone bookings — new ticket. Full verdict: `docs/research/rider-ux-evidence.md`.
+- **Admin is minimal bespoke**: driver/vehicle approval + CRUD, trips list + CSV, platform-config editor (still through `resolveCommissionPct()`-compatible `platform_config` rows). Stats delegated to self-hosted Metabase (read-only Postgres user) when the first recurring stats question appears; rider-visible legal/terms = public static pages; support-inbox stub deferred (see traceability map).
+- **UX evidence is binding input to surface tickets**: the three evidence reports' top-10 lists were folded into tickets #14–#21 on 2026-08-07 (offer-card contents, FIFO queue transparency, caller-ID pop, keyboard-first console, alarm-budget discipline, PIN pickup, blind-rider arrival protocol, scheduled-ride guarantee). Anti-scope is explicit: no heatmaps, no in-app navigation, no IVR/voice-AI, no gamified tiers tied to acceptance rate, no bidding.
+- **Measurement**: experiential/outcome UX metrics live in `docs/ux-metrics-ledger.md` (weekly review during pilot), per the outcomes-not-outputs rule.
+
 ## Missing pieces
 
 What the chosen approach needs that doesn't exist yet:
