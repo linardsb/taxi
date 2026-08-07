@@ -25,6 +25,14 @@ npx expo run:android              # or: npx expo run:ios (device plugged in)
 
 `expo run:*` prebuilds a dev client with the background-location entitlements from `app.json`. When prompted, grant location **"Allow all the time"** (Android) / **"Always"** (iOS) — the harness requests foreground then background permission on first "Go online".
 
+### Analyzing a run
+
+```bash
+node spikes/gps-harness/analyze.mjs spikes/gps-harness/data/<run>.jsonl
+```
+
+Drop exported `fixes.jsonl` files into `spikes/gps-harness/data/`, named per run: `android-default.jsonl`, `android-unrestricted.jsonl`, `ios.jsonl`. The script is zero-dependency (bare Node ≥18, `--selftest` built in): it splits sessions at >10 min `ts` jumps (forgotten "Clear"), separates moving from stationary gaps (`distanceInterval: 10` means a stopped phone legitimately goes quiet — only moving gaps are gated), and prints a ready-to-paste markdown block per session with a PASS / FAIL / INCONCLUSIVE verdict against the table below. Borderline zones (max gap 60–120 s, battery 8–12 %/hr) come out INCONCLUSIVE deliberately — that call is human.
+
 ## Field protocol
 
 Per platform (Android on Atis's actual phone is the one that matters):
@@ -46,3 +54,19 @@ Per platform (Android on Atis's actual phone is the one that matters):
 | Battery | ≤8%/hr | >12%/hr |
 
 PASS → #14 proceeds as designed with these exact `startLocationUpdatesAsync` options. FAIL → #14 is designed around the free mounted-phone pattern instead: screen kept awake while online (`expo-keep-awake`), background streaming best-effort, server-side gap tolerance. No paid library for the pilot.
+
+## Field results
+
+<!-- Paste analyze.mjs output per run. Note phone model + OEM + OS version — OEM battery policy is the known risk. -->
+
+### Android — default settings (decisive run)
+
+_Pending field drive._
+
+### Android — battery-optimization exemption (Unrestricted)
+
+_Pending field drive._
+
+### iOS
+
+_Pending field drive._
