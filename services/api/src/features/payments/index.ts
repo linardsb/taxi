@@ -35,8 +35,10 @@
  *   production client calls this route yet (#15 and #17 are unbuilt), and
  *   mitigated three ways rather than none — the route is idempotent and callable
  *   by `dispatcher`/`admin` (so a stuck ride is recoverable by hand today),
- *   every failure logs a distinct `payment.settlement.*` event with the rideId,
- *   and unsettled money is one query:
+ *   every failure logs a distinct `payment.settlement.*` event with the rideId —
+ *   including `write_failed`, the charge-succeeded-then-rolled-back case, which
+ *   carries the PaymentIntent so the query below can tell a ride that was
+ *   charged from one that never was — and unsettled money is one query:
  *     SELECT id, order_id, driver_id, payment_method, total_cents, updated_at
  *     FROM rides WHERE status = 'completed' ORDER BY updated_at;
  *   The real fix is #15 calling `settle` right after `complete` and retrying.

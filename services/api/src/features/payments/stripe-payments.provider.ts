@@ -63,10 +63,9 @@ function describe(error: unknown): {
     return { message: detail, providerRef: intentId };
   }
 
-  // The `type` verbatim, not flattened into "provider error". `StripeIdempotencyError`
-  // in particular can only happen if the amount for a ride changed between
-  // attempts, which the frozen settled split makes impossible — so if it ever
-  // shows up it is a real bug, and the log is where that becomes visible.
+  // The `type` verbatim, not flattened into "provider error". A
+  // `StripeIdempotencyError` here is a real bug worth seeing — the frozen
+  // settled split means the amount for a ride cannot change between attempts.
   const type = typeof e?.type === 'string' ? e.type : null;
   const message =
     error instanceof Error
@@ -74,8 +73,50 @@ function describe(error: unknown): {
       : typeof e?.message === 'string'
         ? e.message
         : 'unknown';
-  return { message: type ? `${type}: ${message}` : message, providerRef: null };
+  // `intentId` ON BOTH BRANCHES, not just the card-error one. This is the
+  // `provider_error` bucket, which MEANS "we don't know whether the money
+  // moved" — so it is precisely where the reconciliation handle is worth most.
+  // Dropping it here while keeping it on the decline branch had the asymmetry
+  // exactly backwards. Still null whenever the error carries no intent.
+  return {
+    message: type ? `${type}: ${message}` : message,
+    providerRef: intentId,
+  };
 }
+
+/**
+ * A non-succeeded intent that did NOT throw, bucketed by the same asymmetric
+ * doctrine as `isCardError` above — and, until this map existed, the one path in
+ * this file that contradicted it, because everything not `succeeded` fell
+ * through to `declined`.
+ *
+ * `declined` is only for the two statuses that mean THE RIDER MUST DO
+ * SOMETHING: the instrument was refused (`requires_payment_method`) or SCA is
+ * required (`requires_action` — #17's problem, and a retry from here re-fails
+ * identically). A 402 is honest for both.
+ *
+ * Everything else is retry-SAFE. `processing` is the one that matters: the money
+ * may yet move, so answering 402 tells a driver the rider's card failed while a
+ * charge is still in flight. `requires_capture` means funds ARE authorized and
+ * uncaptured (we never send `capture_method: 'manual'`, so it would be a config
+ * bug); `canceled` and `requires_confirmation` are unreachable on a
+ * `confirm: true` off-session create.
+ *
+ * A `Record` over the closed union rather than a switch: adding a status in an
+ * SDK bump then fails to compile until someone buckets it deliberately, instead
+ * of silently inheriting one in the money path.
+ */
+const STATUS_REASON: Record<
+  Exclude<Stripe.PaymentIntent.Status, 'succeeded'>,
+  'declined' | 'provider_error'
+> = {
+  requires_payment_method: 'declined',
+  requires_action: 'declined',
+  processing: 'provider_error',
+  requires_capture: 'provider_error',
+  requires_confirmation: 'provider_error',
+  canceled: 'provider_error',
+};
 
 /**
  * The Stripe test-mode implementation of the PaymentsProvider seam. This file
@@ -111,12 +152,13 @@ export class StripePaymentsProvider implements PaymentsProvider {
         return { ok: true, providerRef: intent.id };
       }
 
-      // A non-succeeded intent that did NOT throw. `requires_action` in
-      // particular means SCA: the rider must be brought back on-session, which
-      // is #17's problem and a `declined` from here — not a transient fault to
-      // retry. The status rides along in `message` so the log says which one.
+      // A non-succeeded intent that did NOT throw. The status rides along in
+      // `message` so the log says which one; `?? 'provider_error'` is the
+      // runtime half of `STATUS_REASON`'s pin — a status the installed SDK
+      // types do not know must land in the retry-SAFE bucket, never crash a
+      // settlement.
       return this.failed(request, {
-        reason: 'declined',
+        reason: STATUS_REASON[intent.status] ?? 'provider_error',
         providerRef: intent.id,
         message: `payment_intent_${intent.status}`,
       });

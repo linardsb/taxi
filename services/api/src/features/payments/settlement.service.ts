@@ -13,6 +13,7 @@ import {
   assertRideSplitConsistent,
   fareSplitSchema,
   type PaymentChargeResult,
+  type PaymentMethodType,
   type PaymentsProvider,
   type Ride,
 } from '@taxi/shared';
@@ -33,6 +34,43 @@ export interface SettleInput {
   rideId: string;
   actor: SettlementActor;
   actorId: string;
+}
+
+/**
+ * The two methods this ticket settles, narrowed ONCE and ABOVE THE CHARGE.
+ *
+ * Deliberately not a ternary at the ledger call: that one sits INSIDE the
+ * transaction, after money has already moved, so failing closed there would
+ * manufacture the exact hazard this slice is built around — charge succeeded,
+ * database rolled back. Refusing here costs nothing, because nothing has
+ * happened yet.
+ *
+ * The `never` arm is the point. A `balance` ride reaching the ledger as `card`
+ * would post `card_settlement` entries asserting Stripe collected money it never
+ * touched — and the set would still sum to zero, so every invariant test would
+ * pass. Adding a value to `PAYMENT_METHOD_TYPES` now stops compiling until
+ * someone decides how it settles.
+ */
+function settlementMethodOf(method: PaymentMethodType): 'cash' | 'card' {
+  switch (method) {
+    case 'cash':
+    case 'card':
+      return method;
+    case 'balance':
+    case 'corporate':
+      // Both are post-MVP. The ledger SHAPE accommodates them (a rider account
+      // already exists as an owner type, and both would simply omit the
+      // collection pair) — the settlement flow does not.
+      throw new ConflictException('payment_method_unsupported');
+    default: {
+      // Unreachable while the union is closed; fails closed anyway rather than
+      // letting an unmapped method post entries.
+      const unmapped: never = method;
+      throw new ConflictException(
+        `payment_method_unsupported: ${String(unmapped)}`,
+      );
+    }
+  }
 }
 
 /**
@@ -88,38 +126,57 @@ export class SettlementService {
 
     const { driverId, split } = this.assertSettlable(ride);
 
-    const charge = await this.chargeIfNeeded(ride, driverId, split.totalCents);
+    // Narrowed ABOVE the charge and reused below it, never re-derived inside the
+    // transaction — see `settlementMethodOf`.
+    const method = settlementMethodOf(ride.paymentMethod);
 
-    const result = await this.db.transaction(async (tx) => {
-      // FIRST STATEMENT IN THE TRANSACTION. `return undefined` then commits an
-      // empty transaction (the dispatch pattern); anything written before it
-      // would commit unpaired.
-      const moved = await this.transitions.transitionInTx(
-        tx,
-        input.rideId,
-        'completed',
-        'settled',
-      );
-      if (!moved) return undefined; // someone else settled this ride
+    const charge = await this.chargeIfNeeded(
+      ride,
+      method,
+      driverId,
+      split.totalCents,
+    );
 
-      const posted = await this.ledger.postRideSettlement(tx, {
-        rideId: input.rideId,
-        riderId: ride.riderId,
-        driverId,
-        paymentMethod: ride.paymentMethod === 'cash' ? 'cash' : 'card',
-        split,
-      });
-
-      if (charge) {
-        await this.settlements.writePaymentRef(
+    const result = await this.db
+      .transaction(async (tx) => {
+        // FIRST STATEMENT IN THE TRANSACTION. `return undefined` then commits an
+        // empty transaction (the dispatch pattern); anything written before it
+        // would commit unpaired.
+        const moved = await this.transitions.transitionInTx(
           tx,
           input.rideId,
-          charge.providerRef,
+          'completed',
+          'settled',
         );
-      }
+        if (!moved) return undefined; // someone else settled this ride
 
-      return { moved, posted };
-    });
+        const posted = await this.ledger.postRideSettlement(tx, {
+          rideId: input.rideId,
+          riderId: ride.riderId,
+          driverId,
+          paymentMethod: method,
+          split,
+        });
+
+        if (charge) {
+          await this.settlements.writePaymentRef(
+            tx,
+            input.rideId,
+            charge.providerRef,
+          );
+        }
+
+        return { moved, posted };
+      })
+      .catch((error: unknown) => {
+        // THE ONLY PATH THAT CAN LOSE MONEY, and until now the only one that
+        // logged nothing: the charge succeeded and the write did not, so the
+        // rollback puts `payment_provider_ref` back to NULL and leaves the ride
+        // `completed` as if nothing happened — while the rider's money sits at
+        // Stripe. Rethrown unchanged; this only makes the loss visible.
+        this.logWriteFailed(ride, driverId, split.totalCents, charge, error);
+        throw error;
+      });
 
     if (!result) {
       // NOT A 409. Because the idempotency key is derived from the ride, the
@@ -201,19 +258,11 @@ export class SettlementService {
    */
   private async chargeIfNeeded(
     ride: SettlableRide,
+    method: 'cash' | 'card',
     driverId: string,
     totalCents: number,
   ): Promise<{ providerRef: string } | null> {
-    if (
-      ride.paymentMethod === 'balance' ||
-      ride.paymentMethod === 'corporate'
-    ) {
-      // Both are post-MVP. The ledger SHAPE accommodates them (a rider account
-      // already exists as an owner type, and both would simply omit the
-      // collection pair) — the settlement flow does not.
-      throw new ConflictException('payment_method_unsupported');
-    }
-    if (ride.paymentMethod === 'cash') return null;
+    if (method === 'cash') return null;
 
     // Stripe rejects zero-amount intents, and there is nothing to collect.
     if (totalCents === 0) return null;
@@ -267,6 +316,41 @@ export class SettlementService {
       reason: charge.reason,
       message: charge.message,
       providerRef: charge.providerRef,
+      at: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * THE ONE LOG LINE THAT NAMES A RIDE AND ITS PAYMENTINTENT TOGETHER.
+   *
+   * `charge_failed` cannot cover this case — the charge SUCCEEDED — and
+   * `settled` never runs, so before this existed the money-losing path was the
+   * only one in the slice that emitted no `payment.settlement.*` event at all.
+   * The barrel's reconciliation query surfaces the stuck ride either way, but
+   * without `providerRef` here it cannot tell "never charged" from "charged,
+   * then rolled back" without opening the Stripe dashboard.
+   *
+   * `providerRef` is null on a cash ride, where the same rollback costs nothing.
+   * The line still fires: a settlement that failed to write is worth seeing
+   * either way, and a null ref is itself the signal that no money is stranded.
+   */
+  private logWriteFailed(
+    ride: SettlableRide,
+    driverId: string,
+    totalCents: number,
+    charge: { providerRef: string } | null,
+    error: unknown,
+  ): void {
+    this.logger.error({
+      event: 'payment.settlement.write_failed',
+      rideId: ride.id,
+      orderId: ride.orderId,
+      driverId,
+      riderId: ride.riderId,
+      paymentMethod: ride.paymentMethod,
+      totalCents,
+      providerRef: charge?.providerRef ?? null,
+      message: error instanceof Error ? error.message : String(error),
       at: new Date().toISOString(),
     });
   }

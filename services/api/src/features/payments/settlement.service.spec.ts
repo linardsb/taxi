@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { Db } from '@taxi/db';
 import type {
   PaymentChargeRequest,
@@ -70,7 +71,7 @@ class FakePaymentsProvider implements PaymentsProvider {
 
 const build = (
   ride: SettlableRide | undefined,
-  options: { transitionWins?: boolean } = {},
+  options: { transitionWins?: boolean; postThrows?: Error } = {},
 ) => {
   const payments = new FakePaymentsProvider();
   const posted: unknown[] = [];
@@ -87,6 +88,7 @@ const build = (
 
   const ledger = {
     postRideSettlement: (_tx: DbTx, input: unknown) => {
+      if (options.postThrows) return Promise.reject(options.postThrows);
       posted.push(input);
       return Promise.resolve({
         transactionId: 'txn_1',
@@ -157,6 +159,11 @@ const settle = (service: SettlementService) =>
   service.settle({ rideId: RIDE_ID, actor: 'driver', actorId: DRIVER_ID });
 
 describe('SettlementService.settle', () => {
+  // The two `write_failed` cases spy on `Logger.prototype`, which is global. A
+  // per-test restore would leak the spy into every test below on the first
+  // failed assertion, turning one red test into a cascade that hides it.
+  afterEach(() => jest.restoreAllMocks());
+
   it('charges a card ride exactly once with a ride-derived key, then posts (expected)', async () => {
     const { service, payments, posted, paymentRefs } = build(settlable());
 
@@ -196,7 +203,7 @@ describe('SettlementService.settle', () => {
     expect(paymentRefs).toEqual([]); // nothing to reference
   });
 
-  it('answers 200 for an already-settled ride without charging or posting (edge)', async () => {
+  it('answers 201 for an already-settled ride without charging or posting (edge)', async () => {
     const { service, payments, posted, transactionsOpened } = build(
       settlable({ status: 'settled' }),
     );
@@ -209,9 +216,9 @@ describe('SettlementService.settle', () => {
     expect(transactionsOpened()).toBe(0);
   });
 
-  it('answers 200 when it loses the transition race, posting nothing (edge)', async () => {
+  it('answers 201 when it loses the transition race, posting nothing (edge)', async () => {
     // The loser's charge and the winner's charge are the SAME PaymentIntent
-    // (one derived key), so 200-with-the-settled-ride is true, not a papered-over
+    // (one derived key), so 201-with-the-settled-ride is true, not a papered-over
     // conflict. A 409 here would make a retrying driver app treat success as failure.
     const { service, payments, posted } = build(settlable(), {
       transitionWins: false,
@@ -241,13 +248,19 @@ describe('SettlementService.settle', () => {
   it.each(['balance', 'corporate'] as PaymentMethodType[])(
     'refuses %s with 409 payment_method_unsupported, provider untouched (edge)',
     async (paymentMethod) => {
-      const { service, payments, posted } = build(settlable({ paymentMethod }));
+      const { service, payments, posted, transactionsOpened } = build(
+        settlable({ paymentMethod }),
+      );
 
       await expect(settle(service)).rejects.toThrow(
         'payment_method_unsupported',
       );
       expect(payments.calls).toEqual([]);
       expect(posted).toEqual([]);
+      // Refused ABOVE the charge, so there is nothing to roll back. Narrowing
+      // inside the transaction instead would fail closed only after the money
+      // had already moved — the `write_failed` hazard, manufactured on purpose.
+      expect(transactionsOpened()).toBe(0);
     },
   );
 
@@ -327,6 +340,62 @@ describe('SettlementService.settle', () => {
       }),
     ).resolves.toBeDefined();
     expect(payments.calls).toHaveLength(1);
+  });
+
+  it('logs write_failed naming the ride AND the PaymentIntent when the write rolls back (failure)', async () => {
+    // THE ONLY PATH THAT CAN LOSE MONEY. The charge succeeded and the
+    // transaction did not, so `payment_provider_ref` rolls back to NULL and the
+    // ride reads `completed` as if nothing happened — while the rider's money
+    // sits at Stripe. `charge_failed` cannot cover this (the charge SUCCEEDED)
+    // and `settled` never runs, so without this line no log anywhere names the
+    // ride and the intent together, and reconciliation cannot tell "charged,
+    // then rolled back" from "never charged" without opening the dashboard.
+    const { service, payments } = build(settlable(), {
+      postThrows: new Error('connection terminated mid-transaction'),
+    });
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+    await expect(settle(service)).rejects.toThrow(
+      'connection terminated mid-transaction',
+    );
+
+    // Rethrown unchanged — this log makes the loss visible, it does not swallow it.
+    expect(payments.calls).toHaveLength(1);
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'payment.settlement.write_failed',
+        rideId: RIDE_ID,
+        driverId: DRIVER_ID,
+        riderId: RIDER_ID,
+        paymentMethod: 'card',
+        totalCents: 1_000,
+        // The handle that makes the stranded money findable.
+        providerRef: 'pi_test_1',
+        message: 'connection terminated mid-transaction',
+      }),
+    );
+  });
+
+  it('logs write_failed with a null providerRef when a CASH write rolls back (edge)', async () => {
+    // The line still fires where no money is stranded, and the null ref is
+    // itself the signal that nothing is: a cash rollback costs nothing, so
+    // reconciliation can skip it without opening Stripe.
+    const { service, payments } = build(settlable({ paymentMethod: 'cash' }), {
+      postThrows: new Error('deadlock detected'),
+    });
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+    await expect(settle(service)).rejects.toThrow('deadlock detected');
+
+    expect(payments.calls).toEqual([]);
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'payment.settlement.write_failed',
+        rideId: RIDE_ID,
+        paymentMethod: 'cash',
+        providerRef: null,
+      }),
+    );
   });
 
   it('answers 404 for a ride that does not exist (failure)', async () => {

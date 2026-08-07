@@ -464,7 +464,7 @@ describe('payments + ledger (integration)', () => {
     expect(await ledger.findByRide(ride.id)).toHaveLength(6);
   });
 
-  /** (edge) Settling twice is a 200 both times, one charge, one entry set. */
+  /** (edge) Settling twice is a 201 both times, one charge, one entry set. */
   it('is idempotent: a second settle charges nothing and posts nothing (AC #1)', async () => {
     const d = await onlineDriver(6, near(CENTRE_PICKUP.location, 0.001, 0));
     const r = await rider(54);
@@ -477,7 +477,7 @@ describe('payments + ledger (integration)', () => {
     const balanceAfterFirst = (await driverRow(d.id)).balanceCents;
 
     // A retrying client must not have to distinguish "I settled it" from "it was
-    // already settled" — so this is a 200-shaped answer, never a 409.
+    // already settled" — so this is a success-shaped answer, never a 409.
     const second = await http
       .post(`/rides/${ride.id}/settle`)
       .set('authorization', d.auth)
@@ -503,6 +503,27 @@ describe('payments + ledger (integration)', () => {
       .post(`/rides/${ride.id}/settle`)
       .set('authorization', d.auth)
       .expect(409);
+
+    expect(ctx.payments.calls).toHaveLength(0);
+    expect((await rideRow(ride.id)).status).toBe('completed');
+    expect(await ledger.findByRide(ride.id)).toHaveLength(0);
+  });
+
+  /** (failure) A rider does not settle their own ride — pinned at THIS route. */
+  it('refuses a rider at the settle route with 403 (failure)', async () => {
+    // `RolesGuard`'s own spec proves the mechanism generically, but nothing
+    // pinned this route's `@Roles` list. Adding `'rider'` to it now fails here
+    // instead of reaching `SETTLEMENT_ACTORS` — the defensive complement to that
+    // map's `null` arm, one layer up. The rider owns this ride, so a 403 is
+    // about the ROLE, not about ownership.
+    const d = await onlineDriver(8, near(CENTRE_PICKUP.location, 0.001, 0));
+    const r = await rider(56);
+    const ride = await completedRide(r.auth, d, 'card');
+
+    await http
+      .post(`/rides/${ride.id}/settle`)
+      .set('authorization', r.auth)
+      .expect(403);
 
     expect(ctx.payments.calls).toHaveLength(0);
     expect((await rideRow(ride.id)).status).toBe('completed');

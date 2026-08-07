@@ -108,6 +108,12 @@ export class LedgerRepository {
    * Every entry for one ride, oldest first — the reconciliation read
    * `ledger_entries_ride_idx` exists to serve (the deferred PR #32 finding).
    * #20 renders it; the payments integration spec asserts through it.
+   *
+   * `id` IS THE TIEBREAKER, and `created_at` alone cannot order this data:
+   * `defaultNow()` is `transaction_timestamp()`, which is stable across a
+   * transaction, and all six rows land in one INSERT — so they carry identical
+   * timestamps and "oldest first" would otherwise be whatever order the planner
+   * felt like, differing between two requests for the same ride.
    */
   findByRide(rideId: string): Promise<LedgerEntryRow[]> {
     return this.db
@@ -124,6 +130,6 @@ export class LedgerRepository {
       .from(ledgerEntries)
       .innerJoin(ledgerAccounts, eq(ledgerEntries.accountId, ledgerAccounts.id))
       .where(eq(ledgerEntries.rideId, rideId))
-      .orderBy(asc(ledgerEntries.createdAt));
+      .orderBy(asc(ledgerEntries.createdAt), asc(ledgerEntries.id));
   }
 }

@@ -118,6 +118,27 @@ describe('StripePaymentsProvider.charge', () => {
     });
   });
 
+  it.each(['processing', 'requires_capture', 'requires_confirmation'] as const)(
+    'routes a non-terminal %s intent to provider_error, not declined (edge)',
+    async (status) => {
+      // THE DOCTRINE AT THE TOP OF THE FILE, applied to the non-throw path —
+      // which used to contradict it by falling through to `declined` for
+      // everything not `succeeded`. `processing` is the case that matters: the
+      // money may yet move, so a 402 would tell a driver the rider's card failed
+      // while a charge is still in flight. Because the key is ride-derived, that
+      // 402 then replays from Stripe's cache for the whole 24h key window, so
+      // the ride cannot be settled by retrying.
+      const { provider } = build({ intent: { id: `pi_${status}`, status } });
+
+      await expect(provider.charge(request())).resolves.toEqual({
+        ok: false,
+        reason: 'provider_error',
+        providerRef: `pi_${status}`,
+        message: `payment_intent_${status}`,
+      });
+    },
+  );
+
   it('classifies a thrown StripeCardError as declined with its decline code (failure)', async () => {
     const { provider } = build({
       throws: {
@@ -160,6 +181,27 @@ describe('StripePaymentsProvider.charge', () => {
       if (!result.ok) expect(result.message).toContain(type);
     },
   );
+
+  it('keeps the PaymentIntent id on a NON-card error too (edge)', async () => {
+    // `provider_error` MEANS "we don't know whether the money moved", so it is
+    // exactly where the reconciliation handle is worth most. Discarding it here
+    // while keeping it on the decline branch had the asymmetry backwards.
+    const { provider } = build({
+      throws: {
+        type: 'StripeConnectionError',
+        message: 'network went away mid-confirm',
+        payment_intent: { id: 'pi_test_inflight' },
+      },
+    });
+
+    const result = await provider.charge(request());
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'provider_error',
+      providerRef: 'pi_test_inflight',
+    });
+  });
 
   it('classifies a plain Error as provider_error (failure)', async () => {
     const { provider } = build({ throws: new Error('connection reset') });
