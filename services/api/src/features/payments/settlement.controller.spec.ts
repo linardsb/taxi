@@ -65,4 +65,23 @@ describe('SettlementController.settle role mapping', () => {
     );
     expect(settled).toEqual([]);
   });
+
+  it('refuses a role outside USER_ROLES rather than passing undefined on (failure)', () => {
+    // The `undefined` arm, which `actor === null` used to let through. An
+    // unmapped role indexes `SETTLEMENT_ACTORS` to `undefined`, and
+    // `settle({ actor: undefined })` fails `input.actor === 'driver'` — SKIPPING
+    // the ownership check, the exact override the `null` arm exists to refuse.
+    //
+    // Forged past the type system on purpose: `jwtClaimsSchema.parse` in the
+    // auth slice makes this unreachable through a real token. That is the point
+    // — the docblock above claims this route fails closed, and until this test
+    // the property lived in another slice's zod enum, not here.
+    const { controller, settled } = build();
+    const unmapped = { sub: USER_ID, role: 'auditor', iat: 0, exp: 0 };
+
+    expect(() =>
+      controller.settle(unmapped as unknown as JwtClaims, RIDE_ID),
+    ).toThrow(ForbiddenException);
+    expect(settled).toEqual([]);
+  });
 });

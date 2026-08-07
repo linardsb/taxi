@@ -105,15 +105,22 @@ export class LedgerRepository {
   }
 
   /**
-   * Every entry for one ride, oldest first — the reconciliation read
+   * Every entry for one ride, in a STABLE order — the reconciliation read
    * `ledger_entries_ride_idx` exists to serve (the deferred PR #32 finding).
    * #20 renders it; the payments integration spec asserts through it.
    *
-   * `id` IS THE TIEBREAKER, and `created_at` alone cannot order this data:
-   * `defaultNow()` is `transaction_timestamp()`, which is stable across a
-   * transaction, and all six rows land in one INSERT — so they carry identical
-   * timestamps and "oldest first" would otherwise be whatever order the planner
-   * felt like, differing between two requests for the same ride.
+   * NOT "oldest first", which this data cannot express. A ride settles EXACTLY
+   * ONCE — the `completed → settled` transition is itself the lock — so all six
+   * rows land in one INSERT in one transaction and carry an IDENTICAL
+   * `created_at`: `defaultNow()` is `transaction_timestamp()`, stable across a
+   * transaction. `asc(createdAt)` therefore never breaks a tie, and `asc(id)`
+   * does all the ordering on a `defaultRandom()` uuid.
+   *
+   * Which is the point, and the whole of it: the sequence is ARBITRARY but
+   * IDENTICAL across two reads of the same ride, instead of whatever order the
+   * planner felt like. A LOGICAL sequence (fare → commission → collection) is a
+   * different thing — an explicit `ORDER BY entry_type` — and #20 is where it
+   * gets decided, if its rendering needs one.
    */
   findByRide(rideId: string): Promise<LedgerEntryRow[]> {
     return this.db

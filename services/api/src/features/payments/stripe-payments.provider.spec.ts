@@ -90,7 +90,7 @@ describe('StripePaymentsProvider.charge', () => {
     expect(calls[0]!.options).toEqual(calls[1]!.options);
   });
 
-  it('treats a returned non-succeeded intent as declined, keeping its id (edge)', async () => {
+  it('treats a returned requires_payment_method intent as declined, keeping its id (edge)', async () => {
     const { provider } = build({
       intent: { id: 'pi_test_rpm', status: 'requires_payment_method' },
     });
@@ -125,9 +125,17 @@ describe('StripePaymentsProvider.charge', () => {
       // which used to contradict it by falling through to `declined` for
       // everything not `succeeded`. `processing` is the case that matters: the
       // money may yet move, so a 402 would tell a driver the rider's card failed
-      // while a charge is still in flight. Because the key is ride-derived, that
-      // 402 then replays from Stripe's cache for the whole 24h key window, so
-      // the ride cannot be settled by retrying.
+      // while a charge is still in flight.
+      //
+      // WHAT THIS BUYS IS DIAGNOSIS, NOT RECOVERY. A `processing` intent strands
+      // the ride under EITHER bucketing: the key is ride-derived, so Stripe
+      // replays the same cached answer to every retry, and with no webhooks (see
+      // the payments barrel) nothing else advances the ride. What changes is
+      // that the log carries an honest reason and the caller gets the retry-SAFE
+      // class rather than a 402 that blames the rider's card. The caveat of
+      // being retry-safe: a retry landing after Stripe's key window expires
+      // would mint a SECOND PaymentIntent, which is what #67's runbook checks
+      // for before anyone settles a stuck ride by hand.
       const { provider } = build({ intent: { id: `pi_${status}`, status } });
 
       await expect(provider.charge(request())).resolves.toEqual({
@@ -186,9 +194,17 @@ describe('StripePaymentsProvider.charge', () => {
     // `provider_error` MEANS "we don't know whether the money moved", so it is
     // exactly where the reconciliation handle is worth most. Discarding it here
     // while keeping it on the decline branch had the asymmetry backwards.
+    //
+    // `StripeAPIError` AND NOT `StripeConnectionError`, which is the shape this
+    // fixture had first and cannot occur: `payment_intent` is assigned on the
+    // BASE `StripeError` from an HTTP response body (`cjs/Error.js:97`), while
+    // `StripeConnectionError` is built locally from `{ message, detail }` with
+    // no response to read (`cjs/RequestSender.js:419-424`) — so it can never
+    // carry one. Read with the `it.each` above, which asserts exactly that:
+    // connection error → `providerRef: null`, API error → the intent survives.
     const { provider } = build({
       throws: {
-        type: 'StripeConnectionError',
+        type: 'StripeAPIError',
         message: 'network went away mid-confirm',
         payment_intent: { id: 'pi_test_inflight' },
       },

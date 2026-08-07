@@ -512,18 +512,29 @@ describe('payments + ledger (integration)', () => {
   /** (failure) A rider does not settle their own ride — pinned at THIS route. */
   it('refuses a rider at the settle route with 403 (failure)', async () => {
     // `RolesGuard`'s own spec proves the mechanism generically, but nothing
-    // pinned this route's `@Roles` list. Adding `'rider'` to it now fails here
-    // instead of reaching `SETTLEMENT_ACTORS` — the defensive complement to that
-    // map's `null` arm, one layer up. The rider owns this ride, so a 403 is
+    // pinned this route's `@Roles` list. The rider owns this ride, so a 403 is
     // about the ROLE, not about ownership.
+    //
+    // THE MESSAGE IS THE ASSERTION, not the status code. Two layers refuse a
+    // rider here and BOTH answer 403 — `RolesGuard` with `insufficient_role`,
+    // and `SETTLEMENT_ACTORS`' `null` arm one layer down with
+    // `role_cannot_settle`. Against `.expect(403)` alone this test stays green
+    // when `'rider'` is added to `@Roles`, which is the one edit it exists to
+    // catch (verified by making that edit). `insufficient_role` is reachable
+    // only from the guard, so asserting it is what pins the decorator list.
     const d = await onlineDriver(8, near(CENTRE_PICKUP.location, 0.001, 0));
     const r = await rider(56);
     const ride = await completedRide(r.auth, d, 'card');
 
-    await http
+    // Cast at the boundary like the idempotency case above — supertest types
+    // the body `any`, and the shape assertion is the point.
+    const refused = await http
       .post(`/rides/${ride.id}/settle`)
       .set('authorization', r.auth)
       .expect(403);
+    expect((refused.body as { message: string }).message).toBe(
+      'insufficient_role',
+    );
 
     expect(ctx.payments.calls).toHaveLength(0);
     expect((await rideRow(ride.id)).status).toBe('completed');

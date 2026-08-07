@@ -15,8 +15,12 @@ import { STRIPE_CLIENT } from './payments.tokens';
 export type StripeClient = Pick<Stripe, 'paymentIntents'>;
 
 /**
- * `declined` means THE RIDER'S INSTRUMENT SAID NO. Everything else — including
- * anything we fail to recognise — is `provider_error`, the retry-SAFE bucket.
+ * `declined` means THE RIDER MUST ACT — retrying this charge unchanged cannot
+ * succeed. Usually that is the instrument saying no; SCA qualifies too, since
+ * the rider has to re-authenticate before any retry can work. Everything else —
+ * including anything we fail to recognise — is `provider_error`, the retry-SAFE
+ * bucket. THIS IS THE FILE'S ONE RULE; `STATUS_REASON` below applies it rather
+ * than restating it, so a future SDK bump hands its reader a single test.
  *
  * That default is deliberate and asymmetric: a transient error misfiled as
  * `declined` strands a settleable ride behind a 402 that says the rider's card
@@ -78,6 +82,13 @@ function describe(error: unknown): {
   // moved" — so it is precisely where the reconciliation handle is worth most.
   // Dropping it here while keeping it on the decline branch had the asymmetry
   // exactly backwards. Still null whenever the error carries no intent.
+  //
+  // AND THE WORST CASE IS THE ONE IT CANNOT HELP. A `create` that times out
+  // AFTER Stripe charged surfaces as `StripeConnectionError`, which the SDK
+  // builds locally from `{ message, detail }` with no response body to read
+  // (`cjs/RequestSender.js:419-424`) — so there is no `payment_intent` to keep,
+  // `charge_failed` logs a null ref, and the ride is recoverable only through
+  // `metadata.rideId` in the Stripe dashboard. That is the runbook in #67.
   return {
     message: type ? `${type}: ${message}` : message,
     providerRef: intentId,
@@ -90,10 +101,11 @@ function describe(error: unknown): {
  * this file that contradicted it, because everything not `succeeded` fell
  * through to `declined`.
  *
- * `declined` is only for the two statuses that mean THE RIDER MUST DO
- * SOMETHING: the instrument was refused (`requires_payment_method`) or SCA is
- * required (`requires_action` — #17's problem, and a retry from here re-fails
- * identically). A 402 is honest for both.
+ * `declined` is only for the two statuses that meet the rule at the top of this
+ * file — THE RIDER MUST ACT: the instrument was refused
+ * (`requires_payment_method`), or SCA is required (`requires_action` — #17's
+ * problem, and a retry from here re-fails identically). A 402 is honest for
+ * both.
  *
  * Everything else is retry-SAFE. `processing` is the one that matters: the money
  * may yet move, so answering 402 tells a driver the rider's card failed while a

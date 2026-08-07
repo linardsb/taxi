@@ -63,8 +63,15 @@ export class SettlementController {
     // refused anything unmapped long before here, so reaching this throw means
     // the decorator and `SETTLEMENT_ACTORS` disagree — which is a bug to
     // surface, never a full override to hand out silently.
+    //
+    // `!actor`, NOT `actor === null`: a `user.role` outside `USER_ROLES` indexes
+    // the map to `undefined`, which `=== null` lets through into
+    // `settle({ actor: undefined })` — where `input.actor === 'driver'` is false
+    // and the OWNERSHIP CHECK IS SKIPPED, the same silent full override this map
+    // exists to remove. `jwtClaimsSchema` makes that unreachable today, but it
+    // does so in another slice; this keeps the property true here.
     const actor = SETTLEMENT_ACTORS[user.role];
-    if (actor === null) throw new ForbiddenException('role_cannot_settle');
+    if (!actor) throw new ForbiddenException('role_cannot_settle');
 
     return this.settlement.settle({ rideId, actor, actorId: user.sub });
   }

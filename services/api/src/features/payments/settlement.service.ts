@@ -170,10 +170,14 @@ export class SettlementService {
       })
       .catch((error: unknown) => {
         // THE ONLY PATH THAT CAN LOSE MONEY, and until now the only one that
-        // logged nothing: the charge succeeded and the write did not, so the
+        // logged nothing: a charge succeeded and the write did not, so the
         // rollback puts `payment_provider_ref` back to NULL and leaves the ride
         // `completed` as if nothing happened — while the rider's money sits at
         // Stripe. Rethrown unchanged; this only makes the loss visible.
+        //
+        // FIRES ON EVERY WRITE FAILURE, not only the money-losing shape — cash
+        // and zero-amount rides reach here with no charge behind them. `charge`
+        // is null on those, which is the signal that nothing is stranded.
         this.logWriteFailed(ride, driverId, split.totalCents, charge, error);
         throw error;
       });
@@ -330,9 +334,11 @@ export class SettlementService {
    * without `providerRef` here it cannot tell "never charged" from "charged,
    * then rolled back" without opening the Stripe dashboard.
    *
-   * `providerRef` is null on a cash ride, where the same rollback costs nothing.
-   * The line still fires: a settlement that failed to write is worth seeing
-   * either way, and a null ref is itself the signal that no money is stranded.
+   * `providerRef` is null wherever no charge happened — a cash ride, and also a
+   * ZERO-AMOUNT card ride, which `chargeIfNeeded` short-circuits before reaching
+   * the provider. The same rollback costs nothing on either. The line still
+   * fires: a settlement that failed to write is worth seeing either way, and a
+   * null ref is itself the signal that no money is stranded.
    */
   private logWriteFailed(
     ride: SettlableRide,
