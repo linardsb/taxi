@@ -134,8 +134,7 @@ describe('StripePaymentsProvider.charge', () => {
       // that the log carries an honest reason and the caller gets the retry-SAFE
       // class rather than a 402 that blames the rider's card. The caveat of
       // being retry-safe: a retry landing after Stripe's key window expires
-      // would mint a SECOND PaymentIntent, which is what #67's runbook checks
-      // for before anyone settles a stuck ride by hand.
+      // would mint a SECOND PaymentIntent, which is what #67's runbook is for.
       const { provider } = build({ intent: { id: `pi_${status}`, status } });
 
       await expect(provider.charge(request())).resolves.toEqual({
@@ -200,8 +199,9 @@ describe('StripePaymentsProvider.charge', () => {
     // BASE `StripeError` from an HTTP response body (`cjs/Error.js:97`), while
     // `StripeConnectionError` is built locally from `{ message, detail }` with
     // no response to read (`cjs/RequestSender.js:419-424`) — so it can never
-    // carry one. Read with the `it.each` above, which asserts exactly that:
-    // connection error → `providerRef: null`, API error → the intent survives.
+    // carry one. THAT REASON IS THE SDK SOURCE, not a test: the `it.each` above
+    // pins connection error → `providerRef: null` (its fixtures carry no
+    // intent), and this case pins that an API error keeps the one it has.
     const { provider } = build({
       throws: {
         type: 'StripeAPIError',
