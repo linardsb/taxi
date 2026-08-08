@@ -24,7 +24,8 @@ export type StripeClient = Pick<Stripe, 'paymentIntents'>;
  *
  * THAT TEST IS "MUST THE RIDER ACT?", NEVER "CAN A BARE RETRY SUCCEED?" — the
  * second does not discriminate, because the key is ride-derived and Stripe
- * replays the same cached answer to every retry. A bare retry changes nothing on
+ * replays the same cached answer to every retry inside the window
+ * `settlement.policy.ts` bounds. A bare retry changes nothing on
  * the `provider_error` statuses either, which the `processing` case says in as
  * many words (`stripe-payments.provider.spec.ts`). Bucketing a new SDK status by
  * the retry framing would land it in `declined` — the expensive direction to be
@@ -97,9 +98,10 @@ function describe(error: unknown): {
   // (`cjs/RequestSender.js:419-424`) — so there is no `payment_intent` to keep
   // and `charge_failed` logs a null ref.
   //
-  // THE RIDE ITSELF STILL RECOVERS THE ORDINARY WAY: the key is ride-derived,
-  // so a retried settle presents the same key and Stripe answers with the
-  // original PaymentIntent rather than charging again (`settlement.policy.ts`).
+  // THE RIDE ITSELF RECOVERS THE ORDINARY WAY, BUT ONLY INSIDE THE BOUND:
+  // `settlement.policy.ts` owns the replay mechanism AND its 24-hour limit, past
+  // which a re-POSTed settle stops replaying the first charge and bills the
+  // rider a second time. Read that file before retrying one by hand.
   // WHAT IS LOST IS THE DIAGNOSIS — nothing logged at failure time says a charge
   // may already have landed, so `metadata.rideId` in the dashboard is how an
   // operator learns whether one did. That is the runbook in #67.
@@ -202,9 +204,13 @@ export class StripePaymentsProvider implements PaymentsProvider {
    * One log site for every failure shape. `providerRef` (a `pi_…` id) is the
    * reconciliation handle and is safe; `customerRef` / `instrumentRef` are never
    * logged AS FIELDS — this payload enumerates its keys and neither is among
-   * them. `message` is the SDK's own string, composed server-side, so a stale-ref
-   * error could still name one; all three are pseudonymous handles of the same
-   * class, so that is a leak of nothing new.
+   * them. `message` IS NOT ONE PROVENANCE: on an API error it carries Stripe's
+   * own server-composed string (prefixed here with the error `type`), so a
+   * stale-ref error could still name one. The other three producers compose it
+   * LOCALLY and can name nothing — the non-throw path from the intent status,
+   * the card branch from a `decline_code`, and `StripeConnectionError` from the
+   * SDK's own text, as `describe()` above says. Either way all three refs are
+   * pseudonymous handles of the same class, so that is a leak of nothing new.
    */
   private failed(
     request: PaymentChargeRequest,

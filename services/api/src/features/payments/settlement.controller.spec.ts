@@ -29,9 +29,9 @@ const build = () => {
  * The mapping layer only — `RolesGuard` is tested generically by its own spec,
  * and `payments.integration.spec.ts` pins the route's decorator list at HTTP
  * level, all four roles: `rider` refused with `insufficient_role`, `driver` on
- * every other settle in the file, and `dispatcher`/`admin` each settling a ride
- * they do not own. What is left, and what this file covers, is where a role
- * lands ONCE it gets past the guard.
+ * the rest, and `dispatcher`/`admin` each settling a ride they do not own. What
+ * is left, and what this file covers, is where a role lands ONCE it gets past
+ * the guard.
  */
 describe('SettlementController.settle role mapping', () => {
   it.each([

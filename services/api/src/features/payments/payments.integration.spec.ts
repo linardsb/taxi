@@ -549,13 +549,13 @@ describe('payments + ledger (integration)', () => {
    *  not own — the by-hand recovery the barrel names as its mitigation for
    *  having no sweeper. */
   it.each([
-    ['dispatcher', 91, 9, 57],
-    ['admin', 92, 10, 58],
+    { article: 'a', role: 'dispatcher', staffN: 91, driverN: 9, riderN: 57 },
+    { article: 'an', role: 'admin', staffN: 92, driverN: 10, riderN: 58 },
   ] as const)(
-    'lets a %s settle a ride they do not own (expected)',
-    async (role, staffN, driverN, riderN) => {
+    'lets $article $role settle a ride they do not own (expected)',
+    async ({ role, staffN, driverN, riderN }) => {
       // THE INCLUSION SIDE OF THE ROUTE'S `@Roles`. The rider case above pins
-      // that `rider` is EXCLUDED and the nine driver-auth settles above pin
+      // that `rider` is EXCLUDED and every other driver-auth settle above pins
       // `driver`; these two are the rest of the list. Until they existed,
       // deleting EITHER `'dispatcher'` or `'admin'` from the decorator left the
       // whole suite green while breaking the recovery path `index.ts`

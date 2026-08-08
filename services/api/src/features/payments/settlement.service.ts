@@ -178,11 +178,12 @@ export class SettlementService {
         // NOT the only shape where money moved and the ride did not settle — a
         // charge that times out AFTER Stripe took it throws 502 in
         // `chargeIfNeeded` below.
-        // Both recover the ordinary way, because the key is ride-derived
-        // (`settlement.policy.ts`): a retried settle presents the same key and
-        // Stripe answers with the original PaymentIntent. What differs is the
-        // DIAGNOSIS — this line names the intent; the timeout's `charge_failed`
-        // carries a null ref, so nothing says a charge may already have landed.
+        // Both recover the ordinary way INSIDE THE BOUND `settlement.policy.ts`
+        // states — it owns the ride-derived key, the replay it buys and the
+        // 24-hour limit past which a retry charges the rider twice instead. What
+        // differs is the DIAGNOSIS — this line names the intent; the timeout's
+        // `charge_failed` carries a null ref, so nothing says a charge may
+        // already have landed.
         //
         // FIRES ON EVERY WRITE FAILURE, not only the money-losing shape — cash
         // and zero-amount rides reach here with no charge behind them. `charge`

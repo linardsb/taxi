@@ -41,7 +41,11 @@
  *   the LOG can tell a ride that was charged from one that never was (the query
  *   below surfaces the stuck ride, the log explains it — the query selects no
  *   `payment_provider_ref`, and the rollback has set that column back to NULL
- *   anyway) — and unsettled money is one query:
+ *   anyway). NOT EVERY CHARGED RIDE LOGS AN INTENT, THOUGH: a `charge_failed`
+ *   carrying a NULL ref may ALSO have been charged — a timeout after Stripe took
+ *   the money has no intent to carry (`settlement.service.ts`), and re-POSTing
+ *   `settle` is only safe inside the bound `settlement.policy.ts` states. And
+ *   unsettled money is one query:
  *     SELECT id, order_id, driver_id, payment_method, total_cents, updated_at
  *     FROM rides WHERE status = 'completed' ORDER BY updated_at;
  *   The real fix is #15 calling `settle` right after `complete` and retrying.

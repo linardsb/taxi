@@ -345,9 +345,12 @@ describe('SettlementService.settle', () => {
   });
 
   it('logs write_failed naming the ride AND the PaymentIntent when the write rolls back (failure)', async () => {
-    // THE ONLY PATH WHERE THE CHARGE SUCCEEDED AND THE WRITE DID NOT, so
-    // `payment_provider_ref` rolls back to NULL and the ride reads `completed`
-    // as if nothing happened — while the rider's money sits at Stripe.
+    // THE ONLY PATH WHERE THE CHARGE WAS OBSERVED TO SUCCEED AND THE WRITE DID
+    // NOT — a charge that times out AFTER Stripe took the money also succeeded
+    // and also wrote nothing; we just never saw it (`settlement.service.ts`).
+    // Here `payment_provider_ref` rolls back to NULL and the ride reads
+    // `completed` as if nothing happened — while the rider's money sits at
+    // Stripe.
     // `charge_failed` cannot cover this (the charge SUCCEEDED) and `settled`
     // never runs, so without this line no log anywhere names the ride and the
     // intent together, and reconciliation cannot tell "charged, then rolled
