@@ -133,8 +133,9 @@ describe('StripePaymentsProvider.charge', () => {
       // the payments barrel) nothing else advances the ride. What changes is
       // that the log carries an honest reason and the caller gets the retry-SAFE
       // class rather than a 402 that blames the rider's card. The caveat of
-      // being retry-safe: a retry landing after Stripe's key window expires
-      // would mint a SECOND PaymentIntent, which is what #67's runbook is for.
+      // being retry-safe: past the 24-hour key window `settlement.policy.ts`
+      // states and cites, a retry mints a SECOND PaymentIntent, which is what
+      // #67's runbook is for.
       const { provider } = build({ intent: { id: `pi_${status}`, status } });
 
       await expect(provider.charge(request())).resolves.toEqual({

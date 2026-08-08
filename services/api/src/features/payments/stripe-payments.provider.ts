@@ -15,12 +15,21 @@ import { STRIPE_CLIENT } from './payments.tokens';
 export type StripeClient = Pick<Stripe, 'paymentIntents'>;
 
 /**
- * `declined` means THE RIDER MUST ACT — retrying this charge unchanged cannot
- * succeed. Usually that is the instrument saying no; SCA qualifies too, since
- * the rider has to re-authenticate before any retry can work. Everything else —
- * including anything we fail to recognise — is `provider_error`, the retry-SAFE
- * bucket. THIS IS THE FILE'S ONE RULE; `STATUS_REASON` below applies it rather
- * than restating it, so a future SDK bump hands its reader a single test.
+ * `declined` means THE RIDER MUST ACT before anything can change — usually the
+ * instrument saying no, and SCA too, since the rider has to re-authenticate.
+ * Everything else — including anything we fail to recognise — is
+ * `provider_error`, the retry-SAFE bucket. THIS IS THE FILE'S ONE RULE;
+ * `STATUS_REASON` below applies it rather than restating it, so a future SDK
+ * bump hands its reader a single test.
+ *
+ * THAT TEST IS "MUST THE RIDER ACT?", NEVER "CAN A BARE RETRY SUCCEED?" — the
+ * second does not discriminate, because the key is ride-derived and Stripe
+ * replays the same cached answer to every retry inside the window
+ * `settlement.policy.ts` bounds. A bare retry changes nothing on
+ * the `provider_error` statuses either, which the `processing` case says in as
+ * many words (`stripe-payments.provider.spec.ts`). Bucketing a new SDK status by
+ * the retry framing would land it in `declined` — the expensive direction to be
+ * wrong in, for the reason the next paragraph gives.
  *
  * That default is deliberate and asymmetric: a transient error misfiled as
  * `declined` strands a settleable ride behind a 402 that says the rider's card
@@ -86,9 +95,16 @@ function describe(error: unknown): {
   // AND THE WORST CASE IS THE ONE IT CANNOT HELP. A `create` that times out
   // AFTER Stripe charged surfaces as `StripeConnectionError`, which the SDK
   // builds locally from `{ message, detail }` with no response body to read
-  // (`cjs/RequestSender.js:419-424`) — so there is no `payment_intent` to keep,
-  // `charge_failed` logs a null ref, and the ride is recoverable only through
-  // `metadata.rideId` in the Stripe dashboard. That is the runbook in #67.
+  // (`cjs/RequestSender.js:419-424`) — so there is no `payment_intent` to keep
+  // and `charge_failed` logs a null ref.
+  //
+  // THE RIDE ITSELF RECOVERS THE ORDINARY WAY, BUT ONLY INSIDE THE BOUND:
+  // `settlement.policy.ts` owns the replay mechanism AND its 24-hour limit, past
+  // which a re-POSTed settle stops replaying the first charge and bills the
+  // rider a second time. Read that file before retrying one by hand.
+  // WHAT IS LOST IS THE DIAGNOSIS — nothing logged at failure time says a charge
+  // may already have landed, so `metadata.rideId` in the dashboard is how an
+  // operator learns whether one did. That is the runbook in #67.
   return {
     message: type ? `${type}: ${message}` : message,
     providerRef: intentId,
@@ -187,7 +203,14 @@ export class StripePaymentsProvider implements PaymentsProvider {
   /**
    * One log site for every failure shape. `providerRef` (a `pi_…` id) is the
    * reconciliation handle and is safe; `customerRef` / `instrumentRef` are never
-   * logged.
+   * logged AS FIELDS — this payload enumerates its keys and neither is among
+   * them. `message` IS NOT ONE PROVENANCE: on an API error it carries Stripe's
+   * own server-composed string (prefixed here with the error `type`), so a
+   * stale-ref error could still name one. The other three producers compose it
+   * LOCALLY and can name nothing — the non-throw path from the intent status,
+   * the card branch from a `decline_code`, and `StripeConnectionError` from the
+   * SDK's own text, as `describe()` above says. Either way all three refs are
+   * pseudonymous handles of the same class, so that is a leak of nothing new.
    */
   private failed(
     request: PaymentChargeRequest,

@@ -173,12 +173,14 @@ describe('payments + ledger (integration)', () => {
     return { id: session.user.id, auth: `Bearer ${session.accessToken}` };
   }
 
-  async function dispatcher(n: number) {
-    const user = await insertUser(ctx.db, { phone: p(n), role: 'dispatcher' });
-    const { accessToken } = await tokens.issue({
-      id: user.id,
-      role: 'dispatcher',
-    });
+  /**
+   * A dispatcher, or an admin — the two settlement actors who are never the
+   * ride's driver, and the two that bypass the ownership check. Defaulted the
+   * way `rider`'s `enrolled` is, since only the settle cases need the other arm.
+   */
+  async function staff(n: number, role: 'dispatcher' | 'admin' = 'dispatcher') {
+    const user = await insertUser(ctx.db, { phone: p(n), role });
+    const { accessToken } = await tokens.issue({ id: user.id, role });
     return { id: user.id, auth: `Bearer ${accessToken}` };
   }
 
@@ -365,7 +367,7 @@ describe('payments + ledger (integration)', () => {
     expect((await pendingOffer(overLimit.id))?.driverId).toBe(second.id);
 
     // ── but the override still reaches them (S9-2) ──
-    const dina = await dispatcher(90);
+    const dina = await staff(90);
     const forced = await book(r.auth, 'cash');
     await http
       .post(`/dispatch/rides/${forced.id}/assign`)
@@ -521,7 +523,9 @@ describe('payments + ledger (integration)', () => {
     // `role_cannot_settle`. Against `.expect(403)` alone this test stays green
     // when `'rider'` is added to `@Roles`, which is the one edit it exists to
     // catch (verified by making that edit). `insufficient_role` is reachable
-    // only from the guard, so asserting it is what pins the decorator list.
+    // only from the guard, so asserting it pins that `rider` is EXCLUDED from
+    // the list — not that anyone else is on it. The dispatcher/admin cases
+    // below pin the other direction.
     const d = await onlineDriver(8, near(CENTRE_PICKUP.location, 0.001, 0));
     const r = await rider(56);
     const ride = await completedRide(r.auth, d, 'card');
@@ -540,6 +544,41 @@ describe('payments + ledger (integration)', () => {
     expect((await rideRow(ride.id)).status).toBe('completed');
     expect(await ledger.findByRide(ride.id)).toHaveLength(0);
   });
+
+  /** (expected) The two non-driver settlement actors each settle a ride they do
+   *  not own — the by-hand recovery the barrel names as its mitigation for
+   *  having no sweeper. */
+  it.each([
+    { article: 'a', role: 'dispatcher', staffN: 91, driverN: 9, riderN: 57 },
+    { article: 'an', role: 'admin', staffN: 92, driverN: 10, riderN: 58 },
+  ] as const)(
+    'lets $article $role settle a ride they do not own (expected)',
+    async ({ role, staffN, driverN, riderN }) => {
+      // THE INCLUSION SIDE OF THE ROUTE'S `@Roles`. The rider case above pins
+      // that `rider` is EXCLUDED and every other driver-auth settle above pins
+      // `driver`; these two are the rest of the list. Until they existed,
+      // deleting EITHER `'dispatcher'` or `'admin'` from the decorator left the
+      // whole suite green while breaking the recovery path `index.ts`
+      // advertises — no type connects a `@Roles` argument to
+      // `SETTLEMENT_ACTORS`, as the controller's own docblock says. Cash, so
+      // the role path is what is under test and the payments fake stays out.
+      const actor = await staff(staffN, role);
+      const d = await onlineDriver(
+        driverN,
+        near(CENTRE_PICKUP.location, 0.001, 0),
+      );
+      const r = await rider(riderN);
+      const ride = await completedRide(r.auth, d, 'cash');
+
+      await http
+        .post(`/rides/${ride.id}/settle`)
+        .set('authorization', actor.auth)
+        .expect(201);
+
+      expect((await rideRow(ride.id)).status).toBe('settled');
+      expect(await ledger.findByRide(ride.id)).toHaveLength(6);
+    },
+  );
 
   /** Every settlement transaction in the database balances. A standing invariant. */
   it('leaves every settlement transaction summing to zero (AC #1)', async () => {
