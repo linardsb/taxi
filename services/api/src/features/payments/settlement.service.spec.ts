@@ -345,13 +345,13 @@ describe('SettlementService.settle', () => {
   });
 
   it('logs write_failed naming the ride AND the PaymentIntent when the write rolls back (failure)', async () => {
-    // THE ONLY PATH THAT CAN LOSE MONEY. The charge succeeded and the
-    // transaction did not, so `payment_provider_ref` rolls back to NULL and the
-    // ride reads `completed` as if nothing happened — while the rider's money
-    // sits at Stripe. `charge_failed` cannot cover this (the charge SUCCEEDED)
-    // and `settled` never runs, so without this line no log anywhere names the
-    // ride and the intent together, and reconciliation cannot tell "charged,
-    // then rolled back" from "never charged" without opening the dashboard.
+    // THE ONLY PATH WHERE THE CHARGE SUCCEEDED AND THE WRITE DID NOT, so
+    // `payment_provider_ref` rolls back to NULL and the ride reads `completed`
+    // as if nothing happened — while the rider's money sits at Stripe.
+    // `charge_failed` cannot cover this (the charge SUCCEEDED) and `settled`
+    // never runs, so without this line no log anywhere names the ride and the
+    // intent together, and reconciliation cannot tell "charged, then rolled
+    // back" from "never charged" without opening the dashboard.
     const { service, payments } = build(settlable(), {
       postThrows: new Error('connection terminated mid-transaction'),
     });

@@ -169,11 +169,20 @@ export class SettlementService {
         return { moved, posted };
       })
       .catch((error: unknown) => {
-        // THE ONLY PATH THAT CAN LOSE MONEY, and until now the only one that
-        // logged nothing: a charge succeeded and the write did not, so the
-        // rollback puts `payment_provider_ref` back to NULL and leaves the ride
-        // `completed` as if nothing happened — while the rider's money sits at
-        // Stripe. Rethrown unchanged; this only makes the loss visible.
+        // THE ONLY PATH WHERE THE CHARGE SUCCEEDED AND THE WRITE DID NOT, and
+        // until now the only one that logged nothing: the rollback puts
+        // `payment_provider_ref` back to NULL and leaves the ride `completed` as
+        // if nothing happened — while the rider's money sits at Stripe. Rethrown
+        // unchanged; this only makes it visible.
+        //
+        // NOT the only shape where money moved and the ride did not settle — a
+        // charge that times out AFTER Stripe took it throws 502 in
+        // `chargeIfNeeded` below.
+        // Both recover the ordinary way, because the key is ride-derived
+        // (`settlement.policy.ts`): a retried settle presents the same key and
+        // Stripe answers with the original PaymentIntent. What differs is the
+        // DIAGNOSIS — this line names the intent; the timeout's `charge_failed`
+        // carries a null ref, so nothing says a charge may already have landed.
         //
         // FIRES ON EVERY WRITE FAILURE, not only the money-losing shape — cash
         // and zero-amount rides reach here with no charge behind them. `charge`
@@ -302,7 +311,8 @@ export class SettlementService {
    * place the difference between "the issuer declined this card" and
    * "`requires_action`: the rider must re-authenticate in-app (#17)" survives.
    * Both answer 402, and a dispatcher on the phone to a driver needs to tell
-   * them apart. The rider's `customerRef`/`instrumentRef` are never logged.
+   * them apart. The rider's `customerRef`/`instrumentRef` are never logged as
+   * fields — see `StripePaymentsProvider.failed` for what `message` can carry.
    */
   private logChargeFailed(
     ride: SettlableRide,

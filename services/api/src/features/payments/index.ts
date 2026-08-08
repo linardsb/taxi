@@ -38,14 +38,17 @@
  *   every CHARGE AND WRITE failure logs a distinct `payment.settlement.*` event
  *   with the rideId — including `write_failed`, the
  *   charge-succeeded-then-rolled-back case, which carries the PaymentIntent so
- *   the query below can tell a ride that was charged from one that never was —
- *   and unsettled money is one query:
+ *   the LOG can tell a ride that was charged from one that never was (the query
+ *   below surfaces the stuck ride, the log explains it — the query selects no
+ *   `payment_provider_ref`, and the rollback has set that column back to NULL
+ *   anyway) — and unsettled money is one query:
  *     SELECT id, order_id, driver_id, payment_method, total_cents, updated_at
  *     FROM rides WHERE status = 'completed' ORDER BY updated_at;
  *   The real fix is #15 calling `settle` right after `complete` and retrying.
- *   THE EXITS THAT NEVER REACH THE PROVIDER LOG NOTHING — six of them, tabulated
- *   in #70. `payment_method_unsupported` and `payment_instrument_missing` are
- *   the two that will bite: the query above surfaces the stuck ride, and nothing
+ *   THE EXITS THAT NEVER REACH THE PROVIDER LOG NOTHING — #70 tabulates them
+ *   (no count here: the table is the one place worth keeping exact).
+ *   `payment_method_unsupported` and `payment_instrument_missing` are the two
+ *   that will bite: the query above surfaces the stuck ride, and nothing
  *   says why. A diagnosis gap, not a loss one — no provider call happens on any
  *   of them.
  * - NO PAYOUT RAIL. Getting money TO a driver is a separate ticket; see the
