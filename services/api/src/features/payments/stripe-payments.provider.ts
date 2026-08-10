@@ -15,27 +15,30 @@ import { STRIPE_CLIENT } from './payments.tokens';
 export type StripeClient = Pick<Stripe, 'paymentIntents'>;
 
 /**
- * `declined` means THE RIDER MUST ACT before anything can change — usually the
- * instrument saying no, and SCA too, since the rider has to re-authenticate.
- * Everything else — including anything we fail to recognise — is
- * `provider_error`, the retry-SAFE bucket. THIS IS THE FILE'S ONE RULE;
- * `STATUS_REASON` below applies it rather than restating it, so a future SDK
- * bump hands its reader a single test.
+ * THE BUCKETING RULE LIVES ON THE SEAM — `PAYMENT_FAILURE_REASONS` in
+ * `@taxi/shared`: "MUST THE RIDER ACT?", never "CAN A BARE RETRY SUCCEED?",
+ * with everything unrecognised defaulting to `provider_error`, the retry-SAFE
+ * bucket. This file APPLIES that rule to Stripe's error surface rather than
+ * restating it, the way `STATUS_REASON` below applies it to the intent
+ * statuses — so a future SDK bump hands its reader a single test, and a second
+ * seam implementation inherits the same one instead of this file's.
  *
- * THAT TEST IS "MUST THE RIDER ACT?", NEVER "CAN A BARE RETRY SUCCEED?" — the
- * second does not discriminate, because the key is ride-derived and Stripe
+ * What applying it means HERE: `declined` is the instrument saying no, and SCA
+ * too, since the rider has to re-authenticate. The retry framing would not
+ * discriminate on Stripe specifically — the key is ride-derived and Stripe
  * replays the same cached answer to every retry inside the window
- * `settlement.policy.ts` bounds. A bare retry changes nothing on
- * the `provider_error` statuses either, which the `processing` case says in as
- * many words (`stripe-payments.provider.spec.ts`). Bucketing a new SDK status by
- * the retry framing would land it in `declined` — the expensive direction to be
- * wrong in, for the reason the next paragraph gives.
+ * `settlement.policy.ts` bounds, so a bare retry changes nothing on the
+ * `provider_error` statuses either, which the `processing` case says in as
+ * many words (`stripe-payments.provider.spec.ts`). Bucketing a new SDK status
+ * by the retry framing would land it in `declined` — the expensive direction
+ * to be wrong in, for the reason the next paragraph gives.
  *
- * That default is deliberate and asymmetric: a transient error misfiled as
- * `declined` strands a settleable ride behind a 402 that says the rider's card
- * failed when it did not, while a decline misfiled as `provider_error` costs one
- * retry that re-declines against the SAME idempotency key. One is a lie to a
- * driver; the other is a wasted API call.
+ * The seam's asymmetric default, priced in this file's terms: a transient
+ * error misfiled as `declined` strands a settleable ride behind a 402 that
+ * says the rider's card failed when it did not, while a decline misfiled as
+ * `provider_error` costs one retry that re-declines against the SAME
+ * idempotency key inside that window (and re-declines fresh past it). One is a
+ * lie to a driver; the other is a wasted API call.
  *
  * Verified in `stripe@22.4.0`'s own `cjs/Error.js`: every subclass passes its
  * class name as `type` (`super(raw, 'StripeCardError')`), and `generateV1Error`

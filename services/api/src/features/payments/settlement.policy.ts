@@ -20,11 +20,12 @@
  * dashboard reconciliation against `metadata.rideId`, never a blind retry
  * (#67's runbook).
  *
- * THE `@taxi/shared` PAYMENTS SEAM STILL STATES THE REPLAY WITHOUT THE BOUND —
- * in both the `idempotencyKey` docblock and the `provider_error` half of
- * `PAYMENT_FAILURE_REASONS`. Deliberately not fixed here: 24h is a STRIPE fact
- * and that seam is provider-agnostic, so what belongs there is the obligation
- * (every implementation declares its own bound), not this number. #73.
+ * THE `@taxi/shared` PAYMENTS SEAM STATES THE OBLIGATION; THIS FILE IS
+ * STRIPE'S DECLARATION OF IT (#73). The seam's `idempotencyKey` contract
+ * requires every implementation to bound its replay and name the bound where
+ * it derives its keys — carrying no figure itself, because 24h is a STRIPE
+ * fact and the seam is provider-agnostic. The paragraph above is that
+ * declaration.
  *
  * A function in its own file so the specs can assert on it BY NAME rather than
  * by re-typing the format — a test that hardcoded `settle:<id>` would keep
