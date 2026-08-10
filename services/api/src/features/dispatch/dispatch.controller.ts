@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
 import { DispatchService } from './dispatch.service';
+import { ForceAssignService } from './force-assign.service';
 
 /**
  * Locally defined, deliberately NOT a shared contract: this body never crosses a
@@ -28,7 +29,10 @@ type ForceAssignBody = z.infer<typeof forceAssignBodySchema>;
  */
 @Controller('dispatch')
 export class DispatchController {
-  constructor(private readonly dispatch: DispatchService) {}
+  constructor(
+    private readonly dispatch: DispatchService,
+    private readonly forceAssignService: ForceAssignService,
+  ) {}
 
   @Post('offers/:offerId/accept')
   @Roles('driver')
@@ -64,7 +68,7 @@ export class DispatchController {
     @Param('rideId', ParseUUIDPipe) rideId: string,
     @Body(new ZodValidationPipe(forceAssignBodySchema)) body: ForceAssignBody,
   ): Promise<{ rideId: string }> {
-    return this.dispatch.forceAssign({
+    return this.forceAssignService.forceAssign({
       dispatcherId: user.sub,
       rideId,
       driverId: body.driverId,
