@@ -293,9 +293,12 @@ export class RecordingPaymentsProvider implements PaymentsProvider {
         message: `test ${reason}`,
       });
     }
+    // DERIVED FROM THE IDEMPOTENCY KEY, like `StubPaymentsProvider`: a retry
+    // with the same key lands on the same PaymentIntent, so tests can assert
+    // the ref — not just the key — is stable across a retry (#66).
     return Promise.resolve({
       ok: true,
-      providerRef: `pi_test_${this.calls.length}`,
+      providerRef: `pi_test_${request.idempotencyKey}`,
     });
   }
 }
