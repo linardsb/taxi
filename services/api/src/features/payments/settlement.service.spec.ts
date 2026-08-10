@@ -159,11 +159,12 @@ const settle = (service: SettlementService) =>
   service.settle({ rideId: RIDE_ID, actor: 'driver', actorId: DRIVER_ID });
 
 describe('SettlementService.settle', () => {
-  // The two `write_failed` cases spy on `Logger.prototype`, which is global. An
-  // IN-BODY restore would leak the spy into every test below on the first failed
-  // assertion — the throw jumps past the `mockRestore()` line below it — and
-  // turn one red test into a cascade that hides it. `afterEach` runs either way,
-  // which is the whole reason the restore lives here and not in the tests.
+  // The `Logger.prototype` spies (warn in the refusal cases, error in the
+  // `write_failed` cases) are global. An IN-BODY restore would leak the spy
+  // into every test below on the first failed assertion — the throw jumps past
+  // the `mockRestore()` line below it — and turn one red test into a cascade
+  // that hides it. `afterEach` runs either way, which is the whole reason the
+  // restore lives here and not in the tests.
   afterEach(() => jest.restoreAllMocks());
 
   it('charges a card ride exactly once with a ride-derived key, then posts (expected)', async () => {

@@ -244,6 +244,11 @@ export class SettlementService {
    *
    * A method rather than a free function since #70, so the refusal can log
    * `payment.settlement.refused` before it throws.
+   *
+   * Deliberately `'cash' | 'card'` inline, not `BookablePaymentMethod`, though
+   * the sets coincide today: "settleable" is what this flow implements, not
+   * what the wire accepts — widening the bookable set must not silently widen
+   * the charge path in `chargeIfNeeded`.
    */
   private settlementMethodOf(ride: SettlableRide): 'cash' | 'card' {
     const method = ride.paymentMethod;

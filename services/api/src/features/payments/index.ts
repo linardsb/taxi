@@ -61,7 +61,9 @@
  *   `payment_instrument_missing`, the two that bite: each now logs a
  *   warn-level `payment.settlement.refused` carrying the rideId and cause,
  *   so the query above surfaces the stuck ride and the log says why. The
- *   rest are silent on purpose: the request-shape guards (404 / 403 /
+ *   benign `already_settled` exit keeps its debug-level
+ *   `payment.settlement.rejected`, as it did before #70. The rest are
+ *   silent on purpose: the request-shape guards (404 / 403 /
  *   `ride_not_completed`) mean the caller sent the wrong thing — the ride is
  *   not stuck because of them — and the data-bug 500s throw loud `Error`s
  *   that surface through Nest's exception logging.
