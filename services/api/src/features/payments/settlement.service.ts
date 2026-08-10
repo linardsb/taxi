@@ -13,7 +13,6 @@ import {
   assertRideSplitConsistent,
   fareSplitSchema,
   type PaymentChargeResult,
-  type PaymentMethodType,
   type PaymentsProvider,
   type Ride,
 } from '@taxi/shared';
@@ -34,43 +33,6 @@ export interface SettleInput {
   rideId: string;
   actor: SettlementActor;
   actorId: string;
-}
-
-/**
- * The two methods this ticket settles, narrowed ONCE and ABOVE THE CHARGE.
- *
- * Deliberately not a ternary at the ledger call: that one sits INSIDE the
- * transaction, after money has already moved, so failing closed there would
- * manufacture the exact hazard this slice is built around — charge succeeded,
- * database rolled back. Refusing here costs nothing, because nothing has
- * happened yet.
- *
- * The `never` arm is the point. A `balance` ride reaching the ledger as `card`
- * would post `card_settlement` entries asserting Stripe collected money it never
- * touched — and the set would still sum to zero, so every invariant test would
- * pass. Adding a value to `PAYMENT_METHOD_TYPES` now stops compiling until
- * someone decides how it settles.
- */
-function settlementMethodOf(method: PaymentMethodType): 'cash' | 'card' {
-  switch (method) {
-    case 'cash':
-    case 'card':
-      return method;
-    case 'balance':
-    case 'corporate':
-      // Both are post-MVP. The ledger SHAPE accommodates them (a rider account
-      // already exists as an owner type, and both would simply omit the
-      // collection pair) — the settlement flow does not.
-      throw new ConflictException('payment_method_unsupported');
-    default: {
-      // Unreachable while the union is closed; fails closed anyway rather than
-      // letting an unmapped method post entries.
-      const unmapped: never = method;
-      throw new ConflictException(
-        `payment_method_unsupported: ${String(unmapped)}`,
-      );
-    }
-  }
 }
 
 /**
@@ -128,7 +90,7 @@ export class SettlementService {
 
     // Narrowed ABOVE the charge and reused below it, never re-derived inside the
     // transaction — see `settlementMethodOf`.
-    const method = settlementMethodOf(ride.paymentMethod);
+    const method = this.settlementMethodOf(ride);
 
     const charge = await this.chargeIfNeeded(
       ride,
@@ -266,6 +228,49 @@ export class SettlementService {
   }
 
   /**
+   * The two methods this ticket settles, narrowed ONCE and ABOVE THE CHARGE.
+   *
+   * Deliberately not a ternary at the ledger call: that one sits INSIDE the
+   * transaction, after money has already moved, so failing closed there would
+   * manufacture the exact hazard this slice is built around — charge succeeded,
+   * database rolled back. Refusing here costs nothing, because nothing has
+   * happened yet.
+   *
+   * The `never` arm is the point. A `balance` ride reaching the ledger as `card`
+   * would post `card_settlement` entries asserting Stripe collected money it never
+   * touched — and the set would still sum to zero, so every invariant test would
+   * pass. Adding a value to `PAYMENT_METHOD_TYPES` now stops compiling until
+   * someone decides how it settles.
+   *
+   * A method rather than a free function since #70, so the refusal can log
+   * `payment.settlement.refused` before it throws.
+   */
+  private settlementMethodOf(ride: SettlableRide): 'cash' | 'card' {
+    const method = ride.paymentMethod;
+    switch (method) {
+      case 'cash':
+      case 'card':
+        return method;
+      case 'balance':
+      case 'corporate':
+        // Both are post-MVP. The ledger SHAPE accommodates them (a rider account
+        // already exists as an owner type, and both would simply omit the
+        // collection pair) — the settlement flow does not.
+        this.logRefused(ride, 'payment_method_unsupported');
+        throw new ConflictException('payment_method_unsupported');
+      default: {
+        // Unreachable while the union is closed; fails closed anyway rather than
+        // letting an unmapped method post entries.
+        const unmapped: never = method;
+        this.logRefused(ride, 'payment_method_unsupported');
+        throw new ConflictException(
+          `payment_method_unsupported: ${String(unmapped)}`,
+        );
+      }
+    }
+  }
+
+  /**
    * Card rides charge; cash rides do not — the whole reason the branch lives
    * ABOVE the seam. Returns the successful charge, or `null` when none was
    * needed. Every failure throws, so nothing is written.
@@ -283,6 +288,7 @@ export class SettlementService {
 
     if (ride.riderCustomerRef === null || ride.riderInstrumentRef === null) {
       // Honest, and exactly what an unenrolled rider deserves — #17 fills these.
+      this.logRefused(ride, 'payment_instrument_missing');
       throw new ConflictException('payment_instrument_missing');
     }
 
@@ -331,6 +337,31 @@ export class SettlementService {
       reason: charge.reason,
       message: charge.message,
       providerRef: charge.providerRef,
+      at: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * The two 409 refusals that leave a completed ride visibly stuck (#70):
+   * the reconciliation query in the barrel surfaces the ride, and this line
+   * is what says why. WARN, not debug like `logRejected` — those two causes
+   * are benign idempotency outcomes; these mean settling CANNOT succeed
+   * until something changes (#17 enrolls the rider's card; a future flow
+   * settles `balance`). The rider's customerRef/instrumentRef are never
+   * logged as fields, same rule as `logChargeFailed`.
+   */
+  private logRefused(
+    ride: SettlableRide,
+    cause: 'payment_method_unsupported' | 'payment_instrument_missing',
+  ): void {
+    this.logger.warn({
+      event: 'payment.settlement.refused',
+      rideId: ride.id,
+      orderId: ride.orderId,
+      driverId: ride.driverId,
+      riderId: ride.riderId,
+      paymentMethod: ride.paymentMethod,
+      cause,
       at: new Date().toISOString(),
     });
   }

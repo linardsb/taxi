@@ -253,6 +253,7 @@ describe('SettlementService.settle', () => {
       const { service, payments, posted, transactionsOpened } = build(
         settlable({ paymentMethod }),
       );
+      const logged = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
       await expect(settle(service)).rejects.toThrow(
         'payment_method_unsupported',
@@ -263,6 +264,16 @@ describe('SettlementService.settle', () => {
       // inside the transaction instead would fail closed only after the money
       // had already moved — the `write_failed` hazard, manufactured on purpose.
       expect(transactionsOpened()).toBe(0);
+      // The refusal names the ride and the reason (#70) — without this line the
+      // reconciliation query surfaces the stuck ride and nothing says why.
+      expect(logged).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'payment.settlement.refused',
+          rideId: RIDE_ID,
+          paymentMethod,
+          cause: 'payment_method_unsupported',
+        }),
+      );
     },
   );
 
@@ -273,12 +284,23 @@ describe('SettlementService.settle', () => {
     'refuses a card ride whose rider has no %s ref, provider untouched (failure)',
     async (_label, over) => {
       const { service, payments, posted } = build(settlable(over));
+      const logged = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
       await expect(settle(service)).rejects.toThrow(
         'payment_instrument_missing',
       );
       expect(payments.calls).toEqual([]);
       expect(posted).toEqual([]);
+      // The expected outcome for every card ride until #17 enrolls riders — the
+      // common case of the diagnosis gap #70 closes, not a corner.
+      expect(logged).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'payment.settlement.refused',
+          rideId: RIDE_ID,
+          paymentMethod: 'card',
+          cause: 'payment_instrument_missing',
+        }),
+      );
     },
   );
 
