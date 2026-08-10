@@ -76,6 +76,11 @@ describe('payments + ledger (integration)', () => {
   });
 
   afterEach(async () => {
+    // Restored HERE because a restore at the arming site only runs on the happy
+    // path — one failed assertion there and the still-armed rejection fires in
+    // the NEXT test (#74). The service sets no `restoreMocks`, so this is it.
+    jest.restoreAllMocks();
+
     // One app per FILE, so charges accumulate across tests. Every case here
     // asserts an exact call count, which is the point ("charged exactly once") —
     // so the recorder is cleared between them rather than offset against.
@@ -431,7 +436,7 @@ describe('payments + ledger (integration)', () => {
     const balanceBefore = (await driverRow(d.id)).balanceCents;
 
     const ledgerService = ctx.app.get(LedgerService);
-    const post = jest
+    jest
       .spyOn(ledgerService, 'postRideSettlement')
       .mockRejectedValueOnce(
         new Error('connection terminated mid-transaction'),
@@ -448,7 +453,8 @@ describe('payments + ledger (integration)', () => {
     expect(await ledger.findByRide(ride.id)).toHaveLength(0);
     expect((await driverRow(d.id)).balanceCents).toBe(balanceBefore);
 
-    post.mockRestore();
+    // No restore needed before the retry: the rejection was armed `Once`, so
+    // the spy has already fallen through to the real implementation.
     await http
       .post(`/rides/${ride.id}/settle`)
       .set('authorization', d.auth)
@@ -462,6 +468,12 @@ describe('payments + ledger (integration)', () => {
     );
     expect(ctx.payments.calls[0]!.idempotencyKey).toBe(
       settlementIdempotencyKey(ride.id),
+    );
+    // …and one PaymentIntent: the fake derives its ref from the key, so the
+    // stored ref proves the retry landed on the SAME intent, not a second
+    // charge that happens to share a key (#66).
+    expect((await rideRow(ride.id)).paymentProviderRef).toBe(
+      `pi_test_${settlementIdempotencyKey(ride.id)}`,
     );
     expect(await ledger.findByRide(ride.id)).toHaveLength(6);
   });
