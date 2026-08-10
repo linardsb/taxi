@@ -38,6 +38,7 @@
 
   <section>
     <h2>1. Uzstādi (vienreiz, ~3 min)</h2>
+    <div class="note">📱 <strong>Ja šo lapu atvēri no WhatsApp</strong> — vispirms atver to Chrome pārlūkā: augšā <strong>⋮</strong> → <strong>“Atvērt pārlūkā”</strong>. No WhatsApp iekšējā pārlūka instalēšana nestrādā. Lejupielādei ieslēdz <strong>Wi-Fi</strong> — fails ir ~69 MB.</div>
     <a class="download" href="/gps-spike.apk">⬇️ Lejupielādēt GPS Spike</a>
     <ol>
       <li>Nospied zaļo pogu un atver lejupielādēto failu (paziņojumā vai mapē <strong>Lejupielādes</strong>).</li>
@@ -46,6 +47,18 @@
       <li>Kad prasa atrašanās vietas atļauju: <strong>“Kamēr tiek izmantota lietotne”</strong>, un nākamajā logā — <strong>“Vienmēr atļaut”</strong> ⟵ pats svarīgākais solis, citādi GPS apstāsies, kad ekrāns bloķēts.</li>
       <li>Ekrānā ik pa brīdim parādās jaunas rindiņas ar koordinātām? Gatavs. ✅</li>
     </ol>
+  </section>
+
+  <section>
+    <h2>❓ Ja piedāvā atvērt ar WhatsApp, e-pastu vai citu lietotni</h2>
+    <p>Tas nozīmē, ka telefons failu nenodeva instalētājam. Sarakstā vajadzīgais ir <strong>“Pakotņu instalētājs”</strong> (Package installer) — ne WhatsApp, ne e-pasts. Ja tāda nav, izej šos soļus pēc kārtas:</p>
+    <ol>
+      <li>Atver šo lapu <strong>Chrome</strong> pārlūkā, nevis WhatsApp iekšējā: WhatsApp <strong>⋮</strong> → <strong>“Atvērt pārlūkā”</strong>.</li>
+      <li>Ieslēdz <strong>Wi-Fi</strong> un lejupielādē vēlreiz. Pārtraukta lejupielāde saglabājas bez <code>.apk</code> galotnes, un tad telefons to neatpazīst.</li>
+      <li>Atver <strong>Faili → Lejupielādes</strong> un pieskaries failam. Nosaukumam jābūt tieši <strong>gps-spike.apk</strong> — ja tur ir kas cits, dzēs un lejupielādē no jauna.</li>
+      <li>Ja Chrome saka, ka nedrīkst instalēt nezināmas lietotnes: <strong>Iestatījumi</strong> → ieslēdz <strong>“Atļaut no šī avota”</strong> → atpakaļ → <strong>Instalēt</strong>.</li>
+    </ol>
+    <p class="muted">Ja “Pakotņu instalētājs” sarakstā neparādās nemaz — uzraksti Linardam. Uz iPhone šis fails nestrādā, lietotne ir tikai Android.</p>
   </section>
 
   <section>
