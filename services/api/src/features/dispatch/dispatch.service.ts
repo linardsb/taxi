@@ -111,7 +111,14 @@ export class DispatchService {
     // One shot per driver per ride, or the cascade would re-offer to whoever
     // just declined.
     const tried = new Set(await this.offers.findTriedDriverIds(ride.id));
-    const candidate = candidates.find((c) => !tried.has(c.driverId));
+    // One LIVE card per driver across all rides (#61 chain B) — a driver already
+    // deciding on one offer must not be holding a second. A skip is a wait, not
+    // a ban: the card resolves within `offerTimeoutSeconds` and the next tick
+    // re-reads the world.
+    const busy = new Set(await this.offers.findDriverIdsWithLiveOffers());
+    const candidate = candidates.find(
+      (c) => !tried.has(c.driverId) && !busy.has(c.driverId),
+    );
 
     if (!candidate) {
       await this.raiseUnclaimed(ride, attempts);
@@ -229,14 +236,20 @@ export class DispatchService {
     // ── committed ──
     this.emitAssigned(ride, driverId, source, null, revoked, 'offered');
     // The claim is conditional on `status = 'online'`, so a driver who dropped
-    // offline mid-offer accepts without ever being marked `on_ride` — and the
-    // `driver_on_ride` presence guard then cannot stop them going `online`
-    // again. Narrowed by this PR, not closed; see the dispatch KNOWN GAPS.
+    // offline mid-offer accepts without ever being marked `on_ride` — ordinary
+    // since #61: `setOnlineIfEligible` reads the rides table, so they stay
+    // offline until the ride ends. What this warn still catches is the ms seam
+    // where a force-assign lands between `offerNext`'s busy-set read and its
+    // insert; see the dispatch KNOWN GAPS. `driverStatus` is what tells the two
+    // apart in the log: `offline` is the benign disconnect, `on_ride` is the
+    // seam.
     if (!claimed) {
+      const [driver] = await this.drivers.findMatchAttributes([driverId]);
       this.logger.warn({
         event: 'dispatch.assign.driver_not_claimed',
         rideId: ride.id,
         driverId,
+        driverStatus: driver?.status ?? null,
         offerId,
         at: new Date().toISOString(),
       });

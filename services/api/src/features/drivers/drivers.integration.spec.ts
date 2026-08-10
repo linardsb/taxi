@@ -1,4 +1,4 @@
-import { drivers, vehicles } from '@taxi/db';
+import { drivers, rides, vehicles } from '@taxi/db';
 import {
   authSessionSchema,
   driverMeSchema,
@@ -399,6 +399,84 @@ describe('drivers (integration)', () => {
     expect((res.body as { message: string }).message).toBe('driver_on_ride');
 
     expect((await d.row())!.status).toBe('on_ride');
+  });
+
+  it('refuses to go online for an offline driver with a live accepted ride (#61 chain A — failure)', async () => {
+    const d = await driver(31);
+    await addCar(d.auth);
+    const rider = await signIn(p(32), 'rider');
+
+    // Chain A's paradox state — `offline` in `drivers.status`, yet committed to
+    // a live ride — is reachable only through a mid-offer disconnect, so no
+    // route can produce it here. Written directly, like `on_ride` above.
+    const [ride] = await ctx.db
+      .insert(rides)
+      .values({
+        orderId: crypto.randomUUID(),
+        status: 'accepted',
+        riderId: rider.user.id,
+        driverId: d.id,
+        request: {}, // never parsed on this path
+        paymentMethod: 'cash',
+        category: 'standard',
+      })
+      .returning({ id: rides.id });
+
+    try {
+      const res = await http
+        .put('/drivers/me/status')
+        .set('authorization', d.auth)
+        .send({ status: 'online' })
+        .expect(409);
+      // The rides table decides, and mid-ride outranks a missing vehicle.
+      expect((res.body as { message: string }).message).toBe('driver_on_ride');
+
+      expect((await d.row())!.status).toBe('offline');
+      expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+    } finally {
+      // This file has no createdRides afterEach — retire the ride by hand.
+      await ctx.db
+        .update(rides)
+        .set({ status: 'cancelled_by_system' })
+        .where(eq(rides.id, ride!.id));
+    }
+  });
+
+  it('lets a driver back online once their ride is completed but unsettled (#61 — edge)', async () => {
+    const d = await driver(33);
+    await addCar(d.auth);
+    const rider = await signIn(p(34), 'rider');
+
+    // `completed` is deliberately outside ACTIVE_DRIVER_RIDE_STATUSES: the
+    // driver was released inside `complete()`, so an unsettled fare must not
+    // pin them offline.
+    const [ride] = await ctx.db
+      .insert(rides)
+      .values({
+        orderId: crypto.randomUUID(),
+        status: 'completed',
+        riderId: rider.user.id,
+        driverId: d.id,
+        request: {},
+        paymentMethod: 'cash',
+        category: 'standard',
+      })
+      .returning({ id: rides.id });
+
+    try {
+      await http
+        .put('/drivers/me/status')
+        .set('authorization', d.auth)
+        .send({ status: 'online' })
+        .expect(200);
+
+      expect((await d.row())!.status).toBe('online');
+    } finally {
+      await ctx.db
+        .update(rides)
+        .set({ status: 'cancelled_by_system' })
+        .where(eq(rides.id, ride!.id));
+    }
   });
 
   describe('findMatchAttributes (#10 consumes this in-process)', () => {

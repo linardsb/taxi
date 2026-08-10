@@ -120,6 +120,25 @@ export class DispatchRepository {
   }
 
   /**
+   * Drivers currently holding a LIVE card on any ride — #61 chain B: one card
+   * per driver platform-wide. Liveness matches `acceptOffer`'s predicate
+   * (`pending` + unexpired, by Postgres's clock), so a card this query counts
+   * is exactly a card its holder could still accept.
+   */
+  async findDriverIdsWithLiveOffers(): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ driverId: rideOffers.driverId })
+      .from(rideOffers)
+      .where(
+        and(
+          eq(rideOffers.status, 'pending'),
+          sql`${rideOffers.expiresAt} > now()`,
+        ),
+      );
+    return rows.map((r) => r.driverId);
+  }
+
+  /**
    * Race-safe accept: only a PENDING offer, only by the driver it was made to,
    * and only before it expired. `undefined` means someone else won or the
    * deadline passed — a 409, never a 500.

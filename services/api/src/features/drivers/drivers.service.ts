@@ -80,7 +80,9 @@ export class DriversService {
     const profile = await this.drivers.findOrCreate(userId);
 
     // #11 owns entering and leaving `on_ride`; a driver must not step out of it
-    // by hand and take a second offer.
+    // by hand and take a second offer. Cheap first gate only: chain A's driver
+    // (#61) is `offline` with a live ride, which is what the rides-table check
+    // inside `setOnlineIfEligible` catches below.
     if (profile.status === 'on_ride')
       throw new ConflictException('driver_on_ride');
 
@@ -95,8 +97,17 @@ export class DriversService {
       // The vehicle check is INSIDE the update (L8). Counting first and setting
       // after left a window for a concurrent delete of the last vehicle to slip
       // between them, which is how a driver ended up online with no car.
-      const online = await this.drivers.setOnlineIfHasVehicle(userId);
-      if (!online) throw new ConflictException('vehicle_required');
+      const online = await this.drivers.setOnlineIfEligible(userId);
+      if (!online) {
+        // The UPDATE said no; this read only picks the message. #61 chain A: an
+        // active ride outranks a missing vehicle — that driver is mid-ride, and
+        // `vehicle_required` would send them to the garage instead of the ride.
+        throw new ConflictException(
+          (await this.drivers.hasActiveRide(userId))
+            ? 'driver_on_ride'
+            : 'vehicle_required',
+        );
+      }
       updated = online;
       await this.locations.markOnline(cityId, userId);
     } else {

@@ -1,11 +1,11 @@
-import { rideFareLines, rides } from '@taxi/db';
+import { rideFareLines, rides, users } from '@taxi/db';
 import {
   authSessionSchema,
   IDEMPOTENCY_KEY_HEADER,
   isFareQuoteConsistent,
   rideCreatedSchema,
 } from '@taxi/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { createTestApp, phoneFor, type TestApp } from '../../../test/harness';
@@ -62,6 +62,30 @@ describe('rides (integration)', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     http = request(ctx.app.getHttpServer());
+  });
+
+  // Nothing in this slice dispatches, but a ride left at `requested` sits in
+  // `findAwaitingDispatch`'s shared pool forever — and since #61 made live
+  // cards platform-global, a later suite's tick dealing its driver onto OUR
+  // leftover marks that driver busy and starves that suite's own assertions.
+  // Rides are booked at a dozen call sites here, so retirement keys on this
+  // file's rider namespace instead of a tracked id list.
+  afterEach(async () => {
+    await ctx.db
+      .update(rides)
+      .set({ status: 'cancelled_by_system' })
+      .where(
+        and(
+          inArray(rides.status, ['requested', 'offered']),
+          inArray(
+            rides.riderId,
+            ctx.db
+              .select({ id: users.id })
+              .from(users)
+              .where(like(users.phone, '+371240%')),
+          ),
+        ),
+      );
   });
 
   afterAll(async () => {
