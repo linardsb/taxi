@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   ASSIGNMENT_SOURCES,
+  BOOKABLE_PAYMENT_METHODS,
   OFFER_STATUSES,
   PAYMENT_METHOD_TYPES,
   PRICING_MODELS,
@@ -96,8 +97,17 @@ export type RideRequest = z.infer<typeof rideRequestSchema>;
  * (`stops: []`, `category: "standard"`, `options`, `vehicleCount: 1`) — which
  * is why the server can re-parse `{ ...body, riderId }` through the full
  * `rideRequestSchema` and get an identical, fully-defaulted `RideRequest`.
+ *
+ * `paymentMethod` is narrowed to `BOOKABLE_PAYMENT_METHODS`: the wire refuses
+ * what settlement cannot finish (#70). `.extend()` keeps this a plain
+ * `ZodObject`, and since the subset is contained in `PAYMENT_METHOD_TYPES`,
+ * the server's re-parse of `{ ...body, riderId }` through the full
+ * `rideRequestSchema` (`rides.service.ts`) still yields an identical,
+ * fully-defaulted `RideRequest`.
  */
-export const rideRequestBodySchema = rideRequestSchema.omit({ riderId: true });
+export const rideRequestBodySchema = rideRequestSchema
+  .omit({ riderId: true })
+  .extend({ paymentMethod: z.enum(BOOKABLE_PAYMENT_METHODS) });
 export type RideRequestBody = z.infer<typeof rideRequestBodySchema>;
 
 /**
@@ -259,9 +269,13 @@ export function assertRideSplitConsistent(ride: Ride): void {
  * Lives here rather than beside the controller — unlike #10's local
  * `forceAssignBodySchema` — because it has a named cross-surface consumer
  * today: #17's rider app is the only thing that ever sends it.
+ *
+ * Narrowed to `BOOKABLE_PAYMENT_METHODS` because this route is the booking
+ * restriction's side door: booking `cash` and then switching to `balance`
+ * before the lock would recreate the exact unsettleable ride #70 closes.
  */
 export const ridePaymentMethodUpdateSchema = z.object({
-  paymentMethod: z.enum(PAYMENT_METHOD_TYPES),
+  paymentMethod: z.enum(BOOKABLE_PAYMENT_METHODS),
 });
 export type RidePaymentMethodUpdate = z.infer<
   typeof ridePaymentMethodUpdateSchema

@@ -15,6 +15,22 @@ export const PAYMENT_METHOD_TYPES = [
 ] as const;
 export type PaymentMethodType = (typeof PAYMENT_METHOD_TYPES)[number];
 
+/**
+ * What a rider may BOOK — and switch to, until the lock (#70).
+ *
+ * `balance` and `corporate` are deliberately absent: both are
+ * `PAYMENT_METHOD_TYPES` values with no settlement flow, so a booked
+ * `balance` ride would complete and then answer 409
+ * `payment_method_unsupported` on every settle attempt, forever. Refusing
+ * the booking makes that state unrepresentable; the settlement guard
+ * (`settlementMethodOf`) stays as defence in depth. Written out rather than
+ * filtered from `PAYMENT_METHOD_TYPES`, because a filter loses the literal
+ * tuple `z.enum()` needs — the `DRIVER_PRESENCE_STATUSES` precedent.
+ * Widen this list when a method's settlement flow actually lands.
+ */
+export const BOOKABLE_PAYMENT_METHODS = ['cash', 'card'] as const;
+export type BookablePaymentMethod = (typeof BOOKABLE_PAYMENT_METHODS)[number];
+
 export const DISPATCH_MODES = ['auto_match', 'geozone_queue'] as const;
 export type DispatchMode = (typeof DISPATCH_MODES)[number];
 

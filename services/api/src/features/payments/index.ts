@@ -14,11 +14,17 @@
  * - NO RIDER CARD ENROLLMENT. `users.payment_customer_ref` /
  *   `payment_instrument_ref` are filled by #17; a card ride for a rider missing
  *   either answers 409 `payment_instrument_missing` rather than inventing a
- *   charge.
- * - NO `balance` OR `corporate` SETTLEMENT. Both are `PAYMENT_METHOD_TYPES`
- *   values and both are post-MVP; `settle` answers 409
- *   `payment_method_unsupported`. The ledger SHAPE accommodates them — each
- *   would simply omit the collection pair — but the flow does not.
+ *   charge — and, since #70, logs `payment.settlement.refused` with the
+ *   rideId.
+ * - NO `balance` OR `corporate` SETTLEMENT — and, since #70, NO `balance` OR
+ *   `corporate` BOOKING: `BOOKABLE_PAYMENT_METHODS` (`@taxi/shared`) narrows
+ *   both wire bodies (`POST /rides` and
+ *   `PATCH /rides/:rideId/payment-method`), so a ride that cannot settle can
+ *   no longer be created. Both stay `PAYMENT_METHOD_TYPES` values and both
+ *   are post-MVP; `settle`'s 409 `payment_method_unsupported` remains as
+ *   defence in depth and now logs `payment.settlement.refused`. The ledger
+ *   SHAPE accommodates them — each would simply omit the collection pair —
+ *   but the flow does not.
  * - NO WEBHOOKS. `STRIPE_WEBHOOK_SECRET` sits unused in `.env.example` and stays
  *   unused: the charge is synchronous and confirmed in the same call, and no
  *   asynchronous payment method (SEPA Direct Debit, Bancontact) is enabled.
@@ -49,12 +55,18 @@
  *     SELECT id, order_id, driver_id, payment_method, total_cents, updated_at
  *     FROM rides WHERE status = 'completed' ORDER BY updated_at;
  *   The real fix is #15 calling `settle` right after `complete` and retrying.
- *   THE EXITS THAT NEVER REACH THE PROVIDER LOG NOTHING — #70 tabulates them
- *   (no count here: the table is the one place worth keeping exact).
- *   `payment_method_unsupported` and `payment_instrument_missing` are the two
- *   that will bite: the query above surfaces the stuck ride, and nothing
- *   says why. A diagnosis gap, not a loss one — no provider call happens on any
- *   of them.
+ *   MOST EXITS THAT NEVER REACH THE PROVIDER STILL LOG NOTHING — #70
+ *   tabulates them (no count here: the table is the one place worth keeping
+ *   exact). The exceptions, since #70, are `payment_method_unsupported` and
+ *   `payment_instrument_missing`, the two that bite: each now logs a
+ *   warn-level `payment.settlement.refused` carrying the rideId and cause,
+ *   so the query above surfaces the stuck ride and the log says why. The
+ *   benign `already_settled` exit keeps its debug-level
+ *   `payment.settlement.rejected`, as it did before #70. The rest are
+ *   silent on purpose: the request-shape guards (404 / 403 /
+ *   `ride_not_completed`) mean the caller sent the wrong thing — the ride is
+ *   not stuck because of them — and the data-bug 500s throw loud `Error`s
+ *   that surface through Nest's exception logging.
  * - NO PAYOUT RAIL. Getting money TO a driver is a separate ticket; see the
  *   ledger barrel for how `'payout'` entries accommodate both rails spike #5
  *   names.

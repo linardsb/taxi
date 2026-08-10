@@ -500,6 +500,28 @@ describe('rideRequestBodySchema', () => {
     const parsed = rideRequestBodySchema.parse({ ...body, riderId: otherUuid });
     expect('riderId' in parsed).toBe(false);
   });
+
+  it.each(['balance', 'corporate'])(
+    'refuses %s — bookable methods are the settleable ones (failure — #70)',
+    (paymentMethod) => {
+      expect(
+        rideRequestBodySchema.safeParse({ ...body, paymentMethod }).success,
+      ).toBe(false);
+    },
+  );
+
+  it('full rideRequestSchema still accepts balance — the persisted-snapshot property (edge — #70)', () => {
+    // The narrowing is wire-only: `rideRequestSchema` is also the shape a
+    // stored request snapshot re-parses through on DB reads, so a historical
+    // `balance` snapshot must keep parsing.
+    expect(
+      rideRequestSchema.safeParse({
+        ...body,
+        paymentMethod: 'balance',
+        riderId: uuid,
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe('ridePaymentMethodUpdateSchema', () => {
@@ -513,6 +535,13 @@ describe('ridePaymentMethodUpdateSchema', () => {
   it('rejects a method the platform does not take (failure)', () => {
     expect(
       ridePaymentMethodUpdateSchema.safeParse({ paymentMethod: 'crypto' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('refuses a switch to balance — the booking restriction has no side door (failure — #70)', () => {
+    expect(
+      ridePaymentMethodUpdateSchema.safeParse({ paymentMethod: 'balance' })
         .success,
     ).toBe(false);
   });
