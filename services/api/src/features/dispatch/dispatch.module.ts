@@ -5,10 +5,12 @@ import { GeozonesModule } from '../geozones';
 import { PlatformConfigModule } from '../platform-config';
 import { RealtimeModule } from '../realtime';
 import { RidesModule } from '../rides';
+import { DispatchNotifier } from './dispatch-notifier';
 import { DispatchController } from './dispatch.controller';
 import { DispatchRepository } from './dispatch.repository';
 import { DispatchService } from './dispatch.service';
 import { DispatchSweeper } from './dispatch.sweeper';
+import { ForceAssignService } from './force-assign.service';
 import { DISPATCH_QUEUE_STORE } from './queue/dispatch-queue.store';
 import { RedisDispatchQueueStore } from './queue/redis-dispatch-queue.store';
 import { AutoMatchStrategy } from './strategies/auto-match.strategy';
@@ -35,6 +37,8 @@ import { GeozoneQueueStrategy } from './strategies/geozone-queue.strategy';
   controllers: [DispatchController],
   providers: [
     DispatchService,
+    DispatchNotifier,
+    ForceAssignService,
     DispatchRepository,
     DispatchSweeper,
     AutoMatchStrategy,

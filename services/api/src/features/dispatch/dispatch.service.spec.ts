@@ -13,6 +13,7 @@ import type {
   RideTransitionService,
   TransitionedRide,
 } from '../rides';
+import { DispatchNotifier } from './dispatch-notifier';
 import type { DispatchRepository, OfferRef } from './dispatch.repository';
 import { DispatchService } from './dispatch.service';
 import { InMemoryDispatchQueueStore } from './queue/in-memory-dispatch-queue.store';
@@ -169,6 +170,7 @@ function build(
         ),
     } as unknown as DriversService,
     realtime,
+    new DispatchNotifier(realtime, transitions),
     new InMemoryDispatchQueueStore(),
     kv,
     { DEFAULT_CITY_ID: CITY } as Env,
