@@ -29,8 +29,10 @@
  *   `offerNext`'s busy-set read and its insert — or a go-online racing an
  *   in-flight accept — can still briefly double-commit a driver. Sequential
  *   single-process sweeper makes that window milliseconds at pilot scale;
- *   `dispatch.assign.driver_not_claimed` is the tripwire, and an accept-time
- *   guard is the full fix if it ever fires in the wild.
+ *   `dispatch.assign.driver_not_claimed` is the tripwire — it also fires
+ *   benignly on a mid-offer-disconnect accept, so read its `driverStatus`
+ *   field: `offline` is that ordinary case, `on_ride` is this seam — and an
+ *   accept-time guard is the full fix if the seam ever fires in the wild.
  * - NO `reassign` AND NO `cancel`. `dispatch-strategies.md` lists all three
  *   privileged dispatcher commands; #10's AC names only force-assign, and
  *   `reassign` needs a cancellation path (#11) to be coherent. Force-assigning a

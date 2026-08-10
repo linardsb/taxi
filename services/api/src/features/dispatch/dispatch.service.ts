@@ -240,12 +240,16 @@ export class DispatchService {
     // since #61: `setOnlineIfEligible` reads the rides table, so they stay
     // offline until the ride ends. What this warn still catches is the ms seam
     // where a force-assign lands between `offerNext`'s busy-set read and its
-    // insert; see the dispatch KNOWN GAPS.
+    // insert; see the dispatch KNOWN GAPS. `driverStatus` is what tells the two
+    // apart in the log: `offline` is the benign disconnect, `on_ride` is the
+    // seam.
     if (!claimed) {
+      const [driver] = await this.drivers.findMatchAttributes([driverId]);
       this.logger.warn({
         event: 'dispatch.assign.driver_not_claimed',
         rideId: ride.id,
         driverId,
+        driverStatus: driver?.status ?? null,
         offerId,
         at: new Date().toISOString(),
       });

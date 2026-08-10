@@ -67,6 +67,8 @@ function build(
     incrResult?: number;
     /** `false` models a force-assigned OFFLINE driver: ordinary, never a throw. */
     claimDriver?: boolean;
+    /** What the drivers slice reports for the accepted driver at warn time. */
+    driverStatus?: 'offline' | 'on_ride';
   } = {},
 ) {
   /**
@@ -159,7 +161,12 @@ function build(
     { forCity: () => Promise.resolve({}) } as unknown as PlatformConfigService,
     {} as DispatchStrategyResolver,
     {
-      findMatchAttributes: () => Promise.resolve([]),
+      findMatchAttributes: () =>
+        Promise.resolve(
+          over.driverStatus
+            ? [{ driverId: DRIVER_ID, status: over.driverStatus }]
+            : [],
+        ),
     } as unknown as DriversService,
     realtime,
     new InMemoryDispatchQueueStore(),
@@ -271,13 +278,19 @@ describe('DispatchService', () => {
 
     it('warns when the claim misses, so the hole is observable (edge)', async () => {
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-      const { service } = build({ claimDriver: false });
+      const { service } = build({
+        claimDriver: false,
+        driverStatus: 'offline',
+      });
 
       await service.accept(DRIVER_ID, OFFER_ID);
 
       // A driver whose socket dropped mid-offer accepts without ever being
       // marked `on_ride`, and can then go `online` again mid-ride. Not closed
-      // here — see the dispatch KNOWN GAPS — but no longer silent.
+      // here — see the dispatch KNOWN GAPS — but no longer silent. The warn
+      // also fires on the double-commit seam, so `driverStatus` carries the
+      // driver's current status: `offline` here reads as this benign
+      // disconnect, `on_ride` would read as the seam.
       const payloads = (
         warn.mock.calls as unknown as [Record<string, unknown>][]
       ).map(([payload]) => payload);
@@ -288,6 +301,7 @@ describe('DispatchService', () => {
       ).toMatchObject({
         rideId: RIDE_ID,
         driverId: DRIVER_ID,
+        driverStatus: 'offline',
         offerId: OFFER_ID,
       });
     });
