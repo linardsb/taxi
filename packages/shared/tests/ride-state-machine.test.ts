@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACTIVE_DRIVER_RIDE_STATUSES,
   ALLOWED_TRANSITIONS,
   InvalidRideTransitionError,
   RIDE_STATUSES,
@@ -56,6 +57,18 @@ describe('ride state machine', () => {
     expect(isPaymentMethodLocked('accepted')).toBe(true);
     expect(isPaymentMethodLocked('in_progress')).toBe(true);
     expect(isPaymentMethodLocked('settled')).toBe(true);
+  });
+
+  it('active-driver statuses are the non-terminal payment-locked ones minus completed (#61)', () => {
+    // Payment lock starts at acceptance (Atis's rule) and `completed` is
+    // excluded because `releaseFromRide` runs inside `complete()` — the
+    // derivation IS the semantic claim, so a new status added to the machine
+    // forces a conscious decision here.
+    expect(ACTIVE_DRIVER_RIDE_STATUSES).toEqual(
+      RIDE_STATUSES.filter(
+        (s) => isPaymentMethodLocked(s) && !isTerminal(s) && s !== 'completed',
+      ),
+    );
   });
 
   it('every status has a transitions entry', () => {

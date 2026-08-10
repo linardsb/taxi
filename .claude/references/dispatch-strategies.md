@@ -7,6 +7,8 @@ Bolt-style offer cascade: rank candidates by ETA from Redis GEO radius query, fi
 
 **The debt check is a LIMIT, not a positive balance** (#12). A driver is dropped only at `balanceCents < -driverDebtLimitCents` (`platform_config.driver_debt_limit_cents`, €50 seeded), never at zero: a cash-only driver is permanently negative by design, so a hard zero would strand them after their first ride. The limit travels on `DispatchContext` — **strategies never read config themselves**.
 
+**One live card per driver, platform-wide** (#61): a candidate already holding a pending unexpired offer on any ride is skipped this round — a skip is a wait, not a ban.
+
 ## geozone_queue ("izsaukumi rindas kārtībā")
 Airport-rank fairness: drivers join a per-geozone FIFO queue when entering the zone online; the ride goes to the queue head (`queued → offered`); declining sends the driver to the back. Queue state lives in Redis lists.
 

@@ -327,6 +327,16 @@ export interface TestApp {
  * `controllers` mounts extra test-only controllers alongside the real ones —
  * the app has no non-@Public() route yet, so probing the global guards needs
  * a guarded route that exists only in the test.
+ *
+ * Suites run SERIALLY (`maxWorkers: 1` in package.json). Every suite shares
+ * one Postgres, and dispatch's `findAwaitingDispatch` pool is global — a
+ * parallel worker booking a ride mid-test put that foreign ride, oldest-first,
+ * in front of this worker's own sweeper tick. Harmless while cascade state was
+ * per-ride; fatal since #61 made live cards platform-global: one card dealt
+ * onto a foreign ride marks the driver busy everywhere and starves the suite
+ * that owns them. Serial workers plus each file retiring its rides keep every
+ * tick's world single-owner — which is the architecture's own assumption
+ * (one process, one sweeper).
  */
 export async function createTestApp(options?: {
   controllers?: Type<unknown>[];

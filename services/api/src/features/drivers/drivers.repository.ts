@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { drivers, vehicles, type Db } from '@taxi/db';
-import type {
-  DriverProfile,
-  DriverProfileUpdate,
-  DriverStatus,
-  Language,
-  RideCategory,
+import { drivers, rides, vehicles, type Db } from '@taxi/db';
+import {
+  ACTIVE_DRIVER_RIDE_STATUSES,
+  type DriverProfile,
+  type DriverProfileUpdate,
+  type DriverStatus,
+  type Language,
+  type RideCategory,
 } from '@taxi/shared';
-import { and, eq, exists, inArray, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, notExists, sql } from 'drizzle-orm';
 import { DRIZZLE, type DbTx } from '../../common/db/db.module';
 
 type DriverRow = typeof drivers.$inferSelect;
@@ -138,17 +139,18 @@ export class DriversRepository {
   }
 
   /**
-   * Goes online ONLY if the driver still has a vehicle, as one statement.
-   * `undefined` means the precondition failed — a 409, not a 500.
+   * Goes online ONLY if the driver still has a vehicle AND no live
+   * post-acceptance ride, as one statement. `undefined` means a precondition
+   * failed — a 409, not a 500; `hasActiveRide` picks which one.
    *
-   * The check has to live inside the UPDATE (L8). Counting vehicles and then
+   * The checks have to live inside the UPDATE (L8). Counting vehicles and then
    * setting the status leaves a window: a concurrent DELETE of the last vehicle
    * lands between the two and the driver ends up online with no car — online
    * and unable to be matched, which is the exact disagreement between "you are
    * online" and "you can be offered a ride" that `vehicle_required` exists to
    * prevent. No transaction needed; one statement cannot interleave.
    */
-  async setOnlineIfHasVehicle(
+  async setOnlineIfEligible(
     userId: string,
   ): Promise<DriverProfile | undefined> {
     const [row] = await this.db
@@ -163,10 +165,40 @@ export class DriversRepository {
               .from(vehicles)
               .where(eq(vehicles.driverId, userId)),
           ),
+          // #61 chain A: the rides table decides, not `drivers.status` — an
+          // offline driver who accepted mid-disconnect has a live ride and no
+          // `on_ride` status. Inside the WHERE (L8), so an accept landing
+          // between a read and this write cannot slip through.
+          notExists(
+            this.db
+              .select({ one: sql`1` })
+              .from(rides)
+              .where(
+                and(
+                  eq(rides.driverId, userId),
+                  inArray(rides.status, [...ACTIVE_DRIVER_RIDE_STATUSES]),
+                ),
+              ),
+          ),
         ),
       )
       .returning();
     return row ? toProfile(row) : undefined;
+  }
+
+  /** Follow-up read for the error message ONLY — the WHERE above decides. */
+  async hasActiveRide(userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ one: sql`1` })
+      .from(rides)
+      .where(
+        and(
+          eq(rides.driverId, userId),
+          inArray(rides.status, [...ACTIVE_DRIVER_RIDE_STATUSES]),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
   }
 
   /**

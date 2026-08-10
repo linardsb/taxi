@@ -25,6 +25,21 @@ export const CANCELLED_STATUSES = [
 ] as const satisfies readonly RideStatus[];
 
 /**
+ * Statuses in which a ride has a driver actively committed to it — from
+ * acceptance until the physical end of the ride. `completed` is NOT here:
+ * the driver is released inside `complete()` (#11), so a completed-but-
+ * unsettled ride must not pin them offline. #61 gates going online on this
+ * set, read from the rides table — `drivers.status` is a derived cache and
+ * chain A is exactly the case where the cache lies.
+ */
+export const ACTIVE_DRIVER_RIDE_STATUSES = [
+  'accepted',
+  'arriving',
+  'arrived',
+  'in_progress',
+] as const satisfies readonly RideStatus[];
+
+/**
  * The single source of truth for the ride lifecycle, consumed by all five
  * surfaces. "offered → requested" is the re-offer loop after a driver
  * declines or times out; "queued" is the geozone-queue dispatch mode.

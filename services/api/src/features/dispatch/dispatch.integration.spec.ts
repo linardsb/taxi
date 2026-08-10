@@ -1,4 +1,10 @@
-import { RIGA_ZONE_IDS, dispatchAuditLog, rideOffers, rides } from '@taxi/db';
+import {
+  RIGA_ZONE_IDS,
+  dispatchAuditLog,
+  drivers,
+  rideOffers,
+  rides,
+} from '@taxi/db';
 import {
   authSessionSchema,
   IDEMPOTENCY_KEY_HEADER,
@@ -24,6 +30,7 @@ import {
 } from '../../../test/harness';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { AuthTokenService } from '../auth';
+import { DriversService } from '../drivers';
 import { MAX_OFFER_ATTEMPTS } from './dispatch.policy';
 import { DispatchSweeper } from './dispatch.sweeper';
 
@@ -314,6 +321,13 @@ describe('dispatch (integration)', () => {
     // The zone was resolved and stamped for Dina's district stats.
     expect((await rideRow(queueRide.id)).geozoneId).toBe(RIGA_ZONE_IDS.rix);
 
+    // Clear queuedD's live card, or #61's one-card rule — not the mode switch —
+    // would hand the second half to nearD.
+    await ctx.db
+      .update(rideOffers)
+      .set({ status: 'revoked' })
+      .where(eq(rideOffers.id, queueOffer!.id));
+
     // ── the paired half: same two drivers, same relative distances, a pickup
     // in a zone with queue mode OFF ──
     await place(nearD.id, near(CENTRE_PICKUP.location, 0.0005, 0));
@@ -585,6 +599,81 @@ describe('dispatch (integration)', () => {
     await sweeper.tick();
 
     expect((await pendingOffer(ride.id))?.driverId).toBe(online.id);
+  });
+
+  /**
+   * #61 chain B — one LIVE card per driver, platform-wide. Two rides, one
+   * driver: the second ride waits rather than dealing the same driver a second
+   * card, and the skip is a wait, not a ban — the card's resolution frees them.
+   */
+  it('never deals a second card to a driver already holding one (#61 chain B — edge)', async () => {
+    const only = await onlineDriver(36, near(CENTRE_PICKUP.location, 0.001, 0));
+    // A booked strictly before B: `findAwaitingDispatch` is oldest-first, so
+    // the assertions below rely on A being dealt first.
+    const rideA = await bookRide(37, CENTRE_PICKUP);
+    const rideB = await bookRide(38, CENTRE_PICKUP);
+
+    await sweeper.tick();
+
+    // One card out, on the older ride; the newer ride got nothing and stays in
+    // the pool rather than double-booking the only driver.
+    expect((await pendingOffer(rideA.id))?.driverId).toBe(only.id);
+    expect(await pendingOffer(rideB.id)).toBeUndefined();
+    expect((await rideRow(rideB.id)).status).toBe('requested');
+
+    // Resolve the card: the driver is offerable again the very next tick.
+    const card = await pendingOffer(rideA.id);
+    await http
+      .post(`/dispatch/offers/${card!.id}/decline`)
+      .set('authorization', only.auth)
+      .expect(201);
+
+    await sweeper.tick();
+
+    // Ride B now gets the driver (ride A's tried set is spent — it goes to
+    // Dina's unclaimed alert, which is deduped and fine).
+    expect((await pendingOffer(rideB.id))?.driverId).toBe(only.id);
+  });
+
+  /**
+   * #61 chain A, end to end — the issue's five-step chain replayed exactly:
+   * offer → socket drop writes `offline` → accept still succeeds (that is the
+   * hole) → going online mid-ride answers 409, because the rides table decides
+   * where `drivers.status` lies.
+   */
+  it('refuses to go online for a driver who accepted while offline (#61 chain A — failure)', async () => {
+    const d = await onlineDriver(39, near(CENTRE_PICKUP.location, 0.001, 0));
+    const ride = await bookRide(40, CENTRE_PICKUP);
+
+    await sweeper.tick();
+    const live = await pendingOffer(ride.id);
+    expect(live?.driverId).toBe(d.id);
+
+    // What the location gateway's handleDisconnect calls: status → `offline`.
+    await ctx.app.get(DriversService).clearPresenceOnDisconnect(d.id);
+
+    // The accept SUCCEEDS — nothing on this path checks presence, and the
+    // `online`-only claim inside it matches nothing. That is the hole.
+    await http
+      .post(`/dispatch/offers/${live!.id}/accept`)
+      .set('authorization', d.auth)
+      .expect(201);
+    expect((await rideRow(ride.id)).driverId).toBe(d.id);
+
+    // Mid-ride, a lost socket must not resurrect them as a candidate.
+    const res = await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(409);
+    expect((res.body as { message: string }).message).toBe('driver_on_ride');
+
+    const [row] = await ctx.db
+      .select()
+      .from(drivers)
+      .where(eq(drivers.userId, d.id));
+    expect(row!.status).toBe('offline');
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
   });
 
   it('goes straight to unclaimed when an option excludes everyone (edge)', async () => {

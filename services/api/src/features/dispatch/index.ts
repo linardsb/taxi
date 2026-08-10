@@ -19,22 +19,18 @@
  *   own ticket.
  * - `driver:queue` IS NEVER EMITTED. A driver cannot see their own place in the
  *   rank; the schema is typed and unused until #14/#19 draw a queue view.
- * - THE `on_ride` CLAIM NARROWS DOUBLE-ASSIGNMENT BUT DOES NOT CLOSE IT. #11
- *   made `accept` claim the driver, so the ordinary path no longer leaves them
- *   `online` for the next tick to offer a second car. Two holes remain, both
- *   reachable: (a) a driver whose socket drops mid-offer is written `offline`
- *   by `clearPresenceOnDisconnect`, so the claim — conditional on
- *   `status = 'online'` — matches nothing, and the `driver_on_ride` guard in
- *   `setPresence` then cannot stop them going `online` again mid-ride; (b)
- *   nothing excludes a driver who already holds a pending offer on a DIFFERENT
- *   ride, so one driver can be offered and accept two. `accept` logs
- *   `dispatch.assign.driver_not_claimed` when the claim misses, so (a) is at
- *   least observable. Widening the claim's WHERE to `status <> 'on_ride'` is
- *   NOT the fix — `releaseFromRide` would then put a force-assigned offline
- *   driver `online` at completion, which is the case the guard exists for. The
- *   real fix gates `setPresence('online')` on "no active post-acceptance ride"
- *   and stops offering a second card; it belongs to this slice's offer model
- *   and is #61.
+ * - DOUBLE-ASSIGNMENT IS CLOSED AT BOTH ENDS (#61), WITH ONE ms-WIDE SEAM
+ *   ACCEPTED. Going online is gated on "no live post-acceptance ride" read from
+ *   the RIDES table (`setOnlineIfEligible`), so the offline-mid-offer driver of
+ *   chain A is caught where `drivers.status` lies; and `offerNext` skips
+ *   candidates already holding a live card anywhere (chain B) — one card per
+ *   driver, platform-wide. What remains: `accept` never re-checks the driver's
+ *   ride state inside its transaction, so a force-assign committing between
+ *   `offerNext`'s busy-set read and its insert — or a go-online racing an
+ *   in-flight accept — can still briefly double-commit a driver. Sequential
+ *   single-process sweeper makes that window milliseconds at pilot scale;
+ *   `dispatch.assign.driver_not_claimed` is the tripwire, and an accept-time
+ *   guard is the full fix if it ever fires in the wild.
  * - NO `reassign` AND NO `cancel`. `dispatch-strategies.md` lists all three
  *   privileged dispatcher commands; #10's AC names only force-assign, and
  *   `reassign` needs a cancellation path (#11) to be coherent. Force-assigning a
