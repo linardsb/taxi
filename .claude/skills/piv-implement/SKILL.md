@@ -21,6 +21,11 @@ won't be in this branch's PR.** If you're still on base, this step creates the b
 - **On the base branch, clean** → create one: `git checkout -b feature/<plan-slug>`.
 - **Already on a feature branch or in a worktree** → use it.
 - **On the base branch with uncommitted changes** → STOP: commit or stash first.
+- **Another session live in this checkout** (`git reflog -8` shows branch moves you didn't make, or fresh
+  mtimes you didn't create) → don't share it: `git worktree add` and implement there from the start —
+  mid-flight branch collisions cost ref surgery. In the worktree, run DB-touching tests and the gate with
+  `COMPOSE_PROJECT_NAME=taxi` so compose reuses the shared containers instead of starting a second Postgres
+  on an occupied port; remove any stray `<worktree-name>-db-1` containers when done.
 
 (One branch per ticket is also what makes parallel worktrees clean later.)
 
