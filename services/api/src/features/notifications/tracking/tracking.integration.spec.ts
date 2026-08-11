@@ -510,6 +510,60 @@ describe('tracking + ride SMS (integration)', () => {
     expect(sms).not.toContain(d.plate);
   });
 
+  it('fleet edited mid-ride: the stamped plate holds once another car starts matching (edge — #92)', async () => {
+    const d = await onlineDriver(9, {
+      lat: CENTRE_PICKUP.location.lat + 0.001,
+      lng: CENTRE_PICKUP.location.lng,
+    });
+    const limoRes = await http
+      .post('/drivers/me/vehicles')
+      .set('authorization', d.auth)
+      .send({
+        plate: nextPlate(),
+        make: 'Mercedes',
+        model: 'S-Class',
+        year: 2021,
+        category: 'limo',
+        passengerSeats: 4,
+        hasChildSeat: false,
+      })
+      .expect(201);
+    const limo = limoRes.body as { id: string; plate: string };
+
+    const r = await rider(61);
+    const ride = await bookByPhone(r.id, {
+      ...BODY,
+      category: 'limo',
+    });
+    const token = ride.trackingToken!;
+
+    await acceptBy(ride.id, d.auth);
+
+    // The fleet changes UNDER the live ride — a legitimate edit, not a
+    // contrived one: `update` carries no `on_ride` guard (only `remove` does).
+    // The limo becomes a standard car, so the driver now owns TWO standard
+    // cars and no limo: the read-time heuristic this test guards against would
+    // find the ride's `limo` category unmatched and answer the Skoda instead.
+    await http
+      .patch(`/drivers/me/vehicles/${limo.id}`)
+      .set('authorization', d.auth)
+      .send({ category: 'standard' })
+      .expect(200);
+
+    // The stamp is a snapshot, not a pointer into a query — the row still
+    // names the car the rider was promised.
+    const [row] = await ctx.db
+      .select()
+      .from(rides)
+      .where(eq(rides.id, ride.id));
+    expect(row!.vehicleId).toBe(limo.id);
+
+    // The rider-visible half, which the row assertion alone never pinned.
+    const assigned = await view(token);
+    expect(assigned.vehiclePlate).toBe(limo.plate);
+    expect(assigned.vehiclePlate).not.toBe(d.plate);
+  });
+
   it('force-assigning a vehicle-less driver stamps NULL and blocks nothing (edge — #86 AC #1)', async () => {
     // A driver with a `drivers` row but NO vehicle: force-assign's
     // findMatchAttributes 404s without the row, so GET /drivers/me creates it.
