@@ -249,10 +249,30 @@ export class CountingMapsProvider implements MapsProvider {
   routeCalls = 0;
   readonly routed: { from: LatLng; to: LatLng; stops: LatLng[] }[] = [];
   private readonly inner = new StubMapsProvider();
+  private nextFailure: Error | null = null;
+
+  /**
+   * Fails the NEXT route() only, then reverts — a leaked armed failure would
+   * fail the next test's call instead, one case late. Still counted: a Routes
+   * call that errors is an attempted paid call like any other.
+   *
+   * `CachingMapsProvider` sits ABOVE this fake, so an armed failure fires only
+   * on a cache MISS. Arm it against coordinates no earlier test in the file has
+   * routed, or the cache answers, the failure survives, and it goes off
+   * somewhere unrelated.
+   */
+  failNext(error = new Error('test maps outage')): void {
+    this.nextFailure = error;
+  }
 
   route(from: LatLng, to: LatLng, stops: LatLng[] = []): Promise<RouteResult> {
     this.routeCalls += 1;
     this.routed.push({ from, to, stops });
+    if (this.nextFailure) {
+      const armed = this.nextFailure;
+      this.nextFailure = null;
+      return Promise.reject(armed);
+    }
     return this.inner.route(from, to, stops);
   }
 

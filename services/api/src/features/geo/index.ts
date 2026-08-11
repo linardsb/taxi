@@ -2,7 +2,9 @@
  * The geo slice's public API — nothing outside imports past this file.
  *
  * It owns the `MapsProvider` seam binding. #10 injects `MAPS_PROVIDER` for
- * driver→pickup ETAs and #5 (pricing) for route legs; both reach it here rather
+ * driver→pickup ETAs, #5 (pricing) for route legs, and #87 for the tracking
+ * page's road ETA — that one snaps its origin to a ~100 m grid first, so a
+ * 5 s poll rides the cache instead of buying a route. All reach it here rather
  * than through the pricing barrel, which would be a lie about ownership.
  *
  * KNOWN GAPS — seen and accepted for the pilot, not overlooked:

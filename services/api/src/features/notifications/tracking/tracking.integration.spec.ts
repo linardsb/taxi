@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { drivers, rideOffers, rides, users } from '@taxi/db';
 import {
   authSessionSchema,
@@ -13,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
   createTestApp,
+  haversineMeters,
   insertUser,
   phoneFor,
   type TestApp,
@@ -21,6 +23,7 @@ import { APP_ENV, type Env } from '../../../common/config/env.schema';
 import { AuthTokenService } from '../../auth';
 import { DispatchService } from '../../dispatch';
 import { RidesService } from '../../rides';
+import { TRACKING_ETA_SPEED_METERS_PER_MINUTE } from '../notifications.policy';
 
 /**
  * `+371280` is this spec file's E.164 range — registered in the range comment
@@ -190,6 +193,21 @@ describe('tracking + ride SMS (integration)', () => {
       .expect(201);
   }
 
+  /**
+   * A booked, accepted ride whose driver starts parked beside the pickup —
+   * where dispatch needs them to be — ready for the test to move.
+   */
+  async function acceptedRide(driverN: number, riderN: number) {
+    const d = await onlineDriver(driverN, {
+      lat: CENTRE_PICKUP.location.lat + 0.001,
+      lng: CENTRE_PICKUP.location.lng,
+    });
+    const r = await rider(riderN);
+    const ride = await bookByPhone(r.id);
+    await acceptBy(ride.id, d.auth);
+    return { d, rideId: ride.id, token: ride.trackingToken! };
+  }
+
   const smsTo = (phone: string) => ctx.sms.messagesFor(phone);
 
   /** The hooks are fire-and-forget: the HTTP/service call resolves before the SMS lands. */
@@ -208,6 +226,42 @@ describe('tracking + ride SMS (integration)', () => {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
+
+  /**
+   * `record()` answers false for a driver the store believes is offline and
+   * silently keeps the OLD position — which shows up three assertions later as
+   * an ETA nobody can explain. Assert the write landed.
+   */
+  async function moveDriver(driverId: string, location: LatLng) {
+    const written = await ctx.locations.record(
+      cityId,
+      driverId,
+      location,
+      Date.now(),
+    );
+    expect(written).toBe(true);
+  }
+
+  /**
+   * What the maps seam answers in dev/test: `StubMapsProvider`'s documented
+   * maths — straight line × 1.35 detour at 40 km/h, rounded at each step —
+   * then the policy's never-zero ceil. Recomputed here so the expectation is a
+   * number this file derived, not one the service handed back.
+   */
+  const routedEtaMinutes = (from: LatLng, to: LatLng): number => {
+    const distanceMeters = Math.round(haversineMeters(from, to) * 1.35);
+    const durationSeconds = Math.round((distanceMeters / 1000 / 40) * 3600);
+    return Math.max(1, Math.ceil(durationSeconds / 60));
+  };
+
+  /** The v1 straight-line policy, which survives as the maps-outage fallback. */
+  const fallbackEtaMinutes = (from: LatLng, to: LatLng): number =>
+    Math.max(
+      1,
+      Math.ceil(
+        haversineMeters(from, to) / TRACKING_ETA_SPEED_METERS_PER_MINUTE,
+      ),
+    );
 
   const track = (token: string) => http.get(`/track/${token}`);
 
@@ -537,5 +591,118 @@ describe('tracking + ride SMS (integration)', () => {
     const receipt = await view(token);
     expect(receipt.state).toBe('completed');
     expect(receipt.vehiclePlate).toBeNull();
+  });
+
+  // #87 — the ETA below the map. One InMemoryKeyValueStore serves this whole
+  // file, so every case that needs a cache MISS parks the driver in a grid
+  // cell no earlier case has routed. `routeCalls` is only ever read as a
+  // delta: each booking's pricing quote routes through the same counter.
+
+  it('the ETA is routed through the maps seam, origin snapped to the ~100 m grid (expected — AC #1)', async () => {
+    const { d, token } = await acceptedRide(6, 58);
+
+    // ~5.6 km out, deliberately off a 3-decimal boundary so the snap is
+    // visible — and far enough that the two formulas disagree. At the kerb
+    // both answer "1 min" and the assertion would pass for the wrong reason.
+    const far = {
+      lat: CENTRE_PICKUP.location.lat + 0.0504,
+      lng: CENTRE_PICKUP.location.lng + 0.0007,
+    };
+    await moveDriver(d.id, far);
+
+    const routed = ctx.maps.routed.length;
+    const page = await view(token);
+
+    // Exactly one paid call, with the snapped origin and the untouched pickup.
+    const origin = { lat: 57.01, lng: 24.086 }; // `far`, at 3 decimals
+    expect(ctx.maps.routed).toHaveLength(routed + 1);
+    expect(ctx.maps.routed.at(-1)!.from).toEqual(origin);
+    expect(ctx.maps.routed.at(-1)!.to).toEqual(CENTRE_PICKUP.location);
+
+    expect(page.etaMinutes).toBe(
+      routedEtaMinutes(origin, CENTRE_PICKUP.location),
+    );
+    expect(page.etaMinutes).not.toBe(
+      fallbackEtaMinutes(far, CENTRE_PICKUP.location),
+    );
+  });
+
+  it('a sub-cell move is a cache hit, a cell crossing is one paid call (edge — AC #2, the budget guardrail)', async () => {
+    const { d, token } = await acceptedRide(7, 59);
+
+    const start = {
+      lat: CENTRE_PICKUP.location.lat + 0.0601,
+      lng: CENTRE_PICKUP.location.lng + 0.0007,
+    };
+    await moveDriver(d.id, start);
+    await view(token); // warms this cell
+    const calls = ctx.maps.routeCalls;
+
+    // ~22 m — one poll's worth of driving, still inside the cell. THE headline
+    // property: the page can be polled every 5 s for free.
+    const nudged = { lat: start.lat + 0.0002, lng: start.lng };
+    await moveDriver(d.id, nudged);
+    const sameCell = await view(token);
+    expect(ctx.maps.routeCalls).toBe(calls);
+    // …and the map still shows the car where it actually is. Snapping is for
+    // the cache key alone; a quantized `position` would fail at 4 decimals.
+    expect(sameCell.position!.lat).toBeCloseTo(nudged.lat, 4);
+
+    // ~111 m — over the boundary, and worth exactly one call.
+    await moveDriver(d.id, { lat: nudged.lat + 0.001, lng: nudged.lng });
+    await view(token);
+    expect(ctx.maps.routeCalls).toBe(calls + 1);
+  });
+
+  it('a maps outage degrades to the straight-line estimate, page still 200 (failure — AC #3)', async () => {
+    const { d, rideId, token } = await acceptedRide(8, 60);
+
+    const far = {
+      lat: CENTRE_PICKUP.location.lat + 0.0704,
+      lng: CENTRE_PICKUP.location.lng + 0.0007,
+    };
+    await moveDriver(d.id, far);
+
+    const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const calls = ctx.maps.routeCalls;
+    ctx.maps.failNext();
+
+    const page = await view(token);
+
+    // The armed failure went off at the SOURCE. A cache hit would have
+    // absorbed it and left it armed for some unrelated case.
+    expect(ctx.maps.routeCalls).toBe(calls + 1);
+    expect(page.state).toBe('assigned');
+    expect(page.position).not.toBeNull();
+    expect(page.etaMinutes).toBe(
+      fallbackEtaMinutes(far, CENTRE_PICKUP.location),
+    );
+    expect(page.etaMinutes).not.toBe(
+      // `far` at 3 decimals — what the seam would have answered.
+      routedEtaMinutes({ lat: 57.03, lng: 24.086 }, CENTRE_PICKUP.location),
+    );
+
+    // The whole key set, not `objectContaining`: what matters is that no
+    // coordinate ever reaches a log line (logging-standard.md), and only
+    // pinning every key can say that.
+    const payload = warned.mock.calls
+      .map(([first]) => first as unknown)
+      .find(
+        (arg): arg is Record<string, unknown> =>
+          typeof arg === 'object' &&
+          arg !== null &&
+          'event' in arg &&
+          arg.event === 'ride.notifications.track_eta_fallback',
+      );
+    expect(payload).toBeDefined();
+    expect(Object.keys(payload!).sort()).toEqual([
+      'at',
+      'driverId',
+      'event',
+      'message',
+      'rideId',
+    ]);
+    expect(payload).toMatchObject({ rideId, driverId: d.id });
+    warned.mockRestore();
   });
 });

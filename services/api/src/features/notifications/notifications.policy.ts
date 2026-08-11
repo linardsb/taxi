@@ -1,4 +1,9 @@
-import type { LatLng, RideStatus, TrackingPageState } from '@taxi/shared';
+import type {
+  LatLng,
+  RideStatus,
+  RouteResult,
+  TrackingPageState,
+} from '@taxi/shared';
 
 /**
  * How long a TERMINAL ride stays viewable on the tracking page, measured from
@@ -10,12 +15,31 @@ import type { LatLng, RideStatus, TrackingPageState } from '@taxi/shared';
 export const TRACKING_TERMINAL_GRACE_SECONDS = 86_400;
 
 /**
- * v1 ETA: straight-line metres ÷ this = minutes. 417 m/min ≈ 25 km/h, a
- * city-traffic average — deliberately NOT a maps call: the page polls every
- * 5 s and a paid route per poll would torch the <€100/mo guardrail. Upgrade
- * path: the maps seam with a quantized-coordinate cache, as a later ticket.
+ * The FALLBACK ETA: straight-line metres ÷ this = minutes. 417 m/min ≈
+ * 25 km/h, a city-traffic average.
+ *
+ * No longer what the tracking page shows — that runs through the maps seam
+ * (#87) and reaches this only when the route call fails, which is why a crude
+ * number is still the right one to keep: it needs no network and cannot fail.
+ * The assigned-SMS estimate (`etaToPickup`) is still computed this way,
+ * being one-shot per ride rather than polled.
  */
 export const TRACKING_ETA_SPEED_METERS_PER_MINUTE = 417;
+
+/**
+ * Decimals the tracking page's route ORIGIN is snapped to before it reaches
+ * the maps seam. At Rīga's ~57°N a 3-decimal cell is ~111 m of latitude ×
+ * ~61 m of longitude — the ticket's "~100 m grid".
+ *
+ * It must stay COARSER than `CachingMapsProvider`'s `COORD_PRECISION = 4`:
+ * that key renders coordinates through `toFixed(4)`, so every raw position
+ * inside one cell yields identical key text and therefore one cache entry.
+ * That is the whole design — the page polls every 5 s, and what costs a paid
+ * call is a driver crossing a cell (~15 s at the speed above), not a poll.
+ * 4 decimals is the key's own precision and would buy nothing; 2 (~1.1 km)
+ * would put the ETA visibly wrong at the kerb.
+ */
+export const TRACKING_ETA_GRID_DECIMALS = 3;
 
 /**
  * What the page shows per machine status — coarser on purpose: the rider at
@@ -69,4 +93,21 @@ export function estimateEtaMinutes(from: LatLng, to: LatLng): number {
     1,
     Math.ceil(haversineMeters(from, to) / TRACKING_ETA_SPEED_METERS_PER_MINUTE),
   );
+}
+
+/**
+ * Snaps a position onto the grid above. For the CACHE KEY only: the page keeps
+ * showing the raw position, because the map has to show where the car is, and
+ * a snapped marker would visibly jump between cells.
+ */
+export function quantizeForEtaCache(point: LatLng): LatLng {
+  return {
+    lat: Number(point.lat.toFixed(TRACKING_ETA_GRID_DECIMALS)),
+    lng: Number(point.lng.toFixed(TRACKING_ETA_GRID_DECIMALS)),
+  };
+}
+
+/** Same never-0 policy as `estimateEtaMinutes`, applied to a routed leg. */
+export function etaMinutesFromRoute(route: RouteResult): number {
+  return Math.max(1, Math.ceil(route.durationSeconds / 60));
 }

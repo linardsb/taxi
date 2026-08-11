@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_ENV } from '../../common/config/env.schema';
 import { smsProviderFactory, SMS_PROVIDER } from '../auth';
 import { DriversModule } from '../drivers';
+import { GeoModule } from '../geo';
 import { PlatformConfigModule } from '../platform-config';
 import { NotificationsRepository } from './notifications.repository';
 import { RideNotificationsService } from './ride-notifications.service';
@@ -19,10 +20,11 @@ import { TrackingService } from './tracking/tracking.service';
  *
  * `PlatformConfigModule` is deliberately not `@Global()` — the import is the
  * declared dependency (`dispatchPhone` on the tracking view). `DriversModule`
- * supplies `DRIVER_LOCATION_STORE` for live positions.
+ * supplies `DRIVER_LOCATION_STORE` for live positions. `GeoModule` supplies
+ * `MAPS_PROVIDER`, the cached seam behind the tracking page's road ETA (#87).
  */
 @Module({
-  imports: [DriversModule, PlatformConfigModule],
+  imports: [DriversModule, GeoModule, PlatformConfigModule],
   controllers: [TrackingController],
   providers: [
     RideNotificationsService,

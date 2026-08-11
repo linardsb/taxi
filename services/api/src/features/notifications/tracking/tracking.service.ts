@@ -9,19 +9,27 @@ import {
   ACTIVE_DRIVER_RIDE_STATUSES,
   trackingTokenSchema,
   trackingViewSchema,
+  type LatLng,
+  type MapsProvider,
   type RideStatus,
   type TrackingView,
 } from '@taxi/shared';
 import { randomBytes } from 'node:crypto';
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
 import { DRIVER_LOCATION_STORE, type DriverLocationStore } from '../../drivers';
+import { MAPS_PROVIDER } from '../../geo';
 import { PlatformConfigService } from '../../platform-config';
 import {
   TRACKING_STATE_BY_STATUS,
   TRACKING_TERMINAL_GRACE_SECONDS,
   estimateEtaMinutes,
+  etaMinutesFromRoute,
+  quantizeForEtaCache,
 } from '../notifications.policy';
-import { NotificationsRepository } from '../notifications.repository';
+import {
+  NotificationsRepository,
+  type NotifiableRide,
+} from '../notifications.repository';
 import { driverFirstName } from '../sms-templates';
 
 /**
@@ -48,6 +56,7 @@ export class TrackingService {
     private readonly platformConfig: PlatformConfigService,
     @Inject(DRIVER_LOCATION_STORE)
     private readonly locations: DriverLocationStore,
+    @Inject(MAPS_PROVIDER) private readonly maps: MapsProvider,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
@@ -117,7 +126,7 @@ export class TrackingService {
             ride.status === 'in_progress'
               ? ride.request.destination.location
               : ride.request.pickup.location;
-          etaMinutes = estimateEtaMinutes(recorded.location, target);
+          etaMinutes = await this.roadEta(ride, recorded.location, target);
         }
       }
     }
@@ -136,6 +145,40 @@ export class TrackingService {
       dispatchPhone: config.dispatchPhone,
       updatedAt: ride.updatedAt.toISOString(),
     });
+  }
+
+  /**
+   * Road ETA through the maps seam. The ORIGIN is quantized to the ~100 m grid
+   * (policy) so the page's 5 s poll lands on the route cache: a paid call
+   * happens when the driver crosses a cell, never per poll — and a hostile
+   * poller adds none at all, because both ends of the key are server-side.
+   * The displayed position stays raw; only the route origin is snapped.
+   *
+   * A maps outage degrades to the straight-line estimate rather than costing
+   * the rider their page — an ETA that is 30% off beats a 500 at the kerb.
+   */
+  private async roadEta(
+    ride: NotifiableRide,
+    from: LatLng,
+    target: LatLng,
+  ): Promise<number> {
+    try {
+      const route = await this.maps.route(quantizeForEtaCache(from), target);
+      return etaMinutesFromRoute(route);
+    } catch (error) {
+      // No coordinates in the payload: the logging standard forbids anything
+      // finer than a geozone name, and this page is the no-login one.
+      this.logger.warn({
+        event: 'ride.notifications.track_eta_fallback',
+        rideId: ride.id,
+        driverId: ride.driverId,
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      });
+      // Raw, not quantized: there is no cache in this path, so the accuracy
+      // costs nothing.
+      return estimateEtaMinutes(from, target);
+    }
   }
 
   private denied(token: string, reason: 'unknown' | 'expired'): void {
