@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { formatMessage } from '@taxi/shared';
 import { TwilioSmsProvider } from './twilio-sms.provider';
 
@@ -24,6 +25,8 @@ const CREATED = JSON.stringify({
 });
 
 describe('TwilioSmsProvider', () => {
+  afterEach(() => jest.restoreAllMocks());
+
   it('POSTs the account-scoped resource with Basic auth and form fields, and resolves on 201 (expected)', async () => {
     const { fn, calls } = fakeFetch(201, CREATED);
 
@@ -45,6 +48,32 @@ describe('TwilioSmsProvider', () => {
     expect(form.get('To')).toBe('+37120000001');
     expect(form.get('From')).toBe(CONFIG.from);
     expect(form.get('Body')).toBe('Jūsu taksometrs ir rezervēts.');
+  });
+
+  it('logs twilio_sent with segments mapped from num_segments, the masked phone, and never the body (expected)', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const { fn } = fakeFetch(201, CREATED);
+
+    await new TwilioSmsProvider(CONFIG, fn).send(
+      '+37120000001',
+      'secret body 123456',
+    );
+
+    const sent = (log.mock.calls as unknown as [Record<string, unknown>][])
+      .map(([payload]) => payload)
+      .find((payload) => payload.event === 'auth.sms.twilio_sent');
+    // Twilio answers num_segments as a STRING; the "SMS spend €/week" ledger
+    // row reads `segments` as a number.
+    expect(sent).toMatchObject({
+      event: 'auth.sms.twilio_sent',
+      segments: 2,
+      phone: '+371*****001',
+    });
+    // Same leak rule as err.message: the log carries neither the SMS body
+    // (OTP codes, tracking links) nor the raw phone.
+    const serialized = JSON.stringify(sent);
+    expect(serialized).not.toContain('secret body');
+    expect(serialized).not.toContain('+37120000001');
   });
 
   it('sendOtp sends the lv catalog body with the code interpolated (expected)', async () => {
