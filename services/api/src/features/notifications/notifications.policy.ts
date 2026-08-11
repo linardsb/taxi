@@ -90,13 +90,13 @@ export const TRACKING_ETA_GRID_DECIMALS = 3;
  * - It does NOT protect the database read in general. An attacker can mint
  *   unlimited shape-valid 22-char tokens, each costing one `rideByToken`. This
  *   bounds polling of a KNOWN token, which is the spend path.
- * - It does NOT break visibly. NO client in the monorepo renders a 429: the
- *   SSR page falls into its `api_down` branch and shows the full-page
- *   "connection lost" screen, and the poll island shows its offline banner and
- *   keeps polling at 5 s, so `retryAfterSeconds` currently reaches nobody. A
- *   rider who hits this is told the platform is down while their ride is fine.
- *   Tracked as #100; until it ships, this limit firing is INVISIBLE as a
- *   throttle and legible only in `ride.notifications.track_view_throttled`.
+ * It DOES now break visibly, which it did not when this limit shipped (#100).
+ * `apps/dispatch` renders a distinct state on 429 rather than "connection
+ * lost": the SSR page shows `page.too_many_viewers` with deliberately no retry
+ * link — a reload spends another request against the same window — and the
+ * poll island shows its own `status` banner and stands down for
+ * `retryAfterSeconds` before polling again. So a viewer over the limit is told
+ * what is actually happening, and stops adding to it.
  *
  * Tune when the first Google bill exists — the same trigger `COORD_PRECISION`
  * carries. If share-trip ever fans out past ~9 simultaneous viewers this is the

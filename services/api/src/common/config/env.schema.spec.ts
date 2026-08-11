@@ -242,3 +242,24 @@ describe('envSchema TWILIO_*', () => {
     ).toThrow(/TWILIO_FROM_NUMBER must be an E\.164 number/);
   });
 });
+
+describe('envSchema MAPS_ETA_FAILURE_TTL_SECONDS', () => {
+  it('accepts 0 as the negative cache kill switch (edge — review L4)', () => {
+    // `CachingMapsProvider` reads `failureTtlSeconds > 0` as the switch, and
+    // the `quote` facade is built with a literal 0. `.positive()` would leave
+    // the `eta` facade with a code-level kill switch and no config-level one,
+    // so turning it off against a misbehaving provider would need a deploy.
+    expect(
+      envSchema.parse(prod({ MAPS_ETA_FAILURE_TTL_SECONDS: '0' }))
+        .MAPS_ETA_FAILURE_TTL_SECONDS,
+    ).toBe(0);
+  });
+
+  it('still refuses a negative TTL, and defaults to 60 (failure)', () => {
+    expect(() =>
+      envSchema.parse(prod({ MAPS_ETA_FAILURE_TTL_SECONDS: '-1' })),
+    ).toThrow();
+
+    expect(envSchema.parse(prod()).MAPS_ETA_FAILURE_TTL_SECONDS).toBe(60);
+  });
+});

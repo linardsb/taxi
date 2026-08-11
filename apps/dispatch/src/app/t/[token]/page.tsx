@@ -52,7 +52,7 @@ export default async function TrackingPage({
   const lang = langFrom(await searchParams);
 
   let view: TrackingView | null = null;
-  let failure: 'not_found' | 'expired' | 'api_down' | null = null;
+  let failure: 'not_found' | 'expired' | 'throttled' | 'api_down' | null = null;
   try {
     const res = await fetch(
       `${API_URL()}/track/${encodeURIComponent(token)}`,
@@ -60,22 +60,35 @@ export default async function TrackingPage({
     );
     if (res.status === 404) failure = 'not_found';
     else if (res.status === 410) failure = 'expired';
+    // 429 BEFORE the generic !res.ok: the token-scoped throttle (#94) is the
+    // system working, not the system down, and `api_down` renders "connection
+    // lost" — telling a rider the platform is broken while their ride is fine.
+    // Share-trip (#17) reuses one token across viewers, so this is reachable
+    // by ordinary use, not just by a script.
+    else if (res.status === 429) failure = 'throttled';
     else if (!res.ok) failure = 'api_down';
     else view = trackingViewSchema.parse(await res.json());
   } catch {
     failure = 'api_down';
   }
 
-  if (failure === 'not_found' || failure === 'expired') {
-    return (
-      <StatusScreen
-        lang={lang}
-        message={formatMessage(
-          lang,
-          failure === 'expired' ? 'page.expired' : 'page.not_found',
-        )}
-      />
-    );
+  if (
+    failure === 'not_found' ||
+    failure === 'expired' ||
+    failure === 'throttled'
+  ) {
+    // Deliberately NO retry link on `throttled`, unlike `api_down` below: the
+    // retry there is a full reload, which spends another request against the
+    // same window and makes the thing it is recovering from worse. The message
+    // says to wait; a manual reload is still available and is one deliberate
+    // act rather than an inviting button.
+    const message =
+      failure === 'expired'
+        ? 'page.expired'
+        : failure === 'throttled'
+          ? 'page.too_many_viewers'
+          : 'page.not_found';
+    return <StatusScreen lang={lang} message={formatMessage(lang, message)} />;
   }
   if (failure !== null || view === null) {
     // API down: the page cannot know anything — one line and a retry link

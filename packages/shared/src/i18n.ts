@@ -38,6 +38,8 @@ const lv = {
   'page.position_updated': 'Atrašanās vieta atjaunota {time}',
   'page.connection_lost':
     'Savienojums zudis. Rādām pēdējos zināmos datus ({time}).',
+  'page.too_many_viewers':
+    'Šo braucienu pašlaik seko pārāk daudz cilvēku. Pamēģiniet pēc brīža.',
   'page.retry': 'Mēģināt vēlreiz',
 } as const;
 
@@ -70,6 +72,8 @@ export const MESSAGES = {
     'page.position_updated': 'Местоположение обновлено {time}',
     'page.connection_lost':
       'Связь потеряна. Показаны последние данные ({time}).',
+    'page.too_many_viewers':
+      'За этой поездкой сейчас следит слишком много людей. Попробуйте через минуту.',
     'page.retry': 'Попробовать ещё раз',
   },
   en: {
@@ -96,6 +100,8 @@ export const MESSAGES = {
     'page.position_updated': 'Location updated {time}',
     'page.connection_lost':
       'Connection lost. Showing last known data ({time}).',
+    'page.too_many_viewers':
+      'Too many people are watching this ride right now. Try again in a moment.',
     'page.retry': 'Try again',
   },
 } as const satisfies Record<Language, Record<MessageKey, string>>;

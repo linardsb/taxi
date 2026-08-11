@@ -20,6 +20,32 @@ const TERMINAL = new Set<TrackingPageState>([
 ]);
 
 /**
+ * How long to stand down when the API answers 429 and its body is unreadable.
+ * The server sends `retryAfterSeconds` (the key's remaining TTL, floored at 1);
+ * this is only for a malformed or truncated body, and it is deliberately the
+ * full window rather than a token retry — the throttle exists to stop spend,
+ * so guessing LOW would defeat it.
+ */
+const THROTTLE_FALLBACK_SECONDS = 60;
+
+/**
+ * `{ message, retryAfterSeconds }` is the API's 429 shape
+ * (`tracking.service.ts`), but this is a network boundary like any other, so
+ * the number is checked rather than trusted. A non-finite or negative value
+ * would otherwise compute a retry instant in the past and poll straight
+ * through the back-off.
+ */
+function retryAfterSecondsFrom(body: unknown): number {
+  const raw =
+    typeof body === 'object' && body !== null && 'retryAfterSeconds' in body
+      ? (body as { retryAfterSeconds: unknown }).retryAfterSeconds
+      : undefined;
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+    ? raw
+    : THROTTLE_FALLBACK_SECONDS;
+}
+
+/**
  * The live half of the tracking page: status line, driver card, map and the
  * offline banner, re-fed every 5 s by the same-origin `/t/:token/data` proxy
  * (no CORS, API origin hidden). Initial markup server-renders from the SSR
@@ -33,7 +59,15 @@ export function TrackingLive({
   const [view, setView] = useState(initial);
   const [fatal, setFatal] = useState<'expired' | 'not_found' | null>(null);
   const [offline, setOffline] = useState(false);
+  const [throttled, setThrottled] = useState(false);
   const [lastSeenAt, setLastSeenAt] = useState<Date | null>(null);
+
+  /**
+   * The instant polling may resume, in `Date.now()` terms. A ref, not state:
+   * the interval closure reads it on every tick, and re-running the effect to
+   * pick up a new value would tear down and restart the timer.
+   */
+  const retryNotBefore = useRef(0);
 
   const mapNode = useRef<HTMLDivElement | null>(null);
   const map = useRef<LeafletMap | null>(null);
@@ -44,15 +78,30 @@ export function TrackingLive({
   useEffect(() => {
     if (done) return;
     const timer = setInterval(() => {
+      // Standing down after a 429. The interval keeps its 5 s cadence and the
+      // ticks inside the window simply spend nothing — cheaper than restarting
+      // the timer, and it resumes on its own without another effect run.
+      if (Date.now() < retryNotBefore.current) return;
       void (async () => {
         try {
           const res = await fetch(`/t/${token}/data`, { cache: 'no-store' });
           if (res.status === 410) return setFatal('expired');
           if (res.status === 404) return setFatal('not_found');
+          // Before the generic `!res.ok`: a throttle is not an outage, and the
+          // API computes `retryAfterSeconds` for exactly this. Polling through
+          // it at 5 s would spend the next window as fast as it opens.
+          if (res.status === 429) {
+            const body: unknown = await res.json().catch(() => null);
+            retryNotBefore.current =
+              Date.now() + retryAfterSecondsFrom(body) * 1_000;
+            setThrottled(true);
+            return;
+          }
           if (!res.ok) return setOffline(true);
           setView(trackingViewSchema.parse(await res.json()));
           setLastSeenAt(new Date());
           setOffline(false);
+          setThrottled(false);
         } catch {
           setOffline(true); // keep showing the last known data, honestly stamped
         }
@@ -126,6 +175,25 @@ export function TrackingLive({
       >
         {statusLine(lang, view.state)}
       </p>
+
+      {/* Its OWN banner, not the offline one: "connection lost" would be a lie
+          about a working system, and the data below is still as fresh as the
+          last successful poll. `status`, not `alert` — nothing is wrong. */}
+      {throttled && !offline && (
+        <p
+          role="status"
+          style={{
+            margin: 0,
+            padding: 'var(--spacing-sm) var(--spacing-md)',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-warning)',
+            color: 'var(--color-accent-fg)',
+            fontSize: 'var(--font-size-sm)',
+          }}
+        >
+          {formatMessage(lang, 'page.too_many_viewers')}
+        </p>
+      )}
 
       {offline && (
         <p

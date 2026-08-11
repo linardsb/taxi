@@ -121,6 +121,31 @@ describe('TrackingPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('names the throttle instead of claiming the platform is down on 429 (failure — #100)', async () => {
+    // THE BUG THIS CLOSES. 429 used to fall into the generic `!res.ok` branch
+    // and render "connection lost" — the rider told the platform is broken
+    // while their ride is fine and the throttle is working as designed.
+    vi.mocked(fetch).mockResolvedValue(statusOnly(429) as never);
+    await renderPage();
+
+    expect(
+      screen.getByRole('heading', {
+        name: formatMessage('lv', 'page.too_many_viewers'),
+      }),
+    ).toBeInTheDocument();
+
+    // Not the api_down screen, and no retry link: a reload spends another
+    // request against the same window and makes the throttle worse.
+    expect(
+      screen.queryByText(
+        formatMessage('lv', 'page.connection_lost', { time: '—' }),
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: formatMessage('lv', 'page.retry') }),
+    ).not.toBeInTheDocument();
+  });
+
   it('shows the catalog notice for 404 and 410 (failure)', async () => {
     vi.mocked(fetch).mockResolvedValue(statusOnly(404) as never);
     await renderPage();
