@@ -100,7 +100,7 @@ export default async function TrackingPage({
           {formatMessage(lang, 'page.connection_lost', { time: '—' })}
         </h1>
         <a
-          href=""
+          href={`/t/${token}?lang=${lang}`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
