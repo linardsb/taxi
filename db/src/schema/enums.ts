@@ -1,6 +1,7 @@
 import { pgEnum } from 'drizzle-orm/pg-core';
 import {
   ASSIGNMENT_SOURCES,
+  BOOKING_CHANNELS,
   COMMISSION_SOURCES,
   DISPATCH_MODES,
   DRIVER_STATUSES,
@@ -35,6 +36,7 @@ export const commissionSourceEnum = pgEnum(
   'commission_source',
   COMMISSION_SOURCES,
 );
+export const bookingChannelEnum = pgEnum('booking_channel', BOOKING_CHANNELS);
 
 /** Mirrors `fareQuoteSchema.breakdown` keys — the normalized fare-lines table (#11/#12 consume). */
 export const fareLineTypeEnum = pgEnum('fare_line_type', [

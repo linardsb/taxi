@@ -77,6 +77,12 @@ export const envSchema = z
         message:
           'STRIPE_SECRET_KEY must be a test-mode key (sk_test_…): Stripe stays in test mode until the SIA exists.',
       }),
+    /**
+     * Where the SMS tracking links point (#63) — the dispatch web app's
+     * public origin, which serves `/t/:token`. The default is its dev origin
+     * (first in the seeded `CORS_ORIGINS`); a deploy sets the real domain.
+     */
+    PUBLIC_TRACKING_BASE_URL: z.string().url().default('http://localhost:3000'),
     CORS_ORIGINS: z
       .string()
       .default('http://localhost:3000,http://localhost:3002')

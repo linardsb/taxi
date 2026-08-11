@@ -166,6 +166,10 @@ export async function seedRiga(db: Db): Promise<void> {
   // day, less than an unbounded credit line, and re-openable in #20 without a
   // deploy. Both values are re-asserted in the conflict set so a re-seed
   // corrects a hand-edited row.
+  // dispatchPhone is the number the tracking page's call button dials (#63).
+  // PLACEHOLDER until the pilot has a real dispatch line — deliberately NOT in
+  // the conflict set: once #20 lets an admin set the real number, a re-seed
+  // must not stomp it back to the placeholder.
   await db
     .insert(platformConfig)
     .values({
@@ -173,6 +177,7 @@ export async function seedRiga(db: Db): Promise<void> {
       cityId: RIGA_CITY_ID,
       commissionPct: 15,
       driverDebtLimitCents: 5000,
+      dispatchPhone: '+37160000000',
     })
     .onConflictDoUpdate({
       target: platformConfig.cityId,

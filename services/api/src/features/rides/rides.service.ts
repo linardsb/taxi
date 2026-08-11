@@ -9,6 +9,7 @@ import {
 import {
   rideRequestSchema,
   RT,
+  type BookingChannel,
   type Ride,
   type RideCreated,
   type RideRequest,
@@ -16,6 +17,7 @@ import {
 } from '@taxi/shared';
 import { randomUUID } from 'node:crypto';
 import { KV_STORE, type KeyValueStore } from '../../common/kv/kv.store';
+import { mintTrackingToken, RideNotificationsService } from '../notifications';
 import { PricingService } from '../pricing';
 import { RealtimeService } from '../realtime';
 import { entryStatusFor } from './ride-entry';
@@ -49,12 +51,20 @@ export class RidesService {
     private readonly rides: RidesRepository,
     private readonly realtime: RealtimeService,
     @Inject(KV_STORE) private readonly kv: KeyValueStore,
+    private readonly notifications: RideNotificationsService,
   ) {}
 
+  /**
+   * `bookingChannel` is a SERVER-SIDE argument, never wire input:
+   * `rideRequestBodySchema` carries no such field, the rider-facing
+   * controller always books `'app'`, and #19's dispatcher controller is the
+   * one caller that will pass `'phone'`.
+   */
   async request(
     riderId: string,
     idempotencyKey: string,
     body: RideRequestBody,
+    bookingChannel: BookingChannel = 'app',
   ): Promise<RideCreated> {
     // The server's identity wins. A body-supplied `riderId` was already
     // stripped by `.omit()` — this re-parse is what makes that structural.
@@ -102,7 +112,7 @@ export class RidesService {
 
     try {
       await this.assertWithinRateLimit(riderId);
-      return await this.createRide(key, request, riderId);
+      return await this.createRide(key, request, riderId, bookingChannel);
     } catch (error) {
       // Release, best-effort. Without it a maps outage — or a single 429 —
       // burns the rider's key for 24 h and every honest retry replays a ride
@@ -126,6 +136,7 @@ export class RidesService {
     key: string,
     request: RideRequest,
     riderId: string,
+    bookingChannel: BookingChannel,
   ): Promise<RideCreated> {
     try {
       const { quote, split } = await this.pricing.quote(request);
@@ -135,11 +146,16 @@ export class RidesService {
         status: entryStatusFor(request),
         request,
         quote,
+        bookingChannel,
+        trackingToken: mintTrackingToken(),
       });
 
       // ---- POST-COMMIT: nothing below may throw out of this method ----
       await this.recordIdempotency(key, ride.id);
       this.notifyRider(riderId, ride);
+      // Fire-and-forget: onRideCreated catches everything itself — an SMS
+      // failure never fails a booking.
+      void this.notifications.onRideCreated(ride);
 
       this.logger.log({
         event: 'ride.request.created',

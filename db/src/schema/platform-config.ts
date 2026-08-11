@@ -2,6 +2,7 @@ import {
   doublePrecision,
   integer,
   pgTable,
+  text,
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -42,6 +43,12 @@ export const platformConfig = pgTable('platform_config', {
   unclaimedAlertSeconds: integer('unclaimed_alert_seconds')
     .notNull()
     .default(60),
+  /**
+   * CONFIG, NOT CONSTANT: no column default — the SEED supplies the pilot
+   * number; #20 makes it admin-editable. The migration backfills with a
+   * DEFAULT-then-DROP, the `driver_debt_limit_cents` precedent (0006).
+   */
+  dispatchPhone: text('dispatch_phone').notNull(),
   /** DB-owned, like `rides.updatedAt` — see migration 0003. */
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()

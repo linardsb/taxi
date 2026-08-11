@@ -8,6 +8,7 @@ import {
 } from '@taxi/shared';
 import { randomUUID } from 'node:crypto';
 import { InMemoryKeyValueStore } from '../../../test/harness';
+import type { RideNotificationsService } from '../notifications';
 import type { PricingService } from '../pricing';
 import type { RealtimeService } from '../realtime';
 import {
@@ -131,8 +132,18 @@ function build(
 
   const kv = options.kv ?? new InMemoryKeyValueStore();
 
+  // The post-commit SMS hook — fire-and-forget in the service, so a marker in
+  // `calls` is all the unit layer needs; the policy itself is specced in
+  // features/notifications.
+  const notifications = {
+    onRideCreated: () => {
+      calls.push('notifications.onRideCreated');
+      return Promise.resolve();
+    },
+  } as unknown as RideNotificationsService;
+
   return {
-    service: new RidesService(pricing, rides, realtime, kv),
+    service: new RidesService(pricing, rides, realtime, kv, notifications),
     calls,
     emitted,
     kv,

@@ -12,6 +12,8 @@ export * from './schemas/driver';
 export * from './schemas/vehicle';
 export * from './schemas/ride';
 export * from './schemas/tariff';
+export * from './schemas/tracking';
+export * from './i18n';
 export * from './theme';
 export * from './theme-css';
 export * from './seams/maps-provider';

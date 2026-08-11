@@ -5,6 +5,7 @@ import {
   fareQuoteSchema,
   rideRequestSchema,
   rideSchema,
+  type BookingChannel,
   type FareQuote,
   type Ride,
   type RideRequest,
@@ -58,6 +59,10 @@ export interface CreateRideInput {
   status: RideEntryStatus;
   request: RideRequest;
   quote: FareQuote;
+  /** How the booking arrived (#63) — the rider app's path always says 'app'. */
+  bookingChannel: BookingChannel;
+  /** Minted by the caller (notifications' `mintTrackingToken`) — every ride gets one. */
+  trackingToken: string;
 }
 
 /**
@@ -102,6 +107,8 @@ function toRide(row: RideRow, quote: FareQuote): Ride {
           driverNetCents: row.driverNetCents,
         }
       : null,
+    bookingChannel: row.bookingChannel,
+    trackingToken: row.trackingToken,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -139,6 +146,8 @@ export class RidesRepository {
           category: input.request.category,
           pricingModel: input.quote.model,
           totalCents: input.quote.totalCents,
+          bookingChannel: input.bookingChannel,
+          trackingToken: input.trackingToken,
         })
         .returning();
 

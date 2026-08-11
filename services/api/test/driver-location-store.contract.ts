@@ -155,5 +155,42 @@ export function runDriverLocationStoreContract(
       );
       expect(await query()).toEqual([]);
     });
+
+    it('positionOf round-trips the recorded position with its timestamp (expected)', async () => {
+      const { east } = CONTRACT_DRIVERS;
+      await seed([east]);
+
+      const pos = await store.positionOf(cityId, east.id);
+      expect(pos?.atMs).toBe(NOW);
+      expect(pos?.location.lat).toBeCloseTo(east.location.lat, 3);
+      expect(pos?.location.lng).toBeCloseTo(east.location.lng, 3);
+    });
+
+    it('positionOf returns null for a driver never seen (edge)', async () => {
+      expect(
+        await store.positionOf(cityId, CONTRACT_DRIVERS.east.id),
+      ).toBeNull();
+    });
+
+    it('positionOf still reads a position too stale for findNearby (edge — tracking outlives dispatchability)', async () => {
+      // The tracking page shows a stale position with its timestamp; dispatch
+      // must not offer to it. Same store, two deliberate answers.
+      const { east } = CONTRACT_DRIVERS;
+      await seed([east], NOW - 120_000);
+
+      expect(await query()).toEqual([]);
+      expect((await store.positionOf(cityId, east.id))?.atMs).toBe(
+        NOW - 120_000,
+      );
+    });
+
+    it('positionOf reads nothing after markOffline (failure)', async () => {
+      const { east } = CONTRACT_DRIVERS;
+      await seed([east]);
+
+      await store.markOffline(cityId, east.id);
+
+      expect(await store.positionOf(cityId, east.id)).toBeNull();
+    });
   });
 }

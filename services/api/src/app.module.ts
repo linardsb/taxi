@@ -10,6 +10,7 @@ import { DispatchModule } from './features/dispatch';
 import { DriversModule } from './features/drivers';
 import { GeozonesModule } from './features/geozones';
 import { LedgerModule } from './features/ledger';
+import { NotificationsModule } from './features/notifications';
 import { PaymentsModule } from './features/payments';
 import { RealtimeModule } from './features/realtime';
 import { RidesModule } from './features/rides';
@@ -23,6 +24,8 @@ import { RidesModule } from './features/rides';
     RealtimeModule,
     DriversModule,
     GeozonesModule,
+    // Before RidesModule: rides fires the SMS hooks this module owns (#63).
+    NotificationsModule,
     // GeoModule, PlatformConfigModule and PricingModule arrive transitively.
     RidesModule,
     // After RidesModule: dispatch consumes the rides slice's repository and

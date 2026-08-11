@@ -6,10 +6,12 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import {
   assignmentSourceEnum,
+  bookingChannelEnum,
   commissionSourceEnum,
   fareLineTypeEnum,
   offerStatusEnum,
@@ -63,6 +65,19 @@ export const rides = pgTable(
      * idempotency key rules out a second intent on retry).
      */
     paymentProviderRef: text('payment_provider_ref'),
+    /**
+     * How the ride was booked (#63). The column default is legitimate here —
+     * it is a FACT about legacy rows (they all came from the app), not a
+     * config knob.
+     */
+    bookingChannel: bookingChannelEnum('booking_channel')
+      .notNull()
+      .default('app'),
+    /**
+     * Unguessable handle for the no-login tracking page (#63), minted at
+     * creation. Nullable: legacy rows never got one — untrackable by design.
+     */
+    trackingToken: text('tracking_token'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -80,6 +95,9 @@ export const rides = pgTable(
     index('rides_driver_idx').on(t.driverId),
     index('rides_status_idx').on(t.status),
     index('rides_order_idx').on(t.orderId),
+    // The tracking page's only lookup path — unique because a token that
+    // resolved to two rides would show a stranger's trip.
+    uniqueIndex('rides_tracking_token_idx').on(t.trackingToken),
   ],
 );
 

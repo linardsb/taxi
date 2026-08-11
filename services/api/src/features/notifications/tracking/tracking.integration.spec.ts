@@ -1,0 +1,380 @@
+import { drivers, rideOffers, rides, users } from '@taxi/db';
+import {
+  authSessionSchema,
+  IDEMPOTENCY_KEY_HEADER,
+  rideCreatedSchema,
+  rideRequestSchema,
+  trackingViewSchema,
+  type LatLng,
+  type RideRequestBody,
+} from '@taxi/shared';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import request from 'supertest';
+import {
+  createTestApp,
+  phoneFor,
+  type TestApp,
+} from '../../../../test/harness';
+import { APP_ENV, type Env } from '../../../common/config/env.schema';
+import { DispatchService } from '../../dispatch';
+import { RidesService } from '../../rides';
+
+/**
+ * `+371280` is this spec file's E.164 range — registered in the range comment
+ * at `ride-lifecycle.integration.spec.ts` (the registry), where `+371210` …
+ * `+371270` are already claimed. NOT `+371270`, whatever older docs say:
+ * payments.integration.spec.ts already holds it (the registry had drifted).
+ */
+const p = (n: number) => phoneFor('+371280', n);
+
+/** Inside centre only — the reasoning at `ride-lifecycle.integration.spec.ts`. */
+const CENTRE_PICKUP = {
+  location: { lat: 56.96, lng: 24.085 },
+  address: 'Hanzas iela, Rīga',
+};
+const DESTINATION = {
+  location: { lat: 56.9712, lng: 24.18 },
+  address: 'Teika, Rīga',
+};
+
+const BODY: RideRequestBody = {
+  pickup: CENTRE_PICKUP,
+  destination: DESTINATION,
+  paymentMethod: 'cash',
+} as RideRequestBody;
+
+const PHOTO_URL = 'https://cdn.example.test/drivers/janis.jpg';
+
+describe('tracking + ride SMS (integration)', () => {
+  let ctx: TestApp;
+  let http: ReturnType<typeof request>;
+  let ridesService: RidesService;
+  let dispatch: DispatchService;
+  let cityId: string;
+
+  const createdRides: string[] = [];
+  const usedDrivers: string[] = [];
+
+  beforeAll(async () => {
+    ctx = await createTestApp();
+    http = request(ctx.app.getHttpServer());
+    ridesService = ctx.app.get(RidesService);
+    dispatch = ctx.app.get(DispatchService);
+    cityId = ctx.app.get<Env>(APP_ENV).DEFAULT_CITY_ID;
+  });
+
+  afterEach(async () => {
+    const driverIds = usedDrivers.splice(0);
+    for (const driverId of driverIds) {
+      await ctx.locations.markOffline(cityId, driverId);
+    }
+    if (driverIds.length) {
+      await ctx.db
+        .update(drivers)
+        .set({ status: 'online' })
+        .where(
+          and(
+            inArray(drivers.userId, driverIds),
+            eq(drivers.status, 'on_ride'),
+          ),
+        );
+    }
+    if (createdRides.length) {
+      await ctx.db
+        .update(rides)
+        .set({ status: 'cancelled_by_system' })
+        .where(inArray(rides.id, createdRides.splice(0)));
+    }
+  });
+
+  afterAll(async () => {
+    await ctx.app.close();
+  });
+
+  async function signIn(phone: string, role: 'rider' | 'driver') {
+    await http.post('/auth/otp/request').send({ phone, role }).expect(200);
+    const code = ctx.sms.lastCodeFor(phone)!;
+    const res = await http
+      .post('/auth/otp/verify')
+      .send({ phone, code })
+      .expect(200);
+    return authSessionSchema.parse(res.body);
+  }
+
+  let plateSeq = 0;
+  const nextPlate = () => `TR${String(++plateSeq).padStart(4, '0')}`;
+
+  /** A named driver with a photo, a car, presence and a live position. */
+  async function onlineDriver(n: number, location: LatLng) {
+    const session = await signIn(p(n), 'driver');
+    const auth = `Bearer ${session.accessToken}`;
+    const id = session.user.id;
+    const plate = nextPlate();
+
+    await http
+      .post('/drivers/me/vehicles')
+      .set('authorization', auth)
+      .send({
+        plate,
+        make: 'Skoda',
+        model: 'Octavia',
+        year: 2019,
+        passengerSeats: 4,
+        hasChildSeat: false,
+      })
+      .expect(201);
+    await http
+      .put('/drivers/me/status')
+      .set('authorization', auth)
+      .send({ status: 'online' })
+      .expect(200);
+
+    // Onboarding (#20) owns these writes in production; the spec fills them in
+    // so the SMS and the page have a name and a photo to show.
+    await ctx.db
+      .update(users)
+      .set({ displayName: 'Jānis Bērziņš' })
+      .where(eq(users.id, id));
+    await ctx.db
+      .update(drivers)
+      .set({ photoUrl: PHOTO_URL })
+      .where(eq(drivers.userId, id));
+
+    await ctx.locations.markOnline(cityId, id);
+    await ctx.locations.record(cityId, id, location, Date.now());
+    usedDrivers.push(id);
+    return { id, auth, plate };
+  }
+
+  async function rider(n: number) {
+    const session = await signIn(p(n), 'rider');
+    return { id: session.user.id, auth: `Bearer ${session.accessToken}` };
+  }
+
+  /** Phone bookings have no wire path until #19 — the service layer IS the entry. */
+  async function bookByPhone(riderId: string) {
+    const { ride } = await ridesService.request(
+      riderId,
+      randomUUID(),
+      BODY,
+      'phone',
+    );
+    createdRides.push(ride.id);
+    return ride;
+  }
+
+  async function acceptBy(rideId: string, driverAuth: string) {
+    const [row] = await ctx.db.select().from(rides).where(eq(rides.id, rideId));
+    await dispatch.offerNext({
+      id: row!.id,
+      orderId: row!.orderId,
+      riderId: row!.riderId,
+      geozoneId: row!.geozoneId,
+      request: rideRequestSchema.parse(row!.request),
+      createdAt: row!.createdAt,
+    });
+    const [offer] = await ctx.db
+      .select()
+      .from(rideOffers)
+      .where(
+        and(eq(rideOffers.rideId, rideId), eq(rideOffers.status, 'pending')),
+      );
+    await http
+      .post(`/dispatch/offers/${offer!.id}/accept`)
+      .set('authorization', driverAuth)
+      .expect(201);
+  }
+
+  const smsTo = (phone: string) => ctx.sms.messagesFor(phone);
+
+  /** The hooks are fire-and-forget: the HTTP/service call resolves before the SMS lands. */
+  async function waitForSms(
+    phone: string,
+    expected: number,
+    timeoutMs = 3_000,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (smsTo(phone).length < expected) {
+      if (Date.now() > deadline) {
+        throw new Error(
+          `timed out waiting for ${expected} SMS to ${phone}, saw ${smsTo(phone).length}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  const track = (token: string) => http.get(`/track/${token}`);
+
+  const view = async (token: string) => {
+    const res = await track(token).expect(200);
+    return trackingViewSchema.parse(res.body);
+  };
+
+  it('phone booking: 3 SMS with the link, page follows the full lifecycle (expected — AC #1, #2, budget)', async () => {
+    const d = await onlineDriver(1, {
+      lat: CENTRE_PICKUP.location.lat + 0.001,
+      lng: CENTRE_PICKUP.location.lng,
+    });
+    const r = await rider(50);
+
+    const ride = await bookByPhone(r.id);
+    const token = ride.trackingToken!;
+    expect(token).toMatch(/^[A-Za-z0-9_-]{22}$/);
+
+    // AC #1: the link travels IN the confirmation, sent inside the creation
+    // request — delay ≈ 0, comfortably under the ≤30 s ledger row.
+    await waitForSms(p(50), 1);
+    expect(smsTo(p(50))[0]).toContain(`/t/${token}`);
+
+    // Before any driver: searching, and nothing to show but the dispatch phone.
+    const searching = await view(token);
+    expect(searching.state).toBe('searching');
+    expect(searching.driverName).toBeNull();
+    expect(searching.vehiclePlate).toBeNull();
+    expect(searching.position).toBeNull();
+    expect(searching.dispatchPhone).toMatch(/^\+/);
+
+    await acceptBy(ride.id, d.auth);
+
+    // The phone-channel follow-up: driver, plate, ETA, link (AC #1).
+    await waitForSms(p(50), 2);
+    const assigned = smsTo(p(50))[1]!;
+    expect(assigned).toContain('Jānis');
+    expect(assigned).toContain(d.plate);
+    expect(assigned).toMatch(/~\d+ min/);
+    expect(assigned).toContain(`/t/${token}`);
+
+    // AC #2: plate + driver + live position while active.
+    const active = await view(token);
+    expect(active.state).toBe('assigned');
+    expect(active.driverName).toBe('Jānis');
+    expect(active.driverPhotoUrl).toBe(PHOTO_URL);
+    expect(active.vehiclePlate).toBe(d.plate);
+    expect(active.position).not.toBeNull();
+    expect(active.position!.lat).toBeCloseTo(
+      CENTRE_PICKUP.location.lat + 0.001,
+      3,
+    );
+    expect(active.etaMinutes).toBeGreaterThanOrEqual(1);
+
+    for (const step of ['arriving', 'arrived'] as const) {
+      await http
+        .post(`/rides/${ride.id}/${step}`)
+        .set('authorization', d.auth)
+        .expect(201);
+      expect((await view(token)).state).toBe(step);
+    }
+
+    // The arrival SMS goes to every channel (AC #1).
+    await waitForSms(p(50), 3);
+    expect(smsTo(p(50))[2]).toContain(d.plate);
+
+    await http
+      .post(`/rides/${ride.id}/start`)
+      .set('authorization', d.auth)
+      .expect(201);
+    const inProgress = await view(token);
+    expect(inProgress.state).toBe('in_progress');
+
+    await http
+      .post(`/rides/${ride.id}/complete`)
+      .set('authorization', d.auth)
+      .expect(201);
+    const completed = await view(token);
+    expect(completed.state).toBe('completed');
+    // A completed ride's page is a receipt, not a surveillance feed.
+    expect(completed.position).toBeNull();
+
+    // The budget row: EXACTLY 3 SMS for a phone booking, none extra from the
+    // arriving/in_progress/completed hops.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(smsTo(p(50))).toHaveLength(3);
+  });
+
+  it('app booking: 2 SMS, no link, no driver_assigned (edge — budget row)', async () => {
+    const d = await onlineDriver(2, {
+      lat: CENTRE_PICKUP.location.lat + 0.001,
+      lng: CENTRE_PICKUP.location.lng,
+    });
+    const r = await rider(51);
+
+    const res = await http
+      .post('/rides')
+      .set('authorization', r.auth)
+      .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
+      .send(BODY)
+      .expect(201);
+    const { ride } = rideCreatedSchema.parse(res.body);
+    createdRides.push(ride.id);
+
+    await waitForSms(p(51), 1);
+    expect(smsTo(p(51))[0]).not.toContain('/t/');
+
+    await acceptBy(ride.id, d.auth);
+    for (const step of ['arriving', 'arrived'] as const) {
+      await http
+        .post(`/rides/${ride.id}/${step}`)
+        .set('authorization', d.auth)
+        .expect(201);
+    }
+
+    // arrived SMS arrives; driver_assigned never does.
+    await waitForSms(p(51), 2);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const bodies = smsTo(p(51));
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toContain(d.plate);
+    expect(bodies[1]).not.toContain('/t/');
+
+    // The app rider's ride is still trackable — #17's share-trip reuses this.
+    expect((await view(ride.trackingToken!)).state).toBe('arrived');
+  });
+
+  it('terminal ride outliving the 24 h grace answers 410 (edge — AC #3)', async () => {
+    const r = await rider(52);
+    const ride = await bookByPhone(r.id);
+    const token = ride.trackingToken!;
+
+    // The 0003 trigger unconditionally stamps NEW.updated_at = now(), so a
+    // plain backdate is silently overwritten — disable it around the write.
+    // Safe: jest runs serially (maxWorkers 1), nothing else is writing rides.
+    await ctx.db.execute(
+      sql`ALTER TABLE rides DISABLE TRIGGER rides_set_updated_at`,
+    );
+    try {
+      await ctx.db.execute(sql`
+        UPDATE rides
+        SET status = 'cancelled_by_system',
+            updated_at = now() - interval '2 days'
+        WHERE id = ${ride.id}
+      `);
+    } finally {
+      await ctx.db.execute(
+        sql`ALTER TABLE rides ENABLE TRIGGER rides_set_updated_at`,
+      );
+    }
+
+    await track(token).expect(410);
+  });
+
+  it('a FRESH terminal ride is still viewable — grace, not instant death (edge)', async () => {
+    const r = await rider(53);
+    const ride = await bookByPhone(r.id);
+
+    await ctx.db
+      .update(rides)
+      .set({ status: 'cancelled_by_rider' })
+      .where(eq(rides.id, ride.id));
+
+    expect((await view(ride.trackingToken!)).state).toBe('cancelled');
+  });
+
+  it('unknown and malformed tokens both answer 404 (failure — AC #3)', async () => {
+    // Valid shape, no ride: indistinguishable from malformed by design.
+    await track('AAAAAAAAAAAAAAAAAAAAAA').expect(404);
+    await track('not-a-token').expect(404);
+    await track(randomUUID()).expect(404);
+  });
+});

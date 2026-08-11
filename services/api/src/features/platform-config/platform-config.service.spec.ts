@@ -18,6 +18,7 @@ const row = (commissionPct: number) => ({
   defaultDispatchMode: 'auto_match',
   offerTimeoutSeconds: 20,
   unclaimedAlertSeconds: 60,
+  dispatchPhone: '+37160000000',
   updatedAt: new Date('2026-08-03T09:00:00.000Z'),
 });
 

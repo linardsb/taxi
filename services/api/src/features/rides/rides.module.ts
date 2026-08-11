@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DriversModule } from '../drivers';
+import { NotificationsModule } from '../notifications';
 import { PricingModule } from '../pricing';
 import { RealtimeModule } from '../realtime';
 import { RideLifecycleController } from './lifecycle/ride-lifecycle.controller';
@@ -15,9 +16,11 @@ import { RidesService } from './rides.service';
  * lifecycle owns. No cycle: `DriversModule` imports only `RealtimeModule`.
  * `DispatchModule` must NOT be imported here — it already imports this module,
  * which is why the lifecycle reads `ride_offers` directly instead.
+ * `NotificationsModule` supplies the two post-commit SMS hooks (#63); it reads
+ * ride rows through its own repository and never imports this module back.
  */
 @Module({
-  imports: [PricingModule, RealtimeModule, DriversModule],
+  imports: [PricingModule, RealtimeModule, DriversModule, NotificationsModule],
   controllers: [RidesController, RideLifecycleController],
   providers: [
     RidesService,
