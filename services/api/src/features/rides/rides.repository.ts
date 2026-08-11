@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { rideFareLines, rides, type Db } from '@taxi/db';
+import { rideFareLines, rides, vehicles, type Db } from '@taxi/db';
 import {
   assertFareQuoteConsistent,
   fareQuoteSchema,
@@ -10,7 +10,7 @@ import {
   type Ride,
   type RideRequest,
 } from '@taxi/shared';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 import { assertEntryStatus, type RideEntryStatus } from './ride-entry';
 import type { DbTx } from './ride-transition.service';
@@ -259,6 +259,11 @@ export class RidesRepository {
    * conditional UPDATE the whole cascade depends on. `false` means someone else
    * won, which is a 409 and never a 500.
    *
+   * The sole writer of BOTH assignment columns: `driver_id` and, since #86,
+   * `vehicle_id`. The vehicle-resolution rule lives here and nowhere else —
+   * the driver's vehicle in the ride's category, else their first by plate
+   * (deterministic), else NULL.
+   *
    * `tx` composes this into the accept path's transaction, where the offer
    * accept, the status change, this write and the audit row must commit or roll
    * back together. Without it this would silently commit outside the caller's
@@ -271,7 +276,19 @@ export class RidesRepository {
   ): Promise<boolean> {
     const [row] = await (tx ?? this.db)
       .update(rides)
-      .set({ driverId })
+      .set({
+        driverId,
+        // The vehicle the rider will match at the kerb, frozen at assignment:
+        // the driver's vehicle in the ride's category, else their first by
+        // plate (deterministic), else NULL — a force-assigned driver may own
+        // no car at all, and refusing the assignment for that would break S9-2.
+        vehicleId: sql`(
+          select v.id from ${vehicles} as v
+          where v.driver_id = ${driverId}
+          order by (v.category = ${rides.category}) desc, v.plate asc
+          limit 1
+        )`,
+      })
       .where(and(eq(rides.id, rideId), isNull(rides.driverId)))
       .returning({ id: rides.id });
     return row !== undefined;
