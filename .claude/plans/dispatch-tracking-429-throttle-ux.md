@@ -1,5 +1,23 @@
 # Feature: the tracking page tells the truth about a 429
 
+> ## ✅ SHIPPED — do not implement this plan
+>
+> Delivered by **PR #104** (`Closes #100`) and **PR #105**, merged 2026-08-11. The unchecked boxes
+> below are the plan as written, kept as the record of intent — they are **not** outstanding work.
+>
+> This plan and that implementation were produced by **two sessions running concurrently** and neither
+> saw the other. They converged on 7 of 8 acceptance criteria independently. The exception was worth
+> having: **AC #2's "clamped to the 60 s window"** was missing from the shipped code, which validated
+> `retryAfterSeconds` only from below — so an over-long value would have frozen a live tracking page.
+> That is PR #105.
+>
+> AC #8 ("the L4 note survives as its own filed issue") was met differently: L4 was **fixed** inside
+> #104 rather than deferred, so issue #103 — filed for it concurrently — was closed as already-done.
+>
+> The collision itself is the lesson, and the rule that would have prevented it landed in `CLAUDE.md`
+> in the same PR that accidentally swept this file in (#102): *concurrent Claude sessions share this
+> checkout — check `git reflog -8`, and work in a worktree when another session is live.*
+
 The following plan should be complete, but its important that you validate documentation and codebase patterns and task sanity before you start implementing.
 
 Pay special attention to naming of existing utils types and models. Import from the right files etc.
