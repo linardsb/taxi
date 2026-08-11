@@ -74,11 +74,18 @@ export const envSchema = z
      * `ROUTE` precisely because the `quote` caller does NOT negative-cache: a
      * `MAPS_ROUTE_*` name invites someone to wire it into both, and on the
      * booking path a cached failure blocks real bookings (see `geo.module.ts`).
+     *
+     * **`0` disables the negative cache entirely** — `CachingMapsProvider`
+     * reads `failureTtlSeconds > 0` as the switch, and the `quote` facade is
+     * built with a literal `0` for exactly that reason. `.nonnegative()`, not
+     * `.positive()`, so the `eta` facade has the same kill switch from
+     * configuration: if it ever misbehaves against a real provider, turning it
+     * off is an env change rather than a deploy.
      */
     MAPS_ETA_FAILURE_TTL_SECONDS: z.coerce
       .number()
       .int()
-      .positive()
+      .nonnegative()
       .default(60),
     /**
      * BOTH callers share this one — pricing as well as tracking, unlike the

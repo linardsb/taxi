@@ -126,6 +126,71 @@ describe('TrackingLive', () => {
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 
+  it('stands down for retryAfterSeconds on 429 instead of polling through it (failure — #100)', async () => {
+    // THE POINT OF THE FIX. Without the back-off the island keeps polling at
+    // 5 s while throttled, so it spends the next window as fast as the server
+    // opens it — and `retryAfterSeconds` is computed for nobody.
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({ message: 'too_many_requests', retryAfterSeconds: 30 }),
+    } as never);
+
+    render(<TrackingLive token={TOKEN} lang="lv" initial={baseView} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+    // Its own banner, naming the throttle — NOT the "connection lost" alert,
+    // which would be a lie about a working system.
+    expect(screen.getByRole('status')).toHaveTextContent(
+      formatMessage('lv', 'page.too_many_viewers'),
+    );
+    expect(
+      screen.queryByRole('alert'),
+    ).not.toBeInTheDocument();
+
+    // 25 s of ticks inside the 30 s window: five more intervals fire and every
+    // one of them spends nothing.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25_000);
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+    // Past the window it resumes on its own — no reload, no second effect run.
+    vi.mocked(fetch).mockResolvedValue(okJson(baseView) as never);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('falls back to a full window when the 429 body is unreadable (edge — #100)', async () => {
+    // A truncated or non-JSON body must not compute a retry instant in the
+    // past. Guessing LOW would defeat the throttle the back-off exists to obey.
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => {
+        throw new Error('unexpected end of JSON input');
+      },
+    } as never);
+
+    render(<TrackingLive token={TOKEN} lang="lv" initial={baseView} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+    // 55 s on: still inside the 60 s fallback, so still nothing spent.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(55_000);
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
   it('swaps the island for the expired notice when a poll returns 410 (failure)', async () => {
     vi.mocked(fetch).mockResolvedValue(statusOnly(410) as never);
 
