@@ -356,7 +356,10 @@ Design unit tests with fixtures and assertions following existing testing approa
 
 ### Edge Cases
 
-<List specific edge cases that must be tested for this feature>
+<List specific edge cases that must be tested for this feature. Every edge case must NAME where it is
+verified — a test file, or a numbered step in Level 4 manual validation. If an edge case lands in a surface
+with no test framework (e.g. an app validated only by typecheck/lint/build), say so explicitly and assign it
+a manual step: an edge case owned by nobody silently fails to land.>
 
 ---
 

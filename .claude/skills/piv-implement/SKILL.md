@@ -90,6 +90,10 @@ Write a short report to `.claude/reports/<plan-slug>-report.md` (and print the s
 and the `piv-review-pr` gate read — especially the **deviations** (a documented deviation is an *intentional*
 decision the reviewer should not flag):
 
+**Before filling Deviations**: re-read the plan's STEP-BY-STEP TASKS and TESTING STRATEGY and diff every *named*
+behavior and test case against what actually shipped. A divergence you didn't notice while coding is still a
+deviation — and the review gate treats an undocumented one as unintentional.
+
 ```markdown
 # Implementation Report — <feature>
 
