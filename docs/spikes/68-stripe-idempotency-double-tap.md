@@ -1,5 +1,12 @@
 # Spike #68 — Stripe in-flight idempotency-key behaviour on a concurrent double-tap
 
+> ⚠️ **STATUS: DESK HALF ONLY — NOT A SETTLED ANSWER.** The verdict below is sound on documentation and
+> on the installed SDK's source, but it hangs on one fact nobody has observed: whether Stripe attaches
+> `stripe-should-retry: false` to the 409. If it does, the SDK's automatic retry is suppressed and the
+> conclusion inverts — see [NOT YET OBSERVED](#not-yet-observed--the-one-link-that-cannot-be-checked-locally).
+> The harness that would settle it is committed here and blocked on a test-mode Stripe key.
+> **Do not cite this as decided; issue [#68](https://github.com/linardsb/taxi/issues/68) stays open until the live run happens.**
+
 **Verdict: both hypothesised consequences are REFUTED at primary source — no code change needed. Live confirmation pending (one harness run, ~30s, needs a test key).** Issue [#68](https://github.com/linardsb/taxi/issues/68), deferred from the PR #65 review (finding 10, FYI).
 
 The ticket named the wrong error. The in-flight case is not `idempotency_error`; it is **`idempotency_key_in_use` at HTTP 409**, and **stripe-node retries 409 automatically with the default client we construct**. So the losing half of a double-tap is absorbed inside the SDK and never reaches our code.
