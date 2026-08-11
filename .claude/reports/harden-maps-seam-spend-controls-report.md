@@ -44,6 +44,13 @@ The maps seam now bounds its own spend, logs what it spends, and fails fast inst
 - Lint: 0 errors, 7 warnings — all pre-existing `no-unsafe-argument` warnings in integration specs, none in changed code.
 - Per-task doc checks: `NOTHING ENFORCES THAT CEILING YET` → 0; `MAPS_PROVIDER_ETA` in `services/api/CLAUDE.md` → 1; `track_eta_failed` in the #87 plan → 1; `^MAPS_` in `.env.example` → 4; no surviving `track_eta_fallback` anywhere.
 
+**Round 2 — after the PR #99 review fixes (`1ce2548`).** The figures above are the original implementation run and are left as the record of it; these supersede them for anyone re-running the gate:
+
+- Same gate command → **21/21 tasks successful**. `@taxi/api`: 54 suites, **458 tests** passed (455 + 3: two for M1's best-effort cache writes, one key-set case for `geo.maps.route_failed`). Lint unchanged at 0 errors / 7 pre-existing warnings.
+- Fixed: M1 (a Redis write fault could drop `geo.maps.route_failed`, or misattribute a billed success as `source_rejected` and negative-cache it), L1 (`errorName` logged raw despite a docblock claiming it could not carry a coordinate — now `safeErrorName`), L2 + M2's docblock half (the viewer-count and burst figures, and the false "breaks visibly" claim), L3 (the suite's ordering trap, now cleared and asserted).
+- Deferred to **#100**: M2's client work in `apps/dispatch`, and L4's config-level negative-cache kill switch.
+- **Step 3 below is unchanged by round 2** — still open for a human.
+
 ### Level 4 manual validation — partially performed
 
 **Performed:**
