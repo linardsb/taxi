@@ -9,3 +9,4 @@ The dispatcher web portal (Next.js) — Dina's console, the 24/7 human-dispatche
 - Keyboard-first UX: a dispatcher on a call must be able to enter an order without touching the mouse.
 - Organize by feature (Vertical Slice): `src/features/<name>/`.
 - UI language: LV first (Dina's working language); keep strings in catalogs anyway.
+- Tests: vitest + RTL (jsdom), co-located as `src/features/<name>/*.test.tsx`; run via `pnpm turbo run test --filter @taxi/dispatch` (a direct `pnpm --filter … test` needs a built `@taxi/shared`).
