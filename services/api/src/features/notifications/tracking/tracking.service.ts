@@ -150,8 +150,18 @@ export class TrackingService {
   /**
    * Road ETA through the maps seam. The ORIGIN is quantized to the ~100 m grid
    * (policy) so the page's 5 s poll lands on the route cache: a paid call
-   * happens when the driver crosses a cell, never per poll — and a hostile
-   * poller adds none at all, because both ends of the key are server-side.
+   * happens when the driver crosses a cell, not once per poll.
+   *
+   * What that does NOT buy is a bound on hostile polling. Both ends of the key
+   * are server-side, so a caller cannot AIM spend at a key of its choosing —
+   * but it can still cause spend, by two routes `CachingMapsProvider` leaves
+   * open: there is no in-flight coalescing (concurrent requests arriving
+   * before the first `setWithTtl` lands all miss and all reach the source), and
+   * failures are never cached (during an outage every poll from every viewer
+   * reaches it). Quantization closes neither. The controls are a token-scoped
+   * throttle and a negative cache — follow-ups on this seam, due before a real
+   * provider is bound.
+   *
    * The displayed position stays raw; only the route origin is snapped.
    *
    * A maps outage degrades to the straight-line estimate rather than costing

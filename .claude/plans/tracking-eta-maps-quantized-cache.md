@@ -20,14 +20,14 @@ The v1 ETA is deliberately crude (a city-speed constant over straight-line dista
 
 ## Solution Statement
 
-In `TrackingService.view()`, replace the direct `estimateEtaMinutes()` call with a maps-seam route call whose **origin is the driver's position rounded to 3 decimal places** (~111 m lat × ~61 m lng at Rīga's latitude — the "~100 m grid"). `routeCacheKey` renders coordinates at 4 decimals (`toFixed(4)`), so every raw position inside a grid cell produces the *identical* cache key — a moving driver triggers a paid call only when they cross into a new cell (~every 15 s at city speed, vs every 5 s poll), and a hostile rapid poller can force **zero** extra paid calls because the driver's position is server-side. The route's `durationSeconds` becomes the ETA (`max(1, ceil(s/60))` — the "never ~0 min" policy survives). On any maps failure, fall back to the existing haversine estimate and log a structured warn. The page's displayed `position` stays the **raw** recorded position — quantization is for the cache key only, the map must show the real car.
+In `TrackingService.view()`, replace the direct `estimateEtaMinutes()` call with a maps-seam route call whose **origin is the driver's position rounded to 3 decimal places** (~111 m lat × ~61 m lng at Rīga's latitude — the "~100 m grid"). `routeCacheKey` renders coordinates at 4 decimals (`toFixed(4)`), so every raw position inside a grid cell produces the *identical* cache key — a moving driver triggers a paid call only when they cross into a new cell (~8.9 s apart on average at city speed — the cell is anisotropic, ~16 s due N/S but ~7.7 s on the worst heading — against a 5 s poll, so ~2×). A hostile rapid poller cannot **aim** spend, because both ends of the key are server-side; it can still **cause** spend, because the cache has no in-flight coalescing and never caches failures. The route's `durationSeconds` becomes the ETA (`max(1, ceil(s/60))` — the "never ~0 min" policy survives). On any maps failure, fall back to the existing haversine estimate and log a structured warn. The page's displayed `position` stays the **raw** recorded position — quantization is for the cache key only, the map must show the real car.
 
 ## Out of Scope / Non-Goals
 
 - **Not changing the assigned-SMS ETA** (`ride-notifications.service.ts:139` `etaToPickup`) — it keeps the haversine estimate. It is one-shot per ride (not polled), the ticket names only the tracking page, and touching it would widen the SMS templates' blast radius. Flagged in Open Questions as a possible follow-up.
 - **Not changing `CachingMapsProvider`, `routeCacheKey`, or `COORD_PRECISION`** — quantization happens at the call site, because the cache is shared with pricing, where degrading input precision costs fare accuracy (the `COORD_PRECISION` docblock's explicit trade-off).
 - **Not binding a real Google provider** — that stays #13/#16. Dev/test still run `StubMapsProvider` through the real cache.
-- **Not adding rate limiting to `GET /track/:token`** — quantization already bounds paid spend structurally (see Solution); request-level abuse of a free endpoint is out of this ticket.
+- **Not adding rate limiting to `GET /track/:token`** — deferred to the maps-seam hardening follow-up (with the negative cache), due before a real provider is bound. The original rationale here — "quantization already bounds paid spend structurally" — was wrong and is corrected in Solution: quantization bounds the ordinary moving-driver case, not the hostile one. Nothing is at risk while `StubMapsProvider` is the only bound source, which is what makes deferring it safe rather than merely cheap.
 - **Not touching `packages/shared`** — `TrackingView.etaMinutes` is unchanged on the wire; no contract moves.
 
 ## Feature Metadata
@@ -333,7 +333,20 @@ REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build -
 
 **Why quantize at the call site instead of inside `CachingMapsProvider`:** the cache is shared with pricing, and pricing's `COORD_PRECISION = 4` docblock explicitly prices the precision/hit-rate trade-off in cents of fare accuracy. A cache-level ~100 m snap would silently degrade quotes. Call-site quantization keeps the blast radius exactly one consumer.
 
-**Spend arithmetic (why this satisfies the guardrail):** page polls every 5 s; at the policy's own 25 km/h city average a driver crosses a ~100 m cell every ~15 s → worst-case ~1 paid call per 15 s per active ride *with a real provider*, vs 1 per 5 s without quantization — and each cell's result is shared by every watcher of that ride (share-trip #17) and by the SMS corridor. Hostile polling adds zero paid calls: the origin is server-side Redis state, the target is pinned by the ride row, so the cache key cannot be varied from outside — the property `rides.policy.ts`'s per-rider cap exists to defend on the ride-creation path falls out structurally here.
+**Spend arithmetic (why this satisfies the guardrail):** page polls every 5 s (12/min); at the policy's own 25 km/h city average (417 m/min) a driver crosses a ~100 m cell at a rate that depends on heading, because the cell is ~111 m of latitude × ~61 m of longitude at 57°N:
+
+| Heading | Crossings/min | One per |
+|---|---|---|
+| Due N/S | 417/111 = 3.8 | ~16 s |
+| Due E/W | 417/61 = 6.8 | ~8.8 s |
+| Worst (~61° off N) | √(3.8² + 6.8²) = 7.8 | **~7.7 s** |
+| Mean over uniform heading | (2/π)(3.8 + 6.8) = **6.8** | ~8.9 s |
+
+So ~6.8 paid calls/min/active ride against 12/min unquantized — a **~2× reduction for a moving driver**, not the ~3× an unqualified "~15 s" implies (that is the due-N/S best case). Each cell's result is still shared by every watcher of that ride (share-trip #17) and by the SMS corridor.
+
+The bigger win is not in this table: a **stationary or slow** driver — at the kerb, in `arrived`, in traffic — otherwise mints a fresh 4-decimal key on nearly every poll indefinitely, because raw GPS jitter of ±10–20 m moves the 4th decimal. Quantization collapses that to the 1–4 cells the jitter spans, all cached after first visit. That case is unbounded without this change and bounded with it, which is a stronger argument than the moving-driver ratio.
+
+**Hostile polling is *not* bounded to zero** (corrected — the original claim here was wrong). Both ends of the key are server-side, so a caller cannot *aim* spend at a key of its choosing. It can still *cause* spend: `CachingMapsProvider.route()` is get → miss → `inner.route()` → `setWithTtl` with no in-flight coalescing, so a concurrent burst into an un-warmed cell costs one source call per request; and a rejected `inner.route()` writes nothing, so during a provider outage every poll from every viewer reaches the source. The controls are a token-scoped throttle and a negative cache, deferred to the seam-hardening follow-up — see the rate-limiting note in NOT DOING. `StubMapsProvider` is the only bound source until then, so no money is at risk in the interim.
 
 **Rejected: skipping the maps call when the fallback would say the same thing** (e.g. <300 m). Cute, saves pennies, adds a branch whose threshold is a new magic number — KISS says no.
 

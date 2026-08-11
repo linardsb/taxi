@@ -35,7 +35,22 @@ export const TRACKING_ETA_SPEED_METERS_PER_MINUTE = 417;
  * that key renders coordinates through `toFixed(4)`, so every raw position
  * inside one cell yields identical key text and therefore one cache entry.
  * That is the whole design — the page polls every 5 s, and what costs a paid
- * call is a driver crossing a cell (~15 s at the speed above), not a poll.
+ * call is a driver crossing a cell, not a poll.
+ *
+ * The cell is ANISOTROPIC, so one interval cannot describe it. At the speed
+ * above (417 m/min) a crossing costs one call per ~16 s driving due N/S, per
+ * ~8.8 s due E/W, and per ~7.7 s on the worst heading (~61° off north);
+ * averaged over a uniform heading it is ~6.8 crossings/min, one per ~8.9 s.
+ * Against 12 polls/min unquantized that is a ~2× reduction for a moving
+ * driver — not the ~3× that the ~16 s figure alone implies, which is the due
+ * N/S BEST case, not the worst.
+ *
+ * The larger win is the driver who is NOT moving — waiting at the kerb, in
+ * `arrived`, stuck in traffic. Raw GPS jitter of ±10–20 m mints a fresh
+ * 4-decimal key on nearly every poll, indefinitely; this grid collapses that
+ * to the one to four cells the jitter spans, all cached after first visit.
+ * That case is what the grid really rescues.
+ *
  * 4 decimals is the key's own precision and would buy nothing; 2 (~1.1 km)
  * would put the ETA visibly wrong at the kerb.
  */
