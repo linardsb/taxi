@@ -62,10 +62,24 @@ export const TRACKING_ETA_GRID_DECIMALS = 3;
  * code, and a guardrail you can turn off from an environment file is a
  * suggestion.
  *
- * The arithmetic: the page polls every 5 s, so one viewer is 12 requests/min.
- * #17's share-trip reuses ONE token across viewers, so the budget is genuinely
- * shared — 120/min is 10 concurrent viewers at full poll rate. A family of
- * three watching one ride is 36/min, comfortably inside; a script is not.
+ * The arithmetic: the page polls every 5 s, so one viewer is 12 requests/min,
+ * and a page LOAD costs one more on top of that (the SSR fetch in
+ * `apps/dispatch/src/app/t/[token]/page.tsx`). #17's share-trip reuses ONE
+ * token across viewers, so the budget is genuinely shared.
+ *
+ * The ceiling that always holds is therefore **9 viewers**, not 10: ten people
+ * opening the shared link inside one window is 10 + 120 = 130 and the last of
+ * them get 429. Ten is the ceiling only once every page is already open and
+ * nobody reloads (12 × 10 = 120, the exact limit — `attempts <= MAX` passes,
+ * so the 121st is the first refused). A family of three is 39/min on load and
+ * 36/min after, comfortably inside either; a script is not.
+ *
+ * WORST CASE for anyone sizing spend: the window is FIXED, not sliding —
+ * `incrWithTtl` sets the TTL only when the key is absent, so the window starts
+ * at the first request and does not slide with later ones. Two boundary-
+ * adjacent windows therefore pass **~240 requests inside a ~60 s span**. That
+ * is the number to budget against; 120/min is the per-window figure, not the
+ * per-minute guarantee.
  *
  * What it does NOT do, stated so the next reader does not assume otherwise:
  *
@@ -76,10 +90,17 @@ export const TRACKING_ETA_GRID_DECIMALS = 3;
  * - It does NOT protect the database read in general. An attacker can mint
  *   unlimited shape-valid 22-char tokens, each costing one `rideByToken`. This
  *   bounds polling of a KNOWN token, which is the spend path.
+ * - It does NOT break visibly. NO client in the monorepo renders a 429: the
+ *   SSR page falls into its `api_down` branch and shows the full-page
+ *   "connection lost" screen, and the poll island shows its offline banner and
+ *   keeps polling at 5 s, so `retryAfterSeconds` currently reaches nobody. A
+ *   rider who hits this is told the platform is down while their ride is fine.
+ *   Tracked as #100; until it ships, this limit firing is INVISIBLE as a
+ *   throttle and legible only in `ride.notifications.track_view_throttled`.
  *
  * Tune when the first Google bill exists — the same trigger `COORD_PRECISION`
- * carries. If share-trip ever fans out past ~10 simultaneous viewers this is
- * the number that breaks first, and it breaks visibly (a 429 on the page).
+ * carries. If share-trip ever fans out past ~9 simultaneous viewers this is the
+ * number that breaks first.
  */
 export const TRACKING_VIEW_MAX_PER_WINDOW = 120;
 export const TRACKING_VIEW_WINDOW_SECONDS = 60;

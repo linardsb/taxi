@@ -56,6 +56,26 @@ const hangingSource: MapsProvider = {
   reverseGeocode: jest.fn(),
 };
 
+/**
+ * The structured payload of the first logged call carrying `event`. Takes the
+ * spy's `calls` rather than the spy so one helper serves `log`, `warn` and
+ * `error`, whose Nest signatures differ.
+ */
+function payloadFor(
+  calls: unknown[][],
+  event: string,
+): Record<string, unknown> | undefined {
+  return calls
+    .map(([first]) => first)
+    .find(
+      (arg): arg is Record<string, unknown> =>
+        typeof arg === 'object' &&
+        arg !== null &&
+        'event' in arg &&
+        arg.event === event,
+    );
+}
+
 /** Answers one fixed shape, valid or not — the write path's input under test. */
 function fixedSource(result: unknown): MapsProvider {
   return {
@@ -389,5 +409,131 @@ describe('CachingMapsProvider', () => {
     expect(JSON.stringify(withoutTimestamp)).not.toMatch(/56\.9|24\.1/);
 
     logged.mockRestore();
+  });
+
+  it('the failure log pins the same key set and drops a provider-set error name (failure — AC #3)', async () => {
+    // `error.name` is the ONE provider-controlled value that reaches a log
+    // line here, and `name` is a writable own property on any `Error` — so a
+    // hostile adapter is the only case that can actually test the claim
+    // `services/api/CLAUDE.md` states as law. A benign `Error` would pass this
+    // assertion while the field was logged raw, which is why the name below
+    // carries a coordinate.
+    const hostile: MapsProvider = {
+      route: () => {
+        const error = new Error('provider down');
+        error.name = 'route 56.9,24.1 failed';
+        return Promise.reject(error);
+      },
+      geocode: jest.fn(),
+      reverseGeocode: jest.fn(),
+    };
+    const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { maps } = build({ caller: 'eta', inner: hostile });
+
+    await expect(maps.route(CENTRE, RIX)).rejects.toThrow('provider down');
+
+    const payload = payloadFor(warned.mock.calls, 'geo.maps.route_failed');
+    expect(payload).toBeDefined();
+
+    // The whole key set, for the same reason as the miss-path case above: it
+    // pins the ABSENCE of any free-text field, so a provider message could not
+    // be added back without failing here.
+    expect(Object.keys(payload!).sort()).toEqual([
+      'at',
+      'caller',
+      'cell',
+      'errorName',
+      'event',
+      'reason',
+    ]);
+    expect(payload!.reason).toBe('source_rejected');
+    expect(payload!.errorName).toBe('unsafe_name');
+
+    // `at` excluded on purpose — same ISO-timestamp flake as the sibling case.
+    const withoutTimestamp = { ...payload };
+    delete withoutTimestamp.at;
+    expect(JSON.stringify(withoutTimestamp)).not.toMatch(/56\.9|24\.1/);
+
+    warned.mockRestore();
+  });
+
+  it('a failed SUCCESS-key write still returns the route and still counts it (failure)', async () => {
+    // The billed call already happened. A partial Redis fault (writes refused,
+    // reads fine — OOM under `noeviction`, a READONLY replica) used to turn it
+    // into a `source_rejected` throw: a false attribution, an uncounted paid
+    // call, and a 60 s dark corridor on the `eta` caller from a route that
+    // actually SUCCEEDED.
+    const logged = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { kv, maps } = build({ caller: 'eta' });
+    // Only the success key faults, so the assertion below genuinely proves the
+    // fail key was never ASKED for rather than merely failing to land too.
+    jest
+      .spyOn(kv, 'setWithTtl')
+      .mockImplementation((key: string) =>
+        key.startsWith('maps:route:v1:')
+          ? Promise.reject(new Error('OOM command not allowed'))
+          : Promise.resolve(),
+      );
+
+    const route = await maps.route(CENTRE, RIX);
+
+    expect(route.distanceMeters).toBeGreaterThan(0);
+    expect(
+      logged.mock.calls.some(
+        ([first]) =>
+          typeof first === 'object' &&
+          first !== null &&
+          (first as Record<string, unknown>).event === 'geo.maps.route_fetched',
+      ),
+    ).toBe(true);
+    // The defect itself: no misattributed failure, and nothing negative-cached.
+    expect(
+      payloadFor(warned.mock.calls, 'geo.maps.route_failed'),
+    ).toBeUndefined();
+    expect(await kv.get(routeFailureKey('eta', CENTRE, RIX))).toBeNull();
+    // Not silent: a cache that has stopped writing means every later call for
+    // this corridor re-pays, which is the spend this class exists to prevent.
+    expect(
+      payloadFor(warned.mock.calls, 'geo.maps.cache_write_failed'),
+    ).toMatchObject({
+      caller: 'eta',
+      kind: 'route',
+    });
+
+    logged.mockRestore();
+    warned.mockRestore();
+  });
+
+  it('a failed FAIL-key write still emits route_failed and still throws the real error (failure)', async () => {
+    // `geo.maps.route_failed` is the only production signal that the provider
+    // is down. Writing the fail key first meant losing it exactly when it
+    // mattered — and handing the caller a Redis error in place of the real one,
+    // which `TrackingService.roadEta` would then log as an ETA failure with no
+    // trace of the actual cause.
+    const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { kv, maps } = build({ caller: 'eta', inner: failingSource(1) });
+    jest
+      .spyOn(kv, 'setWithTtl')
+      .mockImplementation((key: string) =>
+        key.startsWith('maps:route:fail:')
+          ? Promise.reject(new Error('READONLY against a read only replica'))
+          : Promise.resolve(),
+      );
+
+    await expect(maps.route(CENTRE, RIX)).rejects.toThrow('provider down');
+
+    expect(
+      payloadFor(warned.mock.calls, 'geo.maps.route_failed'),
+    ).toMatchObject({
+      reason: 'source_rejected',
+    });
+    expect(
+      payloadFor(warned.mock.calls, 'geo.maps.cache_write_failed'),
+    ).toMatchObject({
+      kind: 'failure',
+    });
+
+    warned.mockRestore();
   });
 });

@@ -654,14 +654,6 @@ describe('tracking + ride SMS (integration)', () => {
     expect(ctx.maps.routeCalls).toBe(calls + 1);
   });
 
-  // ORDERING DEPENDENCY, acquired in #94 — same class of trap as the shared
-  // store noted at the top of this block. `failNext()` now leaves a live
-  // negative-cache entry in that shared `InMemoryKeyValueStore`, which this
-  // file never resets and never `advance()`s, so the key lives 60 real
-  // seconds. It is safe only because this is the LAST case in the file. Any
-  // case appended after it that routes the same `eta` corridor gets a
-  // negative-cached throw instead of a source call, and its `routeCalls` delta
-  // assertion fails for a reason that looks nothing like the cause.
   it('a maps outage degrades to the straight-line estimate, page still 200 (failure — AC #3)', async () => {
     const { d, rideId, token } = await acceptedRide(8, 60);
 
@@ -718,5 +710,26 @@ describe('tracking + ride SMS (integration)', () => {
     ]);
     expect(payload).toMatchObject({ rideId, driverId: d.id });
     warned.mockRestore();
+
+    // `failNext()` armed the negative cache, and its entry lives 60 s
+    // (`MAPS_ETA_FAILURE_TTL_SECONDS`) in the ONE store this whole file
+    // shares. Left behind, it hands whichever case is appended next a
+    // negative-cached THROW instead of a source call — and a `routeCalls`
+    // delta that fails for a reason looking nothing like the cause. Cleared
+    // here rather than documented, so this case stops having to be last.
+    //
+    // 61 s, not more: it clears the failure entry without expiring route
+    // caches an appended case might rely on (300 s for `eta`, 24 h for
+    // `quote`) or the 120 s ride-idempotency reservations.
+    ctx.kv.advance(61);
+
+    // And proved, not assumed — this is what an appended case would see. The
+    // corridor reaches the SOURCE again (the failure wrote no success entry to
+    // hit), and the ETA is the routed one the assertion above ruled out.
+    const recovered = await view(token);
+    expect(ctx.maps.routeCalls).toBe(calls + 2);
+    expect(recovered.etaMinutes).toBe(
+      routedEtaMinutes({ lat: 57.03, lng: 24.086 }, CENTRE_PICKUP.location),
+    );
   });
 });

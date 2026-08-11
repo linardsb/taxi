@@ -136,6 +136,26 @@ function cellOf(key: string): string {
   return createHash('sha256').update(key).digest('base64url').slice(0, 10);
 }
 
+/**
+ * `error.name` is a class name BY CONVENTION ONLY — it is a writable own
+ * property on every `Error` instance, so an adapter that sets
+ * `err.name = 'route 56.9,24.1 failed'` would put a coordinate straight into a
+ * log line `.claude/references/logging-standard.md:14` forbids. Letters only,
+ * length-capped: every class name actually in play (`Error`, `TypeError`,
+ * `ZodError`, ioredis' `ReplyError`) passes, and nothing carrying a digit, a
+ * dot or a comma can.
+ *
+ * That makes the sanitization STRUCTURAL, matching the closed `reason` enum
+ * beside it — the alternative was a docblock asserting a guarantee the type
+ * system does not give, which is what this rule exists to stop.
+ */
+const SAFE_ERROR_NAME = /^[A-Za-z]{1,40}$/;
+
+function safeErrorName(error: unknown): string {
+  if (!(error instanceof Error)) return 'unknown';
+  return SAFE_ERROR_NAME.test(error.name) ? error.name : 'unsafe_name';
+}
+
 /** A ZodError can only come from this file's own write-path `parse()`. */
 function classify(
   error: unknown,
@@ -234,9 +254,13 @@ export class CachingMapsProvider implements MapsProvider {
         distanceMeters: Math.round(result.distanceMeters),
         durationSeconds: Math.round(result.durationSeconds),
       });
-      await this.kv.setWithTtl(key, JSON.stringify(validated), this.ttlSeconds);
       // THE paid-call counter: one line per call that would have cost money.
       // Before this existed, the only counter in the codebase was a test fake.
+      //
+      // Emitted BEFORE the cache write, not after: the money is already spent
+      // by this point, so whether the call gets counted must not depend on
+      // Redis accepting a write. Ordered the other way, the counter
+      // under-reported spend precisely when Redis was unhealthy.
       this.logger.log({
         event: 'geo.maps.route_fetched',
         caller: this.caller,
@@ -245,16 +269,27 @@ export class CachingMapsProvider implements MapsProvider {
         durationSeconds: validated.durationSeconds,
         at: new Date().toISOString(),
       });
+      await this.kv
+        .setWithTtl(key, JSON.stringify(validated), this.ttlSeconds)
+        .catch((error: unknown) => this.cacheWriteFailed('route', key, error));
       return validated;
     } catch (error) {
       const reason = classify(error);
+      // Logged BEFORE the fail-key write. This line is the only production
+      // signal that the provider is failing, and a write that threw here used
+      // to lose it exactly when it mattered — while also replacing the real
+      // error with a Redis one on its way out.
+      this.logFailure(reason, key, error);
       // All three kinds are remembered, including `contract_violation`: a
       // systematically broken adapter fails identically next time, and each
       // retry costs money.
       if (this.negativeCache) {
-        await this.kv.setWithTtl(failKey, reason, this.failureTtlSeconds);
+        await this.kv
+          .setWithTtl(failKey, reason, this.failureTtlSeconds)
+          .catch((cacheError: unknown) =>
+            this.cacheWriteFailed('failure', key, cacheError),
+          );
       }
-      this.logFailure(reason, key, error);
       throw error;
     }
   }
@@ -291,10 +326,11 @@ export class CachingMapsProvider implements MapsProvider {
   }
 
   /**
-   * `error.name` is a class name and `reason` is a closed enum — neither can
-   * contain a coordinate. The provider's own message is deliberately absent:
-   * that detail belongs to the Google adapter (#13/#16), the only code that
-   * knows its own error shapes well enough to sanitize them knowingly.
+   * `reason` is a closed enum and `errorName` goes through `safeErrorName`, so
+   * neither CAN contain a coordinate — enforced, not asserted. The provider's
+   * own message is deliberately absent: that detail belongs to the Google
+   * adapter (#13/#16), the only code that knows its own error shapes well
+   * enough to sanitize them knowingly.
    */
   private logFailure(
     reason: MapsFailureReason,
@@ -307,7 +343,7 @@ export class CachingMapsProvider implements MapsProvider {
       cell: cellOf(key),
       reason,
       ...(reason === 'source_rejected' && error instanceof Error
-        ? { errorName: error.name }
+        ? { errorName: safeErrorName(error) }
         : {}),
       at: new Date().toISOString(),
     };
@@ -316,6 +352,45 @@ export class CachingMapsProvider implements MapsProvider {
     // platform to haversine while every page still answers 200.
     if (reason === 'contract_violation') this.logger.error(payload);
     else this.logger.warn(payload);
+  }
+
+  /**
+   * Both cache WRITES are best-effort, and this is what "best-effort" costs.
+   *
+   * Scope, stated exactly: the two `setWithTtl` calls in `route()`. The `get`s
+   * and the `del` above them are NOT covered — they still propagate, as they
+   * did before this. So this is not "a cache fault can never fail a route
+   * call"; it is "a failed cache WRITE cannot".
+   *
+   * Why those two specifically: each is pure memoization. The success write
+   * only saves the NEXT caller a paid call, and the fail write only saves it
+   * during an outage — neither is part of answering the call in hand. Letting
+   * them throw meant a partial Redis fault (writes rejected, reads fine — OOM
+   * under `noeviction`, a `READONLY` replica, `MISCONF`) turned a route that
+   * had already succeeded AND BILLED into a `source_rejected` failure: a false
+   * attribution, an uncounted paid call, and for `eta` a corridor negative-
+   * cached dark for the whole failure TTL.
+   *
+   * NOT silent, deliberately: a cache that has quietly stopped writing means
+   * every later call for that corridor re-pays, which is the exact spend this
+   * class exists to prevent. `cell` is hashed from the SUCCESS key for both
+   * kinds, so a failed fail-key write still correlates with the corridor's
+   * other lines. `safeErrorName`, never the message — a Redis error's text is
+   * free-form and the key it names carries coordinates.
+   */
+  private cacheWriteFailed(
+    kind: 'route' | 'failure',
+    key: string,
+    error: unknown,
+  ): void {
+    this.logger.warn({
+      event: 'geo.maps.cache_write_failed',
+      caller: this.caller,
+      cell: cellOf(key),
+      kind,
+      errorName: safeErrorName(error),
+      at: new Date().toISOString(),
+    });
   }
 
   // Uncached, straight through: nothing calls these yet, and caching a call
