@@ -356,3 +356,5 @@ The bigger win is not in this table: a **stationary or slow** driver — at the 
 
 ## AMENDMENTS
 
+2026-08-11 — #94 renamed the log event AC #3 pins: `ride.notifications.track_eta_fallback` → `ride.notifications.track_eta_failed` (`logging-standard.md:8` defines `action_state` as verb + state; "fallback" is a noun describing the handling). The same AC's payload no longer carries the provider's `message` — `geo.maps.route_failed` owns provider-error detail as a closed-enum `reason`, so no free text can echo a coordinate into a log line. #94 also closed this plan's open TTL-staleness thread via `MAPS_ETA_CACHE_TTL_SECONDS` (300 s on a second bound facade, `MAPS_PROVIDER_ETA`), and made this plan's Level 4 manual check performable at last by adding the miss-path counter `geo.maps.route_fetched`. The "hostile polling is not bounded to zero" note above stands with one leg closed: failures are now cached (for the `eta` caller only) and route calls carry a timeout, but **in-flight coalescing remains absent** and is deferred to #13/#16.
+

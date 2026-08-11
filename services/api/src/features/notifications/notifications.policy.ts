@@ -57,6 +57,63 @@ export const TRACKING_ETA_SPEED_METERS_PER_MINUTE = 417;
 export const TRACKING_ETA_GRID_DECIMALS = 3;
 
 /**
+ * The tracking page's poll budget, per token. Constants, not env vars, for the
+ * same reason as `rides.policy.ts:1-13` — this is the <€100/mo guardrail in
+ * code, and a guardrail you can turn off from an environment file is a
+ * suggestion.
+ *
+ * The arithmetic: the page polls every 5 s, so one viewer is 12 requests/min,
+ * and a page LOAD costs one more on top of that (the SSR fetch in
+ * `apps/dispatch/src/app/t/[token]/page.tsx`). #17's share-trip reuses ONE
+ * token across viewers, so the budget is genuinely shared.
+ *
+ * The ceiling that always holds is therefore **9 viewers**, not 10: ten people
+ * opening the shared link inside one window is 10 + 120 = 130 and the last of
+ * them get 429. Ten is the ceiling only once every page is already open and
+ * nobody reloads (12 × 10 = 120, the exact limit — `attempts <= MAX` passes,
+ * so the 121st is the first refused). A family of three is 39/min on load and
+ * 36/min after, comfortably inside either; a script is not.
+ *
+ * WORST CASE for anyone sizing spend: the window is FIXED, not sliding —
+ * `incrWithTtl` sets the TTL only when the key is absent, so the window starts
+ * at the first request and does not slide with later ones. Two boundary-
+ * adjacent windows therefore pass **~240 requests inside a ~60 s span**. That
+ * is the number to budget against; 120/min is the per-window figure, not the
+ * per-minute guarantee.
+ *
+ * What it does NOT do, stated so the next reader does not assume otherwise:
+ *
+ * - It BOUNDS the concurrent-burst path; it does not CLOSE it. Requests
+ *   arriving before the first `setWithTtl` lands still all miss and all reach
+ *   the source. Closing that needs in-flight coalescing — deferred to #13/#16,
+ *   where the real concurrency shape is measurable.
+ * - It does NOT protect the database read in general. An attacker can mint
+ *   unlimited shape-valid 22-char tokens, each costing one `rideByToken`. This
+ *   bounds polling of a KNOWN token, which is the spend path.
+ * - It does NOT break visibly. NO client in the monorepo renders a 429: the
+ *   SSR page falls into its `api_down` branch and shows the full-page
+ *   "connection lost" screen, and the poll island shows its offline banner and
+ *   keeps polling at 5 s, so `retryAfterSeconds` currently reaches nobody. A
+ *   rider who hits this is told the platform is down while their ride is fine.
+ *   Tracked as #100; until it ships, this limit firing is INVISIBLE as a
+ *   throttle and legible only in `ride.notifications.track_view_throttled`.
+ *
+ * Tune when the first Google bill exists — the same trigger `COORD_PRECISION`
+ * carries. If share-trip ever fans out past ~9 simultaneous viewers this is the
+ * number that breaks first.
+ */
+export const TRACKING_VIEW_MAX_PER_WINDOW = 120;
+export const TRACKING_VIEW_WINDOW_SECONDS = 60;
+
+/**
+ * Keyed on the TOKEN, not the ride id: the service throttles before it knows
+ * whether a ride exists, which is what keeps a throttled request free of a
+ * database round trip.
+ */
+export const trackingViewRateKey = (token: string): string =>
+  `tracking:rate:${token}`;
+
+/**
  * What the page shows per machine status — coarser on purpose: the rider at
  * the kerb does not care which of four parties cancelled, and every
  * pre-driver status reads as "searching". `expired` is absent because it is
