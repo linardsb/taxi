@@ -3,6 +3,7 @@ import { rides, type Db } from '@taxi/db';
 import { assertTransition, RT, type RideStatus } from '@taxi/shared';
 import { and, eq } from 'drizzle-orm';
 import { DRIZZLE, type DbTx } from '../../common/db/db.module';
+import { RideNotificationsService } from '../notifications';
 import { RealtimeService } from '../realtime';
 
 /**
@@ -61,6 +62,7 @@ export class RideTransitionService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly realtime: RealtimeService,
+    private readonly notifications: RideNotificationsService,
   ) {}
 
   /**
@@ -122,6 +124,11 @@ export class RideTransitionService {
         at: new Date().toISOString(),
       });
     }
+    // The ONE SMS hook for every post-creation transition (#63): all
+    // `accepted` paths reach here via DispatchNotifier.emitAssigned, all
+    // `arrived` paths via the lifecycle service. Fire-and-forget — onStatus
+    // filters to the statuses it wants and catches everything itself.
+    void this.notifications.onStatus(ride, from);
   }
 
   /**

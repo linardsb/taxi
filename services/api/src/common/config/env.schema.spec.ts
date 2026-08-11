@@ -21,6 +21,8 @@ const prod = (over: Record<string, string> = {}) => ({
   NODE_ENV: 'production',
   JWT_SECRET: STRONG_JWT,
   OTP_PEPPER: STRONG_PEPPER,
+  // Production refuses the localhost default — every prod() case needs a real one.
+  PUBLIC_TRACKING_BASE_URL: 'https://track.example.com',
   ...over,
 });
 
@@ -76,6 +78,36 @@ describe('envSchema production secret rules', () => {
       expect(env.JWT_SECRET).toBe('dev-only-change-me');
       expect(env.OTP_PEPPER).toBe('dev-only-otp-pepper'); // the schema default
     }
+  });
+});
+
+describe('envSchema PUBLIC_TRACKING_BASE_URL', () => {
+  it('refuses its own localhost default in production (failure — review L3)', () => {
+    // The forgot-to-set-it deploy: the schema default IS the refused value, so
+    // this is exactly what would otherwise be texted to real riders.
+    const { PUBLIC_TRACKING_BASE_URL: _omitted, ...forgotToSetIt } = prod();
+
+    expect(() => envSchema.parse(forgotToSetIt)).toThrow(
+      /PUBLIC_TRACKING_BASE_URL is a localhost origin/,
+    );
+  });
+
+  it('refuses loopback spelled as an IP (edge)', () => {
+    expect(() =>
+      envSchema.parse(
+        prod({ PUBLIC_TRACKING_BASE_URL: 'http://127.0.0.1:3000' }),
+      ),
+    ).toThrow(/PUBLIC_TRACKING_BASE_URL is a localhost origin/);
+  });
+
+  it('leaves the localhost default alone outside production (expected)', () => {
+    const env = envSchema.parse({
+      ...base,
+      NODE_ENV: 'development',
+      JWT_SECRET: 'dev-only-change-me',
+    });
+
+    expect(env.PUBLIC_TRACKING_BASE_URL).toBe('http://localhost:3000');
   });
 });
 

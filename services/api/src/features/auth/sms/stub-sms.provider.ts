@@ -23,4 +23,16 @@ export class StubSmsProvider implements SmsProvider {
     });
     return Promise.resolve();
   }
+
+  async send(phoneE164: string, body: string): Promise<void> {
+    // Body in full for the same reason the OTP is: manual validation reads
+    // the tracking link out of this log. The real provider (#13) logs neither.
+    this.logger.log({
+      event: 'auth.sms.stub_sent',
+      phone: maskPhone(phoneE164),
+      body,
+      at: new Date().toISOString(),
+    });
+    return Promise.resolve();
+  }
 }

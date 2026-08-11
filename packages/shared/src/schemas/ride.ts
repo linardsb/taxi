@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   ASSIGNMENT_SOURCES,
   BOOKABLE_PAYMENT_METHODS,
+  BOOKING_CHANNELS,
   OFFER_STATUSES,
   PAYMENT_METHOD_TYPES,
   PRICING_MODELS,
@@ -16,6 +17,7 @@ import {
 } from '../money';
 import { RIDE_STATUSES } from '../ride-state-machine';
 import { addressPointSchema } from './geo';
+import { trackingTokenSchema } from './tracking';
 
 export const rideOptionsSchema = z.object({
   childSeat: z.boolean().default(false),
@@ -209,6 +211,17 @@ export const rideSchema = z.object({
   assignment: rideAssignmentSchema.nullable().default(null),
   /** Written at completion (#11); null until then. */
   split: fareSplitSchema.nullable().default(null),
+  /**
+   * How the ride was booked (#63). Defaults `'app'` so pre-#63 ride objects
+   * still parse; #19's dispatcher controller is the only writer of `'phone'`.
+   */
+  bookingChannel: z.enum(BOOKING_CHANNELS).default('app'),
+  /**
+   * Unguessable handle for the no-login tracking page, minted at creation
+   * (#63; #17's share-trip reuses it). Nullable because legacy rows never got
+   * one — those rides are simply untrackable, by design.
+   */
+  trackingToken: trackingTokenSchema.nullable().default(null),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });

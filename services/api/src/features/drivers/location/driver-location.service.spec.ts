@@ -60,7 +60,7 @@ describe('DriverLocationService', () => {
 
     await service.ingest(DRIVER_ID, ping());
 
-    expect(store.positionOf(CITY, DRIVER_ID)?.location).toEqual(
+    expect((await store.positionOf(CITY, DRIVER_ID))?.location).toEqual(
       CONTRACT_CENTRE,
     );
     expect(emitToDispatch).toHaveBeenCalledTimes(1);
@@ -107,7 +107,7 @@ describe('DriverLocationService', () => {
       DriverLocationEvent,
     ];
     expect(payload.at).not.toBe(clientAt);
-    expect(store.positionOf(CITY, DRIVER_ID)!.atMs).toBeGreaterThan(
+    expect((await store.positionOf(CITY, DRIVER_ID))!.atMs).toBeGreaterThan(
       Date.parse(clientAt),
     );
   });

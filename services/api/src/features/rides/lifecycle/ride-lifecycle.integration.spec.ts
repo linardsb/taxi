@@ -28,8 +28,9 @@ import { DispatchService } from '../../dispatch';
 
 /**
  * `+371260` is this spec file's E.164 range — see phoneFor(). `+371210` (auth),
- * `+371220` (drivers), `+371230` (driver-location gateway), `+371240` (rides)
- * and `+371250` (dispatch) are taken, and `users.phone` is unique across a run
+ * `+371220` (drivers), `+371230` (driver-location gateway), `+371240` (rides),
+ * `+371250` (dispatch), `+371270` (payments) and `+371280`
+ * (tracking/notifications) are taken, and `users.phone` is unique across a run
  * that never resets the database, so a collision reuses another file's user —
  * and its ROLE, which surfaces as a 403 naming nothing.
  */

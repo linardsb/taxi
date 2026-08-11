@@ -1,5 +1,6 @@
 import { InvalidRideTransitionError, type RideStatus } from '@taxi/shared';
 import type { Db } from '@taxi/db';
+import type { RideNotificationsService } from '../notifications';
 import type { RealtimeService } from '../realtime';
 import { RideTransitionService, type DbTx } from './ride-transition.service';
 
@@ -43,9 +44,22 @@ function build(rows: unknown[] = [rideRow('offered')]) {
   const emitToRide = jest.fn();
   const realtime = { emitToRide } as unknown as RealtimeService;
 
-  const service = new RideTransitionService(chain as unknown as Db, realtime);
+  const onStatus = jest.fn().mockResolvedValue(undefined);
+  const notifications = { onStatus } as unknown as RideNotificationsService;
 
-  return { service, emitToRide, touched, tx: chain as unknown as DbTx };
+  const service = new RideTransitionService(
+    chain as unknown as Db,
+    realtime,
+    notifications,
+  );
+
+  return {
+    service,
+    emitToRide,
+    touched,
+    onStatus,
+    tx: chain as unknown as DbTx,
+  };
 }
 
 describe('RideTransitionService', () => {

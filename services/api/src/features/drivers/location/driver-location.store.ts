@@ -48,4 +48,16 @@ export interface DriverLocationStore {
     centre: LatLng,
     opts: { radiusMeters: number; limit: number; freshSinceMs: number },
   ): Promise<NearbyDriver[]>;
+
+  /**
+   * One driver's last recorded position, or null when none is recorded.
+   * NO freshness filter, deliberately — the tracking page (#63) shows a stale
+   * position with its timestamp rather than nothing, so the caller gets `atMs`
+   * and decides. An explicit `markOffline` still drops the position, so an
+   * offline driver reads null.
+   */
+  positionOf(
+    cityId: string,
+    driverId: string,
+  ): Promise<{ location: LatLng; atMs: number } | null>;
 }

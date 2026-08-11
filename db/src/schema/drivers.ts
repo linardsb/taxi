@@ -25,4 +25,6 @@ export const drivers = pgTable('drivers', {
   balanceCents: integer('balance_cents').notNull().default(0),
   /** Per-driver override, e.g. the S6-7 0%-pilot; null = platform base (`resolveCommissionPct`). */
   commissionPctOverride: doublePrecision('commission_pct_override'),
+  /** Shown on the tracking page (#63); upload pipeline is #20's — null renders a placeholder. */
+  photoUrl: text('photo_url'),
 });

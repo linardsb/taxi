@@ -176,6 +176,41 @@ export class RedisDriverLocationStore
     return nearby;
   }
 
+  async positionOf(
+    cityId: string,
+    driverId: string,
+  ): Promise<{ location: LatLng; atMs: number } | null> {
+    const replies = await this.redis
+      .pipeline()
+      .geopos(geoKey(cityId), driverId)
+      .zscore(seenKey(cityId), driverId)
+      .exec();
+
+    if (!replies)
+      throw new Error('driver-location: redis pipeline returned no replies');
+    const [posReply, seenReply] = replies;
+    // Surface a command error, same rule as findNearby: a silent null here
+    // reads to the tracking page as "driver has no position".
+    if (posReply?.[0]) throw posReply[0];
+    if (seenReply?.[0]) throw seenReply[0];
+
+    // GEOPOS → [[lng, lat] | null] per queried member; ZSCORE → string | null.
+    // Validated rather than cast (the asGeoSearchRow rule): a malformed reply
+    // is null, never a position at {NaN, NaN}.
+    const entries = Array.isArray(posReply?.[1])
+      ? (posReply[1] as unknown[])
+      : [];
+    const coord = entries[0];
+    if (!Array.isArray(coord) || coord.length < 2) return null;
+    const [lng, lat] = coord as unknown[];
+    if (!isNumeric(lng) || !isNumeric(lat) || !isNumeric(seenReply?.[1]))
+      return null;
+    return {
+      location: { lat: Number(lat), lng: Number(lng) },
+      atMs: Number(seenReply[1]),
+    };
+  }
+
   /**
    * `quit()` is the graceful close, but it rejects when Redis is unreachable
    * (restart, network blip). Letting that escape would abort the rest of the

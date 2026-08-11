@@ -77,6 +77,12 @@ export const envSchema = z
         message:
           'STRIPE_SECRET_KEY must be a test-mode key (sk_test_…): Stripe stays in test mode until the SIA exists.',
       }),
+    /**
+     * Where the SMS tracking links point (#63) — the dispatch web app's
+     * public origin, which serves `/t/:token`. The default is its dev origin
+     * (first in the seeded `CORS_ORIGINS`); a deploy sets the real domain.
+     */
+    PUBLIC_TRACKING_BASE_URL: z.string().url().default('http://localhost:3000'),
     CORS_ORIGINS: z
       .string()
       .default('http://localhost:3000,http://localhost:3002')
@@ -109,6 +115,19 @@ export const envSchema = z
           message: `${key} must be at least ${MIN_PRODUCTION_SECRET_LENGTH} characters in production (got ${value.length}): openssl rand -hex 32`,
         });
       }
+    }
+
+    // Unreachable while the stub SMS factory refuses production boot — but the
+    // moment a real provider lands, a deploy that forgot this var would text
+    // `http://localhost:3000/t/…` links to real riders.
+    const trackingHost = new URL(env.PUBLIC_TRACKING_BASE_URL).hostname;
+    if (['localhost', '127.0.0.1', '::1', '[::1]'].includes(trackingHost)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBLIC_TRACKING_BASE_URL'],
+        message:
+          'PUBLIC_TRACKING_BASE_URL is a localhost origin — SMS tracking links point here, so production needs the deployed dispatch-app domain.',
+      });
     }
 
     // Two secrets with one value is the coupling OTP_PEPPER exists to break —

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DISPATCH_MODES } from '../enums';
 import { commissionPctSchema, nonNegativeCentsSchema } from '../money';
+import { phoneSchema } from './user';
 
 /**
  * The per-city knobs the platform runs on. One row per city; #6 owns the table
@@ -39,6 +40,12 @@ export const platformConfigSchema = z.object({
   offerTimeoutSeconds: z.number().int().positive().default(20),
   /** Unclaimed-order alert threshold to Dina's board (S9-4). */
   unclaimedAlertSeconds: z.number().int().positive().default(60),
+  /**
+   * The number the tracking page's "call dispatch" button dials (#63).
+   * CONFIG, NOT CONSTANT — no zod default, seeded by the db workspace,
+   * admin-editable via #20.
+   */
+  dispatchPhone: phoneSchema,
   updatedAt: z.coerce.date(),
 });
 export type PlatformConfig = z.infer<typeof platformConfigSchema>;

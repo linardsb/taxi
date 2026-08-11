@@ -88,3 +88,13 @@ export type AssignmentSource = (typeof ASSIGNMENT_SOURCES)[number];
 /** Which rule produced a commission percentage. A const array so #27 adds "loyalty_tier" in one place. */
 export const COMMISSION_SOURCES = ['platform_base', 'driver_override'] as const;
 export type CommissionSource = (typeof COMMISSION_SOURCES)[number];
+
+/**
+ * How the ride was BOOKED — not to be confused with `ASSIGNMENT_SOURCES`,
+ * which records how a ride got its driver. Drives the SMS policy (#63):
+ * phone bookings get the tracking link because the rider has no app to watch.
+ * The rider app always writes `app`; #19's dispatcher phone-order controller
+ * writes `phone`.
+ */
+export const BOOKING_CHANNELS = ['app', 'phone'] as const;
+export type BookingChannel = (typeof BOOKING_CHANNELS)[number];

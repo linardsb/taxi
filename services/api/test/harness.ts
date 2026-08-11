@@ -154,12 +154,11 @@ export class InMemoryDriverLocationStore implements DriverLocationStore {
     return this.online.get(cityId)?.has(driverId) ?? false;
   }
 
-  /** Test-only assertion helper. */
   positionOf(
     cityId: string,
     driverId: string,
-  ): { location: LatLng; atMs: number } | undefined {
-    return this.positions.get(cityId)?.get(driverId);
+  ): Promise<{ location: LatLng; atMs: number } | null> {
+    return Promise.resolve(this.positions.get(cityId)?.get(driverId) ?? null);
   }
 
   markOnline(cityId: string, driverId: string): Promise<void> {
@@ -216,14 +215,27 @@ export class InMemoryDriverLocationStore implements DriverLocationStore {
 /** Captures what the stub would have texted, so tests can read the code. */
 export class RecordingSmsProvider implements SmsProvider {
   readonly sent: { phone: string; code: string }[] = [];
+  /** Ride-status SMS (#63) — separate from OTPs so counts stay assertable. */
+  readonly sentMessages: { phone: string; body: string }[] = [];
 
   sendOtp(phoneE164: string, code: string): Promise<void> {
     this.sent.push({ phone: phoneE164, code });
     return Promise.resolve();
   }
 
+  send(phoneE164: string, body: string): Promise<void> {
+    this.sentMessages.push({ phone: phoneE164, body });
+    return Promise.resolve();
+  }
+
   lastCodeFor(phone: string): string | undefined {
     return this.sent.filter((s) => s.phone === phone).at(-1)?.code;
+  }
+
+  messagesFor(phone: string): string[] {
+    return this.sentMessages
+      .filter((m) => m.phone === phone)
+      .map((m) => m.body);
   }
 }
 
