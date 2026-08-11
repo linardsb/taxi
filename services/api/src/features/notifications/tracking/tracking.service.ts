@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import {
   ACTIVE_DRIVER_RIDE_STATUSES,
-  isTerminal,
   trackingTokenSchema,
   trackingViewSchema,
   type RideStatus,
@@ -67,8 +66,12 @@ export class TrackingService {
       throw new NotFoundException('tracking_token_unknown');
     }
 
+    // PAGE-terminal, not machine-terminal: `completed` still has `→ settled`
+    // ahead of it, but the page is done either way — gating on isTerminal()
+    // kept a completed-but-never-settled ride's link alive forever.
+    const state = TRACKING_STATE_BY_STATUS[ride.status];
     if (
-      isTerminal(ride.status) &&
+      (state === 'completed' || state === 'cancelled') &&
       Date.now() - ride.updatedAt.getTime() >
         TRACKING_TERMINAL_GRACE_SECONDS * 1000
     ) {
@@ -124,7 +127,7 @@ export class TrackingService {
     // Parsed through the wire schema so a `Date` can never leak onto the
     // wire — the same discipline as RT_EVENT_SCHEMAS.
     return trackingViewSchema.parse({
-      state: TRACKING_STATE_BY_STATUS[ride.status],
+      state,
       driverName,
       driverPhotoUrl,
       vehiclePlate,

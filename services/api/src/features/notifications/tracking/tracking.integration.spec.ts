@@ -359,6 +359,33 @@ describe('tracking + ride SMS (integration)', () => {
     await track(token).expect(410);
   });
 
+  it('a completed-but-never-settled ride expires too — page-terminal, not machine-terminal (edge — review L1)', async () => {
+    const r = await rider(54);
+    const ride = await bookByPhone(r.id);
+    const token = ride.trackingToken!;
+
+    // `completed` is NOT machine-terminal (`completed → settled` remains), so
+    // an isTerminal() gate kept this link alive forever when the settle call
+    // never came. Same trigger dance as the test above.
+    await ctx.db.execute(
+      sql`ALTER TABLE rides DISABLE TRIGGER rides_set_updated_at`,
+    );
+    try {
+      await ctx.db.execute(sql`
+        UPDATE rides
+        SET status = 'completed',
+            updated_at = now() - interval '2 days'
+        WHERE id = ${ride.id}
+      `);
+    } finally {
+      await ctx.db.execute(
+        sql`ALTER TABLE rides ENABLE TRIGGER rides_set_updated_at`,
+      );
+    }
+
+    await track(token).expect(410);
+  });
+
   it('a FRESH terminal ride is still viewable — grace, not instant death (edge)', async () => {
     const r = await rider(53);
     const ride = await bookByPhone(r.id);

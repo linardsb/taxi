@@ -36,6 +36,7 @@ const lv = {
   'page.position_updated': 'Atrašanās vieta atjaunota {time}',
   'page.connection_lost':
     'Savienojums zudis. Rādām pēdējos zināmos datus ({time}).',
+  'page.retry': 'Mēģināt vēlreiz',
 } as const;
 
 export type MessageKey = keyof typeof lv;
@@ -66,6 +67,7 @@ export const MESSAGES = {
     'page.position_updated': 'Местоположение обновлено {time}',
     'page.connection_lost':
       'Связь потеряна. Показаны последние данные ({time}).',
+    'page.retry': 'Попробовать ещё раз',
   },
   en: {
     'sms.booking_confirmed': 'Your taxi is booked.',
@@ -90,6 +92,7 @@ export const MESSAGES = {
     'page.position_updated': 'Location updated {time}',
     'page.connection_lost':
       'Connection lost. Showing last known data ({time}).',
+    'page.retry': 'Try again',
   },
 } as const satisfies Record<Language, Record<MessageKey, string>>;
 

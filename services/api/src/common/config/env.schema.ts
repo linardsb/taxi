@@ -117,6 +117,19 @@ export const envSchema = z
       }
     }
 
+    // Unreachable while the stub SMS factory refuses production boot — but the
+    // moment a real provider lands, a deploy that forgot this var would text
+    // `http://localhost:3000/t/…` links to real riders.
+    const trackingHost = new URL(env.PUBLIC_TRACKING_BASE_URL).hostname;
+    if (['localhost', '127.0.0.1', '::1', '[::1]'].includes(trackingHost)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBLIC_TRACKING_BASE_URL'],
+        message:
+          'PUBLIC_TRACKING_BASE_URL is a localhost origin — SMS tracking links point here, so production needs the deployed dispatch-app domain.',
+      });
+    }
+
     // Two secrets with one value is the coupling OTP_PEPPER exists to break —
     // it would make a JWT rotation a silent sign-in outage again.
     if (env.JWT_SECRET === env.OTP_PEPPER) {

@@ -1,3 +1,4 @@
+import { trackingTokenSchema } from '@taxi/shared';
 import type { NextRequest } from 'next/server';
 
 /**
@@ -13,6 +14,16 @@ export async function GET(
   const { token } = await ctx.params;
   const apiUrl = process.env.API_URL ?? 'http://localhost:3001';
 
+  // Shape-check before the API hop: a junk token (`/t/%2E%2E/data` decodes to
+  // `..`, which encodeURIComponent leaves intact and URL-normalization folds
+  // into the API root) answers 404 locally instead of costing a fetch.
+  if (!trackingTokenSchema.safeParse(token).success) {
+    return Response.json(
+      { message: 'tracking_token_unknown' },
+      { status: 404 },
+    );
+  }
+
   try {
     const res = await fetch(
       `${apiUrl}/track/${encodeURIComponent(token)}`,
@@ -20,7 +31,10 @@ export async function GET(
     );
     return new Response(await res.text(), {
       status: res.status,
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+      },
     });
   } catch {
     // API unreachable — the island renders its offline banner off any non-OK.

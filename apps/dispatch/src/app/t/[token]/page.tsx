@@ -114,7 +114,7 @@ export default async function TrackingPage({
             fontSize: 'var(--font-size-md)',
           }}
         >
-          ↻
+          {formatMessage(lang, 'page.retry')}
         </a>
       </main>
     );

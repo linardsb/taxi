@@ -4,6 +4,7 @@ import {
   formatMessage,
   trackingViewSchema,
   type Language,
+  type TrackingPageState,
   type TrackingView,
 } from '@taxi/shared';
 import 'leaflet/dist/leaflet.css';
@@ -12,7 +13,11 @@ import { useEffect, useRef, useState } from 'react';
 import { statusLine } from './states';
 
 const POLL_MS = 5_000;
-const TERMINAL = new Set(['completed', 'cancelled', 'expired']);
+const TERMINAL = new Set<TrackingPageState>([
+  'completed',
+  'cancelled',
+  'expired',
+]);
 
 /**
  * The live half of the tracking page: status line, driver card, map and the
@@ -105,10 +110,11 @@ export function TrackingLive({
     );
   }
 
-  const updatedTime = (lastSeenAt ?? new Date(view.updatedAt)).toLocaleTimeString(
-    lang === 'lv' ? 'lv-LV' : lang === 'ru' ? 'ru-RU' : 'en-GB',
-    { hour: '2-digit', minute: '2-digit' },
-  );
+  const timeOf = (date: Date) =>
+    date.toLocaleTimeString(
+      lang === 'lv' ? 'lv-LV' : lang === 'ru' ? 'ru-RU' : 'en-GB',
+      { hour: '2-digit', minute: '2-digit' },
+    );
 
   return (
     <div style={{ display: 'grid', gap: 'var(--spacing-md)' }}>
@@ -133,7 +139,9 @@ export function TrackingLive({
             fontSize: 'var(--font-size-sm)',
           }}
         >
-          {formatMessage(lang, 'page.connection_lost', { time: updatedTime })}
+          {formatMessage(lang, 'page.connection_lost', {
+            time: timeOf(lastSeenAt ?? new Date(view.updatedAt)),
+          })}
         </p>
       )}
 
@@ -236,8 +244,11 @@ export function TrackingLive({
               color: 'var(--color-fg-muted)',
             }}
           >
+            {/* The position's OWN recorded time (positionOf contract: the
+                caller stamps staleness honestly) — NOT the poll clock, which
+                would relabel a silent GPS as fresh every 5 s. */}
             {formatMessage(lang, 'page.position_updated', {
-              time: updatedTime,
+              time: timeOf(new Date(view.position.at)),
             })}
           </p>
         </>
