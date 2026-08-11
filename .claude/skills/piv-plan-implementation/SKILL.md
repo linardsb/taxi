@@ -385,6 +385,22 @@ Execute every command to ensure zero regressions and 100% feature correctness.
 
 <Feature-specific manual testing steps - API calls, UI testing, etc.>
 
+**Every step here must be PERFORMABLE with what this ticket ships and what the seed provides.**
+Write each step, then ask: can a human actually reach this state? Two ways it fails, both seen:
+
+- The step reads a signal the ticket does not emit ("poll twice, the logs must show no second
+  route call" — when the slice has no logger at all).
+- The step needs live state the seed cannot produce — a tracking token, an accepted ride, a
+  driver position. Tokens are minted by the booking flow, never by the seed, so "open the
+  tracking page" silently means the full OTP → book → dispatch → accept → GPS-ping chain.
+
+If a step needs state the seed lacks, the ticket must **ship the means to produce it** — a dev
+script, a seed row, a dev-only route — or the step must be rewritten against state that exists.
+Name that means as a task in this plan, not as an aside.
+
+A step nobody can run is not validation deferred; it is validation that silently never happens.
+It also tends to be the ticket's own success condition, because that is the interesting one.
+
 ### Level 5: Additional Validation (Optional)
 
 <MCP servers or additional CLI tools if available>

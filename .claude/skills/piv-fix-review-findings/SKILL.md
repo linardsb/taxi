@@ -56,7 +56,26 @@ sprawling one.
 For each:
 1. Explain what was wrong.
 2. Make the fix.
-3. Create and run a test that proves it.
+3. Create and run a test that proves it. Where you can, **run the new test against the unfixed
+   code and watch it fail** — that is the only thing separating a regression test from a passing
+   decoration.
+
+### When a fix changes a NUMBER or a GUARANTEE, chase its copies
+
+A figure gets written once and quoted four times. Fixing the original and stopping leaves the
+copies stating the old, now-false claim — and the repo rule ("a number or a guarantee in a
+comment, plan or PR body is a claim, not decoration") is broken by the copies just as much.
+
+Grep for the **value**, not the topic word. The stale copy usually does not contain the word you
+fixed — correcting a "429" claim leaves a stale *viewer count* and a stale *test total*, neither
+of which contains "429". Check:
+
+- the docblocks and constants around the fix
+- `.claude/plans/<feature>.md` — including its task list, ACs and manual-validation steps, not
+  just the one paragraph you already found
+- `.claude/reports/<feature>-report.md` — gate figures go stale the moment a test is added
+- **the PR body** — no working-tree grep can reach it, and it is the first thing the next
+  reviewer reads and the number they will re-run the gate against
 
 ## 3. Validate
 
