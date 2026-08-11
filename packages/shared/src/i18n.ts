@@ -19,6 +19,8 @@ const lv = {
   'sms.driver_assigned':
     'Jūsu šoferis {driver}, {plate}, būs pēc ~{eta} min. Sekojiet līdzi: {link}',
   'sms.driver_arrived': 'Jūsu taksometrs ({plate}) ir klāt.',
+  // Deliberately diacritic-free: GSM-7 keeps the OTP at 1 billed segment.
+  'sms.otp_code': 'Sakta Cab kods: {code}',
   'page.title': 'Jūsu brauciens',
   'page.searching': 'Meklējam jums šoferi…',
   'page.assigned': 'Šoferis ir atrasts',
@@ -50,6 +52,7 @@ export const MESSAGES = {
     'sms.driver_assigned':
       'Ваш водитель {driver}, {plate}, будет через ~{eta} мин. Следите здесь: {link}',
     'sms.driver_arrived': 'Ваше такси ({plate}) на месте.',
+    'sms.otp_code': 'Код Sakta Cab: {code}',
     'page.title': 'Ваша поездка',
     'page.searching': 'Ищем вам водителя…',
     'page.assigned': 'Водитель найден',
@@ -75,6 +78,7 @@ export const MESSAGES = {
     'sms.driver_assigned':
       'Your driver {driver}, {plate}, is ~{eta} min away. Track it: {link}',
     'sms.driver_arrived': 'Your taxi ({plate}) has arrived.',
+    'sms.otp_code': 'Sakta Cab code: {code}',
     'page.title': 'Your ride',
     'page.searching': 'Looking for your driver…',
     'page.assigned': 'Driver assigned',
