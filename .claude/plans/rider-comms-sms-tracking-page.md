@@ -66,6 +66,7 @@ Phone-booked riders today have zero visibility after hanging up. The rider app i
 - #19 — dispatcher phone-order controller sets `bookingChannel='phone'`; SMS then flows with zero notifications-slice changes
 - #20 — admin CRUD for `drivers.photo_url` + `platform_config.dispatch_phone`
 - (future) real SMS provider ticket — swaps the stub inside the factory only
+- #86 → .claude/plans/api-ride-vehicle-stamp.md — resolves OPEN QUESTIONS #4: the ride now records its vehicle at assignment
 
 ---
 

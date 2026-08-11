@@ -13,10 +13,12 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
   createTestApp,
+  insertUser,
   phoneFor,
   type TestApp,
 } from '../../../../test/harness';
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
+import { AuthTokenService } from '../../auth';
 import { DispatchService } from '../../dispatch';
 import { RidesService } from '../../rides';
 
@@ -51,6 +53,7 @@ describe('tracking + ride SMS (integration)', () => {
   let http: ReturnType<typeof request>;
   let ridesService: RidesService;
   let dispatch: DispatchService;
+  let tokens: AuthTokenService;
   let cityId: string;
 
   const createdRides: string[] = [];
@@ -61,6 +64,7 @@ describe('tracking + ride SMS (integration)', () => {
     http = request(ctx.app.getHttpServer());
     ridesService = ctx.app.get(RidesService);
     dispatch = ctx.app.get(DispatchService);
+    tokens = ctx.app.get(AuthTokenService);
     cityId = ctx.app.get<Env>(APP_ENV).DEFAULT_CITY_ID;
   });
 
@@ -153,11 +157,11 @@ describe('tracking + ride SMS (integration)', () => {
   }
 
   /** Phone bookings have no wire path until #19 — the service layer IS the entry. */
-  async function bookByPhone(riderId: string) {
+  async function bookByPhone(riderId: string, body: RideRequestBody = BODY) {
     const { ride } = await ridesService.request(
       riderId,
       randomUUID(),
-      BODY,
+      body,
       'phone',
     );
     createdRides.push(ride.id);
@@ -403,5 +407,135 @@ describe('tracking + ride SMS (integration)', () => {
     await track('AAAAAAAAAAAAAAAAAAAAAA').expect(404);
     await track('not-a-token').expect(404);
     await track(randomUUID()).expect(404);
+  });
+
+  it('multi-vehicle driver: the stamped category-matched car is shown, not fleet[0] (expected — #86 AC #1, #2)', async () => {
+    const d = await onlineDriver(3, {
+      lat: CENTRE_PICKUP.location.lat + 0.001,
+      lng: CENTRE_PICKUP.location.lng,
+    });
+    // A second car in ANOTHER category — the old read-time heuristic would
+    // pick whichever fleet row matched at read time; the stamp freezes this one.
+    const limoRes = await http
+      .post('/drivers/me/vehicles')
+      .set('authorization', d.auth)
+      .send({
+        plate: nextPlate(),
+        make: 'Mercedes',
+        model: 'S-Class',
+        year: 2021,
+        category: 'limo',
+        passengerSeats: 4,
+        hasChildSeat: false,
+      })
+      .expect(201);
+    const limo = limoRes.body as { id: string; plate: string };
+
+    const r = await rider(55);
+    const ride = await bookByPhone(r.id, {
+      ...BODY,
+      category: 'limo',
+    });
+    const token = ride.trackingToken!;
+
+    await acceptBy(ride.id, d.auth);
+
+    // AC #1: the ride row records the category-matched car at assignment.
+    const [row] = await ctx.db
+      .select()
+      .from(rides)
+      .where(eq(rides.id, ride.id));
+    expect(row!.vehicleId).toBe(limo.id);
+
+    // AC #2: page and SMS read the stamp — the limo plate, not the standard one.
+    const assigned = await view(token);
+    expect(assigned.vehiclePlate).toBe(limo.plate);
+    await waitForSms(p(55), 2);
+    const sms = smsTo(p(55))[1]!;
+    expect(sms).toContain(limo.plate);
+    expect(sms).not.toContain(d.plate);
+  });
+
+  it('force-assigning a vehicle-less driver stamps NULL and blocks nothing (edge — #86 AC #1)', async () => {
+    // A driver with a `drivers` row but NO vehicle: force-assign's
+    // findMatchAttributes 404s without the row, so GET /drivers/me creates it.
+    const session = await signIn(p(4), 'driver');
+    const auth = `Bearer ${session.accessToken}`;
+    const driverId = session.user.id;
+    await http.get('/drivers/me').set('authorization', auth).expect(200);
+    await ctx.db
+      .update(users)
+      .set({ displayName: 'Jānis Bērziņš' })
+      .where(eq(users.id, driverId));
+    usedDrivers.push(driverId);
+
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(95),
+      role: 'dispatcher',
+    });
+    const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const r = await rider(56);
+    const ride = await bookByPhone(r.id);
+
+    await http
+      .post(`/dispatch/rides/${ride.id}/assign`)
+      .set('authorization', dispatcherAuth)
+      .send({ driverId })
+      .expect(201);
+
+    const [row] = await ctx.db
+      .select()
+      .from(rides)
+      .where(eq(rides.id, ride.id));
+    expect(row!.vehicleId).toBeNull();
+
+    const assigned = await view(ride.trackingToken!);
+    expect(assigned.state).toBe('assigned');
+    expect(assigned.driverName).toBe('Jānis');
+    expect(assigned.vehiclePlate).toBeNull();
+  });
+
+  it('vehicle deleted after the ride: SET NULL, the page never 500s and never resurrects a plate (failure — #86 AC #3)', async () => {
+    const d = await onlineDriver(5, {
+      lat: CENTRE_PICKUP.location.lat + 0.001,
+      lng: CENTRE_PICKUP.location.lng,
+    });
+    const r = await rider(57);
+    const ride = await bookByPhone(r.id);
+    const token = ride.trackingToken!;
+
+    await acceptBy(ride.id, d.auth);
+    const [stamped] = await ctx.db
+      .select()
+      .from(rides)
+      .where(eq(rides.id, ride.id));
+    expect(stamped!.vehicleId).not.toBeNull();
+
+    for (const step of ['arriving', 'arrived', 'start', 'complete'] as const) {
+      await http
+        .post(`/rides/${ride.id}/${step}`)
+        .set('authorization', d.auth)
+        .expect(201);
+    }
+
+    // `complete` released the driver, so the `on_ride` guard passes — and the
+    // FK must not turn a legitimate delete into a 500.
+    await http
+      .delete(`/drivers/me/vehicles/${stamped!.vehicleId}`)
+      .set('authorization', d.auth)
+      .expect(204);
+
+    const [after] = await ctx.db
+      .select()
+      .from(rides)
+      .where(eq(rides.id, ride.id));
+    expect(after!.vehicleId).toBeNull(); // ON DELETE SET NULL fired
+
+    // Within the terminal grace the receipt still renders — plate null, not
+    // re-derived from the (now empty) fleet as the old heuristic would try.
+    const receipt = await view(token);
+    expect(receipt.state).toBe('completed');
+    expect(receipt.vehiclePlate).toBeNull();
   });
 });
