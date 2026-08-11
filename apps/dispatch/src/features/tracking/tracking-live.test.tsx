@@ -167,6 +167,32 @@ describe('TrackingLive', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  it('clamps an over-long retryAfterSeconds to the window (edge — #100 AC #2)', async () => {
+    // The value crosses a network boundary, and this failure is the opposite
+    // of the unreadable-body one: unbounded, a bad number freezes a LIVE page
+    // for as long as it says. A day here would leave a rider watching a "wait
+    // a moment" banner over a day-old position while the ride happens.
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({ message: 'too_many_requests', retryAfterSeconds: 86_400 }),
+    } as never);
+
+    render(<TrackingLive token={TOKEN} lang="lv" initial={baseView} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+    // Clamped to the 60 s window: past it the page recovers on its own.
+    vi.mocked(fetch).mockResolvedValue(okJson(baseView) as never);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('falls back to a full window when the 429 body is unreadable (edge — #100)', async () => {
     // A truncated or non-JSON body must not compute a retry instant in the
     // past. Guessing LOW would defeat the throttle the back-off exists to obey.

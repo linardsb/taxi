@@ -20,20 +20,32 @@ const TERMINAL = new Set<TrackingPageState>([
 ]);
 
 /**
- * How long to stand down when the API answers 429 and its body is unreadable.
- * The server sends `retryAfterSeconds` (the key's remaining TTL, floored at 1);
- * this is only for a malformed or truncated body, and it is deliberately the
- * full window rather than a token retry — the throttle exists to stop spend,
- * so guessing LOW would defeat it.
+ * `TRACKING_VIEW_WINDOW_SECONDS` as the client sees it — the longest the API
+ * can legitimately ask this page to wait, since `retryAfterSeconds` is that
+ * key's remaining TTL. Not imported: it lives in `services/api`'s notifications
+ * slice, and a constant is not a cross-surface contract worth moving into
+ * `@taxi/shared` for one ceiling. If the server window ever grows, this bounds
+ * the page to a stale-by-60 s view rather than breaking it.
+ *
+ * It serves as BOTH the ceiling and the fallback, and deliberately so — see
+ * `retryAfterSecondsFrom`.
  */
-const THROTTLE_FALLBACK_SECONDS = 60;
+const THROTTLE_WINDOW_SECONDS = 60;
 
 /**
  * `{ message, retryAfterSeconds }` is the API's 429 shape
  * (`tracking.service.ts`), but this is a network boundary like any other, so
- * the number is checked rather than trusted. A non-finite or negative value
- * would otherwise compute a retry instant in the past and poll straight
- * through the back-off.
+ * the number is checked rather than trusted. Two ways it can go wrong, and
+ * they fail in opposite directions:
+ *
+ * - **Too low or absent** — a non-finite, negative or missing value computes a
+ *   retry instant in the past and polls straight through the back-off. Falls
+ *   back to the full window: the throttle exists to stop spend, so guessing
+ *   LOW would defeat it.
+ * - **Too high** — an unbounded value freezes a LIVE tracking page for as long
+ *   as it says. `86400` would leave a rider watching a "wait a moment" banner
+ *   over a day-old position while the ride happens without them. Clamped, so
+ *   the worst case is one stale window and then a retry.
  */
 function retryAfterSecondsFrom(body: unknown): number {
   const raw =
@@ -41,8 +53,8 @@ function retryAfterSecondsFrom(body: unknown): number {
       ? (body as { retryAfterSeconds: unknown }).retryAfterSeconds
       : undefined;
   return typeof raw === 'number' && Number.isFinite(raw) && raw > 0
-    ? raw
-    : THROTTLE_FALLBACK_SECONDS;
+    ? Math.min(raw, THROTTLE_WINDOW_SECONDS)
+    : THROTTLE_WINDOW_SECONDS;
 }
 
 /**
