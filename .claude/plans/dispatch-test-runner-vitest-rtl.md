@@ -209,7 +209,7 @@ that passed.
   explicit `include`).
 - `packages/shared/package.json` (scripts block) — Why: `"test": "vitest run"` is the exact script string to
   copy; `vitest ^3.0.0` is the version line to match.
-- `packages/shared/src/i18n.ts` (lines 104-112) — Why: `formatMessage(lang, key, params)` signature. Note the
+- `packages/shared/src/i18n.ts` (lines 108-116) — Why: `formatMessage(lang, key, params)` signature. Note the
   catalog is `satisfies Record<Language, Record<MessageKey, string>>` — **totality is already compiler-pinned**,
   so do NOT write a "every key exists" test (it would be redundant with the type system).
 - `packages/shared/src/schemas/tracking.ts` (lines 28-64) — Why: `TRACKING_PAGE_STATES` and
@@ -1241,3 +1241,15 @@ though it is now expected to pass on the first try.
      load-bearing (proved by removing it), and both mutation checks failing exactly one test each. The
      timezone rule became decisive rather than theoretical: `09:00Z` renders as `10:00` locally
      (Europe/Riga), so a hardcoded literal would have passed CI and failed on the dev machine.
+
+- **2026-08-11 — drift-check against `eb1fa3f` (post-merge of PRs #93, #89, #90); plan holds, confidence
+  unchanged.** Three PRs merged after the spike commit `80bd98c`. Re-verified every load-bearing fact at the
+  new HEAD: `apps/dispatch` still has no `test` script; the react 19.2.3 (rider/driver) vs 19.2.4
+  (dispatch/admin) skew persists, so **Task 0 is still required**; root `package.json` still has no
+  `pnpm.overrides`; `turbo.json`'s `test` task and `ci.yml` are untouched; Node is v20.20.2. Nothing under
+  `apps/dispatch/`, `packages/shared/src/schemas/`, or the four files under test changed. The only drift in a
+  referenced file: PR #89 added an `sms.otp_code` key to all three catalogs in `packages/shared/src/i18n.ts`
+  (+4 lines), moving `formatMessage` from line 104 to 108 — the CONTEXT REFERENCES pointer was updated
+  inline; no `page.*` key or `TRACKING_PAGE_STATES` mapping changed, so no test in the plan is affected.
+  Note the spike's verified line numbers for `tracking-map.tsx` / `page.tsx` are still exact (those files
+  did not change).

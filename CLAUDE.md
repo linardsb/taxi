@@ -45,6 +45,8 @@ pnpm --filter @taxi/db generate   # drizzle-kit: migration from schema changes (
 
 Redis-backed suites are **opt-in**: without `REDIS_TEST_URL` they `describe.skip`, so a green gate can be five tests short. CI sets it; set it locally to match your `REDIS_PORT`.
 
+**Concurrent Claude sessions share this checkout.** Check `git reflog -8` before any branch move; if another session is live, do your work in a `git worktree` from the start — mid-flight branch collisions cost ref surgery. In a worktree, run anything DB-touching (including the gate) with `COMPOSE_PROJECT_NAME=taxi`: compose names its project after the directory, so a worktree otherwise starts a second Postgres against the occupied 5432. Integration runs are mutually destructive across sessions (global-setup drops the shared test DB) — one gate at a time.
+
 ## Hard rules
 
 - **Payment method locks at ride acceptance** — enforced by `isPaymentMethodLocked()` in `@taxi/shared`; never bypass it.
