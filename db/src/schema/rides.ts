@@ -23,6 +23,7 @@ import {
 import { drivers } from './drivers';
 import { geozones } from './geo';
 import { users } from './users';
+import { vehicles } from './vehicles';
 
 /**
  * Mirrors `rideSchema` (@taxi/shared). Rule of thumb: snapshot-of-a-contract →
@@ -41,6 +42,16 @@ export const rides = pgTable(
       .references(() => users.id),
     /** The denormalized field #6 indexes; `dispatch_audit_log` is the audit record. */
     driverId: uuid('driver_id').references(() => drivers.userId),
+    /**
+     * The car serving this ride (#86), stamped by `assignDriver` in the same
+     * UPDATE as `driver_id` — category match, else first by plate, else NULL
+     * (a force-assigned driver may own no vehicle). SET NULL on vehicle delete:
+     * vehicles are deletable (`VehiclesService.remove`), ride history must not
+     * pin them forever. Null also = pre-#86 rows and unassigned rides.
+     */
+    vehicleId: uuid('vehicle_id').references(() => vehicles.id, {
+      onDelete: 'set null',
+    }),
     /** Pickup zone — drives queue mode and Dina's district stats (S7-2). */
     geozoneId: uuid('geozone_id').references(() => geozones.id),
     /** Full `RideRequest` snapshot — audit "what was asked". */

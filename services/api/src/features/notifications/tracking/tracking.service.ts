@@ -97,7 +97,7 @@ export class TrackingService {
     if (ride.driverId) {
       const card = await this.repository.driverCard(
         ride.driverId,
-        ride.category,
+        ride.vehicleId,
       );
       driverName = card.name === null ? null : driverFirstName(card.name);
       driverPhotoUrl = card.photoUrl;

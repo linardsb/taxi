@@ -99,7 +99,7 @@ export class RideNotificationsService {
       if (!rider) return;
       const card = await this.repository.driverCard(
         details.driverId,
-        details.category,
+        details.vehicleId,
       );
       const plate = card.plate ?? '—';
 

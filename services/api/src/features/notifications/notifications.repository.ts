@@ -5,7 +5,6 @@ import {
   rideRequestSchema,
   type BookingChannel,
   type Language,
-  type RideCategory,
   type RideRequest,
   type RideStatus,
 } from '@taxi/shared';
@@ -19,9 +18,10 @@ export interface NotifiableRide {
   status: RideStatus;
   riderId: string;
   driverId: string | null;
+  /** The car stamped at assignment (#86) — null until assigned, or when the driver owned no vehicle. */
+  vehicleId: string | null;
   bookingChannel: BookingChannel;
   trackingToken: string | null;
-  category: RideCategory;
   request: RideRequest;
   updatedAt: Date;
 }
@@ -42,9 +42,9 @@ function toNotifiable(row: RideRow): NotifiableRide {
     status: row.status,
     riderId: row.riderId,
     driverId: row.driverId,
+    vehicleId: row.vehicleId,
     bookingChannel: row.bookingChannel,
     trackingToken: row.trackingToken,
-    category: row.category,
     request: rideRequestSchema.parse(row.request),
     updatedAt: row.updatedAt,
   };
@@ -93,14 +93,13 @@ export class NotificationsRepository {
   }
 
   /**
-   * Driver name/photo plus the plate the rider should match at the kerb.
-   * Plate heuristic (documented assumption, plan resolution #4): the driver's
-   * vehicle in the ride's category, else their first vehicle, else null —
-   * until a ride records its vehicle at acceptance (a dispatch-side ticket).
+   * Driver name/photo plus the plate the rider should match at the kerb —
+   * read off the vehicle stamped on the ride at assignment (#86), never
+   * re-derived from the driver's current fleet.
    */
   async driverCard(
     driverId: string,
-    category: RideCategory,
+    vehicleId: string | null,
   ): Promise<{
     name: string | null;
     photoUrl: string | null;
@@ -113,14 +112,17 @@ export class NotificationsRepository {
       .where(eq(drivers.userId, driverId))
       .limit(1);
 
-    const fleet = await this.db
-      .select({ plate: vehicles.plate, category: vehicles.category })
-      .from(vehicles)
-      .where(eq(vehicles.driverId, driverId));
-    const plate =
-      fleet.find((v) => v.category === category)?.plate ??
-      fleet[0]?.plate ??
-      null;
+    let plate: string | null = null;
+    if (vehicleId) {
+      const [vehicle] = await this.db
+        .select({ plate: vehicles.plate })
+        .from(vehicles)
+        .where(eq(vehicles.id, vehicleId))
+        .limit(1);
+      // ON DELETE SET NULL makes a miss ~impossible, but never throw here —
+      // a throw would cost the rider their SMS body, not just the plate.
+      plate = vehicle?.plate ?? null;
+    }
 
     return {
       name: profile?.displayName ?? null,

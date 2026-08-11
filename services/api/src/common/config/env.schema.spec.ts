@@ -156,3 +156,89 @@ describe('envSchema STRIPE_SECRET_KEY', () => {
     },
   );
 });
+
+describe('envSchema TWILIO_*', () => {
+  const trio = {
+    TWILIO_ACCOUNT_SID: 'AC' + 'f'.repeat(32),
+    TWILIO_AUTH_TOKEN: 'g'.repeat(32),
+    TWILIO_FROM_NUMBER: '+37120000000',
+  };
+
+  const dev = (over: Record<string, string> = {}) => ({
+    ...base,
+    NODE_ENV: 'development',
+    JWT_SECRET: STRONG_JWT,
+    ...over,
+  });
+
+  it('parses the full trio with values retained, in dev and production (expected)', () => {
+    for (const parsed of [
+      envSchema.parse(dev(trio)),
+      envSchema.parse(prod(trio)),
+    ]) {
+      expect(parsed.TWILIO_ACCOUNT_SID).toBe(trio.TWILIO_ACCOUNT_SID);
+      expect(parsed.TWILIO_AUTH_TOKEN).toBe(trio.TWILIO_AUTH_TOKEN);
+      expect(parsed.TWILIO_FROM_NUMBER).toBe(trio.TWILIO_FROM_NUMBER);
+    }
+  });
+
+  it('reads the empty strings committed to .env.example as undefined so the stub binds (edge)', () => {
+    const env = envSchema.parse(
+      dev({
+        TWILIO_ACCOUNT_SID: '',
+        TWILIO_AUTH_TOKEN: '',
+        TWILIO_FROM_NUMBER: '',
+      }),
+    );
+
+    expect(env.TWILIO_ACCOUNT_SID).toBeUndefined();
+    expect(env.TWILIO_AUTH_TOKEN).toBeUndefined();
+    expect(env.TWILIO_FROM_NUMBER).toBeUndefined();
+  });
+
+  it('refuses an Account SID without the AC prefix (failure)', () => {
+    // An API key (SK…) or the auth token pasted into the SID slot fails here,
+    // at boot, instead of as a 401 on the first send.
+    expect(() =>
+      envSchema.parse(
+        prod({ ...trio, TWILIO_ACCOUNT_SID: 'SK' + 'f'.repeat(32) }),
+      ),
+    ).toThrow(/TWILIO_ACCOUNT_SID must start with AC/);
+  });
+
+  it('refuses a partial trio, naming each missing key (failure)', () => {
+    // In EVERY environment, not just production: a partial trio in dev
+    // silently binds the stub while you think you are testing Twilio.
+    expect(() =>
+      envSchema.parse(dev({ TWILIO_ACCOUNT_SID: trio.TWILIO_ACCOUNT_SID })),
+    ).toThrow(
+      /TWILIO_AUTH_TOKEN is missing[\s\S]*TWILIO_FROM_NUMBER is missing/,
+    );
+
+    expect(() =>
+      envSchema.parse(
+        prod({
+          TWILIO_AUTH_TOKEN: trio.TWILIO_AUTH_TOKEN,
+          TWILIO_FROM_NUMBER: trio.TWILIO_FROM_NUMBER,
+        }),
+      ),
+    ).toThrow(/TWILIO_ACCOUNT_SID is missing/);
+  });
+
+  it('accepts an alphanumeric sender ID and refuses malformed senders (edge)', () => {
+    expect(
+      envSchema.parse(prod({ ...trio, TWILIO_FROM_NUMBER: 'SaktaCab' }))
+        .TWILIO_FROM_NUMBER,
+    ).toBe('SaktaCab');
+
+    // One char over Twilio's 11-char alphanumeric limit.
+    expect(() =>
+      envSchema.parse(prod({ ...trio, TWILIO_FROM_NUMBER: 'SaktaCabRiga' })),
+    ).toThrow(/TWILIO_FROM_NUMBER must be an E\.164 number/);
+
+    // Digits without a leading + are neither E.164 nor alphanumeric (no letter).
+    expect(() =>
+      envSchema.parse(prod({ ...trio, TWILIO_FROM_NUMBER: '37120000000' })),
+    ).toThrow(/TWILIO_FROM_NUMBER must be an E\.164 number/);
+  });
+});

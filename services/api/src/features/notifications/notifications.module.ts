@@ -11,8 +11,8 @@ import { TrackingService } from './tracking/tracking.service';
 
 /**
  * `SMS_PROVIDER` is bound HERE TOO, with auth's exported factory — a
- * deliberate duplicate: Nest providers are module-scoped, two stub instances
- * are harmless, and the test harness's `overrideProvider(SMS_PROVIDER)`
+ * deliberate duplicate: Nest providers are module-scoped, two provider
+ * instances are harmless, and the test harness's `overrideProvider(SMS_PROVIDER)`
  * overrides the token across the whole compiled graph, so one
  * `RecordingSmsProvider` still captures both OTP and ride SMS. Importing
  * AuthModule instead would work only if auth exported its provider binding,
