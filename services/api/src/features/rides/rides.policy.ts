@@ -35,10 +35,10 @@ export const RIDE_IDEMPOTENCY_TTL_SECONDS = 86_400; // 24 h
  * one reserve, which is #46 back again; that constraint sets the floor, and the
  * value above it is deliberately the smallest one that clears it.
  *
- * NOTHING ENFORCES THAT CEILING YET: no maps call carries a timeout, so a hang
- * past this window would reopen #46 by a new door. Unreachable today — the only
- * provider is `StubMapsProvider` — but a real Routes client needs a timeout
- * well under this value, not a longer window here.
+ * That ceiling IS enforced now (#94): `MAPS_ROUTE_TIMEOUT_MS` bounds every
+ * route call at 3 s by default, and the env schema's `.max(30_000)` is what
+ * keeps a misconfiguration from re-opening #46 by a new door — a bound in the
+ * schema rather than a comment asking the next reader to remember one.
  *
  * Short because a `pending` marker is the one state nothing can clear on its
  * own: a process death between the commit and `recordIdempotency` leaves it

@@ -21,7 +21,12 @@ import { TrackingService } from './tracking/tracking.service';
  * `PlatformConfigModule` is deliberately not `@Global()` — the import is the
  * declared dependency (`dispatchPhone` on the tracking view). `DriversModule`
  * supplies `DRIVER_LOCATION_STORE` for live positions. `GeoModule` supplies
- * `MAPS_PROVIDER`, the cached seam behind the tracking page's road ETA (#87).
+ * `MAPS_PROVIDER_ETA` — the tracking page's OWN cached facade, not pricing's
+ * `MAPS_PROVIDER` (#94): the page reads `durationSeconds`, so it needs the
+ * short TTL and the negative cache that the booking path must not have.
+ *
+ * No `imports` entry for `KV_STORE` (the view throttle): `KvModule` is
+ * `@Global()`.
  */
 @Module({
   imports: [DriversModule, GeoModule, PlatformConfigModule],

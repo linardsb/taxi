@@ -1,5 +1,7 @@
 import {
   GoneException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -16,15 +18,19 @@ import {
 } from '@taxi/shared';
 import { randomBytes } from 'node:crypto';
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
+import { KV_STORE, type KeyValueStore } from '../../../common/kv/kv.store';
 import { DRIVER_LOCATION_STORE, type DriverLocationStore } from '../../drivers';
-import { MAPS_PROVIDER } from '../../geo';
+import { MAPS_PROVIDER_ETA } from '../../geo';
 import { PlatformConfigService } from '../../platform-config';
 import {
   TRACKING_STATE_BY_STATUS,
   TRACKING_TERMINAL_GRACE_SECONDS,
+  TRACKING_VIEW_MAX_PER_WINDOW,
+  TRACKING_VIEW_WINDOW_SECONDS,
   estimateEtaMinutes,
   etaMinutesFromRoute,
   quantizeForEtaCache,
+  trackingViewRateKey,
 } from '../notifications.policy';
 import {
   NotificationsRepository,
@@ -56,7 +62,8 @@ export class TrackingService {
     private readonly platformConfig: PlatformConfigService,
     @Inject(DRIVER_LOCATION_STORE)
     private readonly locations: DriverLocationStore,
-    @Inject(MAPS_PROVIDER) private readonly maps: MapsProvider,
+    @Inject(MAPS_PROVIDER_ETA) private readonly maps: MapsProvider,
+    @Inject(KV_STORE) private readonly kv: KeyValueStore,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
@@ -68,6 +75,11 @@ export class TrackingService {
       this.denied(token, 'unknown');
       throw new NotFoundException('tracking_token_unknown');
     }
+
+    // Between the shape check and the read, deliberately. Shape-first means
+    // arbitrary junk cannot mint unbounded Redis keys; before-the-read means a
+    // throttled request costs no database round trip and no paid route call.
+    await this.assertWithinRateLimit(token);
 
     const ride = await this.repository.rideByToken(token);
     if (!ride) {
@@ -152,20 +164,24 @@ export class TrackingService {
    * (policy) so the page's 5 s poll lands on the route cache: a paid call
    * happens when the driver crosses a cell, not once per poll.
    *
-   * What that does NOT buy is a bound on hostile polling. Both ends of the key
-   * are server-side, so a caller cannot AIM spend at a key of its choosing —
-   * but it can still cause spend, by two routes `CachingMapsProvider` leaves
-   * open: there is no in-flight coalescing (concurrent requests arriving
-   * before the first `setWithTtl` lands all miss and all reach the source), and
-   * failures are never cached (during an outage every poll from every viewer
-   * reaches it). Quantization closes neither. The controls are a token-scoped
-   * throttle and a negative cache — follow-ups on this seam, due before a real
-   * provider is bound.
+   * Quantization alone never bounded hostile polling, and #94 split that job
+   * three ways: the SEAM owns the timeout and the negative cache (which is on
+   * for this `eta` caller and deliberately off for pricing), and the PAGE owns
+   * the token-scoped throttle in `view()`. IN-FLIGHT COALESCING REMAINS OPEN —
+   * requests arriving before the first `setWithTtl` lands all miss and all
+   * reach the source. The throttle BOUNDS that path; nothing here closes it.
+   * Deferred to #13/#16.
    *
    * The displayed position stays raw; only the route origin is snapped.
    *
    * A maps outage degrades to the straight-line estimate rather than costing
    * the rider their page — an ETA that is 30% off beats a 500 at the kerb.
+   *
+   * The provider's error DETAIL deliberately does not appear here.
+   * `geo.maps.route_failed` owns it, keyed by `cell` and correlated by time,
+   * because a provider message could echo coordinates into a line
+   * `logging-standard.md:14` forbids — and no key-set assertion can catch a
+   * coordinate hiding inside a free-text field.
    */
   private async roadEta(
     ride: NotifiableRide,
@@ -175,20 +191,50 @@ export class TrackingService {
     try {
       const route = await this.maps.route(quantizeForEtaCache(from), target);
       return etaMinutesFromRoute(route);
-    } catch (error) {
-      // No coordinates in the payload: the logging standard forbids anything
-      // finer than a geozone name, and this page is the no-login one.
+    } catch {
+      // No coordinates in the payload, and no FREE TEXT either: the logging
+      // standard forbids anything finer than a geozone name, this page is the
+      // no-login one, and a provider message is the one field a coordinate
+      // could ride in on unnoticed.
       this.logger.warn({
-        event: 'ride.notifications.track_eta_fallback',
+        event: 'ride.notifications.track_eta_failed',
         rideId: ride.id,
         driverId: ride.driverId,
-        message: error instanceof Error ? error.message : String(error),
         at: new Date().toISOString(),
       });
       // Raw, not quantized: there is no cache in this path, so the accuracy
       // costs nothing.
       return estimateEtaMinutes(from, target);
     }
+  }
+
+  /**
+   * Spent before the database read, so a throttled request costs neither a
+   * query nor a paid Routes call. INCR-then-check like the rides slice: a
+   * GET-then-INCR would let a burst all read the same count and every one of
+   * them through.
+   */
+  private async assertWithinRateLimit(token: string): Promise<void> {
+    const key = trackingViewRateKey(token);
+    const attempts = await this.kv.incrWithTtl(
+      key,
+      TRACKING_VIEW_WINDOW_SECONDS,
+    );
+    if (attempts <= TRACKING_VIEW_MAX_PER_WINDOW) return;
+
+    // The key can expire between the INCR and this read, and a
+    // retryAfterSeconds of 0 would read as "retry now" on a rejection.
+    const retryAfterSeconds = Math.max(1, await this.kv.ttl(key));
+    this.logger.warn({
+      event: 'ride.notifications.track_view_throttled',
+      tokenPrefix: token.slice(0, 4),
+      attempts,
+      at: new Date().toISOString(),
+    });
+    throw new HttpException(
+      { message: 'too_many_requests', retryAfterSeconds },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   private denied(token: string, reason: 'unknown' | 'expired'): void {

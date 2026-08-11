@@ -654,6 +654,14 @@ describe('tracking + ride SMS (integration)', () => {
     expect(ctx.maps.routeCalls).toBe(calls + 1);
   });
 
+  // ORDERING DEPENDENCY, acquired in #94 — same class of trap as the shared
+  // store noted at the top of this block. `failNext()` now leaves a live
+  // negative-cache entry in that shared `InMemoryKeyValueStore`, which this
+  // file never resets and never `advance()`s, so the key lives 60 real
+  // seconds. It is safe only because this is the LAST case in the file. Any
+  // case appended after it that routes the same `eta` corridor gets a
+  // negative-cached throw instead of a source call, and its `routeCalls` delta
+  // assertion fails for a reason that looks nothing like the cause.
   it('a maps outage degrades to the straight-line estimate, page still 200 (failure — AC #3)', async () => {
     const { d, rideId, token } = await acceptedRide(8, 60);
 
@@ -685,6 +693,13 @@ describe('tracking + ride SMS (integration)', () => {
     // The whole key set, not `objectContaining`: what matters is that no
     // coordinate ever reaches a log line (logging-standard.md), and only
     // pinning every key can say that.
+    //
+    // #94 made this assertion STRONGER, not just different: dropping `message`
+    // pins the ABSENCE of any free-text field, so a provider message that
+    // embedded coordinates could not slip through a payload of this shape —
+    // which a key-set assertion never could have caught while `message`
+    // existed, because the coordinate would be INSIDE it. Provider-error
+    // detail now lives on `geo.maps.route_failed`, as a closed-enum `reason`.
     const payload = warned.mock.calls
       .map(([first]) => first as unknown)
       .find(
@@ -692,14 +707,13 @@ describe('tracking + ride SMS (integration)', () => {
           typeof arg === 'object' &&
           arg !== null &&
           'event' in arg &&
-          arg.event === 'ride.notifications.track_eta_fallback',
+          arg.event === 'ride.notifications.track_eta_failed',
       );
     expect(payload).toBeDefined();
     expect(Object.keys(payload!).sort()).toEqual([
       'at',
       'driverId',
       'event',
-      'message',
       'rideId',
     ]);
     expect(payload).toMatchObject({ rideId, driverId: d.id });

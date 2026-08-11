@@ -57,6 +57,42 @@ export const TRACKING_ETA_SPEED_METERS_PER_MINUTE = 417;
 export const TRACKING_ETA_GRID_DECIMALS = 3;
 
 /**
+ * The tracking page's poll budget, per token. Constants, not env vars, for the
+ * same reason as `rides.policy.ts:1-13` — this is the <€100/mo guardrail in
+ * code, and a guardrail you can turn off from an environment file is a
+ * suggestion.
+ *
+ * The arithmetic: the page polls every 5 s, so one viewer is 12 requests/min.
+ * #17's share-trip reuses ONE token across viewers, so the budget is genuinely
+ * shared — 120/min is 10 concurrent viewers at full poll rate. A family of
+ * three watching one ride is 36/min, comfortably inside; a script is not.
+ *
+ * What it does NOT do, stated so the next reader does not assume otherwise:
+ *
+ * - It BOUNDS the concurrent-burst path; it does not CLOSE it. Requests
+ *   arriving before the first `setWithTtl` lands still all miss and all reach
+ *   the source. Closing that needs in-flight coalescing — deferred to #13/#16,
+ *   where the real concurrency shape is measurable.
+ * - It does NOT protect the database read in general. An attacker can mint
+ *   unlimited shape-valid 22-char tokens, each costing one `rideByToken`. This
+ *   bounds polling of a KNOWN token, which is the spend path.
+ *
+ * Tune when the first Google bill exists — the same trigger `COORD_PRECISION`
+ * carries. If share-trip ever fans out past ~10 simultaneous viewers this is
+ * the number that breaks first, and it breaks visibly (a 429 on the page).
+ */
+export const TRACKING_VIEW_MAX_PER_WINDOW = 120;
+export const TRACKING_VIEW_WINDOW_SECONDS = 60;
+
+/**
+ * Keyed on the TOKEN, not the ride id: the service throttles before it knows
+ * whether a ride exists, which is what keeps a throttled request free of a
+ * database round trip.
+ */
+export const trackingViewRateKey = (token: string): string =>
+  `tracking:rate:${token}`;
+
+/**
  * What the page shows per machine status — coarser on purpose: the rider at
  * the kerb does not care which of four parties cancelled, and every
  * pre-driver status reads as "searching". `expired` is absent because it is
