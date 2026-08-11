@@ -12,6 +12,7 @@ import type {
 const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
 const RIDER_ID = '99999999-8888-4777-8666-555555555555';
 const DRIVER_ID = 'bb1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e12';
+const VEHICLE_ID = 'cc2e3d4f-5a6b-4c7d-8e9f-1b2c3d4e5f01';
 const TOKEN = 'Ab3_-6qhTGplK0vwXz9y-Q';
 const BASE_URL = 'http://localhost:3000';
 
@@ -45,9 +46,9 @@ function notifiable(overrides: Partial<NotifiableRide> = {}): NotifiableRide {
     status: 'accepted',
     riderId: RIDER_ID,
     driverId: DRIVER_ID,
+    vehicleId: VEHICLE_ID,
     bookingChannel: 'phone',
     trackingToken: TOKEN,
-    category: 'standard',
     request: {
       pickup: { location: PICKUP, address: 'Brīvības iela 1' },
       destination: {
@@ -95,8 +96,8 @@ function build(
         'details' in options ? options.details : notifiable(),
       );
     },
-    driverCard: () => {
-      calls.push('repo.driverCard');
+    driverCard: (_driverId: string, vehicleId: string | null) => {
+      calls.push(`repo.driverCard(${vehicleId})`);
       return Promise.resolve({
         name: 'Jānis Bērziņš',
         photoUrl: null,
@@ -180,7 +181,7 @@ describe('RideNotificationsService.onRideCreated', () => {
 
 describe('RideNotificationsService.onStatus', () => {
   it('accepted + phone channel → driver_assigned with name, plate, ETA, link (expected — AC #1)', async () => {
-    const { service, sent } = build();
+    const { service, sent, calls } = build();
 
     await service.onStatus(transitioned('accepted'), 'offered');
 
@@ -191,6 +192,8 @@ describe('RideNotificationsService.onStatus', () => {
     expect(body).toContain('AB-1234');
     expect(body).toMatch(/~\d+ min/); // a real estimate, not the '?' fallback
     expect(body).toContain(`/t/${TOKEN}`);
+    // The plate comes from the ride's STAMPED vehicle (#86), never the fleet.
+    expect(calls).toContain(`repo.driverCard(${VEHICLE_ID})`);
   });
 
   it('accepted + app channel → NO driver_assigned SMS (edge — SMS budget row)', async () => {
