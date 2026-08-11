@@ -8,19 +8,33 @@ import { AuthService } from './auth.service';
 import { AuthTokenService } from './auth-token.service';
 import { SMS_PROVIDER } from './sms/sms.tokens';
 import { StubSmsProvider } from './sms/stub-sms.provider';
+import { TwilioSmsProvider } from './sms/twilio-sms.provider';
 
 /**
- * Refuses to boot in production while the stub is the only bound provider.
+ * The `TWILIO_*` trio binds `TwilioSmsProvider` (#85) — the schema's refines
+ * already vetted the values, so trio-presence IS the client construction (the
+ * `paymentsProviderFactory` shape, minus the SDK-handle token: `fetch` is
+ * ambient). Until the trio is set, production refuses to boot:
  * `StubSmsProvider` delivers no SMS and logs the code in full, so an
- * internet-facing deploy that reached it would hand full sign-in to anyone with
- * log read access — the OTP *is* the credential. Structural rather than
- * conventional: #13 replaces this factory with the Twilio provider, and until
- * it does, `NODE_ENV=production` cannot start at all.
+ * internet-facing deploy that reached it would hand full sign-in to anyone
+ * with log read access — the OTP *is* the credential. Structural rather than
+ * conventional.
  */
 export function smsProviderFactory(env: Env): SmsProvider {
+  if (
+    env.TWILIO_ACCOUNT_SID &&
+    env.TWILIO_AUTH_TOKEN &&
+    env.TWILIO_FROM_NUMBER
+  ) {
+    return new TwilioSmsProvider({
+      accountSid: env.TWILIO_ACCOUNT_SID,
+      authToken: env.TWILIO_AUTH_TOKEN,
+      from: env.TWILIO_FROM_NUMBER,
+    });
+  }
   if (env.NODE_ENV === 'production') {
     throw new Error(
-      'No production SmsProvider is bound: StubSmsProvider delivers nothing and logs OTP codes in full. Bind the real provider (#13) before running with NODE_ENV=production.',
+      'No production SmsProvider is bound: StubSmsProvider delivers nothing and logs OTP codes in full. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER (#85) before running with NODE_ENV=production.',
     );
   }
   return new StubSmsProvider();

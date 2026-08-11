@@ -3,8 +3,16 @@ import { APP_ENV } from '../../common/config/env.schema';
 import { AuthModule, smsProviderFactory } from './auth.module';
 import { SMS_PROVIDER } from './sms/sms.tokens';
 import { StubSmsProvider } from './sms/stub-sms.provider';
+import { TwilioSmsProvider } from './sms/twilio-sms.provider';
 
-const env = (NODE_ENV: Env['NODE_ENV']) => ({ NODE_ENV }) as Env;
+const env = (NODE_ENV: Env['NODE_ENV'], over: Partial<Env> = {}) =>
+  ({ NODE_ENV, ...over }) as Env;
+
+const TRIO: Partial<Env> = {
+  TWILIO_ACCOUNT_SID: 'AC' + 'f'.repeat(32),
+  TWILIO_AUTH_TOKEN: 'auth-token-secret',
+  TWILIO_FROM_NUMBER: '+37167000000',
+};
 
 describe('smsProviderFactory', () => {
   it('provides the stub outside production (expected)', () => {
@@ -14,10 +22,21 @@ describe('smsProviderFactory', () => {
     expect(smsProviderFactory(env('test'))).toBeInstanceOf(StubSmsProvider);
   });
 
+  it('binds the Twilio provider whenever the trio is present (expected)', () => {
+    // The values are only present when they passed the schema's refines, so
+    // "the trio exists" already means "vetted" — the same reasoning as the
+    // payments factory's "a client exists already means test mode".
+    for (const NODE_ENV of ['development', 'test', 'production'] as const) {
+      expect(smsProviderFactory(env(NODE_ENV, TRIO))).toBeInstanceOf(
+        TwilioSmsProvider,
+      );
+    }
+  });
+
   it('refuses to boot in production (failure)', () => {
     // The stub delivers no SMS and logs the code in full, so an internet-facing
-    // deploy before #13 hands sign-in to anyone with log read access. Failing
-    // at boot is the point: a silent stub is worse than no boot.
+    // deploy without the TWILIO_* trio hands sign-in to anyone with log read
+    // access. Failing at boot is the point: a silent stub is worse than no boot.
     expect(() => smsProviderFactory(env('production'))).toThrow(
       /No production SmsProvider is bound/,
     );
