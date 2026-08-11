@@ -28,6 +28,16 @@ Perform a meta-level analysis of how well the implementation followed the plan a
 
 ## Context & Inputs
 
+**Check both arguments before you read anything.** They are POSITIONAL — plan first, execution
+report second — and getting one argument instead of two is the common failure: `$plan` silently
+receives the report and `$report` resolves to empty. If either is missing, or if `$plan` points
+into `.claude/execution-reports/` (which means they were passed in one slot or reversed), say
+which you got and ask — do not guess. Correct form:
+
+```
+/system-evolution-review .claude/plans/<feature>.md .claude/execution-reports/<feature>.md
+```
+
 You will analyze four key artifacts:
 
 **Plan Skill:**

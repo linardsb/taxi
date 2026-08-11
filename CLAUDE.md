@@ -60,6 +60,7 @@ Redis-backed suites are **opt-in**: without `REDIS_TEST_URL` they `describe.skip
 - Every feature plan's UX section uses breadboard notation (place → [affordance] → place), lists loading/empty/error/offline states, and requires minimum 44px touch targets plus visible focus states on every interactive element. It also includes a friction audit: state the tap/decision count from intent to done, justify every step, and prefer the flow option with the lowest count. Cosmetic questions that come up mid-feature are not debated — log them in `.claude/references/ui-decisions.md`.
 - Vertical Slice Architecture inside every app/service: one folder per feature owning routes/service/schemas/tests; `index.ts` is the slice's public API. Max ~500 lines per file.
 - Tests mirror slices; each feature ships ≥1 expected + 1 edge + 1 failure case. Done = `pnpm turbo run typecheck lint test build --force` green, never say-so.
+- **A number or a guarantee in a comment, plan or PR body is a claim, not decoration** — show the arithmetic behind it and name the case it describes (`~16 s due N/S`, not `~15 s`); if you give one figure, give the worst case or say which one it is. typecheck/lint/test cannot read prose, so you are the only check on it. #87 shipped a best-case interval labelled worst-case and a cache guarantee the cache's own code contradicts — and the plan then de-scoped a control on the strength of the second.
 
 ## Workflow (PIV loop)
 

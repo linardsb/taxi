@@ -510,6 +510,60 @@ describe('tracking + ride SMS (integration)', () => {
     expect(sms).not.toContain(d.plate);
   });
 
+  it('fleet edited mid-ride: the stamped plate holds once another car starts matching (edge — #92)', async () => {
+    const d = await onlineDriver(9, {
+      lat: CENTRE_PICKUP.location.lat + 0.001,
+      lng: CENTRE_PICKUP.location.lng,
+    });
+    const limoRes = await http
+      .post('/drivers/me/vehicles')
+      .set('authorization', d.auth)
+      .send({
+        plate: nextPlate(),
+        make: 'Mercedes',
+        model: 'S-Class',
+        year: 2021,
+        category: 'limo',
+        passengerSeats: 4,
+        hasChildSeat: false,
+      })
+      .expect(201);
+    const limo = limoRes.body as { id: string; plate: string };
+
+    const r = await rider(61);
+    const ride = await bookByPhone(r.id, {
+      ...BODY,
+      category: 'limo',
+    });
+    const token = ride.trackingToken!;
+
+    await acceptBy(ride.id, d.auth);
+
+    // The fleet changes UNDER the live ride — a legitimate edit, not a
+    // contrived one: `update` carries no `on_ride` guard (only `remove` does).
+    // The limo becomes a standard car, so the driver now owns TWO standard
+    // cars and no limo: the read-time heuristic this test guards against would
+    // find the ride's `limo` category unmatched and answer the Skoda instead.
+    await http
+      .patch(`/drivers/me/vehicles/${limo.id}`)
+      .set('authorization', d.auth)
+      .send({ category: 'standard' })
+      .expect(200);
+
+    // The stamp is a snapshot, not a pointer into a query — the row still
+    // names the car the rider was promised.
+    const [row] = await ctx.db
+      .select()
+      .from(rides)
+      .where(eq(rides.id, ride.id));
+    expect(row!.vehicleId).toBe(limo.id);
+
+    // The rider-visible half, which the row assertion alone never pinned.
+    const assigned = await view(token);
+    expect(assigned.vehiclePlate).toBe(limo.plate);
+    expect(assigned.vehiclePlate).not.toBe(d.plate);
+  });
+
   it('force-assigning a vehicle-less driver stamps NULL and blocks nothing (edge — #86 AC #1)', async () => {
     // A driver with a `drivers` row but NO vehicle: force-assign's
     // findMatchAttributes 404s without the row, so GET /drivers/me creates it.
@@ -685,6 +739,13 @@ describe('tracking + ride SMS (integration)', () => {
     // The whole key set, not `objectContaining`: what matters is that no
     // coordinate ever reaches a log line (logging-standard.md), and only
     // pinning every key can say that.
+    //
+    // #94 made this assertion STRONGER, not just different: dropping `message`
+    // pins the ABSENCE of any free-text field, so a provider message that
+    // embedded coordinates could not slip through a payload of this shape —
+    // which a key-set assertion never could have caught while `message`
+    // existed, because the coordinate would be INSIDE it. Provider-error
+    // detail now lives on `geo.maps.route_failed`, as a closed-enum `reason`.
     const payload = warned.mock.calls
       .map(([first]) => first as unknown)
       .find(
@@ -692,17 +753,37 @@ describe('tracking + ride SMS (integration)', () => {
           typeof arg === 'object' &&
           arg !== null &&
           'event' in arg &&
-          arg.event === 'ride.notifications.track_eta_fallback',
+          arg.event === 'ride.notifications.track_eta_failed',
       );
     expect(payload).toBeDefined();
     expect(Object.keys(payload!).sort()).toEqual([
       'at',
       'driverId',
       'event',
-      'message',
       'rideId',
     ]);
     expect(payload).toMatchObject({ rideId, driverId: d.id });
     warned.mockRestore();
+
+    // `failNext()` armed the negative cache, and its entry lives 60 s
+    // (`MAPS_ETA_FAILURE_TTL_SECONDS`) in the ONE store this whole file
+    // shares. Left behind, it hands whichever case is appended next a
+    // negative-cached THROW instead of a source call — and a `routeCalls`
+    // delta that fails for a reason looking nothing like the cause. Cleared
+    // here rather than documented, so this case stops having to be last.
+    //
+    // 61 s, not more: it clears the failure entry without expiring route
+    // caches an appended case might rely on (300 s for `eta`, 24 h for
+    // `quote`) or the 120 s ride-idempotency reservations.
+    ctx.kv.advance(61);
+
+    // And proved, not assumed — this is what an appended case would see. The
+    // corridor reaches the SOURCE again (the failure wrote no success entry to
+    // hit), and the ETA is the routed one the assertion above ruled out.
+    const recovered = await view(token);
+    expect(ctx.maps.routeCalls).toBe(calls + 2);
+    expect(recovered.etaMinutes).toBe(
+      routedEtaMinutes({ lat: 57.03, lng: 24.086 }, CENTRE_PICKUP.location),
+    );
   });
 });

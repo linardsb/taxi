@@ -55,6 +55,52 @@ export const envSchema = z
       .positive()
       .default(86_400),
     /**
+     * The TRACKING page's own route TTL, deliberately not the one above.
+     *
+     * Pricing consumes `distanceMeters`, which is near time-invariant; the
+     * tracking page consumes `durationSeconds`, which is exactly the field
+     * traffic moves. Inheriting 24 h would serve an 08:30 rush-hour page from
+     * an 02:00 off-peak route on the same key. 5 min is roughly the interval
+     * over which a Rīga corridor's travel time changes meaningfully — a guess,
+     * with no traffic data to calibrate against yet.
+     */
+    MAPS_ETA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+    /**
+     * How long a FAILED route is remembered — for the `eta` caller only.
+     *
+     * Long enough that a provider outage costs one call per corridor per
+     * minute instead of one per poll per viewer; short enough that a transient
+     * blip self-heals inside a rider's patience. Named `ETA` rather than
+     * `ROUTE` precisely because the `quote` caller does NOT negative-cache: a
+     * `MAPS_ROUTE_*` name invites someone to wire it into both, and on the
+     * booking path a cached failure blocks real bookings (see `geo.module.ts`).
+     */
+    MAPS_ETA_FAILURE_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(60),
+    /**
+     * BOTH callers share this one — pricing as well as tracking, unlike the
+     * two `MAPS_ETA_*` knobs above. Lowering it to make the tracking page fail
+     * faster also fails every quote, and therefore every booking.
+     *
+     * Bounds LATENCY, not spend: `Promise.race` does not cancel the loser, so
+     * the upstream HTTP call keeps running and still bills. What it buys is
+     * that a hung Routes call cannot hang `GET /track/:token` — public,
+     * no-login, polled every 5 s.
+     *
+     * The `.max()` is the enforcement, not a comment: this MUST stay well under
+     * `RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS` (120 s), or a hang past that
+     * window reopens #46 by a new door.
+     */
+    MAPS_ROUTE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(30_000)
+      .default(3_000),
+    /**
      * TEST MODE ONLY, structurally. `sk_live_…` is refused at boot: the repo
      * rule is "Stripe stays in test mode until the SIA exists", and spike #5
      * confirms a live platform account needs a legal entity we do not have.
