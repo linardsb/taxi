@@ -44,7 +44,7 @@ The driver walk is deliberately geometric — a fixed longitude column, exact `0
 - **Not** a load or spend benchmark. It verifies the *invariant* (one call per crossing), not the *rate* (crossings per minute). See "On the heading arithmetic" in NOTES.
 - **Not** changing `CachingMapsProvider`, `TrackingService`, `notifications.policy.ts`, or any counter/cache behaviour. If the script finds a defect, that is a separate ticket.
 - **Not** replacing `tracking.integration.spec.ts`. The spec keeps its own coverage; this observes what the spec's fakes cannot.
-- **Not** wiring a Google Routes provider. `MAPS_PROVIDER_SOURCE` stays `StubMapsProvider` in dev (`geo.module.ts:21-28`) — the cache, the counter and the grid are what is under observation, and all three are provider-agnostic.
+- **Not** wiring a Google Routes provider. `MAPS_PROVIDER_SOURCE` stays `StubMapsProvider` in dev (`geo.module.ts:21-28`) — the cache and the counter are what is under observation (the grid is not isolated by this walk — see #108), and both are provider-agnostic.
 - **Not** touching `apps/dispatch`. The 5 s poll is *modelled* by the script's loop, not driven by a browser.
 
 ## Feature Metadata
@@ -61,7 +61,7 @@ The driver walk is deliberately geometric — a fixed longitude column, exact `0
 
 **Back-references**:
 
-- `.claude/plans/tracking-eta-maps-quantized-cache.md` — #87, introduced `TRACKING_ETA_GRID_DECIMALS` and the quantized cache this script measures
+- `.claude/plans/tracking-eta-maps-quantized-cache.md` — #87, introduced `TRACKING_ETA_GRID_DECIMALS` and the quantized cache. Note: this script does **not** isolate the grid — a walk that sits still between polls cannot distinguish it from `CachingMapsProvider`'s 4-dp corridor cache, which predates #87. What is measured is one paid call per new corridor. See #108.
 - `.claude/plans/harden-maps-seam-spend-controls.md` — #94, built the `geo.maps.route_fetched` counter and the negative cache
 - `.claude/plans/dispatch-tracking-429-throttle-ux.md` — #100, the token throttle the script must stay under
 
@@ -554,7 +554,7 @@ The headline claim — "polls inside one cell are free" — expects **zero**. Ze
 
 ### What this cannot tell us
 
-`StubMapsProvider` is what answers `route()`. The script verifies the **cache/grid/counter** contract — how many times the seam would have reached a paid provider — not Google's latency, quota behaviour, or billing. #13/#16 should re-run this script as its own Level 4 evidence once the real provider is bound; the counter is provider-agnostic by construction, so the same command should answer the same way.
+`StubMapsProvider` is what answers `route()`. The script verifies the **cache/counter** contract — how many times the seam would have reached a paid provider — not Google's latency, quota behaviour, or billing. #13/#16 should re-run this script as its own Level 4 evidence once the real provider is bound; the counter is provider-agnostic by construction, so the same command should answer the same way.
 
 ### Sequencing note
 
