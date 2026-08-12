@@ -95,9 +95,23 @@ services/api/dist/src              absent   ← the relocation symptom, explicit
 | distinct `cell` values | 6 | **6** |
 | eta calls on views 2–5 of any cell | 0 | **0** |
 | `geo.maps.route_fetched` `caller:'quote'` | ≥1 | **1** |
-| unquantized counterfactual | 30 | **30** |
 
-Reduction at this dwell: **30 → 6, 5×**. It scales with polls-per-cell, not with anything the grid does.
+**The unquantized counterfactual is NOT observed — and for this walk it is 6, not 30.**
+
+This run emits one position per cell and then polls it 5×, so the position is byte-identical across a
+cell's polls. `quantizeForEtaCache` is `toFixed(3)` and `cellLocation` already rounds to 3 dp, so the
+grid is an **identity function** on every coordinate this walk generates. Delete #87's grid and this
+walk still costs **6** paid calls. What the zeros in the table above demonstrate is
+`CachingMapsProvider`'s 4-decimal corridor cache (`caching-maps.provider.ts:18,67`) — which predates
+#87. The Level 5 key is the tell: `56.9610` is simultaneously the 4-dp rendering of the quantized *and*
+of the raw position.
+
+Under real per-poll GPS jitter — the case `notifications.policy.ts:44-51` names as the grid's win, and
+the one this walk does not have — each of a cell's 5 polls would key a distinct 4-dp corridor, and the
+unquantized cost would be 30 (6 cells × 5 polls), a 5× reduction. **That is arithmetic, not a
+measurement:** this script never runs an unquantized pass. Making it observable means adding sub-cell
+jitter between polls (±0.0002°, sanctioned at `plan.md:297`) and widening the `5e-5` landed tolerance
+that would otherwise reject it — a change to the instrument, deferred to its own ticket.
 
 **Which case these numbers describe:** the walk is **due north**. `0.001°` of latitude ≈ 111.3 m — the
 cell's *largest* dimension, so the *fewest* crossings per metre driven, the **best** case for spend. The

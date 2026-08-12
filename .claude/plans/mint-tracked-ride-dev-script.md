@@ -444,9 +444,9 @@ Expected, with `CELLS=6`, `POLLS_PER_CELL=5`:
 | distinct `cell` values | **6** | proves *one per cell*, not six for one corridor |
 | eta calls on views 2–5 of any cell | **0** | the headline property: polling inside a cell is free |
 | `geo.maps.route_fetched` `caller:'quote'` | ≥1 | `POST /rides` pricing — proves the filter discriminates |
-| unquantized counterfactual | 30 | what one-call-per-poll would have cost |
+| unquantized counterfactual | *not measured* | see below — for this walk it is **6**, not 30 |
 
-Reduction at this dwell: **30 → 6, a 5× saving**, and it scales with polls-per-cell, not with anything the grid does. The walk is **due north**: `0.001°` latitude ≈ 111.3 m, the cell's largest dimension — the *fewest* crossings per metre driven. The invariant under test (one call per crossing) is heading-independent; the crossing *rate* is not, and is not what this measures.
+**The unquantized counterfactual is not measured, and for this walk it is 6.** Every position here is already on the 3-dp grid and does not move between a cell's polls, so `quantizeForEtaCache` is an identity function for this run — the zeros above are `CachingMapsProvider`'s 4-dp corridor cache, which predates #87. Under real per-poll GPS jitter (the case `notifications.policy.ts:44-51` names, absent here) the unquantized cost would be 30, a 5× reduction scaling with polls-per-cell — arithmetic, not a measurement. The walk is **due north**: `0.001°` latitude ≈ 111.3 m, the cell's largest dimension — the *fewest* crossings per metre driven. The invariant under test (one call per crossing) is heading-independent; the crossing *rate* is not, and is not what this measures.
 
 **Step 4 — idempotence.** Run Step 2 again immediately.
 

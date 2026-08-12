@@ -474,9 +474,15 @@ async function main(): Promise<void> {
             declined.add(offer.id);
             // Declined rather than ignored, so the cascade moves on instead of
             // waiting out the offer's expiry.
-            void api('POST', `/dispatch/offers/${offer.id}/decline`, {
+            //
+            // `.catch`, not bare `void`: `void` satisfies `no-floating-promises`
+            // but attaches no handler, so a reject (connection reset mid-cascade)
+            // is an unhandled rejection — fatal in Node ≥ 15. The process would
+            // die before teardown and leave the driver `on_ride`, the exact state
+            // that makes the NEXT run find no candidate.
+            api('POST', `/dispatch/offers/${offer.id}/decline`, {
               auth: driver?.accessToken,
-            });
+            }).catch(() => {});
           }
         }
         return undefined;
@@ -749,12 +755,20 @@ function report(rows: CellRow[], token: string): void {
   console.log(
     `paid quote route calls      ${quoteCalls} — POST /rides pricing, proves the caller filter discriminates`,
   );
+  // NAME THE CASE. This run emits ONE position per cell and polls it
+  // `POLLS_PER_CELL` times, so the position is byte-identical across a cell's
+  // polls and `quantizeForEtaCache` (toFixed(3)) is an IDENTITY function on
+  // every coordinate this walk generates. The unquantized cost of THIS run is
+  // therefore `etaCalls`, not `totalViews`: what the zeros above demonstrate is
+  // `CachingMapsProvider`'s 4-decimal corridor cache, which predates #87's grid.
   console.log(
-    `unquantized counterfactual  ${totalViews} — one call per poll, which is what the grid removes`,
-  );
-  console.log(
-    `reduction at this dwell     ${totalViews} → ${etaCalls}, ` +
-      `${(totalViews / Math.max(1, etaCalls)).toFixed(0)}× — it scales with polls-per-cell, not with the grid`,
+    `\nunquantized cost of THIS run ${etaCalls} — NOT ${totalViews}. Every position here is already on the\n` +
+      "3-decimal grid and does not move between a cell's polls, so the grid is an identity function for\n" +
+      "this walk and the zeros above are the 4-dp corridor cache's, not the grid's.\n" +
+      `Under real per-poll GPS jitter — the case notifications.policy.ts:44-51 names, and the one this\n` +
+      `walk does NOT have — each poll would key a distinct corridor and the unquantized cost would be\n` +
+      `${totalViews} (${rows.length} cells × ${POLLS_PER_CELL} polls), a ${(totalViews / Math.max(1, etaCalls)).toFixed(0)}× reduction. That is ARITHMETIC, not a measurement:\n` +
+      'this script does not run an unquantized pass, and nothing here observed it.',
   );
 
   // NAME THE HEADING. #87 shipped a best-case interval labelled worst-case;
@@ -844,9 +858,13 @@ async function teardown(
   }
 
   if (state.driver !== null) {
+    // Guarded like the cancel above: a throw from inside `finally` REPLACES the
+    // original error, so an unguarded reject here prints the teardown's failure
+    // instead of the run's real diagnosis — and skips `app.close()`, leaving the
+    // process hung rather than exiting 1.
     const me = await api('GET', '/drivers/me', {
       auth: state.driver.accessToken,
-    });
+    }).catch((err: unknown) => ({ status: 0, body: String(err) }));
     // `DriverMe` is `{ profile, vehicles }` — the status is one level in.
     const status = (me.body as { profile?: { status?: unknown } })?.profile
       ?.status;
@@ -863,7 +881,7 @@ async function teardown(
     const off = await api('PUT', '/drivers/me/status', {
       auth: state.driver.accessToken,
       body: { status: 'offline' },
-    });
+    }).catch((err: unknown) => ({ status: 0, body: String(err) }));
     console.log(`driver → offline (${off.status})`);
   }
 
