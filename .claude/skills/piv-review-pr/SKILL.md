@@ -57,6 +57,30 @@ tests present · maintainability.
 
 Acknowledge what's done well, too — review is constructive, not just a defect list.
 
+### The numbers pass — do this explicitly, it is not covered by the agent
+
+typecheck, lint, test and build cannot read prose, so **you are the only gate on every figure in the PR
+body and the implementation report.** Two consecutive tickets shipped a false number to `main` (#87, #107)
+and both times the reviewer re-deriving it was the first and only check.
+
+Enumerate every figure and ask of each: **which run produced this?**
+
+- Can it name one → `observed`. Spot-check that the run's own output actually says so.
+- It cannot → it is `derived` or `expected`, and must say which. **A derived figure sitting under an
+  "Observed" heading is a finding**, at the severity its downstream use warrants — a number that a later
+  ticket could de-scope work on is **High**, not Low.
+- Correct arithmetic does not make a figure observed. #107's `30 = 6 cells × 5 polls` was sound arithmetic,
+  truthfully passed its own "show the arithmetic" AC, and still described a run that never happened.
+
+When a figure credits a mechanism ("proves the cache saves 5×"), ask **what was held constant to isolate
+it**. If the experiment cannot distinguish the credited mechanism from something else in the path, the
+attribution is the defect even when the count is right.
+
+Check the claim's **subject**, not just its digits — grep the noun (`quantiz`, `grid`, the issue number)
+and read every hit. A retired claim survives as a verb ("the cache this script *measures*") long after its
+number is gone, and it survives in the **PR body**, which is the most-read surface and the only one not in
+the working tree.
+
 ## Phase 5 — Decide
 
 - **Approve** — no critical/high issues, validation passes, matches intent.
