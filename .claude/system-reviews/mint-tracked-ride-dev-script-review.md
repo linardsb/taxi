@@ -28,15 +28,29 @@ The action taken was:
 > `[x] Add a hard rule that a quantitative claim in a comment, plan, or PR body is a checkable assertion — show the derivation, and name which case a figure describes.`
 
 **The diagnosis was "no gate exists." The remedy was prose in CLAUDE.md** — not a gate, and the same class
-of artifact that failed. Verified empirically this session:
+of artifact that failed.
 
-```
-grep -ril "quantitative|provenance|counterfactual" .claude/skills/   → no matches
-```
+**How this was verified, and how far the evidence actually goes** — this document argues for provenance, so
+it owes its own:
 
-`piv-plan-implementation` (512 lines), `piv-implement` (135), and `piv-review-pr` (93) contain **no
-instruction whatsoever** about quantitative claims. The rule lives in exactly one place — CLAUDE.md prose —
-and every executable step of the loop is silent on it. It was never wired into anything that runs.
+- **Primary evidence (`observed`): the three loop skills were read.** `piv-plan-implementation` (512 lines),
+  `piv-implement` (135) and `piv-review-pr` (93, pre-this-PR) contain **no instruction of any kind** about
+  quantitative claims, provenance, or verifying a figure. Searching each for `number|claim|arithmetic|figure|observed`
+  returns only unrelated hits — issue numbers, `file:line` references, a PR-number argument hint.
+- **Corroborating (`observed`, at `8f83b4a`, before this PR):**
+  ```
+  grep -rilE "quantitative|provenance|counterfactual" .claude/skills/   → no matches
+  ```
+- **Two limits on that grep, stated because they matter:**
+  1. **It will still return empty after this PR merges.** The `piv-review-pr` numbers pass added here
+     implements the concept without using any of those three words. The grep therefore cannot distinguish
+     *"no gate exists"* from *"a gate exists that doesn't use this vocabulary"* — **it is not a regression
+     check**, and must not be re-run later as one.
+  2. A keyword grep is a weak instrument for "contains no instruction about X" in the first place. It is
+     cited as corroboration for the reading above, not as the basis of the claim.
+
+The rule lives in exactly one place — CLAUDE.md prose — and every executable step of the loop is silent on
+it. It was never wired into anything that runs.
 
 #107 then shipped `30` under a column headed **Observed** while the script quoted that very rule four lines
 below the offending figure.
