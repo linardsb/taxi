@@ -13,12 +13,11 @@ read from the hashes the provider emitted rather than recomputed script-side. No
 default path.
 
 What the review found was a cluster in exactly the area the ticket is about — **which figures may wear which
-tag, and which claims survive their own edit**. Ten findings, no Critical, no High in the code; the two that
-matter most are a *derived* ratio printed as `[observed]`, and an env-var typo path that prints a fabricated
-attribution above a green `PASS`. All ten are fixed on this branch (commits below) and re-validated. One item
-is left open for the author because it is a restructure, not a review fix.
-
-Fourteen items: twelve fixed on this branch, two left open for the author.
+tag, and which claims survive their own edit**. Fourteen findings, no Critical, no High in the code; the two
+that matter most are a *derived* ratio printed as `[observed]`, and an env-var typo path that prints a
+fabricated attribution above a green `PASS`. Twelve are fixed on this branch (commits below) and re-validated.
+Two are left open for the author: a restructure that is not a review fix (D1), and a rules-file line outside
+this PR's subject (D2).
 
 | Severity | Found | Fixed on branch |
 |---|---|---|
