@@ -96,6 +96,10 @@ And in the notifications slice: a token-scoped throttle mirroring `rides.service
 **Forward-references** (plans that extend or supersede this — append as follow-ups get created):
 
 - #13/#16 (bind the real Google Routes provider) — this ticket is its stated blocker. Two threads land there: in-flight coalescing, and the provider adapter owning its own sanitized error detail (HTTP status etc.), which this plan deliberately does not invent.
+- `.claude/plans/dispatch-tracking-429-throttle-ux.md` — Why: retires this plan's "It does **not** break
+  visibly: no client renders a 429" claim (OPEN QUESTIONS / ASSUMPTIONS, the
+  `TRACKING_VIEW_MAX_PER_WINDOW = 120` bullet) by giving the 429 an honest state on both tracking
+  surfaces (#100). Cited by quote, not line: appending an entry here shifts every line below it.
 
 ---
 
