@@ -1,7 +1,9 @@
 import type { RouteResult } from '@taxi/shared';
+import { COORD_PRECISION } from '../geo';
 import {
   etaMinutesFromRoute,
   quantizeForEtaCache,
+  TRACKING_ETA_GRID_DECIMALS,
 } from './notifications.policy';
 
 /** Only `durationSeconds` matters here; the other two are shape. */
@@ -34,6 +36,14 @@ describe('quantizeForEtaCache', () => {
     const after = quantizeForEtaCache({ lat: 56.96139, lng: 24.0857 });
 
     expect(after).toEqual(before);
+  });
+
+  it('stays coarser than the corridor cache key, or the grid buys nothing (edge)', () => {
+    // The prose claim at `notifications.policy.ts:34` made checkable. At equal
+    // precision this function is an identity map on every coordinate the cache
+    // key can distinguish, so `mint:ride`'s two passes (#108) would report the
+    // same count and print a 1× "reduction" as if it were a measurement.
+    expect(TRACKING_ETA_GRID_DECIMALS).toBeLessThan(COORD_PRECISION);
   });
 });
 

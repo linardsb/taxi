@@ -67,7 +67,9 @@ The driver walk is deliberately geometric — a fixed longitude column, exact `0
 
 **Forward-references**:
 
-- (none yet) — #13/#16 (real Google Routes provider) should re-run this script as its own Level 4 evidence
+- `.claude/plans/mint-ride-sub-cell-jitter.md` — #108, which added deterministic sub-cell jitter and a second
+  (unquantized) pass, converting this plan's unquantized figure from arithmetic to observation. See AMENDMENTS.
+- #13/#16 (real Google Routes provider) should re-run this script as its own Level 4 evidence
 
 ---
 
@@ -563,3 +565,23 @@ The four config edits (`mint:ride`, `tsconfig.build.json`, lint glob, E.164 regi
 ## AMENDMENTS
 
 <!-- Append-only. Newest at the bottom. -->
+
+### 2026-08-14 — #108 made the unquantized counterfactual measurable
+
+The note at line 449/451 ("the unquantized counterfactual is not measured, and for this walk it is 6") accurately
+described what #107 shipped, and is left as written — it is the record of that run, not a claim about the current
+script.
+
+It no longer describes the instrument. [#108](https://github.com/linardsb/taxi/issues/108)
+(`.claude/plans/mint-ride-sub-cell-jitter.md`) added two things:
+
+1. **Deterministic sub-cell jitter** — each of a cell's polls now sits at its own integer multiple of
+   `COORD_PRECISION`'s `1e-4°` of latitude, so every poll keys a distinct 4-dp corridor while still quantizing to
+   the one cell centre. `quantizeForEtaCache` is therefore no longer an identity function for this walk, and the
+   zeros are the grid's rather than the corridor cache's.
+2. **A second, unquantized pass** — the positions the page reported are replayed through the same
+   `MAPS_PROVIDER_ETA` instance with quantization removed, and counted from the same `geo.maps.route_fetched`.
+
+Both figures the script prints are now `observed`, each tagged with the pass that produced it. The reduction is
+attributable to #87's grid because substituting identity for `quantizeForEtaCache` is the only difference between
+the two counts.
