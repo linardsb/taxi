@@ -153,6 +153,6 @@ Only now — on top of a working core loop:
 - Status changes only via `assertTransition()`; payment lock never bypassed
 - Contracts only in `packages/shared`; providers only via seams
 - i18n LV/RU/EN, no hardcoded strings; rider screens screen-reader-complete
-- VSA: slice owns routes/service/schemas/tests; `index.ts` = public API; ≤500 lines/file of shipped source (specs, test/, scripts/ exempt)
+- VSA: slice owns routes/service/schemas/tests; `index.ts` = public API; ≤500 lines/file of shipped source (.spec/.test files, test/, tests/, scripts/ exempt)
 - Done = `pnpm check` green, never say-so
 - Budget: cache maps calls, watch SMS volume (<€100/mo)

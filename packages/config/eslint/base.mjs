@@ -38,9 +38,11 @@ export default tseslint.config(
   },
   {
     // Dev instruments are outside the rule, not merely lenient under it — see
-    // CLAUDE.md's VSA bullet. This mirrors what each package's build already
-    // excludes (`services/api/tsconfig.build.json`), so the gate and the build
-    // draw the same shipped/dev line. Part of the rule's definition rather than
+    // CLAUDE.md's VSA bullet. This mirrors what `services/api`'s build already
+    // excludes (`services/api/tsconfig.build.json`) exactly; for `db` and
+    // `packages/shared` the gate is slightly stricter than the build, since their
+    // lint scripts name `drizzle.config.ts`/`vitest.config.ts` and their builds
+    // are `include: ["src"]`. Part of the rule's definition rather than
     // a per-package need, so it lives here despite the header's #53 convention.
     files: [
       '**/*.spec.ts',

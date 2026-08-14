@@ -98,14 +98,16 @@ overruled by the surface that runs.
   GOTCHA in Task 1) — the issue's trajectory concern is therefore only partly answered, and that is a
   recorded, deliberate call, not an oversight.
 - **Not touching any of the ten over-length files.** They become compliant by amendment, not by edit.
-- **Not rewriting historical artifacts.** **23** files cite the old `~500` phrasing (`observed` at base
-  `085ef88`, by the command below — note this is a *different* survey from Task 0's, which counts
-  over-length source files, not prose citations):
+- **Not rewriting historical artifacts.** **25** files cite the old `~500` phrasing (`observed` at base
+  `085ef88`; the earlier 23 was measured in the pre-merge `bea4222` tree — the #110 merge added
+  `.claude/code-reviews/pr-110-review.md` and `.claude/reports/mint-ride-sub-cell-jitter-report.md`).
+  Note this is a *different* survey from Task 0's, which counts over-length source files, not prose
+  citations:
 
   ```bash
   grep -rln -iE "500 lines|~500|≤500|500-line" \
     .claude/code-reviews/ .claude/plans/ .claude/reports/ .claude/execution-reports/ \
-    | grep -v file-length-rule | wc -l     # → 23
+    | grep -v file-length-rule | wc -l     # → 25
   ```
 
   These are dated records that were true when written —
@@ -145,7 +147,7 @@ enforced the rule anywhere; and `pr-107-review.md:150-152` and `pr-110-review.md
 *opposite* conclusions about the same file under the same rule, three weeks apart. That last one is the
 actual defect — the boundary lived in reviewers' heads. One argument was checked and **discarded**
 rather than used: "the file is long because the numbers rule mandates provenance prose" is false (33%
-comments against a ~31% repo norm; 888 code lines alone is 1.8× the cap).
+comments against the largest shipped file's 30.6%; 888 code lines alone is 1.8× the cap).
 
 **Amended after the decision, before implementation**: the `eslint-disable max-lines` guard in Task 2.
 A gate that one comment can switch off for a whole file is not executable, which is the property the
@@ -493,7 +495,8 @@ IMPORTANT: Execute every task in order, top to bottom.
   clean seams" would have left ~1010 lines in one file — the audit from Task 0.
 - **GOTCHA**: do not rewrite D1 itself. It was an accurate finding under the rule as it stood; the
   append records the outcome.
-- **GOTCHA**: do **not** sweep the other 23 dated artifacts citing `~500` — see Out of Scope.
+- **GOTCHA**: do **not** sweep the other 24 dated artifacts citing `~500` (25 in the sweep set at
+  `085ef88` less this one, the only member the ticket touches) — see Out of Scope.
 - **VALIDATE**: `grep -n -A3 "D1 ·" .claude/code-reviews/pr-110-review.md`
 - **SATISFIES**: AC #8
 
@@ -637,8 +640,11 @@ pnpm turbo run typecheck lint test build --force     # CI parity; COMPOSE_PROJEC
 2. The shipped/dev boundary is the one each package's build already draws. `services/api` draws it by
    `exclude`, `db` and `packages/shared` by `include: ["src"]`. `apps/dispatch` and `apps/admin` have no
    `tsconfig.build.json`, so for them the glob list is the definition, not a mirror of one. This is a
-   real asymmetry — the amendment's phrase "what each package's build compiles" is exact for three
-   packages and motivational for two.
+   real asymmetry — the amendment's phrase "what each package's build compiles" is exact for
+   `services/api` alone, and motivational for the other four. For `db` and `packages/shared` the gate is
+   *stricter* than the build, not equal to it: their lint scripts explicitly name `drizzle.config.ts` /
+   `vitest.config.ts`, which `max-lines` therefore caps while `include: ["src"]` compiles neither
+   (`observed` — package.json lint scripts and `tsconfig.build.json`). Harmless today, all being tiny.
 
    One gap checked and found empty: the eslint override exempts `**/*.test.ts`, but `services/api`'s
    build excludes only `**/*spec.ts` — so for api the glob list is nominally *broader* than the build's
@@ -707,14 +713,15 @@ only) would have amended the rule and left it false about nine files.
 
 "The file is long because CLAUDE.md's numbers rule mandates provenance prose." Measured:
 
-| file | total | code | comment | comment share |
+| file | total | code | comment | comment share of non-blank lines |
 |---|---|---|---|---|
 | `mint-tracked-ride.ts` | 1414 | 888 | 433 | 32.8% |
 | `ride-lifecycle.service.ts` | 447 | 286 | 126 | 30.6% |
 
 Provenance: `observed` — classifier over both files on `origin/main` (block comments counted through
-their closing `*/`); shares are `derived` from those counts. 33% against a ~31% repo norm is not an
-outlier. **Code alone is 888 lines, 1.8× the cap.** This argument does not support the exemption and
+their closing `*/`); shares are `derived` from those counts over `code + comment`, i.e. excluding blank
+lines (`433 / 1321`, `126 / 412`) — the same denominator for both rows. 33% against the largest shipped
+file's 30.6% is not an outlier. This is a two-file comparison, not a repo-wide norm. **Code alone is 888 lines, 1.8× the cap.** This argument does not support the exemption and
 should not appear in the PR body as though it does.
 
 ### The trajectory concern, honestly

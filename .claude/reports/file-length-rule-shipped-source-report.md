@@ -57,8 +57,8 @@ banner map `102 · 209 · 243 · 348 · 969 · 1047 · 1347`. From it:
 
 | seam | range | lines | provenance |
 |---|---|---|---|
-| jitter geometry + guards | 102–208 | **107** | `observed` (banner boundaries) |
-| report + assertions | 1047–1346 | **300** | `observed` (banner boundaries) |
+| jitter geometry + guards | 102–208 | **107** | `derived` — `208 − 102 + 1`, boundaries `observed` from grep |
+| report + assertions | 1047–1346 | **300** | `derived` — `1346 − 1047 + 1`, boundaries `observed` from grep |
 | *"the run"* (remainder) | — | **1007** | `derived` — `1414 − 107 − 300` |
 
 **Deviation from the plan's figure**: the plan carried `~297` and `~1010` from ranges read off a symbol
@@ -156,8 +156,11 @@ induced-failure controls above are the test, per the plan's testing strategy.
 `describe.skip`-ing. Docker `taxi-db-1` (5432) and `taxi-redis-1` (6381) were already healthy.
 
 **AC #9 — nothing was edited to make it green.** `git diff --name-only origin/main` over all ten
-over-length paths returns empty; they are byte-identical to base. The complete diff is 8 files,
-79 insertions / 4 deletions, all rules, docs or eslint config — **zero source files**.
+over-length paths returns empty; they are byte-identical to base. As of commit `efefcd8`, the diff is
+8 files excluding the two PIV artifacts committed alongside (10 total), **81** insertions / 4 deletions
+— `observed`, `git show --numstat efefcd8` less the plan's 768 and the report's 223 — all rules, docs or
+eslint config, **zero source files**. Later commits on the branch, including this review pass, add to
+those counts without touching source.
 
 ## Deviations from the plan
 

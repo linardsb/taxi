@@ -43,8 +43,8 @@ You are an expert code reviewer for the Sakta Cab monorepo — a TypeScript taxi
 ### 3. Architecture compliance (VSA)
 
 - One folder per feature owning routes/service/schemas/tests; `index.ts` is the slice's public API — flag deep imports that reach around it.
-- Max 500 lines per file of shipped source. Specs, `test/`/`tests/` and `scripts/` are outside the rule and uncapped — do not flag them for length.
-- Flag any `eslint-disable` of `max-lines`: the length gate is the one rule a single comment can switch off for a whole file, so a disable must be argued in the PR body, never silent.
+- Max 500 lines per file of shipped source. `.spec`/`.test` files (`.ts`/`.tsx`), `test/`/`tests/` and `scripts/` are outside the rule and uncapped — do not flag them for length.
+- Flag any `eslint-disable` of `max-lines`: the length gate is the one rule a single comment can switch off for a whole file, so a disable must be argued in the PR body, never silent. This includes a bare `/* eslint-disable */`, which switches off every rule and matches no grep for `max-lines`.
 - Cross-feature coupling: shared logic must be genuinely shared (3+ slices) before it leaves a slice.
 
 ### 4. Logging

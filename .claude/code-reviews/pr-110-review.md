@@ -121,8 +121,9 @@ one option this ticket's own standards argue against.
 > is unchanged at 1414 lines**, and is now compliant by amendment, not by edit.
 > On the split this finding proposed: the three seams are real — they land on the
 > file's own section banners — but they do not reach compliance. `observed` (banner line numbers,
-> `grep -n "^// ─"` at `origin/main` `085ef88`): jitter geometry + guards `102–208` = **107** lines,
-> report + assertions `1047–1346` = **300** lines. Remainder is `derived`: `1414 − 107 − 300` = **1007**
+> `grep -n "^// ─"` at `origin/main` `085ef88`): jitter geometry + guards `102–208`, report + assertions
+> `1047–1346`. Their lengths are `derived` from those boundaries — `208 − 102 + 1` = **107** lines and
+> `1346 − 1047 + 1` = **300** lines. Remainder is `derived`: `1414 − 107 − 300` = **1007**
 > lines left in one file, still 2.0× the cap. A compliant split needs ~5 files, since `main()` alone is
 > 348 lines. See `.claude/plans/file-length-rule-shipped-source.md` for the full decision record — including
 > the residual risk this accepts: nothing now bounds the script's growth, and the review agent is explicitly
