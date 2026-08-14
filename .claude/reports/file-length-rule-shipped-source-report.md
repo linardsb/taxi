@@ -212,12 +212,16 @@ over-length paths returns empty; they are byte-identical to base. The complete d
 
 ## Ready for the next step
 
-All ten tasks complete and all validations green. **AC #1–#9 are met.** **AC #10 is `expected`, not met** —
-it is entirely a claim about the PR body, which does not exist yet; it lands with `piv-create-pr` and cannot
-be asserted from here. Same for the completion checklist's `Closes #112`.
+All ten tasks complete and all validations green. **AC #1–#9 met** at implementation time.
 
-Next: `piv-commit` — confirm `.claude/plans/file-length-rule-shipped-source.md` is staged, since it is the
-only file in the diff that arrived by `cp` from the `bea4222` tree rather than by an edit, and the plan's own
-concurrent-session note requires it to land on this branch. Then `piv-create-pr` with `Closes #112`, writing
-every figure from **this report's** re-derived numbers rather than the plan's tables — the plan carries
-`~297`/`~1010` for the seam arithmetic, which this report supersedes with `300`/`1007`.
+**AC #10 met on PR open** — https://github.com/linardsb/taxi/pull/113 (`chore: scope the 500-line rule to
+shipped source and enforce it (#112)`, `main` ← `feature/file-length-rule-shipped-source`). It could not be
+asserted before the body existed, so it was carried as `expected` until then. Every figure in that body
+carries `observed` / `derived` / `expected` with its arithmetic, and the seam numbers are this report's
+re-derived `300`/`1007` rather than the plan's inherited `~297`/`~1010`. One further figure was re-derived
+while writing it and is `observed` at first hand rather than inherited: the pre-#108 line count is **898**
+(`git show 00e5699:services/api/scripts/mint-tracked-ride.ts | wc -l`), so the growth figure is `+516`
+lines / **+57.5%** (`derived` — `516 / 898`). `pr-110-review.md` says "~899"; 898 is the measured value.
+
+Shipped in commit `efefcd8` — 10 files, 1072 insertions / 4 deletions, zero source files. Next:
+`piv-review-pr 113`, then a human approves.
