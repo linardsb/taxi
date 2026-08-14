@@ -72,20 +72,21 @@ import {
   OTP_RATE_WINDOW_SECONDS,
   OTP_RESEND_COOLDOWN_SECONDS,
 } from '../src/features/auth/otp.policy';
-// Deep imports on purpose. The geo barrel exports only the DI tokens, and the
-// dispatch barrel only its services — but `routeCacheKey`/`routeFailureKey` are
-// exported from the provider FILE precisely so a caller outside the class can
-// address the same corridors, and `SWEEP_INTERVAL_MS` is what sizes the offer
-// wait. Same sanctioned shape as `test/harness.ts` reaching for
-// `StubMapsProvider`: an instrument may see one layer deeper than production.
+// Deep imports on purpose, and only where the barrel does not carry the symbol.
+// `routeCacheKey`/`routeFailureKey` are exported from the provider FILE
+// precisely so a caller outside the class can address the same corridors, and
+// the dispatch barrel exports only its services, so `SWEEP_INTERVAL_MS` — what
+// sizes the offer wait — comes from the policy file. Same sanctioned shape as
+// `test/harness.ts` reaching for `StubMapsProvider`: an instrument may see one
+// layer deeper than production. `COORD_PRECISION` is NOT in that set: #108 made
+// it a contract of the geo slice, so it comes through the barrel like the token.
 import {
   DRIVER_LOCATION_STORE,
   type DriverLocationStore,
 } from '../src/features/drivers';
 import { SWEEP_INTERVAL_MS } from '../src/features/dispatch/dispatch.policy';
-import { MAPS_PROVIDER_ETA } from '../src/features/geo';
+import { COORD_PRECISION, MAPS_PROVIDER_ETA } from '../src/features/geo';
 import {
-  COORD_PRECISION,
   routeCacheKey,
   routeFailureKey,
 } from '../src/features/geo/caching-maps.provider';
@@ -156,17 +157,27 @@ const cellLocation = (i: number): LatLng => ({
  * ~11 m per step. With POLLS_PER_CELL = 5 the offsets are −2…+2 steps, so a
  * poll sits at most 0.0002° ≈ 22 m of LATITUDE from the cell centre (the same
  * figure is ~12 m of LONGITUDE at Rīga's ~57°N — this jitter is latitude, so
- * 22 m is the number). Inside the plan's ±0.0004° bound
- * (`mint-tracked-ride-dev-script.md:297`), which is itself a margin below the
- * half-cell: the 3-dp grid is 0.001° wide, so the boundary is at ±0.0005°.
+ * 22 m is the number). Inside the plan's ±0.0004° bound — the GOTCHA in
+ * `mint-tracked-ride-dev-script.md`'s walk task that begins "sub-cell jitter,
+ * if added, must stay within ±0.0004° lat of the centre"; cited by its text
+ * because #108's own amendment to that file moved its line number. The bound is
+ * itself a margin below the half-cell: the 3-dp grid is 0.001° wide, so the
+ * boundary is at ±0.0005° (`HALF_CELL_DEG`).
  * Real GPS jitter is ±10–20 m (`notifications.policy.ts:49`) — same order.
  */
 const JITTER_STEP_DEG = 10 ** -COORD_PRECISION;
 /** Half a step. Nearest-neighbour: it cannot confuse two jitter positions (1 step apart)
  *  and clears Redis GEO's ~0.6 m (~5.4e-6°) storage error by 9.3× (5e-5 / 5.39e-6). */
 const JITTER_MATCH_TOLERANCE_DEG = JITTER_STEP_DEG / 2;
-/** ±0.0004° — the plan's bound, not the cell edge (0.0005°). */
+/** ±0.0004° — the plan's bound, not the cell edge (`HALF_CELL_DEG`). */
 const MAX_JITTER_STEPS = 4;
+/**
+ * Half a cell, DERIVED. `quantizeForEtaCache` uses `toFixed(3)`, which rounds,
+ * so a 3-dp cell is `10 ** -3` wide and its boundaries sit at `.xxx5`. Every
+ * printed half-cell figure comes from here rather than from a `0.0005` literal:
+ * if the grid is ever retuned, the bound it is a margin below moves with it.
+ */
+const HALF_CELL_DEG = 10 ** -TRACKING_ETA_GRID_DECIMALS / 2;
 /** Metres per degree of LATITUDE. Only ever applied to the latitude jitter. */
 const METERS_PER_DEGREE_LAT = 111_320;
 
@@ -343,7 +354,8 @@ interface Session {
 
 interface CellRow {
   index: number;
-  location: LatLng;
+  /** The cell's own centre, snapped. Nothing reads the raw centre — the table,
+   *  the assertions and pass B all key off this or off `observed`. */
   quantized: LatLng;
   views: number;
   /** Paid `caller:'eta'` calls attributable to each view of this cell, in order. */
@@ -429,11 +441,36 @@ async function main(): Promise<void> {
     baseUrl = `http://127.0.0.1:${address.port}`;
     console.log(`listening on ${baseUrl}`);
 
+    // ── the walk's own shape, before any of it is spent ───────────────────
+    // `MINT_CELLS`/`MINT_POLLS_PER_CELL` are unvalidated env text, and the
+    // DEGENERATE values are the dangerous ones. `MINT_CELLS=0` — or anything
+    // non-numeric, which is `NaN` and passes every `>` comparison below —
+    // walks no cells at all: the positive control lives inside the walk loop
+    // and never fires, both assertion halves are satisfied by empty sets, and
+    // the summary prints `reduction 0×` under `[observed]` above a green
+    // `PASS`. A meaningless figure wearing an observation's tag is the exact
+    // defect this instrument exists to close, so refuse it by name.
+    for (const [name, value] of [
+      ['MINT_CELLS', CELLS],
+      ['MINT_POLLS_PER_CELL', POLLS_PER_CELL],
+    ] as const) {
+      if (!Number.isInteger(value) || value < 1) {
+        throw new Error(
+          `refusing to run: ${name}=${process.env[name] ?? '(unset)'} resolved to ${value}, which is not a ` +
+            `positive integer. A zero or NaN count walks nothing, skips the positive control, satisfies every ` +
+            `assertion on an empty set and prints a 0× reduction as an observation.`,
+        );
+      }
+    }
+
     // ── the poll budget, before spending any of it ────────────────────────
+    // One counted view per poll and nothing else — `awaitPing` reads the store
+    // directly and the summary is printed, not fetched. The `+ 1` is head-room
+    // against the throttle, not a request the run makes.
     const plannedViews = CELLS * POLLS_PER_CELL;
     console.log(
-      `poll budget: ${CELLS} cells × ${POLLS_PER_CELL} polls + 1 page load = ` +
-        `${plannedViews + 1} views vs TRACKING_VIEW_MAX_PER_WINDOW=${TRACKING_VIEW_MAX_PER_WINDOW}` +
+      `poll budget: ${CELLS} cells × ${POLLS_PER_CELL} polls = ${plannedViews} views ` +
+        `(+1 head-room) vs TRACKING_VIEW_MAX_PER_WINDOW=${TRACKING_VIEW_MAX_PER_WINDOW}` +
         ` per ${TRACKING_VIEW_WINDOW_SECONDS} s`,
     );
     if (plannedViews + 1 > TRACKING_VIEW_MAX_PER_WINDOW) {
@@ -467,16 +504,20 @@ async function main(): Promise<void> {
     );
     if (maxSteps > MAX_JITTER_STEPS) {
       throw new Error(
-        `refusing to run: MINT_POLLS_PER_CELL=${POLLS_PER_CELL} needs ±${maxSteps} jitter steps ` +
-          `(±${(maxSteps * JITTER_STEP_DEG).toFixed(4)}°), past the ±${(MAX_JITTER_STEPS * JITTER_STEP_DEG).toFixed(4)}° ` +
-          `bound and near the ${(0.0005).toFixed(4)}° half-cell — polls would cross into the next cell and the ` +
+        `refusing to run: MINT_POLLS_PER_CELL=${POLLS_PER_CELL} needs ${maxSteps} jitter steps at its ` +
+          `furthest (${(maxSteps * JITTER_STEP_DEG).toFixed(4)}°), past the ${(MAX_JITTER_STEPS * JITTER_STEP_DEG).toFixed(4)}° ` +
+          `bound and near the ${HALF_CELL_DEG.toFixed(4)}° half-cell — polls would cross into the next cell and the ` +
           `per-cell counts would be 2, not 1. Max is ${MAX_JITTER_STEPS * 2 + 1} polls per cell.`,
       );
     }
+    // `maxSteps` is the LARGEST MAGNITUDE, not a symmetric bound: an even
+    // `POLLS_PER_CELL` gives a lopsided range (8 polls → −3…+4). The offsets
+    // are printed beside it so the shape is read rather than inferred from a
+    // `±` that would not be true.
     console.log(
-      `jitter: ±${maxSteps} × ${JITTER_STEP_DEG.toFixed(4)}° of latitude = ` +
-        `±${(maxSteps * JITTER_STEP_DEG).toFixed(4)}° ≈ ±${(maxSteps * JITTER_STEP_DEG * METERS_PER_DEGREE_LAT).toFixed(0)} m ` +
-        `(bound ±${(MAX_JITTER_STEPS * JITTER_STEP_DEG).toFixed(4)}°, half-cell ${(0.0005).toFixed(4)}°), ` +
+      `jitter: furthest offset ${maxSteps} × ${JITTER_STEP_DEG.toFixed(4)}° of latitude = ` +
+        `${(maxSteps * JITTER_STEP_DEG).toFixed(4)}° ≈ ${(maxSteps * JITTER_STEP_DEG * METERS_PER_DEGREE_LAT).toFixed(0)} m from the cell centre ` +
+        `(bound ${(MAX_JITTER_STEPS * JITTER_STEP_DEG).toFixed(4)}°, half-cell ${HALF_CELL_DEG.toFixed(4)}°), ` +
         `offsets [${Array.from({ length: POLLS_PER_CELL }, (_, p) => jitterSteps(p)).join(', ')}] steps`,
     );
 
@@ -903,7 +944,6 @@ async function walkCell(
 
   return {
     index,
-    location: centre,
     quantized: quantizeForEtaCache(centre),
     views: perView.length,
     perView,
@@ -1056,6 +1096,9 @@ function reportSummary(
     Math.abs(jitterSteps(POLLS_PER_CELL - 1)),
   );
   const jitterDeg = maxSteps * JITTER_STEP_DEG;
+  const offsetsUsed = Array.from({ length: POLLS_PER_CELL }, (_, p) =>
+    jitterSteps(p),
+  ).join(', ');
 
   console.log('\n── summary ──────────────────────────────────────────────');
   console.log(`token                       ${token}`);
@@ -1074,15 +1117,39 @@ function reportSummary(
     `paid quote route calls      ${quoteCalls} — POST /rides pricing, proves the caller filter discriminates`,
   );
 
-  // THE HEADLINE, and every figure in it came from a pass that ran. The
-  // `[observed — pass A/B]` tags are the deliverable, not decoration: nothing
-  // below is a literal, and the ratio is computed from the two counts rather
-  // than restated.
+  // THE HEADLINE. The tags are the deliverable, not decoration, and they are
+  // NOT all the same tag: the two counts are `observed` — a pass produced each —
+  // while the ratio is `derived`, being arithmetic on them. Printing the ratio
+  // as `[observed]` would be the #107 defect in miniature, a figure no run
+  // emitted wearing a run's tag.
+  //
+  // The counts are also printed SEPARATELY from what they were expected to be.
+  // This function runs BEFORE `assertUnquantizedInvariants`, so a short pass B
+  // would otherwise print `29 = 6 cells × 5 polls` — a false equation, tagged
+  // `[observed]`, above the assertion that catches it.
+  const expectedUnquantized = rows.length * POLLS_PER_CELL;
+  // The attribution is EARNED, not automatic: it holds only while the two passes
+  // are different experiments. At one poll per cell there is no jitter
+  // (`jitterSteps(0) = 0`), both passes key the identical corridor set, and the
+  // 1× is an identity rather than a measurement of the grid. So the clause is
+  // withheld at N < 2 rather than printed and then contradicted underneath.
+  const measures = POLLS_PER_CELL >= 2;
   console.log(
-    `\nquantized cost              ${etaCalls} = one paid call per cell crossing            [observed — pass A]\n` +
-      `unquantized cost           ${String(counts.unquantized).padStart(2)} = ${rows.length} cells × ${POLLS_PER_CELL} polls, one per 4-dp corridor   [observed — pass B]\n` +
-      `reduction                   ${reductionText} attributable to #87's ETA grid              [observed]`,
+    `\nquantized cost              ${etaCalls} paid calls, one per cell crossing            [observed — pass A]\n` +
+      `unquantized cost           ${String(counts.unquantized).padStart(2)} paid calls, one per 4-dp corridor            [observed — pass B]\n` +
+      `                              expected ${rows.length} cells × ${POLLS_PER_CELL} polls = ${expectedUnquantized}                  [derived — asserted below]\n` +
+      `reduction                   ${reductionText} = ${counts.unquantized} ÷ ${etaCalls}` +
+      (measures
+        ? `, attributable to #87's ETA grid  [derived — pass B ÷ pass A]`
+        : `  [derived — pass B ÷ pass A], and NOT attributable to anything`),
   );
+  if (!measures) {
+    console.log(
+      `                            MINT_POLLS_PER_CELL=${POLLS_PER_CELL} means zero jitter, so both passes key the identical\n` +
+        `                            corridor set and this ratio is an identity, not a measurement of the grid.\n` +
+        `                            A measurement needs ≥2 polls per cell; this run is a smoke test.`,
+    );
+  }
   console.log(
     `\nProvenance. Pass B replays the raw positions pass A's page reported, through the SAME\n` +
       '`MAPS_PROVIDER_ETA` instance, the same Redis, the same `MAPS_PROVIDER_SOURCE` and the same\n' +
@@ -1093,16 +1160,18 @@ function reportSummary(
       "go through `GET /track/:token`: it measures the seam's cost, where the paid call is.",
   );
   console.log(
-    `\nJitter: ±${maxSteps} steps × ${JITTER_STEP_DEG.toFixed(4)}° of LATITUDE = ±${jitterDeg.toFixed(4)}° ≈ ±${(jitterDeg * METERS_PER_DEGREE_LAT).toFixed(0)} m ` +
+    `\nJitter: furthest offset ${maxSteps} steps × ${JITTER_STEP_DEG.toFixed(4)}° of LATITUDE = ${jitterDeg.toFixed(4)}° ≈ ${(jitterDeg * METERS_PER_DEGREE_LAT).toFixed(0)} m ` +
       `(${jitterDeg.toFixed(4)} × ${METERS_PER_DEGREE_LAT} m/°); the same\n` +
       `figure would be ~${(jitterDeg * METERS_PER_DEGREE_LAT * Math.cos((CENTRE_PICKUP.location.lat * Math.PI) / 180)).toFixed(0)} m of longitude at Rīga's ~57°N, and this jitter is latitude. Deterministic,\n` +
-      'not random — two runs walk identical coordinates. Inside the ±0.0004° bound and inside the\n' +
-      '0.0005° half-cell, so every poll quantizes to its own cell centre (asserted).',
+      `not random — two runs walk identical coordinates. Offsets [${offsetsUsed}] steps — the furthest is a\n` +
+      `MAGNITUDE, not a symmetric bound (an even poll count is lopsided). Inside the ${(MAX_JITTER_STEPS * JITTER_STEP_DEG).toFixed(4)}° bound and\n` +
+      `inside the ${HALF_CELL_DEG.toFixed(4)}° half-cell, so every poll quantizes to its own cell centre (asserted).`,
   );
   console.log(
     `\nAgainst StubMapsProvider pass B is free. If a real Google provider is ever bound in dev, one\n` +
-      `run of this script is ${etaCalls + counts.unquantized} route calls (${etaCalls} + ${counts.unquantized}), not ${etaCalls} — the <€100/mo guardrail is the\n` +
-      'reason this instrument exists, and pass B is the part of it that costs money.',
+      `run of this script is ${etaCalls + counts.unquantized + quoteCalls} paid route calls (${etaCalls} eta pass A + ${counts.unquantized} eta pass B + ${quoteCalls} quote from\n` +
+      `POST /rides pricing — the quote counts too, it is the same seam), not ${etaCalls}. The <€100/mo guardrail\n` +
+      'is the reason this instrument exists, and pass B is the part of it that costs the most.',
   );
   console.log(
     `\nThe reduction scales with polls per cell and is NOT a per-minute spend figure: it is the cost\n` +
