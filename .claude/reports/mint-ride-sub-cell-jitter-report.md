@@ -161,6 +161,25 @@ hygiene. Now `(0.0002 × 111320 m/°)`, verified by the final run.
 implementation commit showed only the intended float fix. The implementation was committed *before* Level 4
 precisely so this check is a one-line diff rather than a search through the whole ticket.
 
+**Edge case `MINT_POLLS_PER_CELL=1`** — the plan's TESTING STRATEGY predicts "pass B equals pass A; the
+reduction is 1×… it must not throw, and R3 must not fire." Run and confirmed, verbatim:
+
+```
+  #   quantized origin        cell        views  eta calls per view  observed offset (steps)
+   0  56.961,24.085          Ph2gMmERFf      1  [1]                 [0]
+   ...
+quantized cost              6 = one paid call per cell crossing            [observed — pass A]
+unquantized cost            6 = 6 cells × 1 polls, one per 4-dp corridor   [observed — pass B]
+reduction                   1× attributable to #87's ETA grid              [observed]
+
+PASS — one paid route call per cell crossing under sub-cell jitter, and 6 without the grid.
+```
+
+R3 stayed silent (6 polls → 6 distinct corridors, so nothing collapsed) and the run passed. **This is where
+AC #9's `pass B = 6, 1×` figure legitimately comes from** — a degenerate poll count, not the step-5 control.
+Note the caveat the plan itself states: at N=1 the wrong-target detector (R5) is **vacuous**, because both
+passes key the identical corridor set. N=1 is a smoke run; a real measurement needs `POLLS_PER_CELL ≥ 2`.
+
 ### Observed vs the plan's expected figures (R13)
 
 The plan labelled `6 / 30 / 5×` as `expected`. Every one is now `observed`, re-derived from the run's own
@@ -209,8 +228,11 @@ MAX_JITTER_STEPS = 4`), with the `=10` refusal message naming the threshold expl
    inconsistent, and R3 wins by construction. This is not a defect: the control's purpose is to prove the
    jitter is load-bearing, and a refusal that names "the jitter is being rounded onto the grid" proves it at
    least as well as a 1× would, while additionally demonstrating that the instrument declines to print a
-   flattering number. Recorded above with the verbatim output. **AC #9's parenthetical "(pass B = 6, 1×)" is
-   the part of the plan that is wrong, not the implementation.**
+   flattering number. Recorded above with the verbatim output.
+
+   **AC #9 is nonetheless met as written**: `MINT_POLLS_PER_CELL=1` produces exactly `pass B = 6, 1×` under
+   `[observed]`, via a path R3 correctly does not refuse (6 polls → 6 distinct corridors). So the plan is not
+   wrong about the figure — it attached the right figure to the wrong control. Both runs are recorded above.
 
 6. **The plan's `app.select(GeoModule).get(...)` fallback was not implemented.** It was contingent
    ("if it throws"), and step 1's free run proves `app.get(MAPS_PROVIDER_ETA)` resolves non-strictly from the
@@ -244,7 +266,15 @@ MAX_JITTER_STEPS = 4`), with the `=10` refusal message naming the threshold expl
   needed this time.
 - **The environment file was never required.** `.env.example` states that `JWT_SECRET` and `OTP_PEPPER` are
   PUBLIC and committed, and the production-refuses-example-values check is production-gated. The script was
-  therefore run from those committed values plus the two documented local port facts (docker Postgres by LAN
-  IP, since brew Postgres shadows `localhost:5432`; Redis on 6381). No secret was read, written, or needed —
-  the hook's guardrail was never worked around, just made unnecessary. Runner archived at
-  `scratchpad/run-mint.sh`.
+  therefore run from those committed values plus two local port facts. No secret was read, written, or needed
+  — the hook's guardrail was never worked around, just made unnecessary.
+
+  **Reproduction recipe** (the plan's forward-reference asks #13/#16 to re-run this script against a real
+  provider; these are the two non-obvious facts they will need, recorded here rather than in a session-scoped
+  scratch file):
+
+  - `DATABASE_URL` must reach docker Postgres by **LAN IP**, not `localhost` — a brew Postgres holds
+    `127.0.0.1:5432` on this machine and answers `role "taxi" does not exist`. `ipconfig getifaddr en0` was
+    empty; the address came from `ifconfig | grep "inet "`.
+  - `REDIS_URL` on **6381**, not 6379 (6379 is a shadowed ssh tunnel; a wrong port surfaces as `NOAUTH`).
+  - Everything else is verbatim from `.env.example`.
