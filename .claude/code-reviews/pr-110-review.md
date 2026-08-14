@@ -113,6 +113,21 @@ report/assertion halves. **Not fixed** — a split is a restructure with its own
 fix, and it is your call whether `scripts/` gets an explicit exemption instead. Leaving it undiscussed is the
 one option this ticket's own standards argue against.
 
+> **RESOLVED — #112, 2026-08-14 (B-broad).** Decided cold, on a closed ticket with no PR open. The rule now
+> binds *shipped source* — what each package's build compiles — and specs, `test/`/`tests/` and `scripts/` are
+> outside it and uncapped; it is enforced by `max-lines: ['error', { max: 500 }]` — effective in all five
+> packages that run eslint, via the shared base for `services/api`/`db`/`packages/shared` and restated in
+> `apps/dispatch`/`apps/admin`, which do not consume it — rather than by a reviewer's judgement. **The file
+> is unchanged at 1414 lines**, and is now compliant by amendment, not by edit.
+> On the split this finding proposed: the three seams are real — they land on the
+> file's own section banners — but they do not reach compliance. `observed` (banner line numbers,
+> `grep -n "^// ─"` at `origin/main` `085ef88`): jitter geometry + guards `102–208` = **107** lines,
+> report + assertions `1047–1346` = **300** lines. Remainder is `derived`: `1414 − 107 − 300` = **1007**
+> lines left in one file, still 2.0× the cap. A compliant split needs ~5 files, since `main()` alone is
+> 348 lines. See `.claude/plans/file-length-rule-shipped-source.md` for the full decision record — including
+> the residual risk this accepts: nothing now bounds the script's growth, and the review agent is explicitly
+> told not to flag it for length.
+
 **D2 · `CLAUDE.md:46` — "a green gate can be five tests short" is stale.** Measured: 2 suites / 24 tests. It is
 outside this PR's subject (the rules file is not part of #108), so it is flagged rather than edited here. It
 wants a one-line docs commit — and it is the upstream source of A8, so fixing it stops the next ticket

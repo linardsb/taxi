@@ -30,6 +30,27 @@ export default tseslint.config(
       // flags it.
       '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
       'prettier/prettier': ['error', { endOfLine: 'auto' }],
+      // CLAUDE.md's file-length rule, made executable (#112). Counts blank and
+      // comment lines: the cap has always been about total file size, and a
+      // `skipComments` variant would be a different rule wearing the same number.
+      'max-lines': ['error', { max: 500, skipBlankLines: false, skipComments: false }],
     },
+  },
+  {
+    // Dev instruments are outside the rule, not merely lenient under it — see
+    // CLAUDE.md's VSA bullet. This mirrors what each package's build already
+    // excludes (`services/api/tsconfig.build.json`), so the gate and the build
+    // draw the same shipped/dev line. Part of the rule's definition rather than
+    // a per-package need, so it lives here despite the header's #53 convention.
+    files: [
+      '**/*.spec.ts',
+      '**/*.spec.tsx',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/test/**',
+      '**/tests/**',
+      '**/scripts/**',
+    ],
+    rules: { 'max-lines': 'off' },
   },
 );
