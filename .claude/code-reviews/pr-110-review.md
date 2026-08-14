@@ -18,13 +18,15 @@ matter most are a *derived* ratio printed as `[observed]`, and an env-var typo p
 attribution above a green `PASS`. All ten are fixed on this branch (commits below) and re-validated. One item
 is left open for the author because it is a restructure, not a review fix.
 
+Fourteen items: twelve fixed on this branch, two left open for the author.
+
 | Severity | Found | Fixed on branch |
 |---|---|---|
 | Critical | 0 | — |
-| High | 1 (a false compliance claim in the PR body) | ✅ |
-| Medium | 6 | ✅ |
-| Low | 4 | ✅ |
-| Open, needs the author's call | 1 (file length) | ❌ flagged |
+| High | 1 — A1, a false compliance claim in the PR body | ✅ |
+| Medium | 7 — A2–A8 | ✅ |
+| Low | 4 — A9–A12 | ✅ |
+| Open, needs the author's call | 2 — D1 file length, D2 `CLAUDE.md:46` | ❌ flagged |
 
 ---
 
@@ -85,7 +87,7 @@ the boot log and the summary. Separately, the half-cell was a literal in two pri
 whose jitter step is deliberately *derived and never a literal*. → `HALF_CELL_DEG` derived from
 `TRACKING_ETA_GRID_DECIMALS` (`:180`), and both surfaces now say "furthest offset" and print the real offsets.
 
-**A10 · Low · `mint-tracked-ride.ts:1172` and `:437` — two figures that named the wrong thing.** The dev-spend
+**A10 · Low · `mint-tracked-ride.ts:1172` and `:472` — two figures that named the wrong thing.** The dev-spend
 line said "36 route calls" while the same summary counts a paid `quote` call four lines earlier (it is 37); and
 the poll-budget line said "+ 1 page load" for a request the restructured `walkCell` does not make. → 37 with
 the quote broken out; "(+1 head-room)".
@@ -93,7 +95,8 @@ the quote broken out; "(+1 head-room)".
 **A11 · Low · `mint-tracked-ride.ts:355, 947` — `CellRow.location` was dead** (assigned, never read; dead since
 #107). → removed.
 
-**A12 · Low · report — two counts were off by one.** "OTP budget actually spent: 5 of 5" enumerated five runs
+**A12 · Low · `.claude/reports/mint-ride-sub-cell-jitter-report.md:222` and `:89` — two counts were off by
+one.** "OTP budget actually spent: 5 of 5" enumerated five runs
 but the report transcribes six (the `MINT_POLLS_PER_CELL=1` edge run is missing from the list), which cannot
 fit one 5-per-hour window; and "`identity function` survives in exactly three places" missed a fourth
 occurrence that is **line-wrapped**, so `grep "identity function"` skips it — the "grep the noun, not the
