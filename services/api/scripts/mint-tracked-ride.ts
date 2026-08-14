@@ -1094,7 +1094,7 @@ function reportSummary(
   );
   console.log(
     `\nJitter: ±${maxSteps} steps × ${JITTER_STEP_DEG.toFixed(4)}° of LATITUDE = ±${jitterDeg.toFixed(4)}° ≈ ±${(jitterDeg * METERS_PER_DEGREE_LAT).toFixed(0)} m ` +
-      `(${jitterDeg} × ${METERS_PER_DEGREE_LAT} m/°); the same\n` +
+      `(${jitterDeg.toFixed(4)} × ${METERS_PER_DEGREE_LAT} m/°); the same\n` +
       `figure would be ~${(jitterDeg * METERS_PER_DEGREE_LAT * Math.cos((CENTRE_PICKUP.location.lat * Math.PI) / 180)).toFixed(0)} m of longitude at Rīga's ~57°N, and this jitter is latitude. Deterministic,\n` +
       'not random — two runs walk identical coordinates. Inside the ±0.0004° bound and inside the\n' +
       '0.0005° half-cell, so every poll quantizes to its own cell centre (asserted).',
