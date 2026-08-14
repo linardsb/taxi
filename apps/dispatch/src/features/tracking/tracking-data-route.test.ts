@@ -59,4 +59,21 @@ describe('GET /t/[token]/data', () => {
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ message: 'api_unreachable' });
   });
+
+  it('forwards a 429 with its body intact so the island can read retryAfterSeconds (edge — #100)', async () => {
+    const body = { message: 'too_many_requests', retryAfterSeconds: 28 };
+    vi.mocked(fetch).mockResolvedValue({
+      status: 429,
+      text: async () => JSON.stringify(body),
+    } as never);
+
+    const res = await call(TOKEN);
+
+    // The island's entire backoff depends on BOTH surviving this hop — the
+    // route forwards `res.status` and the raw text, and this pins that it
+    // keeps doing so. Collapsing a 429 to a 502 here, or dropping the body,
+    // would send the island to the offline banner at full 5 s cadence.
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual(body);
+  });
 });

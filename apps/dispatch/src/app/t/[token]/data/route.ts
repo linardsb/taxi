@@ -37,7 +37,9 @@ export async function GET(
       },
     });
   } catch {
-    // API unreachable — the island renders its offline banner off any non-OK.
+    // API unreachable — the island renders its offline banner off this 502.
+    // Not off any non-OK: since #100 a forwarded 429 renders the throttled
+    // banner instead, and the status and body above are what it reads.
     return Response.json({ message: 'api_unreachable' }, { status: 502 });
   }
 }
