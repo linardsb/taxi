@@ -107,8 +107,12 @@ overruled by the surface that runs.
   ```bash
   grep -rln -iE "500 lines|~500|≤500|500-line" \
     .claude/code-reviews/ .claude/plans/ .claude/reports/ .claude/execution-reports/ \
-    | grep -v file-length-rule | wc -l     # → 25
+    | grep -v file-length-rule | wc -l     # → 25 at 085ef88
   ```
+
+  Run in the post-review tree this returns **26**: `pr-113-review.md` quotes the "500-line rule" in its
+  own title and its filename does not match the `file-length-rule` filter. The 25 is pinned to the base,
+  as labelled.
 
   These are dated records that were true when written —
   CLAUDE.md's "retire the subject" rule governs *live* claims, not the archive. **Only
@@ -720,7 +724,7 @@ only) would have amended the rule and left it false about nine files.
 
 Provenance: `observed` — classifier over both files on `origin/main` (block comments counted through
 their closing `*/`); shares are `derived` from those counts over `code + comment`, i.e. excluding blank
-lines (`433 / 1321`, `126 / 412`) — the same denominator for both rows. 33% against the largest shipped
+lines (`433 / 1321`, `126 / 412`) — the same denominator rule for both rows. 33% against the largest shipped
 file's 30.6% is not an outlier. This is a two-file comparison, not a repo-wide norm. **Code alone is 888 lines, 1.8× the cap.** This argument does not support the exemption and
 should not appear in the PR body as though it does.
 

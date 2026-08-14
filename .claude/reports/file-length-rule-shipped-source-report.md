@@ -158,8 +158,8 @@ induced-failure controls above are the test, per the plan's testing strategy.
 **AC #9 — nothing was edited to make it green.** `git diff --name-only origin/main` over all ten
 over-length paths returns empty; they are byte-identical to base. As of commit `efefcd8`, the diff is
 8 files excluding the two PIV artifacts committed alongside (10 total), **81** insertions / 4 deletions
-— `observed`, `git show --numstat efefcd8` less the plan's 768 and the report's 223 — all rules, docs or
-eslint config, **zero source files**. Later commits on the branch, including this review pass, add to
+— `observed`, from `git show --numstat efefcd8` with the `.claude/plans/` and `.claude/reports/` paths
+filtered out, which emits the subtotal directly — all rules, docs or eslint config, **zero source files**. Later commits on the branch, including this review pass, add to
 those counts without touching source.
 
 ## Deviations from the plan
