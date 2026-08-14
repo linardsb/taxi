@@ -14,8 +14,13 @@ import type { KeyValueStore } from '../../common/kv/kv.store';
  * ~11 m. The hit-rate/accuracy knob: 3 decimals (~111 m) would raise the hit
  * rate and cost a few cents of fare accuracy. Real hit rates are unmeasurable
  * until there is traffic — revisit when the first Google bill exists.
+ *
+ * Exported because it is also the unit the `mint:ride` instrument derives its
+ * sub-cell jitter step from (#108) — the smallest move that mints a distinct
+ * cache key here is the smallest move an unquantized pass pays for. Moving this
+ * number moves that jitter with it, rather than leaving a stale literal behind.
  */
-const COORD_PRECISION = 4;
+export const COORD_PRECISION = 4;
 
 /**
  * Who this instance routes for. Construction-time configuration, NOT per-call

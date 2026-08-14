@@ -30,6 +30,10 @@
  *   unmeasurable.
  */
 export { GeoModule } from './geo.module';
+// A contract of the slice rather than a private detail: the tracking grid's
+// coarseness claim (`notifications.policy.ts:34`) depends on this number, and
+// `notifications.policy.spec.ts` now checks it rather than asserting it in prose.
+export { COORD_PRECISION } from './caching-maps.provider';
 export {
   MAPS_PROVIDER,
   MAPS_PROVIDER_ETA,
