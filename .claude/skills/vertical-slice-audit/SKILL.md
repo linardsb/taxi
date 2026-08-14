@@ -148,7 +148,7 @@ Return the audit result to the user in this format:
 1. **Score honestly.** A PASS means the file/convention actually exists, not that it could exist.
 2. **Cite real paths.** Every row's evidence column should reference a file or note its absence.
 3. **Don't editorialize.** Describe the codebase as it stands. The score tells the user where they stand; the migration plan tells them what to do next.
-4. **Coupling beats LOC.** A 2,000-line `service.py` is fine if it's cohesive. A 200-line file pulling from 14 other features fails row 10. (In this repo the max-500-lines-per-file rule from CLAUDE.md still applies — note violations, but score coupling, not length.)
+4. **Coupling beats LOC.** A 2,000-line `service.py` is fine if it's cohesive. A 200-line file pulling from 14 other features fails row 10. (In this repo the 500-lines-per-file rule from CLAUDE.md applies to shipped source only — `.spec`/`.test` files (`.ts`/`.tsx`), `test/`/`tests/` and `scripts/` are exempt. Note violations in shipped source, but score coupling, not length.)
 5. **Migration is incremental.** The migration plan should never recommend "refactor everything." Start with the next greenfield slice; let brownfield decay around it.
 
 ---
