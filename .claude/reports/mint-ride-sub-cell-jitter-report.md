@@ -2,7 +2,9 @@
 
 **Plan**: `.claude/plans/mint-ride-sub-cell-jitter.md`
 **Branch**: `feature/mint-ride-sub-cell-jitter` (in worktree `/Users/Berzins/Desktop/taxi-jitter`)
-**Status**: COMPLETE — CI-parity gate green, Level 4 steps 1–6 all run, both controls reverted and verified.
+**Status**: COMPLETE — CI-parity gate green, Level 4 steps 1–6 all run (step 1's `=9` acceptance half derived
+rather than run; see the OTP budget note), both controls reverted and verified. **AC #9 is met with an
+amendment, not as written** — see Deviations #5.
 
 ## Summary
 
@@ -64,23 +66,41 @@ Tests:       462 passed, 462 total
 Tasks:       21 successful, 21 total
 ```
 
-Run without `REDIS_TEST_URL` first, for comparison: 52 of 54 suites, 24 tests skipped — the documented
-short-gate, confirmed and then closed.
+Run without `REDIS_TEST_URL` first, for comparison — verbatim:
 
-**R1 audit** (`grep -n "routeFetched(" services/api/scripts/mint-tracked-ride.ts`) — every occurrence is one of:
-the frozen pass-A snapshot (`:657`, `:658`), the explicit pass-B slice (`:665`), inside `walkCell` where the
-delta is taken and consumed within pass A (`:872`, `:874`), or inside `unquantizedPass`' own delta (`:995`,
-`:1004`). Two further hits are prose in comments. **No bare cumulative read survives in the report or in the
-pass-B assertions** — that is the R1 defect, and ordering now makes it unreachable rather than merely
-discouraged.
+```
+Test Suites: 2 skipped, 52 passed, 52 of 54 total
+Tests:       24 skipped, 438 passed, 462 total
+```
 
-**Subject-retirement grep** — `identity function` survives in exactly three places, all correct: two inside the
-boot guard describing the hypothetical it refuses, one in `walkCell`'s docblock in the **past tense**,
-describing what #108 changed. Nothing claims the grid is an identity function for the current walk.
+**2 suites / 24 tests short, not the "five tests" `CLAUDE.md:46` documents.** That figure is stale — this run
+is what the short gate actually costs today — and it was copied into this ticket's own plan (Level 3 section)
+before being checked. Corrected in the plan; `CLAUDE.md:46` is out of this ticket's subject and is left for a
+docs commit of its own.
 
-**Level 4 — all six steps run.** Logs archived in the session scratchpad (`l4-*.log`).
+**R1 audit** (`grep -n "routeFetched(" services/api/scripts/mint-tracked-ride.ts`) — seven call sites, every one
+of them either the frozen pass-A snapshot (`etaCallsQuantized` / `quoteCalls` in `main`), the explicit pass-B
+slice (`passBEvents`), the `before`/`after` pair inside `walkCell` (taken and consumed within pass A), or the
+`before`/`after` pair inside `unquantizedPass`. Two further hits are prose in comments. **No bare cumulative
+read survives in the report or in the pass-B assertions** — that is the R1 defect, and ordering now makes it
+unreachable rather than merely discouraged. (Described by the binding each hit lands on, not by line number:
+the review round shifted every line in this file, which is exactly how a pinned audit goes stale.)
 
-**Step 1 — guards before any spend (costs no OTP).** `MINT_POLLS_PER_CELL=10`, verbatim:
+**Subject-retirement grep** — `identity function` survives in **four** places, all correct: two inside the boot
+guard describing the hypothetical it refuses, one in `walkCell`'s docblock in the **past tense**, and one in
+the file docblock, also past tense. Nothing claims the grid is an identity function for the current walk.
+
+The count was first written as three: the fourth occurrence is **line-wrapped** (`an identity\n * function`),
+so a `grep "identity function"` misses it. Grep the noun (`identity`), not the sentence form — the same lesson
+`CLAUDE.md` states, tripped over inside the ticket that cites it.
+
+**Level 4 — all six steps run**, with one half-step derived rather than observed and named as such: step 1's
+`MINT_POLLS_PER_CELL=9` *acceptance* run (see the OTP budget note below). Logs archived in the session
+scratchpad (`l4-*.log`).
+
+**Step 1 — guards before any spend (costs no OTP).** `MINT_POLLS_PER_CELL=10`, verbatim — as the
+implementation round printed it; the review round reworded both lines and re-ran them, see **Review round
+(#110)**:
 
 ```
 poll budget: 6 cells × 10 polls + 1 page load = 61 views vs TRACKING_VIEW_MAX_PER_WINDOW=120 per 60 s
@@ -113,6 +133,10 @@ quantized cost              6 = one paid call per cell crossing            [obse
 unquantized cost           30 = 6 cells × 5 polls, one per 4-dp corridor   [observed — pass B]
 reduction                   5× attributable to #87's ETA grid              [observed]
 ```
+
+> **Superseded by the review round.** The counts are unchanged; the *tags* were wrong — the ratio is
+> arithmetic on the two counts, not something a pass emitted. This block is left as the record of what the
+> implementation round shipped. The current output is in **Review round (#110)** at the end of this report.
 
 All six pass-A `cell` hashes (`Ph2gMmERFf`, `C4uMJe41eE`, `wHNObZ8nZQ`, `JPfxDQWP6S`, `1453gzazSn`,
 `3EEp4vd_7M`) appear among pass B's thirty in the captured `geo.maps.route_fetched` stream — the wrong-target
@@ -195,10 +219,21 @@ output above rather than copied forward:
 
 They agree — but they are recorded here because a run produced them, not because the plan predicted them.
 
-**OTP budget actually spent: 5 of 5** (steps 2, 3, 5, 4, and the final confirming run). Step 1 cost none. The
-live `MINT_POLLS_PER_CELL=9` acceptance run was **deliberately skipped** — it would have spent a sixth
-request, and its acceptance is arithmetic on constants already in the source (`maxSteps = 4 ≤
-MAX_JITTER_STEPS = 4`), with the `=10` refusal message naming the threshold explicitly.
+**OTP budget actually spent: 6 full runs**, and they did not all fall in one window — `OTP_MAX_REQUESTS_PER_HOUR
+= 5` per phone (`otp.policy.ts:9`), so this crossed a window boundary. The six, in order: step 2 (the run),
+step 3 (idempotence), step 4 (interception control — it still signs in, see above), step 5 (jitter control),
+the `MINT_POLLS_PER_CELL=1` edge run, and the final confirming run after the float fix. Runs 1–5 fell in the
+first hour; the sixth waited the window out.
+
+An earlier draft of this line said "5 of 5" and enumerated five, omitting the `MINT_POLLS_PER_CELL=1` run that
+is transcribed two sections above. Corrected here rather than quietly — a wrong count of the runs behind the
+figures is the same class of defect as a wrong figure.
+
+Step 1 cost none. The live `MINT_POLLS_PER_CELL=9` acceptance run was **deliberately skipped** — it would have
+spent a further request, and its acceptance is arithmetic on constants already in the source
+(`maxSteps = 4 ≤ MAX_JITTER_STEPS = 4`), with the `=10` refusal message naming the threshold explicitly. So
+Level 4 step 1 is half observed (the `=10` refusal) and half derived (the `=9` acceptance), and this report
+says which is which rather than reporting the step as run.
 
 ## Deviations from the plan
 
@@ -218,8 +253,8 @@ MAX_JITTER_STEPS = 4`), with the `=10` refusal message naming the threshold expl
    used in three printed figures; naming it keeps the three from drifting apart.
 
 4. **Ran the gate twice, deliberately** — once without `REDIS_TEST_URL` and once with. The first run is not
-   waste: it demonstrates the documented short-gate (24 tests skipped) rather than asserting it, which is the
-   same provenance discipline this ticket is about.
+   waste: it measures the short gate (2 suites / 24 tests skipped) rather than asserting it, which is the same
+   provenance discipline this ticket is about — and it is what caught `CLAUDE.md:46`'s "five tests" as stale.
 
 5. **Level 4 step 5 produces R3's refusal, not "pass B = 6, 1×".** The plan's step 5 and AC #9 expect the
    jitter control to let pass B run and report 6 (a 1× reduction). It cannot: forcing `jitterSteps → 0`
@@ -230,9 +265,17 @@ MAX_JITTER_STEPS = 4`), with the `=10` refusal message naming the threshold expl
    least as well as a 1× would, while additionally demonstrating that the instrument declines to print a
    flattering number. Recorded above with the verbatim output.
 
-   **AC #9 is nonetheless met as written**: `MINT_POLLS_PER_CELL=1` produces exactly `pass B = 6, 1×` under
-   `[observed]`, via a path R3 correctly does not refuse (6 polls → 6 distinct corridors). So the plan is not
-   wrong about the figure — it attached the right figure to the wrong control. Both runs are recorded above.
+   **AC #9 is therefore met with an amendment, NOT as written.** Its text is:
+
+   > Level 4 steps 1-6 all pass, with step 5's result (pass B = 6, 1×) recorded in the report as the control
+   > it is.
+
+   It pins `6 / 1×` to **step 5's result**, and step 5's result is R3's refusal. The `6 / 1×` that was
+   observed came from `MINT_POLLS_PER_CELL=1` — a different run, via a path R3 correctly leaves alone (6 polls
+   → 6 distinct corridors). Calling that "met as written" would attach a correct figure to the wrong subject,
+   which is the shape of the defect this ticket exists to close. So: the figure is real and recorded above
+   under the run that produced it; the AC's *prediction* about step 5 is retired, superseded by R3, which the
+   same plan specified and deliberately ordered first. Both runs are recorded above.
 
 6. **The plan's `app.select(GeoModule).get(...)` fallback was not implemented.** It was contingent
    ("if it throws"), and step 1's free run proves `app.get(MAPS_PROVIDER_ETA)` resolves non-strictly from the
@@ -278,3 +321,99 @@ MAX_JITTER_STEPS = 4`), with the `=10` refusal message naming the threshold expl
     empty; the address came from `ifconfig | grep "inet "`.
   - `REDIS_URL` on **6381**, not 6379 (6379 is a shadowed ssh tunnel; a wrong port surfaces as `NOAUTH`).
   - Everything else is verbatim from `.env.example`.
+
+---
+
+## Review round (#110) — `piv-review-pr`
+
+Ten findings from the PR review (`.claude/code-reviews/pr-110-review.md`), all applied on this branch. The
+mechanism and the two counts are unchanged; what changed is which figures may wear which tag, plus one guard.
+
+**Code**
+
+1. **The ratio was tagged `[observed]`.** It is arithmetic on two observed counts, i.e. `derived` under
+   CLAUDE.md's taxonomy — a figure no pass emitted wearing a pass's tag, which is #107's defect in miniature.
+   Now `reduction 5× = 30 ÷ 6 … [derived — pass B ÷ pass A]`.
+2. **`unquantized cost 30 = 6 cells × 5 polls [observed — pass B]`** merged an observed count with a derived
+   identity under one tag — and `reportSummary` runs *before* `assertUnquantizedInvariants`, so a short pass B
+   would have printed the false equation `29 = 6 × 5` above the assertion that catches it. Count and
+   expectation now print on separate lines with separate tags.
+3. **The attribution is now withheld below 2 polls per cell.** At `MINT_POLLS_PER_CELL=1` there is no jitter,
+   both passes key the identical corridor set, and the 1× is an identity. The report said so in prose; the
+   script printed "attributable to #87's ETA grid" regardless.
+4. **Degenerate `MINT_CELLS` refused before any spend.** `MINT_CELLS=0` — or any non-numeric value, which is
+   `NaN` and passes every `>` comparison — walked no cells, so the positive control (inside the loop) never
+   fired, both assertion halves passed on empty sets, and the run printed `reduction 0×` under `[observed]`
+   above a green `PASS`. Now a named refusal, for both counts, requiring a positive integer.
+5. **`COORD_PRECISION` came through the barrel**, and the deep-import comment that claimed "the geo barrel
+   exports only the DI tokens" — which this PR itself made false — was narrowed to the two key builders.
+6. **The jitter docblock's pin `mint-tracked-ride-dev-script.md:297` was stale**, invalidated by *this PR's
+   own* +2-line amendment to that file (the bound moved to 299). Cited by text now, per `bea4222`'s lesson.
+7. **`HALF_CELL_DEG` derived** from `TRACKING_ETA_GRID_DECIMALS` — the half-cell was a `0.0005` literal in two
+   printed strings, in the ticket whose jitter step is deliberately derived and never a literal.
+8. **`±maxSteps` is a magnitude, not a symmetric bound** — an even poll count is lopsided (8 polls → −3…+4).
+   The boot log and the summary now say "furthest offset" and print the actual offset list.
+9. **The dev-spend figure omitted the quote call** the same summary counts four lines earlier: 37 paid route
+   calls, not 36.
+10. **`CellRow.location` removed** — assigned, never read (dead since #107).
+
+Also: the poll-budget line said "+ 1 page load" for a request the restructured `walkCell` does not make; it
+now reads `(+1 head-room)`.
+
+**Documents**
+
+- **AC #9 is met with an amendment, not as written** — see Deviations #5 and the plan's AMENDMENTS. The
+  original claim attached a correct figure (`6 / 1×`) to the wrong subject (step 5).
+- **The plan's Level 3 short-gate figure ("five Redis-backed suites") was inherited from `CLAUDE.md:46` and
+  wrong** — measured at 2 suites / 24 tests. `CLAUDE.md:46` carries the same stale figure and needs its own
+  docs commit; it is outside this ticket's subject.
+- **The OTP count and the `identity function` grep count** were both off by one; corrected above with the
+  reason each was missed.
+
+### Validation — re-run by the review, not inherited
+
+| Check | Result |
+|---|---|
+| `pnpm turbo run typecheck lint test build --force` (`REDIS_TEST_URL` set, from the worktree) | **21/21 tasks, 0 cached · 54 suites / 462 tests** |
+| Same gate **without** `REDIS_TEST_URL` | **2 suites skipped, 24 tests skipped** — the short gate, measured |
+| `pnpm --filter @taxi/api typecheck` / `lint` after the fixes | clean · 0 errors (7 pre-existing spec warnings) |
+| `MINT_CELLS=0` and `MINT_CELLS=abc` | refused by name, **before `── actors ──`** — no OTP spent |
+| `MINT_POLLS_PER_CELL=10` | refused at the jitter guard, no OTP spent |
+| `mint:ride` default (`6 × 5`) | `PASS` · 6 / 30 / 5× · table and hashes identical to the implementation round |
+| `MINT_POLLS_PER_CELL=1` | `PASS` · 6 / 6 / 1× with the "NOT attributable to anything" caveat printed |
+
+Current headline, verbatim from the `MINT_POLLS_PER_CELL=1` run (the branch's newest live output):
+
+```
+quantized cost              6 paid calls, one per cell crossing            [observed — pass A]
+unquantized cost            6 paid calls, one per 4-dp corridor            [observed — pass B]
+                              expected 6 cells × 1 polls = 6                  [derived — asserted below]
+reduction                   1× = 6 ÷ 6  [derived — pass B ÷ pass A], and NOT attributable to anything
+                            MINT_POLLS_PER_CELL=1 means zero jitter, so both passes key the identical
+                            corridor set and this ratio is an identity, not a measurement of the grid.
+                            A measurement needs ≥2 polls per cell; this run is a smoke test.
+```
+
+And the default path, verbatim from the run at 11:43:
+
+```
+quantized cost              6 paid calls, one per cell crossing            [observed — pass A]
+unquantized cost           30 paid calls, one per 4-dp corridor            [observed — pass B]
+                              expected 6 cells × 5 polls = 30                  [derived — asserted below]
+reduction                   5× = 30 ÷ 6, attributable to #87's ETA grid  [derived — pass B ÷ pass A]
+```
+
+**Provenance of that second block, stated because the rule demands it.** It was produced *before* finding #3
+(the conditional attribution) landed. That change is a branch on `POLLS_PER_CELL >= 2`; on the `>= 2` path the
+template concatenates to the identical string, so the block above is what the current code prints at the
+default — but it was not re-observed under the current commit. A confirming run was attempted and **refused by
+`OTP_MAX_REQUESTS_PER_HOUR`** (`too_many_requests`, `+371***001`) — the instrument's own documented ceiling,
+doing its job. Re-run it after the window to move this figure from "argued identical" to "observed".
+
+### Still open — needs the author's call, not fixed here
+
+**The file is 1385 lines against CLAUDE.md's ~500-line rule** (~899 before this ticket, so #108 worsened it by
+roughly half again). The rule is unconditional and the file now has three clean seams: the jitter geometry and
+its guards, the run itself, and the report/assertion halves. Splitting it is a restructure with its own review
+surface, not a review fix — so it is flagged rather than done. Either split it or record an explicit exemption
+for `scripts/`; leaving it undiscussed is the one outcome this ticket's own standards argue against.

@@ -89,9 +89,12 @@ standalone follow-up deferred from the PR #107 review.
 
 **Back-references**:
 
-- `.claude/plans/mint-tracked-ride-dev-script.md` — Why: the plan this script was built from. Line 297
-  sanctions the jitter magnitude (±0.0002°, bound ±0.0004°); line 447-449 carries the claim this ticket
-  converts from arithmetic to observation.
+- `.claude/plans/mint-tracked-ride-dev-script.md` — Why: the plan this script was built from. Its walk task
+  carries the GOTCHA beginning "sub-cell jitter, if added, must stay within ±0.0004° lat of the centre",
+  which sanctions the magnitude (±0.0002°, bound ±0.0004°); the note beginning "the unquantized
+  counterfactual is not measured" carries the claim this ticket converts from arithmetic to observation.
+  **Cited by text, not by line**: this ticket's own amendment to that file shifts every line below its
+  Forward-references block by +2, so a pin written here would be stale the moment it landed.
 - `.claude/code-reviews/pr-107-review.md:43-90` — Why: finding **H1**, the full argument and options (a)/(b)/(c).
   This ticket is option (b).
 - `.claude/plans/tracking-eta-maps-quantized-cache.md` — Why: #87, the grid being measured.
@@ -139,8 +142,9 @@ standalone follow-up deferred from the PR #107 review.
 - `services/api/src/features/notifications/tracking/tracking.integration.spec.ts` (lines 684-709) — Why: the
   in-memory version of exactly this property; its "~22 m nudge is a cache hit" case is the jitter magnitude
   this ticket uses live.
-- `.claude/plans/mint-tracked-ride-dev-script.md` (lines 290-300, 440-455) — Why: the sanctioned jitter
-  magnitude and the claim text being superseded.
+- `.claude/plans/mint-tracked-ride-dev-script.md` — the walk task's jitter GOTCHA and the "unquantized
+  counterfactual is not measured" note. Why: the sanctioned jitter magnitude and the claim text being
+  superseded. Cited by text — this ticket's amendment to that file shifts its line numbers.
 
 ### New Files to Create
 
@@ -312,9 +316,11 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
    * ~11 m per step. With POLLS_PER_CELL = 5 the offsets are −2…+2 steps, so a
    * poll sits at most 0.0002° ≈ 22 m of LATITUDE from the cell centre (the same
    * figure is ~12 m of LONGITUDE at Rīga's ~57°N — this jitter is latitude, so
-   * 22 m is the number). Inside the plan's ±0.0004° bound
-   * (`mint-tracked-ride-dev-script.md:297`), which is itself a margin below the
-   * half-cell: the 3-dp grid is 0.001° wide, so the boundary is at ±0.0005°.
+   * 22 m is the number). Inside the plan's ±0.0004° bound — the GOTCHA in
+   * `mint-tracked-ride-dev-script.md`'s walk task, cited by its text because
+   * this ticket's own amendment moves that file's line numbers. The bound is
+   * itself a margin below the half-cell: the 3-dp grid is 0.001° wide, so the
+   * boundary is at ±0.0005°.
    * Real GPS jitter is ±10–20 m (`notifications.policy.ts:49`) — same order.
    */
   const JITTER_STEP_DEG = 10 ** -COORD_PRECISION;
@@ -768,8 +774,9 @@ pnpm --filter @taxi/api test -- notifications.policy.spec
 pnpm turbo run typecheck lint test build --force
 ```
 
-Set `REDIS_TEST_URL` to match `REDIS_PORT` (6381 on this machine) or five Redis-backed suites `describe.skip`
-and the gate is silently short.
+Set `REDIS_TEST_URL` to match `REDIS_PORT` (6381 on this machine) or the Redis-backed suites `describe.skip`
+and the gate is silently short — **2 suites / 24 tests** as of this ticket, measured, not inherited.
+(`CLAUDE.md:46` still says "five tests short"; that figure is stale and needs its own docs commit.)
 
 ### Level 4: Manual Validation — the instrument's own controls
 
@@ -956,4 +963,24 @@ describe different cases and a reader who conflates them gets the same wrong pic
 
 ## AMENDMENTS
 
-(none yet — plan created 2026-08-14)
+<!-- Append-only. Newest at the bottom. -->
+
+### 2026-08-14 — AC #9's step-5 prediction is retired; R3 supersedes it
+
+AC #9 asks for "step 5's result (pass B = 6, 1×) recorded in the report as the control it is". **Step 5 cannot
+produce that result, and this plan is internally inconsistent here.** Forcing `jitterSteps → 0` collapses all
+`C × N` polls onto `C` corridors, and R3 — specified by this same plan and deliberately ordered *before* pass B
+spends — refuses the pass first. R3 wins by construction, and that is R3 working.
+
+AC #9 is therefore met with this amendment rather than as written: step 5's recorded result is R3's refusal,
+which discharges the control's purpose (prove the jitter is load-bearing) at least as well as a 1× would, and
+additionally shows the instrument declining to print a flattering number. The `pass B = 6, 1×` figure is real
+and is recorded in the report under the run that actually produced it — `MINT_POLLS_PER_CELL=1`, the degenerate
+edge case, via a path R3 correctly leaves alone. The figure was right; the control it was attached to was not.
+
+### 2026-08-14 — the Level 3 short-gate figure was inherited, and wrong
+
+The VALIDATION COMMANDS section said "five Redis-backed suites `describe.skip`", copied from `CLAUDE.md:46`
+without re-derivation — the inheritance failure this ticket exists to close, committed in this ticket's own
+plan. Measured: **2 suites / 24 tests**. Corrected in place. `CLAUDE.md:46` carries the same stale figure and
+needs a docs commit of its own.
