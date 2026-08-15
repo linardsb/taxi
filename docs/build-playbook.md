@@ -120,7 +120,7 @@ Dina's surface. Her anketa answers are the requirements doc.
 - Reliability beats features (her S7-4: "the system often freezes"): error boundaries, reconnect logic, offline banner — test by killing the API mid-shift.
 - **When her S9-1 console drawing arrives, review 5.x plans against it before executing.**
 
-## Step 8 — Phase 6: Admin (`apps/admin`) — ~2–3 slices
+## Step 8 — Phase 6: Admin (the `/admin` route group in `apps/dispatch` — the workspace merged per the 2026-08-07 decision) — ~2–3 slices
 
 - 6.1 platform config UI (commission %, zones, guarantee — the config-not-constants) · 6.2 driver approval + document check · 6.3 basic stats (rides/week, active drivers — the PRD's RIGHT/WRONG counters from day one)
 

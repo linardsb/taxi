@@ -5,6 +5,7 @@ import { GeozonesModule } from '../geozones';
 import { PlatformConfigModule } from '../platform-config';
 import { RealtimeModule } from '../realtime';
 import { RidesModule } from '../rides';
+import { BoardService } from './board/board.service';
 import { DispatchNotifier } from './dispatch-notifier';
 import { DispatchController } from './dispatch.controller';
 import { DispatchRepository } from './dispatch.repository';
@@ -41,6 +42,7 @@ import { GeozoneQueueStrategy } from './strategies/geozone-queue.strategy';
     ForceAssignService,
     DispatchRepository,
     DispatchSweeper,
+    BoardService,
     AutoMatchStrategy,
     GeozoneQueueStrategy,
     DispatchStrategyResolver,

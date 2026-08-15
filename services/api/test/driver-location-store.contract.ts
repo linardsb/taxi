@@ -192,5 +192,52 @@ export function runDriverLocationStoreContract(
 
       expect(await store.positionOf(cityId, east.id)).toBeNull();
     });
+
+    it('listOnline returns every online driver with position and timestamp (expected)', async () => {
+      const { east, north } = CONTRACT_DRIVERS;
+      await seed([east, north]);
+
+      const online = await store.listOnline(cityId);
+      // SMEMBERS gives no order guarantee — assert membership, not sequence.
+      expect(online.map((d) => d.driverId).sort()).toEqual(
+        [east.id, north.id].sort(),
+      );
+      const foundEast = online.find((d) => d.driverId === east.id);
+      expect(foundEast?.lastSeenMs).toBe(NOW);
+      expect(foundEast?.location?.lat).toBeCloseTo(east.location.lat, 3);
+      expect(foundEast?.location?.lng).toBeCloseTo(east.location.lng, 3);
+    });
+
+    it('listOnline carries a never-pinged driver as nulls, not an omission (edge)', async () => {
+      // Presence without a position is still a person Dina can phone — the
+      // opposite answer to findNearby's, on purpose.
+      await store.markOnline(cityId, CONTRACT_DRIVERS.east.id);
+
+      expect(await store.listOnline(cityId)).toEqual([
+        {
+          driverId: CONTRACT_DRIVERS.east.id,
+          location: null,
+          lastSeenMs: null,
+        },
+      ]);
+    });
+
+    it('listOnline still lists a driver too stale for findNearby (edge)', async () => {
+      const { east } = CONTRACT_DRIVERS;
+      await seed([east], NOW - 120_000);
+
+      expect(await query()).toEqual([]);
+      const online = await store.listOnline(cityId);
+      expect(online.map((d) => d.driverId)).toEqual([east.id]);
+      expect(online[0]?.lastSeenMs).toBe(NOW - 120_000);
+    });
+
+    it('listOnline drops a driver after markOffline and reads an empty city as [] (failure)', async () => {
+      const { east } = CONTRACT_DRIVERS;
+      await seed([east]);
+      await store.markOffline(cityId, east.id);
+
+      expect(await store.listOnline(cityId)).toEqual([]);
+    });
   });
 }

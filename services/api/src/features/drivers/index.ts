@@ -14,10 +14,14 @@
  */
 export { DriversModule } from './drivers.module';
 export { DriversService } from './drivers.service';
-export type { DriverMatchAttributes } from './drivers.repository';
+export type {
+  DriverBoardContact,
+  DriverMatchAttributes,
+} from './drivers.repository';
 export { DriverLocationService } from './location/driver-location.service';
 export { DRIVER_LOCATION_STORE } from './location/driver-location.store';
 export type {
   DriverLocationStore,
   NearbyDriver,
+  OnlineDriver,
 } from './location/driver-location.store';

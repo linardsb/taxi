@@ -21,9 +21,10 @@
  * - No real SMS provider: the stub logs instead of delivering, and production
  *   boot refuses it (auth's `smsProviderFactory`, reused here). A paid
  *   provider swaps inside that factory only.
- * - `sms_send_failed` is an ERROR log and nothing more — the Dina-console
- *   alert rides #18.
  * - No cancellation SMS, by scope (#63 non-goals).
+ *
+ * (#18 closed the old "`sms_send_failed` is an ERROR log and nothing more"
+ * gap: the same failure now also emits `dispatch:sms_failed` to the console.)
  */
 export { NotificationsModule } from './notifications.module';
 export { RideNotificationsService } from './ride-notifications.service';

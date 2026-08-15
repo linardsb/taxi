@@ -4,6 +4,7 @@ import { smsProviderFactory, SMS_PROVIDER } from '../auth';
 import { DriversModule } from '../drivers';
 import { GeoModule } from '../geo';
 import { PlatformConfigModule } from '../platform-config';
+import { RealtimeModule } from '../realtime';
 import { NotificationsRepository } from './notifications.repository';
 import { RideNotificationsService } from './ride-notifications.service';
 import { TrackingController } from './tracking/tracking.controller';
@@ -24,12 +25,14 @@ import { TrackingService } from './tracking/tracking.service';
  * `MAPS_PROVIDER_ETA` — the tracking page's OWN cached facade, not pricing's
  * `MAPS_PROVIDER` (#94): the page reads `durationSeconds`, so it needs the
  * short TTL and the negative cache that the booking path must not have.
+ * `RealtimeModule` supplies `RealtimeService` for the `dispatch:sms_failed`
+ * console alert (#18) — mirroring how `DispatchModule` gets its emits.
  *
  * No `imports` entry for `KV_STORE` (the view throttle): `KvModule` is
  * `@Global()`.
  */
 @Module({
-  imports: [DriversModule, GeoModule, PlatformConfigModule],
+  imports: [DriversModule, GeoModule, PlatformConfigModule, RealtimeModule],
   controllers: [TrackingController],
   providers: [
     RideNotificationsService,

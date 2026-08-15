@@ -9,6 +9,7 @@ import { APP_ENV, type Env } from '../../common/config/env.schema';
 import type { DbTx } from '../../common/db/db.module';
 import {
   DriversRepository,
+  type DriverBoardContact,
   type DriverMatchAttributes,
 } from './drivers.repository';
 import {
@@ -202,5 +203,10 @@ export class DriversService {
   /** #10's entry point: the attributes it filters a proximity list by. */
   findMatchAttributes(driverIds: string[]): Promise<DriverMatchAttributes[]> {
     return this.drivers.findMatchAttributes(driverIds);
+  }
+
+  /** #18's entry point: who the online set IS — name, phone, status. */
+  findBoardContacts(driverIds: string[]): Promise<DriverBoardContact[]> {
+    return this.drivers.findBoardContacts(driverIds);
   }
 }

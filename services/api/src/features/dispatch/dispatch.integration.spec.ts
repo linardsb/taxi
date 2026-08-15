@@ -7,6 +7,7 @@ import {
 } from '@taxi/db';
 import {
   authSessionSchema,
+  dispatchBoardEventSchema,
   IDEMPOTENCY_KEY_HEADER,
   rideCreatedSchema,
   RT,
@@ -853,5 +854,60 @@ describe('dispatch (integration)', () => {
       .set('authorization', d.auth)
       .send({ driverId: d.id })
       .expect(403);
+  });
+
+  it('serves the board snapshot to a dispatcher, wire-schema clean (expected)', async () => {
+    const d = await onlineDriver(96, near(CENTRE_PICKUP.location, 0.001, 0));
+    const ride = await bookRide(97, CENTRE_PICKUP);
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(98),
+      role: 'dispatcher',
+    });
+    const auth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const res = await http
+      .get('/dispatch/board')
+      .set('authorization', auth)
+      .expect(200);
+
+    // Parsed through the SAME schema the socket cadence parses with — the
+    // one-shape-two-transports guarantee, through the real guard chain.
+    const board = dispatchBoardEventSchema.parse(res.body);
+    const boardRide = board.rides.find((r) => r.rideId === ride.id);
+    expect(boardRide?.status).toBe('requested');
+    expect(boardRide?.unclaimedSeconds).toBeGreaterThanOrEqual(0);
+    const boardDriver = board.drivers.find((dr) => dr.driverId === d.id);
+    expect(boardDriver?.phone).toBe(p(96));
+    expect(boardDriver?.location?.lat).toBeCloseTo(
+      CENTRE_PICKUP.location.lat + 0.001,
+      3,
+    );
+  });
+
+  it('names the pickup zone for a positioned driver (edge)', async () => {
+    // CENTRE_PICKUP sits inside the seeded centre polygon only, so the zone
+    // name on the frame is deterministic.
+    const d = await onlineDriver(99, CENTRE_PICKUP.location);
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(100),
+      role: 'dispatcher',
+    });
+    const auth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const res = await http
+      .get('/dispatch/board')
+      .set('authorization', auth)
+      .expect(200);
+
+    const board = dispatchBoardEventSchema.parse(res.body);
+    const boardDriver = board.drivers.find((dr) => dr.driverId === d.id);
+    expect(boardDriver?.zoneName).toBeTruthy();
+    expect(boardDriver?.zoneName).not.toBe('centre'); // the NAME, not the slug
+  });
+
+  it('refuses the board snapshot to a driver token (failure)', async () => {
+    const d = await onlineDriver(101, near(CENTRE_PICKUP.location, 0.002, 0));
+
+    await http.get('/dispatch/board').set('authorization', d.auth).expect(403);
   });
 });

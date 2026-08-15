@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   formatMessage,
+  RT,
   type Ride,
   type RideStatus,
   type SmsProvider,
@@ -8,6 +9,7 @@ import {
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { maskPhone, SMS_PROVIDER } from '../auth';
 import { DRIVER_LOCATION_STORE, type DriverLocationStore } from '../drivers';
+import { RealtimeService } from '../realtime';
 import type { TransitionedRide } from '../rides';
 import { estimateEtaMinutes } from './notifications.policy';
 import {
@@ -29,8 +31,9 @@ type SmsKind = 'booking_confirmed' | 'driver_assigned' | 'driver_arrived';
  * watching the app. Budget: 2 SMS/ride app channel, 3 phone channel.
  *
  * NEVER THROWS, structurally: both entry points wrap their whole body — an
- * SMS failure never fails a booking, and the `sms_send_failed` ERROR log is
- * the alarm-to-console until a Dina-console alert rides #18.
+ * SMS failure never fails a booking. The `sms_send_failed` ERROR log is the
+ * durable alarm; `dispatch:sms_failed` (#18) mirrors it onto Dina's console
+ * so she can phone the rider the moment the platform fails them.
  */
 @Injectable()
 export class RideNotificationsService {
@@ -41,6 +44,7 @@ export class RideNotificationsService {
     private readonly repository: NotificationsRepository,
     @Inject(DRIVER_LOCATION_STORE)
     private readonly locations: DriverLocationStore,
+    private readonly realtime: RealtimeService,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
@@ -175,5 +179,24 @@ export class RideNotificationsService {
       reason: error instanceof Error ? error.message : 'unknown',
       at: new Date().toISOString(),
     });
+
+    // Mirror the alarm onto the console (#18). Its own try/catch, same as
+    // raiseUnclaimed's: a schema drift or gateway hiccup here must not turn a
+    // failed SMS into a thrown notification hook.
+    try {
+      this.realtime.emitToDispatch(
+        this.env.DEFAULT_CITY_ID,
+        RT.dispatchSmsFailed,
+        { rideId, kind, at: new Date().toISOString() },
+      );
+    } catch (emitError) {
+      this.logger.warn({
+        event: 'ride.notifications.sms_alert_emit_failed',
+        rideId,
+        kind,
+        reason: emitError instanceof Error ? emitError.message : 'unknown',
+        at: new Date().toISOString(),
+      });
+    }
   }
 }

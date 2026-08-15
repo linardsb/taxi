@@ -27,6 +27,7 @@ import {
   DRIVER_LOCATION_STORE,
   type DriverLocationStore,
   type NearbyDriver,
+  type OnlineDriver,
 } from '../src/features/drivers';
 import { MAPS_PROVIDER_SOURCE } from '../src/features/geo';
 import { PAYMENTS_PROVIDER } from '../src/features/payments';
@@ -209,6 +210,20 @@ export class InMemoryDriverLocationStore implements DriverLocationStore {
     }
     nearby.sort((a, b) => a.distanceMeters - b.distanceMeters);
     return Promise.resolve(nearby.slice(0, opts.limit));
+  }
+
+  /** No freshness filter, like the real store — the board stale-marks instead. */
+  listOnline(cityId: string): Promise<OnlineDriver[]> {
+    const out: OnlineDriver[] = [];
+    for (const driverId of this.online.get(cityId) ?? []) {
+      const pos = this.positions.get(cityId)?.get(driverId);
+      out.push({
+        driverId,
+        location: pos?.location ?? null,
+        lastSeenMs: pos?.atMs ?? null,
+      });
+    }
+    return Promise.resolve(out);
   }
 }
 

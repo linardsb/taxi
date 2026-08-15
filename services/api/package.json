@@ -14,6 +14,7 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test,scripts}/**/*.ts\"",
     "mint:ride": "node -r ts-node/register -r tsconfig-paths/register scripts/mint-tracked-ride.ts",
+    "provision:dispatcher": "node -r ts-node/register -r tsconfig-paths/register scripts/provision-dispatcher.ts",
     "pretest": "docker compose -f ../../docker-compose.yml up -d --wait db",
     "test": "jest",
     "test:watch": "jest --watch",

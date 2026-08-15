@@ -1,8 +1,18 @@
-import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
-import type { JwtClaims } from '@taxi/shared';
+import {
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Post,
+} from '@nestjs/common';
+import type { DispatchBoardEvent, JwtClaims } from '@taxi/shared';
 import { z } from 'zod';
+import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
+import { BoardService } from './board/board.service';
 import { DispatchService } from './dispatch.service';
 import { ForceAssignService } from './force-assign.service';
 
@@ -32,7 +42,21 @@ export class DispatchController {
   constructor(
     private readonly dispatch: DispatchService,
     private readonly forceAssignService: ForceAssignService,
+    private readonly board: BoardService,
+    @Inject(APP_ENV) private readonly env: Env,
   ) {}
+
+  /**
+   * The console's snapshot read (#18) — the SAME payload the socket's
+   * `dispatch:board` cadence pushes, so a (re)connecting or polling client
+   * resyncs from one shape. Single-city pilot: the city is the deployment's,
+   * never the caller's.
+   */
+  @Get('board')
+  @Roles('dispatcher', 'admin')
+  boardSnapshot(): Promise<DispatchBoardEvent> {
+    return this.board.buildBoardState(this.env.DEFAULT_CITY_ID);
+  }
 
   @Post('offers/:offerId/accept')
   @Roles('driver')

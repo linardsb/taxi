@@ -24,8 +24,7 @@ pnpm --filter @taxi/rider dev      # Expo dev server (rider app)
 |---|---|
 | `@taxi/rider` | client mobile app (Expo) |
 | `@taxi/driver` | driver mobile app (Expo) |
-| `@taxi/dispatch` | dispatcher web portal (Next.js) |
-| `@taxi/admin` | admin panel (Next.js) |
+| `@taxi/dispatch` | web app: dispatcher console + admin routes (Next.js) |
 | `@taxi/api` | backend (NestJS) |
 | `@taxi/shared` | contracts: schemas, ride state machine, seams |
 | `@taxi/config` | tsconfig presets |

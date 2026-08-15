@@ -33,6 +33,20 @@ describe('MESSAGES catalog', () => {
       }
     }
   });
+
+  it('the three connection-pill states read distinctly in every language (edge)', () => {
+    // The pill is the console's truthfulness guarantee (#18) — two states
+    // sharing a string would make "reconnecting" indistinguishable from
+    // "live" or "offline" to Dina.
+    for (const lang of LANGUAGES) {
+      const states = [
+        MESSAGES[lang]['console.live'],
+        MESSAGES[lang]['console.reconnecting'],
+        MESSAGES[lang]['console.offline'],
+      ];
+      expect(new Set(states).size, lang).toBe(3);
+    }
+  });
 });
 
 describe('formatMessage', () => {

@@ -1,16 +1,19 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { rideFareLines, rides, vehicles, type Db } from '@taxi/db';
+import { rideFareLines, rides, users, vehicles, type Db } from '@taxi/db';
 import {
+  ACTIVE_DRIVER_RIDE_STATUSES,
   assertFareQuoteConsistent,
   fareQuoteSchema,
   rideRequestSchema,
   rideSchema,
+  type AddressPoint,
   type BookingChannel,
   type FareQuote,
   type Ride,
   type RideRequest,
+  type RideStatus,
 } from '@taxi/shared';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 import { assertEntryStatus, type RideEntryStatus } from './ride-entry';
 import type { DbTx } from './ride-transition.service';
@@ -31,6 +34,29 @@ export interface AwaitingRide {
   riderId: string;
   geozoneId: string | null;
   request: RideRequest;
+  createdAt: Date;
+}
+
+/**
+ * The statuses on Dina's live board (#18): everything between creation and a
+ * terminal state. `scheduled` is deliberately absent — a scheduled ride is not
+ * yet live work — and so are `completed`/`settled`/cancellations.
+ */
+const LIVE_BOARD_STATUSES = [
+  'requested',
+  'offered',
+  'queued',
+  ...ACTIVE_DRIVER_RIDE_STATUSES,
+] as const satisfies readonly RideStatus[];
+
+/** One board row: the ride, its pickup, and who (if anyone) is on it. */
+export interface BoardRide {
+  id: string;
+  status: RideStatus;
+  pickup: AddressPoint;
+  driverId: string | null;
+  driverName: string | null;
+  bookingChannel: BookingChannel;
   createdAt: Date;
 }
 
@@ -190,6 +216,31 @@ export class RidesRepository {
       .orderBy(asc(rides.createdAt))
       .limit(limit);
     return rows.map(toAwaiting);
+  }
+
+  /**
+   * Every LIVE ride for Dina's board (#18), oldest first — `findAwaitingDispatch`
+   * widened to the whole pre-terminal lifecycle, plus the driver's display name
+   * in the same read (the board would otherwise need a query per assigned ride
+   * every 2 s frame). `rides_status_idx` covers the predicate here too.
+   */
+  async findBoardRides(limit: number): Promise<BoardRide[]> {
+    const rows = await this.db
+      .select({ ride: rides, driverName: users.displayName })
+      .from(rides)
+      .leftJoin(users, eq(users.id, rides.driverId))
+      .where(inArray(rides.status, [...LIVE_BOARD_STATUSES]))
+      .orderBy(asc(rides.createdAt))
+      .limit(limit);
+    return rows.map(({ ride, driverName }) => ({
+      id: ride.id,
+      status: ride.status,
+      pickup: rideRequestSchema.parse(ride.request).pickup,
+      driverId: ride.driverId,
+      driverName,
+      bookingChannel: ride.bookingChannel,
+      createdAt: ride.createdAt,
+    }));
   }
 
   /**
