@@ -35,8 +35,9 @@ describe('envSchema production secret rules', () => {
   });
 
   it('refuses the secrets committed to .env.example (failure)', () => {
-    // The exact value at .env.example:16 — 18 chars, so the old `.min(16)`
-    // accepted it and a copied example file booted a real host.
+    // The exact value `.env.example` commits for JWT_SECRET — 18 chars, so
+    // `.min(16)` alone accepted it and a copied example file booted a real host.
+    // Named, not line-pinned: the line moves whenever that file is edited.
     expect(() =>
       envSchema.parse(prod({ JWT_SECRET: 'dev-only-change-me' })),
     ).toThrow(/JWT_SECRET is the value committed to \.env\.example/);
