@@ -19,6 +19,7 @@ import {
   rideStatusEventSchema,
   userRoom,
 } from '../src/realtime-events';
+import { SMS_KINDS } from '../src/enums';
 import { rideOfferSchema } from '../src/schemas/ride';
 import { splitFare } from '../src/commission';
 
@@ -252,6 +253,17 @@ describe('dispatchSmsFailedEventSchema', () => {
       dispatchSmsFailedEventSchema.parse({ ...base, kind: 'driver_arrived' })
         .kind,
     ).toBe('driver_arrived');
+  });
+
+  it('accepts exactly SMS_KINDS — the api derives its union from the same tuple', () => {
+    for (const kind of SMS_KINDS) {
+      expect(
+        dispatchSmsFailedEventSchema.safeParse({ ...base, kind }).success,
+      ).toBe(true);
+    }
+    expect(dispatchSmsFailedEventSchema.shape.kind.options).toEqual([
+      ...SMS_KINDS,
+    ]);
   });
 
   it('rejects an unknown SMS kind (failure)', () => {

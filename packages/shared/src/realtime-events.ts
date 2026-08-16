@@ -1,6 +1,11 @@
 import { z } from 'zod';
-import { ASSIGNMENT_SOURCES, BOOKING_CHANNELS, DRIVER_STATUSES } from './enums';
-import { RIDE_STATUSES } from './ride-state-machine';
+import {
+  ASSIGNMENT_SOURCES,
+  BOOKING_CHANNELS,
+  DRIVER_STATUSES,
+  SMS_KINDS,
+} from './enums';
+import { BOARD_LIVE_RIDE_STATUSES, RIDE_STATUSES } from './ride-state-machine';
 import { addressPointSchema, latLngSchema } from './schemas/geo';
 import { rideOfferSchema } from './schemas/ride';
 
@@ -136,6 +141,13 @@ export type RideAssignedEvent = z.infer<typeof rideAssignedEventSchema>;
  * pickup-point note). `location`/`lastSeenAt` are null for an online driver
  * whose GEO position has never been recorded or was dropped; staleness is the
  * client's presentation concern.
+ *
+ * A ride's `status` is `BOARD_LIVE_RIDE_STATUSES`, NOT the full `RIDE_STATUSES`
+ * — the same tuple the board query selects on. The wide enum let the console
+ * type its status→label map as a `Partial` and hand-restate the set in three
+ * predicates, so a status added to the query would arrive on the wire and
+ * render in no bucket: live work silently missing from the board, with every
+ * check green. Narrow, adding one is a compile error in both packages.
  */
 export const dispatchBoardEventSchema = z.object({
   cityId: z.string().uuid(),
@@ -143,7 +155,7 @@ export const dispatchBoardEventSchema = z.object({
   rides: z.array(
     z.object({
       rideId: z.string().uuid(),
-      status: z.enum(RIDE_STATUSES),
+      status: z.enum(BOARD_LIVE_RIDE_STATUSES),
       pickup: addressPointSchema,
       driverId: z.string().uuid().nullable(),
       driverName: z.string().nullable(),
@@ -180,12 +192,13 @@ export type DispatchUnclaimedEvent = z.infer<
 
 /**
  * An SMS the platform owed a rider was not delivered (#18) — an operator
- * alert, so Dina can phone the rider instead. `kind` mirrors the api's
- * `SmsKind` union at its one emit site (ride-notifications.service.ts).
+ * alert, so Dina can phone the rider instead. `kind` comes from `SMS_KINDS`,
+ * the same tuple the api's one emit site (ride-notifications.service.ts)
+ * derives its `SmsKind` from — one definition, no twin to drift.
  */
 export const dispatchSmsFailedEventSchema = z.object({
   rideId: z.string().uuid(),
-  kind: z.enum(['booking_confirmed', 'driver_assigned', 'driver_arrived']),
+  kind: z.enum(SMS_KINDS),
   at: z.string().datetime(),
 });
 export type DispatchSmsFailedEvent = z.infer<

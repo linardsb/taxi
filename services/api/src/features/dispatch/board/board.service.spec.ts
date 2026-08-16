@@ -1,4 +1,4 @@
-import { dispatchBoardEventSchema } from '@taxi/shared';
+import { dispatchBoardEventSchema, type LatLng } from '@taxi/shared';
 import type { Env } from '../../../common/config/env.schema';
 import { InMemoryDriverLocationStore } from '../../../../test/harness';
 import type { DriversService, DriverBoardContact } from '../../drivers';
@@ -39,6 +39,12 @@ function build(
     rides?: BoardRide[];
     contacts?: DriverBoardContact[];
     zoneName?: string | null;
+    /**
+     * Zone name per `${lat},${lng}`. The frame pairs drivers with zones BY
+     * ARRAY INDEX, so a mock that ignores its `point` cannot tell a correct
+     * pairing from a swapped one — see the two-positioned-drivers case.
+     */
+    zonesByPoint?: Record<string, string>;
     roomSize?: number;
     buildThrows?: boolean;
   } = {},
@@ -54,19 +60,20 @@ function build(
     findBoardContacts: jest.fn(() => Promise.resolve(over.contacts ?? [])),
   } as unknown as DriversService;
 
+  const zoneNameFor = (point: LatLng): string | undefined =>
+    over.zonesByPoint
+      ? over.zonesByPoint[`${point.lat},${point.lng}`]
+      : (over.zoneName ?? undefined);
+
   const geozones = {
-    resolveForPoint: jest.fn(() =>
-      Promise.resolve(
-        over.zoneName === null || over.zoneName === undefined
+    resolveForPoint: jest.fn((_cityId: string, point: LatLng) => {
+      const name = zoneNameFor(point);
+      return Promise.resolve(
+        name === undefined
           ? undefined
-          : {
-              id: CITY,
-              slug: 'centre',
-              name: over.zoneName,
-              queueModeEnabled: false,
-            },
-      ),
-    ),
+          : { id: CITY, slug: 'centre', name, queueModeEnabled: false },
+      );
+    }),
   } as unknown as GeozonesService;
 
   const emitToDispatch = jest.fn();
@@ -169,6 +176,78 @@ describe('BoardService.buildBoardState', () => {
         status: 'online',
       },
     ]);
+  });
+
+  it('tags each positioned driver with the zone of ITS OWN point (expected)', async () => {
+    // `drivers` is built by index off the same `online` array `zones` was
+    // built from. Indices align today; anything that shortens or reorders one
+    // side — e.g. moving the ghost-drop ahead of the zone lookup, a natural
+    // optimisation that saves PostGIS queries — silently swaps the labels.
+    // Nothing throws and nothing logs; Dina just voice-dispatches the wrong
+    // driver. Two POSITIONED drivers at distinct points is the only shape
+    // that can catch it.
+    const A_POINT = { lat: 56.95, lng: 24.11 }; // centre
+    const B_POINT = { lat: 56.9236, lng: 23.9711 }; // airport
+    const { service, locations } = build({
+      contacts: [
+        contact({ driverId: DRIVER_A, name: 'Jānis Ozols' }),
+        contact({
+          driverId: DRIVER_B,
+          name: 'Anna Bērziņa',
+          phone: '+37129999002',
+        }),
+      ],
+      zonesByPoint: {
+        [`${A_POINT.lat},${A_POINT.lng}`]: 'Centrs',
+        [`${B_POINT.lat},${B_POINT.lng}`]: 'Lidosta',
+      },
+    });
+    await locations.markOnline(CITY, DRIVER_A);
+    await locations.record(CITY, DRIVER_A, A_POINT, NOW.getTime() - 5_000);
+    await locations.markOnline(CITY, DRIVER_B);
+    await locations.record(CITY, DRIVER_B, B_POINT, NOW.getTime() - 5_000);
+
+    const frame = await service.buildBoardState(CITY);
+
+    // Asserted by driverId, not by position — a reordering of `online` must
+    // not make this pass or fail for the wrong reason.
+    const byId = new Map(frame.drivers.map((d) => [d.driverId, d]));
+    expect(byId.get(DRIVER_A)?.zoneName).toBe('Centrs');
+    expect(byId.get(DRIVER_B)?.zoneName).toBe('Lidosta');
+    expect(byId.get(DRIVER_A)?.location).toEqual(A_POINT);
+    expect(byId.get(DRIVER_B)?.location).toEqual(B_POINT);
+  });
+
+  it('keeps the pairing when an unpositioned driver sits between two positioned ones (edge)', async () => {
+    // The `Promise.resolve(undefined)` branch still occupies an index. If it
+    // ever stopped doing so, every driver after it would inherit the next
+    // driver's zone.
+    const A_POINT = { lat: 56.95, lng: 24.11 }; // centre
+    const C_POINT = { lat: 56.9236, lng: 23.9711 }; // airport
+    const C = 'd0000000-0000-4000-8000-000000000003';
+    const { service, locations } = build({
+      contacts: [
+        contact({ driverId: DRIVER_A }),
+        contact({ driverId: DRIVER_B, phone: '+37129999002' }),
+        contact({ driverId: C, phone: '+37129999003' }),
+      ],
+      zonesByPoint: {
+        [`${A_POINT.lat},${A_POINT.lng}`]: 'Centrs',
+        [`${C_POINT.lat},${C_POINT.lng}`]: 'Lidosta',
+      },
+    });
+    await locations.markOnline(CITY, DRIVER_A);
+    await locations.record(CITY, DRIVER_A, A_POINT, NOW.getTime() - 5_000);
+    await locations.markOnline(CITY, DRIVER_B); // online, never pinged
+    await locations.markOnline(CITY, C);
+    await locations.record(CITY, C, C_POINT, NOW.getTime() - 5_000);
+
+    const frame = await service.buildBoardState(CITY);
+
+    const byId = new Map(frame.drivers.map((d) => [d.driverId, d]));
+    expect(byId.get(DRIVER_A)?.zoneName).toBe('Centrs');
+    expect(byId.get(DRIVER_B)?.zoneName).toBe(null); // no position at all
+    expect(byId.get(C)?.zoneName).toBe('Lidosta'); // NOT shifted up to Centrs
   });
 
   it('drops an online-set member with no drivers/users row instead of rendering a ghost (edge)', async () => {

@@ -61,6 +61,51 @@ describe('applyFrame / applyDriverLocation', () => {
     expect(next.lastFrameAtMs).toBe(NOW);
   });
 
+  it('ignores a frame the server stamped BEFORE the one on screen (edge)', () => {
+    // Reconnect: the socket cadence delivers t+2s while a REST snapshot built
+    // at t+0 is still in flight on a cold api. Applying the late arrival would
+    // put a 3-second-old ride set on screen and stamp it as received now —
+    // silent staleness under a green «Tiešraide».
+    const fresh = applyFrame(
+      emptyBoard(),
+      frame({ at: '2026-08-15T12:00:02.000Z', rides: [] }),
+      NOW + 2_000,
+    );
+    const late = applyFrame(
+      fresh,
+      frame({ at: AT, drivers: [] }), // built at t+0, arrives at t+3
+      NOW + 3_000,
+    );
+    expect(late).toBe(fresh); // untouched, and receipt time NOT re-stamped
+    expect(late.lastFrameAtMs).toBe(NOW + 2_000);
+  });
+
+  it('still refreshes receipt time for a re-delivered identical frame (edge)', () => {
+    // Strict `<`: an equal `at` is the same frame arriving twice, and the pill
+    // must not go stale just because the server had nothing new to say.
+    const first = applyFrame(emptyBoard(), frame(), NOW);
+    const again = applyFrame(first, frame(), NOW + 1_500);
+    expect(again.lastFrameAtMs).toBe(NOW + 1_500);
+  });
+
+  it('never lets a HYDRATED frame reject live frames (failure)', () => {
+    // A stored frame's `at` can sit arbitrarily far in the future — a clock
+    // step, a restored profile, the same origin pointed at another
+    // environment. Treating it as an ordering baseline would reject every
+    // subsequent frame forever and pin the pill at «Atjaunojas…», which,
+    // unlike the bug above, does not self-heal.
+    const hydrated = {
+      ...emptyBoard(),
+      frame: frame({ at: '2099-01-01T00:00:00.000Z' }),
+    };
+    expect(hydrated.lastFrameAtMs).toBe(null); // that's what marks it hydrated
+
+    const live = applyFrame(hydrated, frame({ at: AT, drivers: [] }), NOW);
+
+    expect(live.frame?.at).toBe(AT);
+    expect(live.lastFrameAtMs).toBe(NOW);
+  });
+
   it('patches a known driver position between frames (expected)', () => {
     const state = applyFrame(emptyBoard(), frame(), NOW);
     const next = applyDriverLocation(state, {

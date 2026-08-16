@@ -6,6 +6,7 @@ import {
   AlertsPanel,
   BoardMap,
   ConnectionPill,
+  isStale,
   RideQueue,
   useBoard,
   ZonesPanel,
@@ -29,10 +30,28 @@ export default function DispatchPage() {
 
   const frame = board.frame;
   const flashRideIds = new Set(
-    board.alerts
-      .filter((a) => a.kind === 'unclaimed')
-      .map((a) => a.rideId),
+    board.alerts.filter((a) => a.kind === 'unclaimed').map((a) => a.rideId),
   );
+
+  /**
+   * The plan's Error state (UX → States): the banner + retry belong to
+   * STALENESS, not to «Bezsaistē». Gating them on `pill === 'offline'` left
+   * the worst case uncovered — handshake fine, emitter broken (a board build
+   * throwing every beat), so `connected` is true, no frame ever arrives, and
+   * the pill sits at «Atjaunojas…» indefinitely with no age shown and nothing
+   * to click, while ride ages keep ticking off `nowMs` and make the panel look
+   * alive.
+   *
+   * Shown while offline (unchanged), or once a frame we HAVE has gone stale.
+   * `frame !== null` keeps it off the cold first paint, where the loading
+   * state already speaks and there is no "last known data" to caveat.
+   */
+  const showStaleBanner =
+    pill === 'offline' ||
+    (frame !== null && isStale(nowMs, board.lastFrameAtMs));
+  // «Bezsaistē» would be a lie when the socket is up and merely silent.
+  const staleBannerKey =
+    pill === 'offline' ? 'console.stale_banner' : 'console.stale_banner_silent';
 
   const toggleStyle = (active: boolean): React.CSSProperties => ({
     minHeight: 44,
@@ -109,7 +128,7 @@ export default function DispatchPage() {
         </div>
       </header>
 
-      {pill === 'offline' && (
+      {showStaleBanner && (
         <div
           role="alert"
           style={{
@@ -125,7 +144,7 @@ export default function DispatchPage() {
           }}
         >
           <span>
-            {formatMessage(LANG, 'console.stale_banner', {
+            {formatMessage(LANG, staleBannerKey, {
               time:
                 board.lastFrameAtMs !== null
                   ? timeOf(board.lastFrameAtMs)

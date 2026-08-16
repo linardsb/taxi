@@ -9,7 +9,11 @@ import { BoardMap } from './board-map';
  * the board keeps one marker per driver, so a shared object would conflate
  * their setLatLng histories.
  */
-const mapStub = { setView: vi.fn(), remove: vi.fn() };
+const mapStub = {
+  setView: vi.fn(),
+  remove: vi.fn(),
+  attributionControl: { setPrefix: vi.fn() },
+};
 mapStub.setView.mockReturnValue(mapStub);
 const markers: Array<{
   setLatLng: ReturnType<typeof vi.fn>;
@@ -110,6 +114,29 @@ describe('BoardMap', () => {
 
     expect(markers[0]!.setLatLng).toHaveBeenCalledWith([56.99, 24.2]);
     expect(markers[1]!.remove).toHaveBeenCalled(); // went offline, marker gone
+  });
+
+  it('labels a marker with a NODE, never a string — the tooltip is an innerHTML sink (failure)', async () => {
+    // leaflet's DivOverlay._updateContent does `node.innerHTML = content` for
+    // string content, so a string here would be the one place a driver's
+    // display name renders unescaped. #20 starts populating that field from
+    // driver-submitted data.
+    render(<BoardMap drivers={[driver({ name: '<img src=x onerror=1>' })]} />);
+    await act(async () => {});
+
+    const label = markers[0]!.bindTooltip.mock.calls[0]![0] as HTMLElement;
+    expect(label).toBeInstanceOf(HTMLElement);
+    expect(label.textContent).toBe('<img src=x onerror=1>');
+    expect(label.querySelector('img')).toBeNull(); // never parsed as markup
+  });
+
+  it('drops leaflet’s attribution prefix — no focusable link inside aria-hidden (edge)', async () => {
+    render(<BoardMap drivers={[driver({})]} />);
+    await act(async () => {});
+
+    // The default prefix is an <a> to leafletjs.com; the map container is
+    // aria-hidden, so a Tab stop there is unreachable to a screen reader.
+    expect(mapStub.attributionControl.setPrefix).toHaveBeenCalledWith(false);
   });
 
   it('tears the map down on unmount (failure)', async () => {

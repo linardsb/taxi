@@ -3,6 +3,7 @@
 import {
   ACTIVE_DRIVER_RIDE_STATUSES,
   formatMessage,
+  type BoardRideStatus,
   type DispatchBoardEvent,
   type Language,
   type MessageKey,
@@ -13,8 +14,17 @@ const LANG: Language = 'lv';
 
 type BoardRide = DispatchBoardEvent['rides'][number];
 
-/** Only the statuses the board query serves — terminal rides never arrive. */
-const STATUS_KEY: Partial<Record<RideStatus, MessageKey>> = {
+/**
+ * TOTAL over `BoardRideStatus`, not `Partial<Record<RideStatus, …>>`. The api
+ * decides what the board carries via `BOARD_LIVE_RIDE_STATUSES`; a `Partial`
+ * let the console restate that set by hand, so adding a status there — the
+ * scheduled-rides work is the named case — would return rides the query
+ * serves, the wire schema accepts (`z.enum(RIDE_STATUSES)` is the full set),
+ * and this file matches against no bucket: work silently missing from Dina's
+ * board with typecheck, lint and every component test green. Total, the
+ * omission is a build failure in both packages.
+ */
+const STATUS_KEY: Record<BoardRideStatus, MessageKey> = {
   requested: 'console.status_requested',
   offered: 'console.status_offered',
   queued: 'console.status_queued',
@@ -24,7 +34,7 @@ const STATUS_KEY: Partial<Record<RideStatus, MessageKey>> = {
   in_progress: 'console.status_in_progress',
 };
 
-const STATUS_COLOR: Partial<Record<RideStatus, string>> = {
+const STATUS_COLOR: Record<BoardRideStatus, string> = {
   requested: 'var(--color-warning)',
   offered: 'var(--color-accent)',
   queued: 'var(--color-accent)',
@@ -52,13 +62,12 @@ function RideRow({
   nowMs,
   flash,
 }: Readonly<{ ride: BoardRide; nowMs: number; flash: boolean }>) {
-  const statusKey = STATUS_KEY[ride.status];
   return (
     <li
       className={flash ? 'console-flash' : undefined}
       style={{
         display: 'grid',
-        gap: 2,
+        gap: 'var(--spacing-xs)',
         padding: 'var(--spacing-sm) var(--spacing-md)',
         borderRadius: 'var(--radius-md)',
         border: '1px solid var(--color-border)',
@@ -77,8 +86,10 @@ function RideRow({
         }}
       >
         {/* Status recolors IN PLACE on progress — never a toast (ISA-18.2). */}
+        {/* No fallback: the map is total over what the wire can carry, so a
+            raw English enum can never reach an LV-only console. */}
         <span style={{ color: STATUS_COLOR[ride.status], fontWeight: 600 }}>
-          {statusKey ? formatMessage(LANG, statusKey) : ride.status}
+          {formatMessage(LANG, STATUS_KEY[ride.status])}
         </span>
         {ride.driverName !== null && <span>{ride.driverName}</span>}
         <span style={{ color: 'var(--color-fg-muted)' }}>

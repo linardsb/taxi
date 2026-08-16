@@ -98,3 +98,15 @@ export type CommissionSource = (typeof COMMISSION_SOURCES)[number];
  */
 export const BOOKING_CHANNELS = ['app', 'phone'] as const;
 export type BookingChannel = (typeof BOOKING_CHANNELS)[number];
+
+/**
+ * The rider SMS messages the platform owes on a ride (#63). Lives here rather
+ * than in the api because `dispatch:sms_failed` puts the kind on the wire and
+ * the console renders a label per kind — three surfaces, one tuple.
+ */
+export const SMS_KINDS = [
+  'booking_confirmed',
+  'driver_assigned',
+  'driver_arrived',
+] as const;
+export type SmsKind = (typeof SMS_KINDS)[number];

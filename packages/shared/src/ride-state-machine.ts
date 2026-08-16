@@ -40,6 +40,26 @@ export const ACTIVE_DRIVER_RIDE_STATUSES = [
 ] as const satisfies readonly RideStatus[];
 
 /**
+ * What Dina's live board carries (#18): everything between creation and a
+ * terminal state. `scheduled` is deliberately absent — a scheduled ride is
+ * not yet live work — and so are `completed`/`settled`/cancellations.
+ *
+ * A cross-surface contract, not a query detail: the api builds the board
+ * query's `inArray` from it and the console buckets rides by it. Adding a
+ * status here must fail the build wherever it isn't rendered, which is why
+ * the console types its status→label map as a total `Record<BoardRideStatus,
+ * …>` rather than a `Partial`.
+ */
+export const BOARD_LIVE_RIDE_STATUSES = [
+  'requested',
+  'offered',
+  'queued',
+  ...ACTIVE_DRIVER_RIDE_STATUSES,
+] as const satisfies readonly RideStatus[];
+
+export type BoardRideStatus = (typeof BOARD_LIVE_RIDE_STATUSES)[number];
+
+/**
  * The single source of truth for the ride lifecycle, consumed by all five
  * surfaces. "offered → requested" is the re-offer loop after a driver
  * declines or times out; "queued" is the geozone-queue dispatch mode.

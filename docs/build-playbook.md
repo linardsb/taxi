@@ -50,7 +50,7 @@ Then: `/piv-commit` in that tab.
 For **every** slice in the spec, fresh tab:
 
 ```
-1.  /prime-app <surface>                  # rider|driver|dispatch|admin|api|shared
+1.  /prime-app <surface>                  # rider|driver|dispatch|api|shared
 2.  /piv-plan-implementation <ticket #N or one-sentence slice statement>
         → writes .claude/plans/<slice>.md; read it (5 min) — sanity-check
           file list, patterns, validation commands

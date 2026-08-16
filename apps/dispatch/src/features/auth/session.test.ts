@@ -1,6 +1,8 @@
 import type { AuthSession, UserRole } from '@taxi/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  BOARD_SNAPSHOT_STORAGE_KEY,
+  SESSION_STORAGE_KEY,
   clearSession,
   hasConsoleRole,
   loadSession,
@@ -9,7 +11,9 @@ import {
 
 const NOW = Date.parse('2026-08-15T12:00:00.000Z');
 
-const session = (over: { role?: UserRole; expiresAt?: string } = {}): AuthSession => ({
+const session = (
+  over: { role?: UserRole; expiresAt?: string } = {},
+): AuthSession => ({
   accessToken: 'token-abc',
   expiresAt: over.expiresAt ?? '2026-09-14T12:00:00.000Z',
   user: {
@@ -52,6 +56,30 @@ describe('session persistence', () => {
     saveSession(session());
     clearSession();
     expect(loadSession(NOW)).toBeNull();
+  });
+
+  it('clearSession also drops the board snapshot — driver PII must not outlive the session (edge)', () => {
+    // The snapshot is rewritten on every 0.5 Hz frame and carries every online
+    // driver's name, phone and last position plus every live ride's pickup
+    // address. A JWT expiring on a shared operator workstation runs
+    // clearSession() → /login; leaving this behind strands third-party PII on
+    // disk with no session present. The accepted XSS risk covers the TOKEN,
+    // not this.
+    window.localStorage.setItem(
+      BOARD_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify({ drivers: [{ phone: '+37129999001' }] }),
+    );
+    saveSession(session());
+
+    clearSession();
+
+    expect(window.localStorage.getItem(BOARD_SNAPSHOT_STORAGE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+  });
+
+  it('clearSession is safe when neither key was ever written (failure)', () => {
+    expect(() => clearSession()).not.toThrow();
+    expect(window.localStorage.getItem(BOARD_SNAPSHOT_STORAGE_KEY)).toBeNull();
   });
 
   it('grants the console to dispatcher and admin, refuses rider and driver (edge)', () => {

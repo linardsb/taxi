@@ -7,7 +7,7 @@ import {
   type MessageKey,
 } from '@taxi/shared';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiUrl } from './api-url';
 import { hasConsoleRole, saveSession } from './session';
 
@@ -30,6 +30,17 @@ export function LoginForm() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
+  const codeInput = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * Step 2 swaps the field IN PLACE while focus is parked on the submit
+   * button, whose accessible name changes from «Sūtīt kodu» to «Pieslēgties»
+   * underneath the user — nothing announces that a new input appeared.
+   * Moving focus to it announces the field and saves a Tab.
+   */
+  useEffect(() => {
+    if (step === 'code') codeInput.current?.focus();
+  }, [step]);
 
   async function requestCode(event: React.FormEvent) {
     event.preventDefault();
@@ -121,7 +132,7 @@ export function LoginForm() {
             required
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="+371…"
+            placeholder={formatMessage(LANG, 'console.phone_placeholder')}
             style={inputStyle}
           />
         </label>
@@ -131,6 +142,7 @@ export function LoginForm() {
             {formatMessage(LANG, 'console.code')}
           </span>
           <input
+            ref={codeInput}
             type="text"
             name="code"
             inputMode="numeric"

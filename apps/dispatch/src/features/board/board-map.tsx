@@ -34,6 +34,12 @@ export function BoardMap({ drivers }: Readonly<{ drivers: BoardDriver[] }>) {
           RIGA_CENTRE,
           12,
         );
+        // Leaflet's default attribution prefix is an <a> to leafletjs.com —
+        // a focusable element inside an aria-hidden container, which is an
+        // AXE violation and a keyboard trap for a screen-reader user (focus
+        // lands on a link that is not in the accessibility tree). Dropping
+        // the PREFIX keeps the required © OpenStreetMap credit below.
+        map.current.attributionControl.setPrefix(false);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap',
         }).addTo(map.current);
@@ -48,11 +54,21 @@ export function BoardMap({ drivers }: Readonly<{ drivers: BoardDriver[] }>) {
         if (existing) {
           existing.setLatLng([driver.location.lat, driver.location.lng]);
         } else {
+          // A NODE, never a string: leaflet's DivOverlay._updateContent does
+          // `node.innerHTML = content` for string content, which would make
+          // this the one place a driver's display name is not escaped (React
+          // escapes it everywhere else it renders). Nothing writes
+          // `displayName` from user input today — #20's driver-onboarding
+          // review is the ticket that starts to, in a console whose JWT sits
+          // in localStorage by design. `textContent` takes the appendChild
+          // branch instead.
+          const label = document.createElement('span');
+          label.textContent = driver.name;
           markers.current.set(
             driver.driverId,
             L.marker([driver.location.lat, driver.location.lng])
               .addTo(map.current)
-              .bindTooltip(driver.name),
+              .bindTooltip(label),
           );
         }
       }

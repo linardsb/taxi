@@ -85,6 +85,29 @@ describe('LoginForm', () => {
     expect(vi.mocked(fetch).mock.calls[0]![1]?.body).toContain('"role":"rider"');
   });
 
+  it('moves focus to the code field on step 2 (edge)', async () => {
+    // Step 2 swaps the input IN PLACE with focus parked on the submit button,
+    // whose accessible name silently changes «Sūtīt kodu» → «Pieslēgties».
+    // Nothing would announce the new field, and it costs a Tab to reach.
+    render(<LoginForm />);
+    await reachCodeStep();
+
+    expect(screen.getByLabelText(formatMessage('lv', 'console.code'))).toBe(
+      document.activeElement,
+    );
+  });
+
+  it('renders the phone placeholder from the catalog, not a literal (edge)', () => {
+    render(<LoginForm />);
+
+    expect(
+      screen.getByLabelText(formatMessage('lv', 'console.phone')),
+    ).toHaveAttribute(
+      'placeholder',
+      formatMessage('lv', 'console.phone_placeholder'),
+    );
+  });
+
   it('rejects a rider session — no_access shown, token DISCARDED (edge)', async () => {
     render(<LoginForm />);
     await reachCodeStep();

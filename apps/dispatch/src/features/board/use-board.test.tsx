@@ -1,7 +1,7 @@
 import type { AuthSession, DispatchBoardEvent } from '@taxi/shared';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { saveSession } from '@/features/auth';
+import { BOARD_SNAPSHOT_STORAGE_KEY, saveSession } from '@/features/auth';
 import { OFFLINE_AFTER_FAILURES } from './board-state';
 import { useBoard } from './use-board';
 
@@ -72,7 +72,10 @@ const okJson = (body: unknown) => ({
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson(frame()) as Response));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(okJson(frame()) as Response),
+  );
   saveSession(session);
   fakeSocket.handlers.clear();
   fakeSocket.connected = false;
@@ -186,6 +189,98 @@ describe('useBoard', () => {
     });
 
     expect(result.current.board.frame?.drivers).toHaveLength(1);
+  });
+
+  it('persists every frame it applies (expected)', async () => {
+    // The mechanism behind "the driver phone list survives a cold refresh with
+    // the API down". Untested, a regression here would be invisible.
+    renderHook(() => useBoard());
+    await connectSocket();
+
+    const stored = window.localStorage.getItem(BOARD_SNAPSHOT_STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored!).cityId).toBe(CITY);
+  });
+
+  it('hydrates the stored frame on mount, STALE-marked (expected)', async () => {
+    const driver = {
+      driverId: 'd0000000-0000-4000-8000-000000000001',
+      name: 'Jānis',
+      phone: '+37129999001',
+      location: null,
+      lastSeenAt: null,
+      zoneName: null,
+      status: 'online' as const,
+    };
+    window.localStorage.setItem(
+      BOARD_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify(frame({ drivers: [driver] })),
+    );
+
+    const { result } = renderHook(() => useBoard());
+
+    // Data is there for Dina to phone off — but nothing claims it is live.
+    expect(result.current.board.frame?.drivers).toHaveLength(1);
+    expect(result.current.board.lastFrameAtMs).toBeNull();
+    expect(result.current.pill).not.toBe('live');
+  });
+
+  it('discards a corrupt stored snapshot and starts empty (failure)', async () => {
+    window.localStorage.setItem(BOARD_SNAPSHOT_STORAGE_KEY, '{not json');
+
+    const { result } = renderHook(() => useBoard());
+
+    expect(result.current.board.frame).toBeNull();
+    // Cleaned, so a bad blob cannot bounce every load.
+    expect(window.localStorage.getItem(BOARD_SNAPSHOT_STORAGE_KEY)).toBeNull();
+  });
+
+  it('discards a stored snapshot that no longer matches the wire schema (failure)', async () => {
+    // Shape drift, not syntax: valid JSON the current schema rejects.
+    window.localStorage.setItem(
+      BOARD_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify({ cityId: CITY, at: NOW.toISOString() }), // no rides/drivers
+    );
+
+    const { result } = renderHook(() => useBoard());
+
+    expect(result.current.board.frame).toBeNull();
+    expect(window.localStorage.getItem(BOARD_SNAPSHOT_STORAGE_KEY)).toBeNull();
+  });
+
+  it('a late REST snapshot never overwrites a newer socket frame (edge)', async () => {
+    // The reconnect race: GET /dispatch/board is issued on connect, a cold api
+    // answers slowly, and the 2 s cadence lands a fresher frame first.
+    const laterFrame = frame({
+      at: new Date(NOW.getTime() + 2_000).toISOString(),
+      drivers: [
+        {
+          driverId: 'd0000000-0000-4000-8000-000000000001',
+          name: 'Jānis',
+          phone: '+37129999001',
+          location: null,
+          lastSeenAt: null,
+          zoneName: null,
+          status: 'online',
+        },
+      ],
+    });
+    const { result } = renderHook(() => useBoard());
+    await connectSocket(); // applies the t+0 REST body
+    await act(async () => {
+      fakeSocket.fire('dispatch:board', laterFrame);
+    });
+    expect(result.current.board.frame?.drivers).toHaveLength(1);
+
+    // Now a stale REST body arrives — retry() re-fetches, mock still returns t+0.
+    await act(async () => {
+      result.current.retry();
+      await Promise.resolve();
+    });
+
+    // Still the newer frame, and receipt time was not re-stamped as fresh.
+    expect(result.current.board.frame?.drivers).toHaveLength(1);
+    expect(result.current.board.frame?.at).toBe(laterFrame.at);
   });
 
   it('an unauthorized handshake clears the session and redirects (failure)', async () => {

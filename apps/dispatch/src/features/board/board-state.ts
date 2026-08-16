@@ -66,12 +66,43 @@ export const emptyBoard = (): BoardState => ({
   alerts: [],
 });
 
-/** Wholesale replace — the whole point: no merge, no merge bugs. */
+/**
+ * Wholesale replace — the whole point: no merge, no merge bugs.
+ *
+ * TWO TRANSPORTS FEED THIS AND NOTHING ELSE ORDERS THEM. On reconnect the
+ * console fires `GET /dispatch/board` while the 2 s cadence keeps pushing; a
+ * cold api answering the REST call in ~3 s delivers a body built BEFORE a
+ * socket frame that already landed. Applied blindly, that older ride set
+ * would replace the newer one and be stamped as received *now* — a board
+ * three seconds behind under a green «Tiešraide», which is precisely the
+ * silent staleness this slice exists to prevent. Same shape when an in-flight
+ * fallback poll lands after the socket recovers, and when `retry()` is
+ * clicked twice (it calls `fetchSnapshot` outside the poll gate).
+ *
+ * Ordered on `frame.at` — the SERVER clock, which both transports share
+ * (`board.service.ts` takes one `nowMs` before its awaits), so no client
+ * clock enters the comparison. Strict `<`, so a re-delivered identical frame
+ * still refreshes `lastFrameAtMs` and keeps the pill honest.
+ *
+ * Only frames received LIVE this session order each other (`lastFrameAtMs
+ * !== null`). A frame rehydrated from localStorage is deliberately never a
+ * baseline: its `at` can be arbitrarily far ahead of the server's — a restored
+ * profile, a clock step, the same origin pointed at another environment — and
+ * treating it as one would reject every subsequent frame forever, leaving the
+ * pill stuck at «Atjaunojas…». Unlike the bug above, that would not self-heal.
+ */
 export function applyFrame(
   state: BoardState,
   frame: DispatchBoardEvent,
   atMs: number,
 ): BoardState {
+  if (
+    state.frame !== null &&
+    state.lastFrameAtMs !== null &&
+    Date.parse(frame.at) < Date.parse(state.frame.at)
+  ) {
+    return state;
+  }
   return { ...state, frame, lastFrameAtMs: atMs };
 }
 

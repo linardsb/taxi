@@ -1,12 +1,13 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { rideFareLines, rides, users, vehicles, type Db } from '@taxi/db';
 import {
-  ACTIVE_DRIVER_RIDE_STATUSES,
+  BOARD_LIVE_RIDE_STATUSES,
   assertFareQuoteConsistent,
   fareQuoteSchema,
   rideRequestSchema,
   rideSchema,
   type AddressPoint,
+  type BoardRideStatus,
   type BookingChannel,
   type FareQuote,
   type Ride,
@@ -38,21 +39,26 @@ export interface AwaitingRide {
 }
 
 /**
- * The statuses on Dina's live board (#18): everything between creation and a
- * terminal state. `scheduled` is deliberately absent — a scheduled ride is not
- * yet live work — and so are `completed`/`settled`/cancellations.
+ * The board needs the pickup and nothing else off the request snapshot, so it
+ * validates the pickup and nothing else — see `findBoardRides`.
  */
-const LIVE_BOARD_STATUSES = [
-  'requested',
-  'offered',
-  'queued',
-  ...ACTIVE_DRIVER_RIDE_STATUSES,
-] as const satisfies readonly RideStatus[];
+const boardPickupSchema = rideRequestSchema.pick({ pickup: true });
+
+const BOARD_STATUS_SET = new Set<string>(BOARD_LIVE_RIDE_STATUSES);
+
+/**
+ * The board query's `inArray` already constrains this, but that guarantee
+ * lives in SQL where the type system cannot see it. A checked guard rather
+ * than a cast: `BoardRide.status` is what the wire schema demands, and an
+ * assertion here would be the one unverified step between the two.
+ */
+const isBoardStatus = (status: RideStatus): status is BoardRideStatus =>
+  BOARD_STATUS_SET.has(status);
 
 /** One board row: the ride, its pickup, and who (if anyone) is on it. */
 export interface BoardRide {
   id: string;
-  status: RideStatus;
+  status: BoardRideStatus;
   pickup: AddressPoint;
   driverId: string | null;
   driverName: string | null;
@@ -142,6 +148,8 @@ function toRide(row: RideRow, quote: FareQuote): Ride {
 
 @Injectable()
 export class RidesRepository {
+  private readonly logger = new Logger(RidesRepository.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /**
@@ -223,24 +231,54 @@ export class RidesRepository {
    * widened to the whole pre-terminal lifecycle, plus the driver's display name
    * in the same read (the board would otherwise need a query per assigned ride
    * every 2 s frame). `rides_status_idx` covers the predicate here too.
+   *
+   * ONE UNREADABLE ROW COSTS ONE CARD, NEVER THE BOARD. `rides.request` is an
+   * audit snapshot written at creation and never migrated, so a later required
+   * field on `rideRequestSchema` makes older live rows unparseable. A whole-
+   * schema `.parse()` here would then reject the read on both transports at
+   * once — `GET /dispatch/board` 500s and every 2 s beat emits nothing — until
+   * that row leaves the live window, which includes `accepted`/`in_progress`
+   * and can be a long time. So: validate only the field the board renders, per
+   * row, and drop the row that fails.
+   *
+   * `toAwaiting`'s full parse deliberately stays strict — the sweeper
+   * dispatches off `category`/`options`/`paymentMethod`, so a degraded request
+   * there would silently mis-dispatch rather than omit a card.
    */
   async findBoardRides(limit: number): Promise<BoardRide[]> {
     const rows = await this.db
       .select({ ride: rides, driverName: users.displayName })
       .from(rides)
       .leftJoin(users, eq(users.id, rides.driverId))
-      .where(inArray(rides.status, [...LIVE_BOARD_STATUSES]))
+      .where(inArray(rides.status, [...BOARD_LIVE_RIDE_STATUSES]))
       .orderBy(asc(rides.createdAt))
       .limit(limit);
-    return rows.map(({ ride, driverName }) => ({
-      id: ride.id,
-      status: ride.status,
-      pickup: rideRequestSchema.parse(ride.request).pickup,
-      driverId: ride.driverId,
-      driverName,
-      bookingChannel: ride.bookingChannel,
-      createdAt: ride.createdAt,
-    }));
+    return rows.flatMap(({ ride, driverName }) => {
+      const parsed = boardPickupSchema.safeParse(ride.request);
+      if (!parsed.success || !isBoardStatus(ride.status)) {
+        this.logger.warn({
+          event: 'dispatch.board.ride_unreadable',
+          rideId: ride.id,
+          status: ride.status,
+          reason: parsed.success
+            ? 'status outside the board window'
+            : (parsed.error.issues[0]?.message ?? 'unknown'),
+          at: new Date().toISOString(),
+        });
+        return [];
+      }
+      return [
+        {
+          id: ride.id,
+          status: ride.status,
+          pickup: parsed.data.pickup,
+          driverId: ride.driverId,
+          driverName,
+          bookingChannel: ride.bookingChannel,
+          createdAt: ride.createdAt,
+        },
+      ];
+    });
   }
 
   /**

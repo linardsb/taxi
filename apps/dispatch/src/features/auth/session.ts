@@ -16,6 +16,14 @@ import {
 export const SESSION_STORAGE_KEY = 'taxi.console.session';
 const STORAGE_KEY = SESSION_STORAGE_KEY;
 
+/**
+ * The board's last-frame cache — declared HERE, next to the session key,
+ * because `clearSession()` must remove it and the auth slice must not import
+ * the board slice (board → auth already exists; the reverse closes a cycle).
+ * The board slice imports this constant back.
+ */
+export const BOARD_SNAPSHOT_STORAGE_KEY = 'taxi.console.board-snapshot';
+
 /** Who may see the console at all — `/admin` narrows further to admin. */
 export const CONSOLE_ROLES: readonly UserRole[] = ['dispatcher', 'admin'];
 
@@ -23,8 +31,17 @@ export function saveSession(session: AuthSession): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
 }
 
+/**
+ * Ends the session AND drops everything cached under it. The board snapshot
+ * is written on every frame and carries every online driver's name, phone and
+ * last position plus every live ride's pickup address — third-party PII that
+ * must not outlive the session on a shared operator workstation. The accepted
+ * XSS risk documented above covers exposure of the TOKEN, not a PII cache
+ * left on disk with no session present.
+ */
 export function clearSession(): void {
   window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.removeItem(BOARD_SNAPSHOT_STORAGE_KEY);
 }
 
 /**

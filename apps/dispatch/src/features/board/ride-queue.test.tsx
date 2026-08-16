@@ -1,4 +1,9 @@
-import { formatMessage, type DispatchBoardEvent } from '@taxi/shared';
+import {
+  BOARD_LIVE_RIDE_STATUSES,
+  dispatchBoardEventSchema,
+  formatMessage,
+  type DispatchBoardEvent,
+} from '@taxi/shared';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { RideQueue } from './ride-queue';
@@ -94,22 +99,55 @@ describe('RideQueue', () => {
       />,
     );
 
-    const flashed = screen
-      .getByText('Brīvības 1')
-      .closest('li');
+    const flashed = screen.getByText('Brīvības 1').closest('li');
     const calm = screen.getByText('Hanzas 3').closest('li');
     expect(flashed).toHaveClass('console-flash');
     expect(calm).not.toHaveClass('console-flash');
   });
 
-  it('never renders a terminal ride, whatever the payload claims (failure)', () => {
+  it('cannot be handed a terminal ride — the wire schema refuses it (failure)', () => {
+    // This used to be a runtime drop: the wire enum was the FULL RIDE_STATUSES
+    // and the component silently bucketed a `completed` ride nowhere. Narrowed
+    // to BOARD_LIVE_RIDE_STATUSES, the payload never parses in the first place,
+    // so the console cannot receive one — `ride({ status: 'completed' })` is
+    // now a type error too.
+    const withTerminal = {
+      cityId: '00000000-0000-4000-8000-000000000001',
+      at: '2026-08-15T12:00:00.000Z',
+      rides: [{ ...ride({}), status: 'completed' }],
+      drivers: [],
+    };
+    expect(dispatchBoardEventSchema.safeParse(withTerminal).success).toBe(
+      false,
+    );
+  });
+
+  it('labels every status the board can carry — no raw enum can leak (edge)', () => {
+    // STATUS_KEY is total over BoardRideStatus, so this is the runtime half of
+    // that guarantee: an unlabelled status would print a raw English enum on
+    // an LV-only console.
     render(
       <RideQueue
-        rides={[ride({ status: 'completed' })]}
+        rides={BOARD_LIVE_RIDE_STATUSES.map((status, i) =>
+          ride({
+            rideId: `${i}f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c`,
+            status,
+            pickup: {
+              location: { lat: 56.95, lng: 24.11 },
+              address: `Adrese ${i}`,
+            },
+          }),
+        )}
         nowMs={NOW}
         flashRideIds={none}
       />,
     );
-    expect(screen.queryByText('Brīvības 1')).not.toBeInTheDocument();
+
+    for (const status of BOARD_LIVE_RIDE_STATUSES) {
+      expect(screen.queryByText(status)).not.toBeInTheDocument(); // never raw
+    }
+    expect(
+      screen.getAllByText(formatMessage('lv', 'console.status_requested')),
+    ).toHaveLength(1);
   });
 });

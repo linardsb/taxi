@@ -400,6 +400,70 @@ describe('rides (integration)', () => {
   });
 
   /**
+   * `rides.request` is an audit snapshot written at creation and never
+   * migrated, so a later required field on `rideRequestSchema` makes older
+   * live rows unparseable. Both board transports read through here, so an
+   * all-or-nothing parse would take Dina's console dark on one bad row.
+   */
+  describe('findBoardRides (degrading on an unreadable request)', () => {
+    const repo = () => ctx.app.get(RidesRepository);
+
+    async function createRide(n: number) {
+      const r = await rider(n);
+      const res = await http
+        .post('/rides')
+        .set('authorization', r.auth)
+        .set(IDEMPOTENCY_KEY_HEADER, idem())
+        .send({ pickup: CENTRE, destination: RIX, paymentMethod: 'cash' })
+        .expect(201);
+      return rideCreatedSchema.parse(res.body).ride;
+    }
+
+    it('carries a live ride with its pickup (expected)', async () => {
+      const ride = await createRide(30);
+
+      const board = await repo().findBoardRides(100);
+
+      const row = board.find((r) => r.id === ride.id);
+      expect(row?.pickup).toEqual(CENTRE);
+      expect(row?.status).toBe('requested');
+    });
+
+    it('drops ONLY the unreadable row and still serves the rest (edge)', async () => {
+      const good = await createRide(31);
+      const bad = await createRide(32);
+      // The shape a future required field produces: a snapshot that no longer
+      // satisfies the schema. `pickup` itself is gone, so the board has
+      // nothing to render for this ride even in principle.
+      await ctx.db
+        .update(rides)
+        .set({ request: {} })
+        .where(eq(rides.id, bad.id));
+
+      const board = await repo().findBoardRides(100);
+
+      const ids = board.map((r) => r.id);
+      expect(ids).toContain(good.id);
+      expect(ids).not.toContain(bad.id);
+    });
+
+    it('never rejects the read because of a bad row (failure)', async () => {
+      const bad = await createRide(33);
+      await ctx.db
+        .update(rides)
+        .set({ request: { pickup: 'Brīvības 1' } }) // pickup, wrong shape
+        .where(eq(rides.id, bad.id));
+
+      // A throw here 500s GET /dispatch/board AND silences every 2 s beat.
+      await expect(repo().findBoardRides(100)).resolves.toEqual(
+        expect.arrayContaining([]),
+      );
+      const board = await repo().findBoardRides(100);
+      expect(board.map((r) => r.id)).not.toContain(bad.id);
+    });
+  });
+
+  /**
    * `findWithQuote` is the codebase's FIRST reader of `ride_fare_lines` — the
    * write path always held the quote in hand, so nothing ever reversed it.
    * Every offer card depends on this reconstruction being exact.

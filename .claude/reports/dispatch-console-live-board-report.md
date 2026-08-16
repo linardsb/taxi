@@ -10,6 +10,7 @@ Built Dina's live dispatch board and the merged dispatch+admin web app. The API 
 
 - T1 widen `dispatch:board`, add 9th event → `packages/shared/src/realtime-events.ts` (UPDATE) + `tests/realtime-events.test.ts`
 - T2 `console.*` catalog (44 keys × lv/ru/en) → `packages/shared/src/i18n.ts` (UPDATE) + pill-distinctness test
+  - **Post-review (PR #117):** now **46** keys × 3 = 138 entries, all used (`observed`, re-counted off the `lv` block that defines `MessageKey`). M7 added `console.stale_banner_silent` (the connected-but-silent banner, where «Bezsaistē» would be a lie) and L6 added `console.phone_placeholder` (the login form's `+371…` was a literal outside the catalog). L4 also stripped the `(#20)` tracker number out of `console.admin_placeholder` in all three locales — Dina cannot resolve an issue number.
 - T3 `listOnline` → `driver-location.store.ts` (port), `redis-driver-location.store.ts` (SMEMBERS + pipelined GEOPOS/ZMSCORE), `test/harness.ts` fake, 4 new contract cases run against BOTH implementations
 - T4 board slice → `services/api/src/features/dispatch/board/{board.service.ts,board.policy.ts,board.service.spec.ts}` (CREATE); `RidesRepository.findBoardRides` (driver-name join, 7 live statuses); `DriversRepository/Service.findBoardContacts`; `ResolvedGeozone` + `name`; `RealtimeService.dispatchRoomSize`
 - T5 `GET /dispatch/board` folded into `dispatch.controller.ts` + 3 integration cases (200/zone-name/403) through the real guard chain
@@ -19,7 +20,8 @@ Built Dina's live dispatch board and the merged dispatch+admin web app. The API 
 - T9 route groups → `dispatch/layout.tsx`, `admin/layout.tsx`, `admin/page.tsx` (placeholder from catalog)
 - T10 board core → `src/features/board/{board-state.ts,use-board.ts}` + tests (17)
 - T11 components → `{connection-pill,ride-queue,zones-panel,board-map,alerts-panel}.tsx`, `dispatch/page.tsx`, slice `index.ts` + tests per component
-- T12 `apps/admin` deleted (`git rm -r`); README workspaces table, `docs/build-playbook.md` Step 8, lockfile refreshed — no `@taxi/admin` references remain in living docs
+- T12 `apps/admin` deleted (`git rm -r`); README workspaces table, `docs/build-playbook.md` Step 8, lockfile refreshed
+  - **Correction (PR #117 review, M5).** This line originally claimed "no `@taxi/admin` references remain in living docs". Literally true — no *package* reference survived — but the substance was false: three living, executable artifacts still routed to the deleted `apps/admin` path, so `/prime-app admin` was broken. `.claude/skills/prime-app/SKILL.md` (surface table + description + argument-hint + reference map + output line), `.claude/agents/code-reviewer.md`'s repo description, and `docs/build-playbook.md:53` were fixed in the review pass. The claim's literal form is what made it feel checked; the check it needed was a grep for the PATH, not the package name. Surviving hits are now confined to `.claude/plans/`, `.claude/reports/`, `.claude/code-reviews/`, `.git-blame-ignore-revs` and decision docs, where history belongs.
 - T13 `apps/dispatch/CLAUDE.md` rewritten (merged app, auth model, socket usage, admin scope carried over); root `CLAUDE.md` map row + diagram + "three apps"
 - T14 `.claude/references/realtime-events.md`: 3 false rows fixed (`ride:status` never reaches dispatch; `dispatch:board` now cadenced; `driver:location` rider leg still future), `driver:queue` marked never-emitted, `dispatch:sms_failed` row added, count 8→9
 - T15 drill + gate (below)

@@ -4,6 +4,7 @@ import {
   RT,
   type Ride,
   type RideStatus,
+  type SmsKind,
   type SmsProvider,
 } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
@@ -17,8 +18,6 @@ import {
   type NotifiableRide,
 } from './notifications.repository';
 import { driverFirstName, trackingLink } from './sms-templates';
-
-type SmsKind = 'booking_confirmed' | 'driver_assigned' | 'driver_arrived';
 
 /**
  * The rider's SMS story (#63), hanging off two post-commit hooks:

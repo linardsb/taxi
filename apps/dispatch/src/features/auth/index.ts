@@ -6,6 +6,7 @@ export { apiUrl } from './api-url';
 export { LoginForm } from './login-form';
 export { RequireRole } from './require-role';
 export {
+  BOARD_SNAPSHOT_STORAGE_KEY,
   CONSOLE_ROLES,
   clearSession,
   hasConsoleRole,

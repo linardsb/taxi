@@ -10,7 +10,12 @@ import {
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { apiUrl, clearSession, loadSession } from '@/features/auth';
+import {
+  apiUrl,
+  BOARD_SNAPSHOT_STORAGE_KEY,
+  clearSession,
+  loadSession,
+} from '@/features/auth';
 import {
   acknowledgeAlert,
   applyDriverLocation,
@@ -25,7 +30,11 @@ import {
   type PillState,
 } from './board-state';
 
-const SNAPSHOT_KEY = 'taxi.console.board-snapshot';
+/**
+ * Declared in the auth slice so `clearSession()` can drop this cache too —
+ * it holds driver PII and must not outlive the session. See session.ts.
+ */
+const SNAPSHOT_KEY = BOARD_SNAPSHOT_STORAGE_KEY;
 
 type ConsoleSocket = Socket<ServerToClientEvents, ClientToServerEmitEvents>;
 

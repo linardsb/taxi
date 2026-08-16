@@ -78,17 +78,20 @@ const lv = {
   'console.alerts_muted': 'Skaņa izslēgta',
   'console.alerts_unmuted': 'Skaņa ieslēgta',
   'console.stale_banner': 'Bezsaistē. Rādām pēdējos zināmos datus ({time}).',
+  // Connected but no fresh frame — «Bezsaistē» would be a lie here.
+  'console.stale_banner_silent':
+    'Nav jaunu datu. Rādām pēdējos zināmos datus ({time}).',
   'console.retry': 'Mēģināt vēlreiz',
   'console.login_title': 'Dispečera pieslēgšanās',
   'console.phone': 'Tālruņa numurs',
+  'console.phone_placeholder': '+371…',
   'console.send_code': 'Sūtīt kodu',
   'console.code': 'Apstiprinājuma kods',
   'console.sign_in': 'Pieslēgties',
   'console.no_access': 'Šim kontam nav piekļuves konsolei',
   'console.wrong_code': 'Nepareizs vai novecojis kods',
   'console.request_failed': 'Neizdevās nosūtīt kodu. Mēģiniet vēlreiz.',
-  'console.admin_placeholder':
-    'Administrēšanas sadaļa tiks pievienota vēlāk (#20)',
+  'console.admin_placeholder': 'Administrēšanas sadaļa tiks pievienota vēlāk',
 } as const;
 
 export type MessageKey = keyof typeof lv;
@@ -159,17 +162,19 @@ export const MESSAGES = {
     'console.alerts_unmuted': 'Звук включён',
     'console.stale_banner':
       'Нет связи. Показаны последние известные данные ({time}).',
+    'console.stale_banner_silent':
+      'Нет новых данных. Показаны последние известные данные ({time}).',
     'console.retry': 'Повторить попытку',
     'console.login_title': 'Вход для диспетчера',
     'console.phone': 'Номер телефона',
+    'console.phone_placeholder': '+371…',
     'console.send_code': 'Отправить код',
     'console.code': 'Код подтверждения',
     'console.sign_in': 'Войти',
     'console.no_access': 'У этого аккаунта нет доступа к консоли',
     'console.wrong_code': 'Неверный или устаревший код',
     'console.request_failed': 'Не удалось отправить код. Попробуйте ещё раз.',
-    'console.admin_placeholder':
-      'Раздел администрирования появится позже (#20)',
+    'console.admin_placeholder': 'Раздел администрирования появится позже',
   },
   en: {
     'sms.booking_confirmed': 'Your taxi is booked.',
@@ -233,16 +238,19 @@ export const MESSAGES = {
     'console.alerts_muted': 'Sound off',
     'console.alerts_unmuted': 'Sound on',
     'console.stale_banner': 'Offline. Showing last known data ({time}).',
+    'console.stale_banner_silent':
+      'No new data. Showing last known data ({time}).',
     'console.retry': 'Retry',
     'console.login_title': 'Dispatcher sign-in',
     'console.phone': 'Phone number',
+    'console.phone_placeholder': '+371…',
     'console.send_code': 'Send code',
     'console.code': 'Verification code',
     'console.sign_in': 'Sign in',
     'console.no_access': 'This account has no console access',
     'console.wrong_code': 'Wrong or expired code',
     'console.request_failed': 'Could not send the code. Try again.',
-    'console.admin_placeholder': 'The admin area arrives later (#20)',
+    'console.admin_placeholder': 'The admin area arrives later',
   },
 } as const satisfies Record<Language, Record<MessageKey, string>>;
 
