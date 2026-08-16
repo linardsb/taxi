@@ -468,3 +468,21 @@ pnpm turbo run typecheck lint test build --force   # with REDIS_TEST_URL exporte
 ## AMENDMENTS
 
 <!-- Append-only after first approval/execution. -->
+
+**2026-08-16 — the two `.claude/plans/deploy-hetzner-environment.md` citations were dangling.**
+OPEN QUESTIONS ("Single API node assumed…") and the CORS/origins note both cite that path; **no such
+file has ever existed**, and at the time they were written the hosting decision of record was
+*Railway*, not Hetzner (`docs/epics/sakta-cab.architecture.md`, decided 2026-08-03). So the
+single-node assumption was sound but its citation was not — the plan asserted a hosting decision that
+had not been made anywhere.
+
+Hetzner has since become the real decision (2026-08-16), which makes the assumption correct in
+substance. Read both citations as pointing to
+[`docs/epics/sakta-cab.architecture.md` → *Hosting decision revised (2026-08-16)*](../../docs/epics/sakta-cab.architecture.md#hosting-decision-revised-2026-08-16)
+and its evidence, `docs/research/hosting-sms-cost-research.md`. The single-node caveat itself stands
+unchanged, including PR #117's review note that it is more pessimistic than the actual behaviour
+(a duplicate frame, never lost coverage).
+
+Logged rather than silently corrected because this is the same defect class as the numbers rule: a
+claim inherited into a plan, carried through implementation and review, and never checked against
+what it cited.

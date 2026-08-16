@@ -23,7 +23,7 @@ Continue on the existing Phase 0 scaffold exactly as laid out in the skeleton pr
 ## Key decisions
 
 - **Stack & libraries** — reaffirmed from the skeleton, no changes: Expo/RN (rider, driver), Next.js App Router (dispatch, admin), NestJS + Drizzle + PostGIS + Redis + Socket.IO (api), zod contracts in `@taxi/shared`. Alternatives were weighed in the skeleton session; familiarity + AI-friendliness won.
-- **Hosting** — **Railway** (decided 2026-08-03; skeleton left Railway-or-Fly open). Managed Postgres+PostGIS and Redis, git-push deploys, WebSockets out of the box; ~€20–40/mo fits the €100 guardrail. Fly.io rejected as more ops surface for a solo builder. Deploy when a shared environment is first needed — local docker carries development until then.
+- **Hosting** — ~~**Railway**~~ **SUPERSEDED 2026-08-16 → [Hosting decision revised](#hosting-decision-revised-2026-08-16)**. *(Original, decided 2026-08-03; skeleton left Railway-or-Fly open: managed Postgres+PostGIS and Redis, git-push deploys, WebSockets out of the box; ~€20–40/mo fits the €100 guardrail. Fly.io rejected as more ops surface for a solo builder. Deploy when a shared environment is first needed — local docker carries development until then.)* The "deploy when first needed" half still stands; the platform does not.
 - **Commission** — 15% flat, **config not constant**: a platform-config table read at quote time, with a pure `resolveCommissionPct(driver, config)` resolver in `@taxi/shared`. The loyalty differentiator is *the same resolver* consulting tenure/quality inputs — no separate subsystem.
 - **Demand-wave radar** — a `demand-signals` slice in `services/api`: polling ingestors behind a `DemandSignalProvider` seam (RIX arrivals, autoosta buses) → Redis → one socket event → "position yourself now" banner in the driver app. Seam exists precisely because the data source is unverified (spike 1). Fallback implementation of the same seam: dispatcher-posted manual wave alerts from Dina's console.
 - **Return-ride matching** — an extension inside the existing dispatch slice, not a new engine: an out-of-Rīga dropoff registers a time-boxed return-offer window keyed on the dropoff location; incoming requests near it match against the window before the normal cascade. No new infra.
@@ -42,6 +42,79 @@ Decided by Linards in the surface-consolidation grilling session; research + evi
 - **UX evidence is binding input to surface tickets**: the three evidence reports' top-10 lists were folded into tickets #14–#21 on 2026-08-07 (offer-card contents, FIFO queue transparency, caller-ID pop, keyboard-first console, alarm-budget discipline, PIN pickup, blind-rider arrival protocol, scheduled-ride guarantee). Anti-scope is explicit: no heatmaps, no in-app navigation, no IVR/voice-AI, no gamified tiers tied to acceptance rate, no bidding.
 - **Measurement**: experiential/outcome UX metrics live in `docs/ux-metrics-ledger.md` (weekly review during pilot), per the outcomes-not-outputs rule.
 
+## Hosting decision revised (2026-08-16)
+
+**Decided by Linards, 2026-08-16.** Supersedes the Railway line under Key decisions. Evidence:
+[`docs/research/hosting-sms-cost-research.md`](../research/hosting-sms-cost-research.md) (researched
+2026-08-14), whose §8.1 required this amendment rather than a silent divergence inside ticket #13.
+
+**Hosting is a Hetzner VPS — CX22 (2 vCPU / 4 GB / 40 GB NVMe) now, resize in place to CX33 when
+load says so.** OVH VPS-2 is the recorded runner-up (free daily backups, but annual commitment for
+the headline price). Contabo was disqualified on a 24-month minimum against a hypothesis the PRD
+makes falsifiable at 3 months.
+
+### Why this reverses a decision that is only 13 days old
+
+Three things the 2026-08-03 session did not weigh:
+
+1. **The production boot gate.** `mapsProviderSourceFactory` (`services/api/src/features/geo/geo.module.ts:22`)
+   throws under `NODE_ENV=production` because no real `MapsProvider` exists in the tree. Any deploy
+   needs one. On a managed platform that means Google Routes, billed per call from the first quote;
+   on a box we control it means **self-hosted OSRM on the Latvia OSM extract — €0 marginal, forever**.
+   This is a capability argument, not a price one, and it did not surface until the cost research.
+2. **The cost gap is ~6×, not marginal.** `derived` (§5.1–5.2 of the research, from vendor rates
+   `observed` 2026-08-14): Hetzner **€5.49/mo** (CX22 €4.49 + IPv4 €0 running IPv6-only behind
+   Cloudflare's free proxy + backups €0 via `pg_dump` to a free object-storage tier + domain ~€1)
+   against Railway at **$33.25/mo** at pilot load ($8.55 idle). The original ~€20–40/mo estimate for
+   Railway was not wrong; the alternative is simply much cheaper than it looked.
+3. **Hourly billing with no commitment.** The box can be created for a testing session or a demo day
+   and destroyed after, keeping a snapshot at €0.0143/GB/mo — a demo day costs roughly €0.30
+   (`derived`). The meter need not start before there is a product.
+
+**Pilot all-in: ~€20.64/mo** — €5.49 infra + €15.15 SMS (`derived`, §4.3). That SMS figure assumes
+*both* volume levers are applied and the PRD's month-3 target ride rate, i.e. the busiest month the
+pilot aims at, not its average. Without the levers the same month is **€47.38**. Either way the
+€100/mo guardrail is not the binding constraint, and **SMS — not hosting — is the largest line item
+at pilot and the only component that cannot run on our own hardware.**
+
+### The objection this decision accepts
+
+The 2026-08-03 session rejected Fly.io as **"more ops surface for a solo builder."** A VPS is *more*
+ops surface than Fly, so this decision does not resolve that objection — **it overrides it**, and the
+reasoning above is what it is traded against. Stating it plainly so a future reader does not mistake
+it for an oversight. What we now own that Railway owned before:
+
+| Responsibility | Mitigation |
+|---|---|
+| Backups | `pg_dump` cron → Cloudflare R2 / Backblaze B2 free tier. **The one item that must not be skipped outright** — pilot data is real rides and a money ledger. Hetzner's own +20% add-on snapshots whole disks; a dump is what we would actually restore from. |
+| TLS / DDoS | Cloudflare free proxy; Caddy serves plain HTTP internally |
+| Deploys | No git-push. Needs a documented deploy path — part of #13 |
+| OS patching, uptime | Uptime Kuma / GlitchTip, both self-hosted, €0 |
+
+### Carried forward unchanged
+
+`docs/research/hosting-sms-cost-research.md` §7 records Railway-specific findings (PostGIS template,
+`ioredis` IPv4 lookup, `PORT` injection, migrations-in-image, seeding policy). **Most are host-agnostic
+and still live on Hetzner** — migrations-in-image, seeding policy, `PORT`, and
+`PUBLIC_TRACKING_BASE_URL` in particular. Kept rather than deleted so a reversal costs nothing.
+
+### Open decisions this leaves
+
+1. **Routing packaging — blocks writing the #13 plan.** Does `OsrmMapsProvider` + the OSRM container
+   ship *inside* #13, or as its own ticket beside it? If #13 lands first it needs a documented
+   single-purpose config switch for the `geo.module.ts:22` gate (the #103 precedent: code-level kill
+   switch → config-level) until the OSRM ticket deletes it.
+2. **ARM vs x86** — OSRM publishes amd64-only container tags (arm64 is a long-standing open issue), so
+   the ARM CAX21 would force Valhalla or a self-built image. CX22 is x86 and removes the question.
+   **Verify at build time; do not take it on trust.**
+3. **Payments posture** — a cash-only pilot needs a provider that *refuses* card rides, replacing the
+   stub that silently reports success (`payments.module.ts:41` throws in production). Small; could
+   ride in #13.
+4. **SMS provider and the two volume levers** — Twilio trial through testing, then a delivery bake-off
+   (BulkGate / BudgetSMS, both EU processors) before pilot volume. The levers are their own tickets;
+   lever 2 spans `@taxi/shared` (`trackingTokenSchema`), the api, the catalogs and a domain purchase.
+   **Transliteration is rejected** (Linards, 2026-08-14) — Latvian lettering and Russian both stay.
+
 ## Missing pieces
 
 What the chosen approach needs that doesn't exist yet:
@@ -49,7 +122,8 @@ What the chosen approach needs that doesn't exist yet:
 - `db/` migrations + Rīga geozone seed (scaffold has none).
 - The entire API feature layer (scaffold is a hello-world NestJS app).
 - The three new-subsystem contracts in `@taxi/shared`: `DemandSignalProvider` seam, commission resolver, return-window types.
-- Railway environment (when first needed).
+- Hetzner environment (when first needed) — see [Hosting decision revised](#hosting-decision-revised-2026-08-16). Its plan is **not yet writable**: open decision 2 below (routing) blocks it.
+- `OsrmMapsProvider` — the only `MapsProvider` implementation that would satisfy the production boot gate at `services/api/src/features/geo/geo.module.ts:22`. Nothing in the tree implements it today, so the API cannot boot under `NODE_ENV=production` at all.
 - Telephony seam interface (click-to-dial/caller-ID stub for Dina's console).
 
 ## Spikes & experiments

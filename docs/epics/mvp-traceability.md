@@ -34,7 +34,7 @@
 | Admin: driver approval, config, stats | #20 | open (re-cut: minimal bespoke in merged app) | **stats** → Metabase (capability preserved, tool changed); **support-inbox stub → DEFERRED** (accepted 2026-08-07: pilot support = Dina's phone + direct line to Linards); **legal** → public static pages (was never really admin UI) |
 | Dispatch+admin as separate web apps | #18/#19/#20 | — | **merged into one Next.js app** (role route groups) — packaging only, role boundaries intact |
 | SMS statuses + live-tracking web page (phone bookings, share-trip, blind-rider assistants) | NEW ticket (2026-08-07) | open | new capability — replaces what a rider PWA would have offered, serves PRD phone-segment JTBD |
-| Deploy (Railway) | #13 | open, untouched | none |
+| Deploy (Hetzner VPS) | #13 | open, replanned | **host changed Railway → Hetzner CX22** (2026-08-16, architecture amendment). Capability unchanged; ops responsibilities Railway used to own (backups, TLS, deploys) move to us — see the amendment's mitigation table. Pulls in a new dependency: `OsrmMapsProvider` must exist for the API to boot in production at all |
 | Demo checkpoint to Atis & Dina | #24 | open, untouched | none (stays a checkpoint, not a scope gate) |
 | Driver app foundation (gated by spike #4) | #14 | open (field drive scheduled) | none |
 
