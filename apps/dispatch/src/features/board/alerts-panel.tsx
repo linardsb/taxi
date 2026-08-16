@@ -123,16 +123,21 @@ export function AlertsPanel({
         </button>
       </div>
 
-      {alerts.length > 0 && (
-        /**
-         * ONE live region wrapping the list, not one per row. `role="alert"`
-         * on each `<li>` overrode its implicit `listitem` role — leaving a
-         * `<ul>` with no list children, so a screen reader announced neither
-         * "list of N" nor "item 2 of 3" — and made every row its own
-         * assertive region. `aria-atomic="false"` so an arriving alert
-         * announces itself rather than re-reading the whole list.
-         */
-        <div role="alert" aria-atomic="false">
+      {/**
+       * ONE live region wrapping the list, not one per row. `role="alert"` on
+       * each `<li>` overrode its implicit `listitem` role — leaving a `<ul>`
+       * with no list children, so a screen reader announced neither "list of
+       * N" nor "item 2 of 3" — and made every row its own assertive region.
+       * `aria-atomic="false"` so an arriving alert announces itself rather
+       * than re-reading the whole list.
+       *
+       * The region is ALWAYS mounted, empty or not. A live region inserted in
+       * the same commit as its first content is a well-known miss — the
+       * assistive tech has nothing to observe a change against — and the very
+       * first alarm is the one that must never be silent.
+       */}
+      <div role="alert" aria-atomic="false">
+        {alerts.length > 0 && (
           <ul
             style={{
               listStyle: 'none',
@@ -181,8 +186,8 @@ export function AlertsPanel({
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   );
 }

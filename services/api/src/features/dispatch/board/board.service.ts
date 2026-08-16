@@ -81,6 +81,14 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
     // Reuses the geozone lookup dispatch's queue mode runs (smallest polygon
     // wins, in SQL) rather than a second point-in-polygon path. ≤10 pilot
     // drivers × one indexed query each per 2 s frame — bounded and boring.
+    //
+    // THIS IS BOUNDED BY THE FLEET SIZE, NOT BY ANYTHING HERE. `Promise.all`
+    // fans out one `ST_Contains` per positioned driver, concurrently, against
+    // the same pool ride booking uses — so the pilot's ≤10 becomes 200
+    // concurrent queries per frame at 200 online drivers, every 2 s. Whoever
+    // raises the fleet cap owns this: batch the lookup into a single query
+    // (one `ST_Contains` over a VALUES list of points) before the cap moves,
+    // or the board starts competing with the booking path for connections.
     const zones = await Promise.all(
       online.map((d) =>
         d.location

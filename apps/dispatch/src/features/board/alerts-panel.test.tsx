@@ -144,7 +144,13 @@ describe('AlertsPanel', () => {
 
   it('shows no alert rows at all when the list is empty — no noise (failure)', () => {
     render(<AlertsPanel alerts={[]} ack={vi.fn()} />);
-    expect(screen.queryAllByRole('alert')).toHaveLength(0);
+
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.queryAllByRole('list')).toHaveLength(0);
+    // The live region itself stays mounted and EMPTY on purpose: a region
+    // inserted in the same commit as its first content is a well-known
+    // announcement miss, and the first alarm is the one that must not be
+    // silent. Empty, it says nothing.
+    expect(screen.getByRole('alert')).toBeEmptyDOMElement();
   });
 });

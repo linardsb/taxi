@@ -63,11 +63,24 @@ function mount(pill: PillState, board: BoardState, nowMs = NOW) {
 const lead = (key: 'console.stale_banner' | 'console.stale_banner_silent') =>
   formatMessage('lv', key).split('(')[0]!.trim();
 
+/**
+ * The banner by its TEXT, not by `role="alert"` — the alerts panel keeps its
+ * own always-mounted live region, so the page legitimately has two.
+ */
+const bannerFor = (
+  key: 'console.stale_banner' | 'console.stale_banner_silent',
+) => screen.queryByText(lead(key), { exact: false });
+
+const retryButton = () =>
+  screen.queryByRole('button', { name: formatMessage('lv', 'console.retry') });
+
 describe('DispatchPage — the plan’s Error state', () => {
   it('shows no banner while frames are arriving (expected)', () => {
     mount('live', boardWith());
 
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(bannerFor('console.stale_banner')).toBeNull();
+    expect(bannerFor('console.stale_banner_silent')).toBeNull();
+    expect(retryButton()).toBeNull(); // no affordance implies nothing is wrong
   });
 
   it('offers retry when CONNECTED but silent past the heartbeat (edge)', () => {
@@ -76,23 +89,17 @@ describe('DispatchPage — the plan’s Error state', () => {
     // and nothing to click, while ride ages keep ticking and look alive.
     mount('reconnecting', boardWith({ lastFrameAtMs: NOW - 6_000 }));
 
-    const alert = screen.getByRole('alert');
     // «Bezsaistē» would be a lie — the socket is up, it is merely silent.
-    expect(alert).toHaveTextContent(lead('console.stale_banner_silent'));
-    expect(alert).not.toHaveTextContent('Bezsaistē');
-    expect(
-      screen.getByRole('button', {
-        name: formatMessage('lv', 'console.retry'),
-      }),
-    ).toBeInTheDocument();
+    expect(bannerFor('console.stale_banner_silent')).toBeInTheDocument();
+    expect(bannerFor('console.stale_banner')).toBeNull();
+    expect(retryButton()).toBeInTheDocument();
   });
 
   it('still says «Bezsaistē» when the pill has given up (edge)', () => {
     mount('offline', boardWith({ lastFrameAtMs: NOW - 6_000 }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      lead('console.stale_banner'),
-    );
+    expect(bannerFor('console.stale_banner')).toBeInTheDocument();
+    expect(retryButton()).toBeInTheDocument();
   });
 
   it('stays quiet on the cold first paint — the loading state speaks (failure)', () => {
@@ -101,7 +108,8 @@ describe('DispatchPage — the plan’s Error state', () => {
     // load.
     mount('reconnecting', boardWith({ frame: null, lastFrameAtMs: null }));
 
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(bannerFor('console.stale_banner_silent')).toBeNull();
+    expect(retryButton()).toBeNull();
     expect(
       screen.getByText(formatMessage('lv', 'console.loading')),
     ).toBeInTheDocument();
@@ -112,6 +120,7 @@ describe('DispatchPage — the plan’s Error state', () => {
     // localStorage, and the banner is what stops it reading as current.
     mount('reconnecting', boardWith({ lastFrameAtMs: null }));
 
-    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(bannerFor('console.stale_banner_silent')).toBeInTheDocument();
+    expect(retryButton()).toBeInTheDocument();
   });
 });
