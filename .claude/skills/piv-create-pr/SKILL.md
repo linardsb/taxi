@@ -40,6 +40,13 @@ git log origin/{base}..HEAD --oneline
   specifics live; this skill stays general.
 - Commits: `git log origin/{base}..HEAD --pretty=format:"- %s"`
 - Files: `git diff --stat origin/{base}..HEAD`
+- **Every size, count or per-path figure in the body must be produced by a command you run NOW, against the
+  final commit, with the command shown beside the figure.** Never transcribe one from the plan, the
+  implementation report, a review, or an earlier draft of this body — those are the four places it has been
+  wrong before. If a figure is a decomposition, print every bucket and its sum so the arithmetic is checkable
+  (`477 + 62 + 94 + 485 = 1,118`), and make sure each bucket's label matches what it actually contains.
+  A tag like `observed` says where a number came from; it does **not** say the number is right — #87, #107 and
+  #117 were all correctly tagged and wrong, and #117's *correction* was wrong twice more before it was right.
 - **Implementation report** (if `piv-implement` wrote one — `.claude/reports/<…>-report.md`): pull the summary,
   validation results, and **documented deviations** (these belong in the PR body — they tell the reviewer what
   was intentional).

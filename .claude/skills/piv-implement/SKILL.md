@@ -95,9 +95,16 @@ Write a short report to `.claude/reports/<plan-slug>-report.md` (and print the s
 and the `piv-review-pr` gate read — especially the **deviations** (a documented deviation is an *intentional*
 decision the reviewer should not flag):
 
-**Before filling Deviations**: re-read the plan's STEP-BY-STEP TASKS and TESTING STRATEGY and diff every *named*
-behavior and test case against what actually shipped. A divergence you didn't notice while coding is still a
-deviation — and the review gate treats an undocumented one as unintentional.
+**Before filling Deviations**: re-read the plan's STEP-BY-STEP TASKS, TESTING STRATEGY, **UX → States** and
+**ACCEPTANCE CRITERIA**, and diff every *named* behavior, state and test case against what actually shipped. A
+divergence you didn't notice while coding is still a deviation — and the review gate treats an undocumented one
+as unintentional.
+
+Tick each declared UX state (loading / empty / error / offline) per surface as you go. **A state you never built
+is a divergence even though nothing in the diff shows it** — and that asymmetry is why omissions get reported at
+zero while changes get reported at ten. #18 reported ten deviations honestly and missed the one thing it dropped:
+the plan's board *Error* state was never implemented, which the PR review then found (M7). Deferring it would
+have been a fine call; not writing it down was not.
 
 ```markdown
 # Implementation Report — <feature>
