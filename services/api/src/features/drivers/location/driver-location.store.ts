@@ -10,6 +10,17 @@ export interface NearbyDriver {
 }
 
 /**
+ * One online driver as the dispatch board sees it (#18). `location` and
+ * `lastSeenMs` are null for a driver who is online but has never had a
+ * position accepted — still a real person Dina can phone.
+ */
+export interface OnlineDriver {
+  driverId: string;
+  location: LatLng | null;
+  lastSeenMs: number | null;
+}
+
+/**
  * The narrow slice of Redis the driver hot path uses. A port, not an
  * abstraction layer — same rationale as common/kv/kv.store.ts: it exists so the
  * suite runs without a Redis server, and so the "location writes never touch
@@ -60,4 +71,12 @@ export interface DriverLocationStore {
     cityId: string,
     driverId: string,
   ): Promise<{ location: LatLng; atMs: number } | null>;
+
+  /**
+   * EVERY member of the online set, with whatever position is recorded — the
+   * board's read (#18). NO freshness filter, same rationale as `positionOf`:
+   * the console shows a stale driver stale-marked rather than dropping them,
+   * because the phone list must survive anything. Order is not guaranteed.
+   */
+  listOnline(cityId: string): Promise<OnlineDriver[]>;
 }

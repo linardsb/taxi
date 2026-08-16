@@ -7,7 +7,11 @@ import { TrackingLive } from './tracking-map';
 // Leaflet touches real layout/geometry; jsdom has none. The map div is
 // aria-hidden — the TEXT alternative is the tested surface — so a structural
 // stub is the honest boundary here.
-const mapStub = { setView: vi.fn(), remove: vi.fn() };
+const mapStub = {
+  setView: vi.fn(),
+  remove: vi.fn(),
+  attributionControl: { setPrefix: vi.fn() },
+};
 mapStub.setView.mockReturnValue(mapStub); // L.map(...).setView(...) is what gets stored
 const markerStub = { setLatLng: vi.fn(), addTo: vi.fn() };
 markerStub.addTo.mockReturnValue(markerStub); // L.marker(...).addTo(...) is what gets stored

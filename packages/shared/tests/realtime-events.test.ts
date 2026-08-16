@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   type ClientToServerEvents,
   RT,
+  RT_EVENT_SCHEMAS,
   type ServerToClientEvents,
   dispatchBoardEventSchema,
   dispatchRoom,
+  dispatchSmsFailedEventSchema,
   dispatchUnclaimedEventSchema,
   driverLocationEventSchema,
   driverLocationPingSchema,
@@ -17,6 +19,7 @@ import {
   rideStatusEventSchema,
   userRoom,
 } from '../src/realtime-events';
+import { SMS_KINDS } from '../src/enums';
 import { rideOfferSchema } from '../src/schemas/ride';
 import { splitFare } from '../src/commission';
 
@@ -162,6 +165,15 @@ describe('rideAssignedEventSchema', () => {
 });
 
 describe('dispatchBoardEventSchema', () => {
+  const driver = {
+    driverId: otherUuid,
+    name: 'Jānis Ozols',
+    phone: '+37129999001',
+    location: riga,
+    lastSeenAt: at,
+    zoneName: 'Centrs',
+    status: 'online',
+  };
   const base = {
     cityId: uuid,
     at,
@@ -171,16 +183,26 @@ describe('dispatchBoardEventSchema', () => {
         status: 'requested',
         pickup,
         driverId: null,
+        driverName: null,
+        bookingChannel: 'phone',
+        requestedAt: at,
         unclaimedSeconds: 42,
       },
     ],
-    drivers: [{ driverId: otherUuid, location: riga, status: 'online' }],
+    drivers: [driver],
   };
 
   it('parses a board with one ride and one driver (expected)', () => {
     const parsed = dispatchBoardEventSchema.parse(base);
     expect(parsed.rides[0]!.unclaimedSeconds).toBe(42);
     expect(parsed.drivers[0]!.status).toBe('online');
+    expect(parsed.drivers[0]!.phone).toBe('+37129999001');
+  });
+
+  it('survives the JSON round-trip a socket actually performs (expected)', () => {
+    const emitted = dispatchBoardEventSchema.parse(base);
+    const overWire: unknown = JSON.parse(JSON.stringify(emitted));
+    expect(dispatchBoardEventSchema.parse(overWire)).toEqual(emitted);
   });
 
   it('parses an empty board before any orders land (edge)', () => {
@@ -192,12 +214,62 @@ describe('dispatchBoardEventSchema', () => {
     expect(parsed.rides).toEqual([]);
   });
 
+  it('carries an online driver with no recorded position as nulls (edge)', () => {
+    const parsed = dispatchBoardEventSchema.parse({
+      ...base,
+      drivers: [
+        { ...driver, location: null, lastSeenAt: null, zoneName: null },
+      ],
+    });
+    expect(parsed.drivers[0]!.location).toBeNull();
+    expect(parsed.drivers[0]!.name).toBe('Jānis Ozols');
+  });
+
   it('rejects an unknown driver status (failure)', () => {
     expect(
       dispatchBoardEventSchema.safeParse({
         ...base,
-        drivers: [{ driverId: otherUuid, location: riga, status: 'napping' }],
+        drivers: [{ ...driver, status: 'napping' }],
       }).success,
+    ).toBe(false);
+  });
+});
+
+describe('dispatchSmsFailedEventSchema', () => {
+  const base = { rideId: uuid, kind: 'booking_confirmed', at };
+
+  it("raises Dina's alert for an undelivered rider SMS (expected)", () => {
+    expect(dispatchSmsFailedEventSchema.parse(base).kind).toBe(
+      'booking_confirmed',
+    );
+  });
+
+  it('carries the other two SMS kinds (edge)', () => {
+    expect(
+      dispatchSmsFailedEventSchema.parse({ ...base, kind: 'driver_assigned' })
+        .kind,
+    ).toBe('driver_assigned');
+    expect(
+      dispatchSmsFailedEventSchema.parse({ ...base, kind: 'driver_arrived' })
+        .kind,
+    ).toBe('driver_arrived');
+  });
+
+  it('accepts exactly SMS_KINDS — the api derives its union from the same tuple', () => {
+    for (const kind of SMS_KINDS) {
+      expect(
+        dispatchSmsFailedEventSchema.safeParse({ ...base, kind }).success,
+      ).toBe(true);
+    }
+    expect(dispatchSmsFailedEventSchema.shape.kind.options).toEqual([
+      ...SMS_KINDS,
+    ]);
+  });
+
+  it('rejects an unknown SMS kind (failure)', () => {
+    expect(
+      dispatchSmsFailedEventSchema.safeParse({ ...base, kind: 'otp_code' })
+        .success,
     ).toBe(false);
   });
 });
@@ -254,7 +326,7 @@ describe('rideOfferEventSchema — the wire projection', () => {
     split: splitFare(2000, { pct: 15, source: 'platform_base' }),
   };
 
-  it('keeps both timestamps as ISO strings, like the other 7 events (expected)', () => {
+  it('keeps both timestamps as ISO strings, like the other 8 events (expected)', () => {
     const parsed = rideOfferEventSchema.parse(wire);
     expect(typeof parsed.expiresAt).toBe('string');
     expect(typeof parsed.sentAt).toBe('string');
@@ -324,8 +396,8 @@ describe('event typing', () => {
 });
 
 describe('RT catalog', () => {
-  it('carries exactly the 8 wired events, each domain:action (completeness)', () => {
-    // Hand-listed on purpose: adding a 9th event without wiring it into the
+  it('carries exactly the 9 wired events, each domain:action (completeness)', () => {
+    // Hand-listed on purpose: adding a 10th event without wiring it into the
     // direction maps and .claude/references/realtime-events.md must fail here.
     const wired = [
       'driver:location',
@@ -336,10 +408,19 @@ describe('RT catalog', () => {
       'ride:assigned',
       'dispatch:board',
       'dispatch:unclaimed',
+      'dispatch:sms_failed',
     ];
     const names: string[] = Object.values(RT);
-    expect(names).toHaveLength(8);
+    expect(names).toHaveLength(9);
     expect([...names].sort()).toEqual([...wired].sort());
     for (const name of names) expect(name).toMatch(/^[a-z]+:[a-z_]+$/);
+  });
+
+  it('backs every server→client event with a payload schema (completeness)', () => {
+    // The `satisfies` on RT_EVENT_SCHEMAS enforces this at compile time; this
+    // pins it at runtime too, so a plain-JS consumer sees the same guarantee.
+    expect(Object.keys(RT_EVENT_SCHEMAS).sort()).toEqual(
+      [...Object.values(RT)].sort(),
+    );
   });
 });

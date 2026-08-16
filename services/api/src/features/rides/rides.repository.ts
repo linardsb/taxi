@@ -1,16 +1,20 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { rideFareLines, rides, vehicles, type Db } from '@taxi/db';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { rideFareLines, rides, users, vehicles, type Db } from '@taxi/db';
 import {
+  BOARD_LIVE_RIDE_STATUSES,
   assertFareQuoteConsistent,
   fareQuoteSchema,
   rideRequestSchema,
   rideSchema,
+  type AddressPoint,
+  type BoardRideStatus,
   type BookingChannel,
   type FareQuote,
   type Ride,
   type RideRequest,
+  type RideStatus,
 } from '@taxi/shared';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 import { assertEntryStatus, type RideEntryStatus } from './ride-entry';
 import type { DbTx } from './ride-transition.service';
@@ -31,6 +35,34 @@ export interface AwaitingRide {
   riderId: string;
   geozoneId: string | null;
   request: RideRequest;
+  createdAt: Date;
+}
+
+/**
+ * The board needs the pickup and nothing else off the request snapshot, so it
+ * validates the pickup and nothing else — see `findBoardRides`.
+ */
+const boardPickupSchema = rideRequestSchema.pick({ pickup: true });
+
+const BOARD_STATUS_SET = new Set<string>(BOARD_LIVE_RIDE_STATUSES);
+
+/**
+ * The board query's `inArray` already constrains this, but that guarantee
+ * lives in SQL where the type system cannot see it. A checked guard rather
+ * than a cast: `BoardRide.status` is what the wire schema demands, and an
+ * assertion here would be the one unverified step between the two.
+ */
+const isBoardStatus = (status: RideStatus): status is BoardRideStatus =>
+  BOARD_STATUS_SET.has(status);
+
+/** One board row: the ride, its pickup, and who (if anyone) is on it. */
+export interface BoardRide {
+  id: string;
+  status: BoardRideStatus;
+  pickup: AddressPoint;
+  driverId: string | null;
+  driverName: string | null;
+  bookingChannel: BookingChannel;
   createdAt: Date;
 }
 
@@ -116,6 +148,8 @@ function toRide(row: RideRow, quote: FareQuote): Ride {
 
 @Injectable()
 export class RidesRepository {
+  private readonly logger = new Logger(RidesRepository.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /**
@@ -190,6 +224,61 @@ export class RidesRepository {
       .orderBy(asc(rides.createdAt))
       .limit(limit);
     return rows.map(toAwaiting);
+  }
+
+  /**
+   * Every LIVE ride for Dina's board (#18), oldest first — `findAwaitingDispatch`
+   * widened to the whole pre-terminal lifecycle, plus the driver's display name
+   * in the same read (the board would otherwise need a query per assigned ride
+   * every 2 s frame). `rides_status_idx` covers the predicate here too.
+   *
+   * ONE UNREADABLE ROW COSTS ONE CARD, NEVER THE BOARD. `rides.request` is an
+   * audit snapshot written at creation and never migrated, so a later required
+   * field on `rideRequestSchema` makes older live rows unparseable. A whole-
+   * schema `.parse()` here would then reject the read on both transports at
+   * once — `GET /dispatch/board` 500s and every 2 s beat emits nothing — until
+   * that row leaves the live window, which includes `accepted`/`in_progress`
+   * and can be a long time. So: validate only the field the board renders, per
+   * row, and drop the row that fails.
+   *
+   * `toAwaiting`'s full parse deliberately stays strict — the sweeper
+   * dispatches off `category`/`options`/`paymentMethod`, so a degraded request
+   * there would silently mis-dispatch rather than omit a card.
+   */
+  async findBoardRides(limit: number): Promise<BoardRide[]> {
+    const rows = await this.db
+      .select({ ride: rides, driverName: users.displayName })
+      .from(rides)
+      .leftJoin(users, eq(users.id, rides.driverId))
+      .where(inArray(rides.status, [...BOARD_LIVE_RIDE_STATUSES]))
+      .orderBy(asc(rides.createdAt))
+      .limit(limit);
+    return rows.flatMap(({ ride, driverName }) => {
+      const parsed = boardPickupSchema.safeParse(ride.request);
+      if (!parsed.success || !isBoardStatus(ride.status)) {
+        this.logger.warn({
+          event: 'dispatch.board.ride_unreadable',
+          rideId: ride.id,
+          status: ride.status,
+          reason: parsed.success
+            ? 'status outside the board window'
+            : (parsed.error.issues[0]?.message ?? 'unknown'),
+          at: new Date().toISOString(),
+        });
+        return [];
+      }
+      return [
+        {
+          id: ride.id,
+          status: ride.status,
+          pickup: parsed.data.pickup,
+          driverId: ride.driverId,
+          driverName,
+          bookingChannel: ride.bookingChannel,
+          createdAt: ride.createdAt,
+        },
+      ];
+    });
   }
 
   /**

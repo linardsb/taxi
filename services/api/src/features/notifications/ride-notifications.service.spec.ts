@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import type { Ride, RideStatus, SmsProvider } from '@taxi/shared';
 import type { Env } from '../../common/config/env.schema';
 import type { DriverLocationStore } from '../drivers';
+import type { RealtimeService } from '../realtime';
 import type { TransitionedRide } from '../rides';
 import { RideNotificationsService } from './ride-notifications.service';
 import type {
@@ -68,10 +69,12 @@ function build(
     smsThrows?: boolean;
     /** null = the driver has no recorded position. */
     position?: { lat: number; lng: number } | null;
+    emitThrows?: boolean;
   } = {},
 ) {
   const calls: string[] = [];
   const sent: { phone: string; body: string }[] = [];
+  const emitted: { event: string; payload: unknown }[] = [];
 
   const sms = {
     send: (phone: string, body: string) => {
@@ -119,15 +122,30 @@ function build(
     },
   } as unknown as DriverLocationStore;
 
+  const realtime = {
+    emitToDispatch: (_cityId: string, event: string, payload: unknown) => {
+      calls.push(`realtime.emitToDispatch(${event})`);
+      if (options.emitThrows) throw new Error('schema drift');
+      emitted.push({ event, payload });
+    },
+  } as unknown as RealtimeService;
+
   const env = {
     PUBLIC_TRACKING_BASE_URL: BASE_URL,
     DEFAULT_CITY_ID: '00000000-0000-4000-8000-000000000001',
   } as Env;
 
   return {
-    service: new RideNotificationsService(sms, repository, locations, env),
+    service: new RideNotificationsService(
+      sms,
+      repository,
+      locations,
+      realtime,
+      env,
+    ),
     sent,
     calls,
+    emitted,
   };
 }
 
@@ -176,6 +194,50 @@ describe('RideNotificationsService.onRideCreated', () => {
       }),
     );
     logged.mockRestore();
+  });
+
+  it("SMS failure also lands on Dina's board as dispatch:sms_failed (expected — #18)", async () => {
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const { service, emitted } = build({ smsThrows: true });
+
+    await service.onRideCreated(ride());
+
+    expect(emitted).toEqual([
+      {
+        event: 'dispatch:sms_failed',
+        payload: {
+          rideId: RIDE_ID,
+          kind: 'booking_confirmed',
+          at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) as unknown,
+        },
+      },
+    ]);
+    logged.mockRestore();
+  });
+
+  it('a delivered SMS emits no console alert (edge)', async () => {
+    const { service, emitted } = build();
+
+    await service.onRideCreated(ride());
+
+    expect(emitted).toEqual([]);
+  });
+
+  it('a failed ALERT emit is logged, never thrown — the booking survives both failures (failure)', async () => {
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service } = build({ smsThrows: true, emitThrows: true });
+
+    await expect(service.onRideCreated(ride())).resolves.toBeUndefined();
+
+    expect(warned).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'ride.notifications.sms_alert_emit_failed',
+        rideId: RIDE_ID,
+      }),
+    );
+    logged.mockRestore();
+    warned.mockRestore();
   });
 });
 

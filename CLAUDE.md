@@ -8,8 +8,7 @@ Taxi booking platform for Latvia (Bolt competitor, driver-first). Venture name *
 |---|---|---|---|
 | `apps/rider` | Client mobile app | Expo / React Native, TS | yes |
 | `apps/driver` | Driver mobile app | Expo / React Native, TS | yes |
-| `apps/dispatch` | Dispatcher web portal (Dina's console) | Next.js App Router, Tailwind | yes |
-| `apps/admin` | Admin panel (stats, config, legal) | Next.js App Router, Tailwind | yes |
+| `apps/dispatch` | Merged web app: Dina's console (`/dispatch`), admin panel (`/admin`, #20), public tracking (`t/[token]`) | Next.js App Router, Tailwind | yes |
 | `services/api` | Backend: REST + Socket.IO + dispatch engine | NestJS, Drizzle, PostGIS, Redis | yes |
 | `db` | Persistence: Drizzle schema, PostGIS migrations, Rīga seed (`@taxi/db`) | Drizzle, PostGIS | no |
 | `packages/shared` | **Contract seam**: zod schemas, ride state machine, enums, provider interfaces | TS + zod | yes |
@@ -20,15 +19,13 @@ Taxi booking platform for Latvia (Bolt competitor, driver-first). Venture name *
 
 ```
 apps/rider   ─┐                                    ┌─ Postgres + PostGIS  (rides, drivers, geo)
-apps/driver  ─┤                                    ├─ Redis               (dispatch state, presence)
-              ├─→ services/api ────────────────────┤
-apps/dispatch─┤   REST + Socket.IO + dispatch engine└─ seams: maps · SMS · payments
-apps/admin   ─┘
+apps/driver  ─┼─→ services/api ────────────────────┼─ Redis               (dispatch state, presence)
+apps/dispatch─┘   REST + Socket.IO + dispatch engine└─ seams: maps · SMS · payments
 
 every surface ──imports (build-time)──> packages/shared   zod schemas · ride state machine · enums · seam interfaces
 ```
 
-Contracts flow one way: apps and `services/api` import from `packages/shared`; **`shared` imports from nothing in the workspace**. The four apps never talk to each other or to the database — only to `services/api`. Postgres is reached only through `@taxi/db`; `services/api` has no direct `pg` dependency.
+Contracts flow one way: apps and `services/api` import from `packages/shared`; **`shared` imports from nothing in the workspace**. The three apps never talk to each other or to the database — only to `services/api`. Postgres is reached only through `@taxi/db`; `services/api` has no direct `pg` dependency.
 
 ## Commands
 

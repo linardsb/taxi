@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACTIVE_DRIVER_RIDE_STATUSES,
   ALLOWED_TRANSITIONS,
+  BOARD_LIVE_RIDE_STATUSES,
   InvalidRideTransitionError,
   RIDE_STATUSES,
   assertTransition,
@@ -74,6 +75,40 @@ describe('ride state machine', () => {
   it('every status has a transitions entry', () => {
     for (const status of RIDE_STATUSES) {
       expect(ALLOWED_TRANSITIONS[status]).toBeDefined();
+    }
+  });
+});
+
+describe('BOARD_LIVE_RIDE_STATUSES', () => {
+  it('is creation-to-handover, in lifecycle order', () => {
+    expect([...BOARD_LIVE_RIDE_STATUSES]).toEqual([
+      'requested',
+      'offered',
+      'queued',
+      'accepted',
+      'arriving',
+      'arrived',
+      'in_progress',
+    ]);
+  });
+
+  it('omits the statuses that are not live work', () => {
+    // `scheduled` is not yet live; `completed` is done driving and only
+    // awaits settlement — neither belongs on Dina's queue.
+    for (const status of ['scheduled', 'completed', 'settled'] as const) {
+      expect(BOARD_LIVE_RIDE_STATUSES).not.toContain(status);
+    }
+  });
+
+  it('carries every status a driver is actively committed to', () => {
+    for (const status of ACTIVE_DRIVER_RIDE_STATUSES) {
+      expect(BOARD_LIVE_RIDE_STATUSES).toContain(status);
+    }
+  });
+
+  it('never carries a terminal status — the board would strand the card', () => {
+    for (const status of BOARD_LIVE_RIDE_STATUSES) {
+      expect(isTerminal(status)).toBe(false);
     }
   });
 });

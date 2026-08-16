@@ -16,6 +16,7 @@ const config = (
 const zone = (queueModeEnabled: boolean): ResolvedGeozone => ({
   id: '00000000-0000-4000-8000-000000000102',
   slug: 'rix',
+  name: 'Lidosta RIX',
   queueModeEnabled,
 });
 

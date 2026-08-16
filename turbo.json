@@ -11,6 +11,10 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      // NEXT_PUBLIC_* is inlined into the client bundle at build time, so it
+      // must key the cache — omitted, CI would serve a bundle baked with one
+      // API origin under another (#18).
+      "env": ["NEXT_PUBLIC_API_URL"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "typecheck": {

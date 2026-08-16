@@ -1,6 +1,11 @@
 import { z } from 'zod';
-import { ASSIGNMENT_SOURCES, DRIVER_STATUSES } from './enums';
-import { RIDE_STATUSES } from './ride-state-machine';
+import {
+  ASSIGNMENT_SOURCES,
+  BOOKING_CHANNELS,
+  DRIVER_STATUSES,
+  SMS_KINDS,
+} from './enums';
+import { BOARD_LIVE_RIDE_STATUSES, RIDE_STATUSES } from './ride-state-machine';
 import { addressPointSchema, latLngSchema } from './schemas/geo';
 import { rideOfferSchema } from './schemas/ride';
 
@@ -11,7 +16,7 @@ import { rideOfferSchema } from './schemas/ride';
  *
  * Wire timestamps are ISO strings (`z.string().datetime()`), not `Date`. The
  * domain schemas in ./schemas use `z.coerce.date()` and re-hydrate them on
- * receipt; do not unify the two worlds. This holds for all 8 events with no
+ * receipt; do not unify the two worlds. This holds for all 9 events with no
  * exception: `ride:offer` is derived from a domain schema, so it overrides its
  * two date fields to obey the rule (see `rideOfferEventSchema`).
  *
@@ -28,6 +33,7 @@ export const RT = {
   rideAssigned: 'ride:assigned',
   dispatchBoard: 'dispatch:board',
   dispatchUnclaimed: 'dispatch:unclaimed',
+  dispatchSmsFailed: 'dispatch:sms_failed',
 } as const;
 
 /**
@@ -125,9 +131,23 @@ export const rideAssignedEventSchema = z
 export type RideAssignedEvent = z.infer<typeof rideAssignedEventSchema>;
 
 /**
- * Thin on purpose: #18 owns the dispatch board's real shape and will widen
- * this. It exists so the gateway (#7) has something typed to emit before
- * Dina's console layout (S9-1) is drawn.
+ * One full frame of Dina's board (#18): every live ride and every online
+ * driver in the city. The client replaces its state wholesale on each frame —
+ * no event-sourcing merge — so this same shape serves both transports
+ * (`GET /dispatch/board` and the cadenced socket emission).
+ *
+ * `phone` legitimately travels here — the operator console exists so Dina can
+ * dispatch by voice, and the masking rule is about LOGS (see raiseUnclaimed's
+ * pickup-point note). `location`/`lastSeenAt` are null for an online driver
+ * whose GEO position has never been recorded or was dropped; staleness is the
+ * client's presentation concern.
+ *
+ * A ride's `status` is `BOARD_LIVE_RIDE_STATUSES`, NOT the full `RIDE_STATUSES`
+ * — the same tuple the board query selects on. The wide enum let the console
+ * type its status→label map as a `Partial` and hand-restate the set in three
+ * predicates, so a status added to the query would arrive on the wire and
+ * render in no bucket: live work silently missing from the board, with every
+ * check green. Narrow, adding one is a compile error in both packages.
  */
 export const dispatchBoardEventSchema = z.object({
   cityId: z.string().uuid(),
@@ -135,16 +155,23 @@ export const dispatchBoardEventSchema = z.object({
   rides: z.array(
     z.object({
       rideId: z.string().uuid(),
-      status: z.enum(RIDE_STATUSES),
+      status: z.enum(BOARD_LIVE_RIDE_STATUSES),
       pickup: addressPointSchema,
       driverId: z.string().uuid().nullable(),
+      driverName: z.string().nullable(),
+      bookingChannel: z.enum(BOOKING_CHANNELS),
+      requestedAt: z.string().datetime(),
       unclaimedSeconds: z.number().int().nonnegative(),
     }),
   ),
   drivers: z.array(
     z.object({
       driverId: z.string().uuid(),
-      location: latLngSchema,
+      name: z.string(),
+      phone: z.string(),
+      location: latLngSchema.nullable(),
+      lastSeenAt: z.string().datetime().nullable(),
+      zoneName: z.string().nullable(),
       status: z.enum(DRIVER_STATUSES),
     }),
   ),
@@ -161,6 +188,21 @@ export const dispatchUnclaimedEventSchema = z.object({
 });
 export type DispatchUnclaimedEvent = z.infer<
   typeof dispatchUnclaimedEventSchema
+>;
+
+/**
+ * An SMS the platform owed a rider was not delivered (#18) — an operator
+ * alert, so Dina can phone the rider instead. `kind` comes from `SMS_KINDS`,
+ * the same tuple the api's one emit site (ride-notifications.service.ts)
+ * derives its `SmsKind` from — one definition, no twin to drift.
+ */
+export const dispatchSmsFailedEventSchema = z.object({
+  rideId: z.string().uuid(),
+  kind: z.enum(SMS_KINDS),
+  at: z.string().datetime(),
+});
+export type DispatchSmsFailedEvent = z.infer<
+  typeof dispatchSmsFailedEventSchema
 >;
 
 /** Room names per .claude/references/realtime-events.md — never build these strings by hand. */
@@ -209,6 +251,7 @@ export interface ServerToClientEvents {
   [RT.rideAssigned]: (payload: RideAssignedEvent) => void;
   [RT.dispatchBoard]: (payload: DispatchBoardEvent) => void;
   [RT.dispatchUnclaimed]: (payload: DispatchUnclaimedEvent) => void;
+  [RT.dispatchSmsFailed]: (payload: DispatchSmsFailedEvent) => void;
 }
 
 /**
@@ -229,4 +272,5 @@ export const RT_EVENT_SCHEMAS = {
   [RT.rideAssigned]: rideAssignedEventSchema,
   [RT.dispatchBoard]: dispatchBoardEventSchema,
   [RT.dispatchUnclaimed]: dispatchUnclaimedEventSchema,
+  [RT.dispatchSmsFailed]: dispatchSmsFailedEventSchema,
 } satisfies Record<keyof ServerToClientEvents, z.ZodType>;

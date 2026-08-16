@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import type {
   DriverLocationStore,
   NearbyDriver,
+  OnlineDriver,
 } from './driver-location.store';
 
 /** Who may have a position recorded at all — the gate the Lua script reads. */
@@ -209,6 +210,59 @@ export class RedisDriverLocationStore
       location: { lat: Number(lat), lng: Number(lng) },
       atMs: Number(seenReply[1]),
     };
+  }
+
+  /**
+   * SMEMBERS, then one pipelined GEOPOS + ZMSCORE over the members. A plain
+   * pipeline, not Lua: this is read-only, so the write race the `record` gate
+   * closes atomically cannot arise here — the worst interleaving is a driver
+   * going offline mid-read, which the next 2 s board frame corrects.
+   */
+  async listOnline(cityId: string): Promise<OnlineDriver[]> {
+    const members = await this.redis.smembers(onlineKey(cityId));
+    if (members.length === 0) return [];
+
+    const replies = await this.redis
+      .pipeline()
+      .geopos(geoKey(cityId), ...members)
+      .zmscore(seenKey(cityId), ...members)
+      .exec();
+
+    if (!replies)
+      throw new Error('driver-location: redis pipeline returned no replies');
+    const [posReply, seenReply] = replies;
+    // Surface a command error, same rule as findNearby: a silent empty list
+    // here reads to the console as "no drivers online in Rīga".
+    if (posReply?.[0]) throw posReply[0];
+    if (seenReply?.[0]) throw seenReply[0];
+
+    // GEOPOS → [[lng, lat] | null] and ZMSCORE → [string | null], one entry
+    // per queried member, in query order. Validated rather than cast (the
+    // asGeoSearchRow rule): a malformed coordinate is a null position on the
+    // board, never a driver at {NaN, NaN}.
+    const positions = Array.isArray(posReply?.[1])
+      ? (posReply[1] as unknown[])
+      : [];
+    const scores = Array.isArray(seenReply?.[1])
+      ? (seenReply[1] as unknown[])
+      : [];
+
+    return members.map((driverId, i) => {
+      const coord = positions[i];
+      let location: OnlineDriver['location'] = null;
+      if (Array.isArray(coord) && coord.length >= 2) {
+        const [lng, lat] = coord as unknown[];
+        if (isNumeric(lng) && isNumeric(lat)) {
+          location = { lat: Number(lat), lng: Number(lng) }; // coord is [lng, lat]
+        }
+      }
+      const score = scores[i];
+      return {
+        driverId,
+        location,
+        lastSeenMs: isNumeric(score) ? Number(score) : null,
+      };
+    });
   }
 
   /**

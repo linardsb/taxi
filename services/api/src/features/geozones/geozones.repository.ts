@@ -13,6 +13,8 @@ import { DRIZZLE } from '../../common/db/db.module';
 export interface ResolvedGeozone {
   id: string;
   slug: string;
+  /** Human name for Dina's board (#18) — slugs are for seeds and config. */
+  name: string;
   queueModeEnabled: boolean;
 }
 
@@ -47,6 +49,7 @@ export class GeozonesRepository {
       .select({
         id: geozones.id,
         slug: geozones.slug,
+        name: geozones.name,
         queueModeEnabled: geozones.queueModeEnabled,
       })
       .from(geozones)

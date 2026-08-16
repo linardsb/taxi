@@ -44,6 +44,19 @@ export class RealtimeService {
   }
 
   /**
+   * How many LOCAL sockets sit in the city's dispatch room. Local on purpose:
+   * under the Redis adapter `adapter.rooms` only knows this node's sockets,
+   * which is exactly the single-node assumption the board emitter (#18)
+   * documents — a second api node's dispatchers would be invisible here.
+   */
+  dispatchRoomSize(cityId: string): number {
+    return (
+      this.gateway.server.sockets.adapter.rooms.get(dispatchRoom(cityId))
+        ?.size ?? 0
+    );
+  }
+
+  /**
    * Server-orchestrated: puts every socket of `userId` into the ride room,
    * cluster-wide via the Redis adapter. Clients never request joins.
    * `socketsJoin` returns void, not a Promise — do not await it.

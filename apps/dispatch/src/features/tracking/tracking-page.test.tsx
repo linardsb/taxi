@@ -6,7 +6,11 @@ import TrackingPage, { generateMetadata } from '@/app/t/[token]/page';
 // `vi.mock` is per-file, so the island's leaflet stub is duplicated here
 // rather than shared — two copies beat a fixture that still needs mocking
 // in every file that loads it.
-const mapStub = { setView: vi.fn(), remove: vi.fn() };
+const mapStub = {
+  setView: vi.fn(),
+  remove: vi.fn(),
+  attributionControl: { setPrefix: vi.fn() },
+};
 mapStub.setView.mockReturnValue(mapStub);
 const markerStub = { setLatLng: vi.fn(), addTo: vi.fn() };
 markerStub.addTo.mockReturnValue(markerStub);

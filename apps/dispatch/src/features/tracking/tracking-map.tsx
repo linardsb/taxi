@@ -135,6 +135,10 @@ export function TrackingLive({
           [position.lat, position.lng],
           15,
         );
+        // No focusable <a> inside an aria-hidden container — leaflet's default
+        // prefix links to leafletjs.com and would be reachable by Tab while
+        // absent from the accessibility tree. The © credit below is unaffected.
+        map.current.attributionControl.setPrefix(false);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap',
         }).addTo(map.current);

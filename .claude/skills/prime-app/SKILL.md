@@ -1,7 +1,7 @@
 ---
 name: prime-app
-description: Primes the agent with focused context for one Sakta Cab surface (rider, driver, dispatch, admin, api, or shared) instead of the whole monorepo. Use at session start when the work is scoped to a single app or service — cheaper and sharper than a full prime.
-argument-hint: [rider|driver|dispatch|admin|api|shared]
+description: Primes the agent with focused context for one Sakta Cab surface (rider, driver, dispatch, api, or shared) instead of the whole monorepo. Use at session start when the work is scoped to a single app or service — cheaper and sharper than a full prime.
+argument-hint: [rider|driver|dispatch|api|shared]
 ---
 
 # Prime App: Load One Surface
@@ -17,9 +17,12 @@ Build focused understanding of a single monorepo surface. Load only what that su
 | rider | `apps/rider` |
 | driver | `apps/driver` |
 | dispatch | `apps/dispatch` |
-| admin | `apps/admin` |
 | api | `services/api` |
 | shared | `packages/shared` |
+
+There is no `admin` surface: the `apps/admin` workspace was retired into
+`apps/dispatch`'s `/admin` route group (2026-08-07 decision), so the admin
+panel is `/prime-app dispatch`.
 
 ## Process
 
@@ -32,14 +35,13 @@ Build focused understanding of a single monorepo surface. Load only what that su
    - **rider / driver** → `.claude/references/realtime-events.md`
    - **dispatch** → `.claude/references/realtime-events.md`, `dispatch-strategies.md`
    - **shared** → `.claude/references/ride-state-machine.md`
-   - **admin** → none by default
 6. Check `git log -5 --oneline -- <path>` for recent activity on the surface
 
 ## Output
 
 Produce a scannable summary:
 
-- **Surface**: what it is and who uses it (Atis = driver app, Dina = dispatch console, Linards = admin)
+- **Surface**: what it is and who uses it (Atis = driver app, Dina = dispatch console; Linards runs the `/admin` route group inside it)
 - **Stack**: framework + key libraries as actually installed (verify versions in package.json — Expo/Next.js versions here are newer than training data)
 - **Slices**: existing feature slices and their public APIs
 - **Contracts**: what it imports from `@taxi/shared`; socket events it emits/consumes

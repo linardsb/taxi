@@ -75,7 +75,7 @@ export { RidesService } from './rides.service';
  * exists to prevent. The narrower evil is this export.
  */
 export { RidesRepository } from './rides.repository';
-export type { AwaitingRide } from './rides.repository';
+export type { AwaitingRide, BoardRide } from './rides.repository';
 export { RideTransitionService } from './ride-transition.service';
 export type { DbTx, TransitionedRide } from './ride-transition.service';
 /**

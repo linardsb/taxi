@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { drivers, rides, vehicles, type Db } from '@taxi/db';
+import { drivers, rides, users, vehicles, type Db } from '@taxi/db';
 import {
   ACTIVE_DRIVER_RIDE_STATUSES,
   type DriverProfile,
@@ -35,6 +35,19 @@ export interface DriverMatchAttributes {
   /** True when ANY of the driver's vehicles has one. */
   hasChildSeat: boolean;
   maxPassengerSeats: number;
+}
+
+/**
+ * Who an online driver IS, for Dina's board (#18): the drivers row joined to
+ * its user for the phone she dispatches by voice with. `name` is nullable —
+ * `users.display_name` is optional — and the board service decides the
+ * fallback, because the wire schema promises a non-null name.
+ */
+export interface DriverBoardContact {
+  driverId: string;
+  name: string | null;
+  phone: string;
+  status: DriverStatus;
 }
 
 /**
@@ -266,6 +279,25 @@ export class DriversRepository {
       .where(eq(drivers.userId, userId))
       .returning();
     return toProfile(requireRow(row, userId, 'setStatus'));
+  }
+
+  /**
+   * The board's who-is-this read (#18), one query for the whole online set.
+   * INNER join on purpose: a drivers row without its user is an FK violation,
+   * not a state to render.
+   */
+  async findBoardContacts(driverIds: string[]): Promise<DriverBoardContact[]> {
+    if (driverIds.length === 0) return [];
+    return this.db
+      .select({
+        driverId: drivers.userId,
+        name: users.displayName,
+        phone: users.phone,
+        status: drivers.status,
+      })
+      .from(drivers)
+      .innerJoin(users, eq(users.id, drivers.userId))
+      .where(inArray(drivers.userId, driverIds));
   }
 
   /**
