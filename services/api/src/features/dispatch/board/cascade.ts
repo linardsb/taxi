@@ -162,6 +162,13 @@ function zoneHolding(
  * and raises it as unclaimed instead of offering again, so there is no next
  * driver to name — the strip must not point Dina at one while the engine is
  * handing the ride to her.
+ *
+ * `attempts` here is `offers.length` — the ROW COUNT for the ride, which is
+ * what the board already reports as `attempts`. `offerNext` compares
+ * `countAttempts` against the same cap but reads it BEFORE writing the new row,
+ * so 5 rows with one pending means the engine gives up on the next tick rather
+ * than this one. #120's H3 redefines what `countAttempts` counts; if it stops
+ * meaning "rows for this ride", this comparison needs re-deriving with it.
  */
 function nextInQueue(
   zone: BoardZone | undefined,

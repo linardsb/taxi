@@ -125,7 +125,7 @@ describe('ZoneGrid', () => {
     ).toBeVisible();
   });
 
-  it('keeps list semantics under list-style: none (edge)', () => {
+  it('states the list role explicitly rather than relying on the tag (edge)', () => {
     // Safari + VoiceOver drops them otherwise, and the ORDER of this list is
     // the information — «2 no 4» is the announcement Dina needs. jsdom gives
     // an `<ol>` the list role either way, so this pins the explicit ATTRIBUTE:
