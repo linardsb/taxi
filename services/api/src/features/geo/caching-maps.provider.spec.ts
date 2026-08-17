@@ -7,6 +7,7 @@ import {
   routeFailureKey,
   type MapsCaller,
 } from './caching-maps.provider';
+import { placeCacheKey } from './place-cache';
 import { StubMapsProvider } from './stub-maps.provider';
 
 const CENTRE = { lat: 56.9496, lng: 24.1052 };
@@ -16,6 +17,7 @@ const TEIKA = { lat: 56.97, lng: 24.18 };
 const CACHE_TTL = 3600;
 const FAILURE_TTL = 60;
 const TIMEOUT_MS = 5_000;
+const PLACE_TTL = 2_592_000;
 
 /** Records what a real (paid) provider would have been asked to do. */
 class CountingProvider implements MapsProvider {
@@ -30,6 +32,8 @@ class CountingProvider implements MapsProvider {
 
   geocode = jest.fn();
   reverseGeocode = jest.fn();
+  searchAddress = jest.fn();
+  resolvePlace = jest.fn();
 }
 
 /** Rejects the first `times` calls, then routes normally — a transient outage. */
@@ -46,6 +50,8 @@ function failingSource(times: number): MapsProvider {
     },
     geocode: jest.fn(),
     reverseGeocode: jest.fn(),
+    searchAddress: jest.fn(),
+    resolvePlace: jest.fn(),
   };
 }
 
@@ -54,6 +60,8 @@ const hangingSource: MapsProvider = {
   route: () => new Promise<RouteResult>(() => {}),
   geocode: jest.fn(),
   reverseGeocode: jest.fn(),
+  searchAddress: jest.fn(),
+  resolvePlace: jest.fn(),
 };
 
 /**
@@ -82,6 +90,8 @@ function fixedSource(result: unknown): MapsProvider {
     route: () => Promise.resolve(result as RouteResult),
     geocode: jest.fn(),
     reverseGeocode: jest.fn(),
+    searchAddress: jest.fn(),
+    resolvePlace: jest.fn(),
   };
 }
 
@@ -108,6 +118,7 @@ describe('CachingMapsProvider', () => {
         CACHE_TTL,
         options.failureTtlSeconds ?? FAILURE_TTL,
         options.timeoutMs ?? TIMEOUT_MS,
+        PLACE_TTL,
       ),
     };
   };
@@ -331,6 +342,7 @@ describe('CachingMapsProvider', () => {
       CACHE_TTL,
       0,
       TIMEOUT_MS,
+      PLACE_TTL,
     );
     const eta = new CachingMapsProvider(
       source,
@@ -339,6 +351,7 @@ describe('CachingMapsProvider', () => {
       CACHE_TTL,
       FAILURE_TTL,
       TIMEOUT_MS,
+      PLACE_TTL,
     );
 
     await quote.route(CENTRE, RIX);
@@ -424,6 +437,8 @@ describe('CachingMapsProvider', () => {
         error.name = 'route 56.9,24.1 failed';
         return Promise.reject(error);
       },
+      searchAddress: jest.fn(),
+      resolvePlace: jest.fn(),
       geocode: jest.fn(),
       reverseGeocode: jest.fn(),
     };
@@ -535,5 +550,99 @@ describe('CachingMapsProvider', () => {
     });
 
     warned.mockRestore();
+  });
+
+  describe('places', () => {
+    const POINT = {
+      location: { lat: 56.9496, lng: 24.1052 },
+      address: 'Brīvības iela 45, Rīga',
+    };
+
+    it('serves a session-free re-resolve from cache (expected)', async () => {
+      const { source, maps } = build();
+      source.resolvePlace.mockResolvedValue(POINT);
+
+      // The first call opens no session (a saved-place refresh), so its write
+      // is what the second one reads.
+      await expect(maps.resolvePlace('p1', 'lv', null)).resolves.toEqual(POINT);
+      await expect(maps.resolvePlace('p1', 'lv', null)).resolves.toEqual(POINT);
+
+      expect(source.resolvePlace).toHaveBeenCalledTimes(1);
+    });
+
+    it('never serves a SESSION-bearing resolve from cache (expected — AC #7)', async () => {
+      const { source, maps } = build();
+      source.resolvePlace.mockResolvedValue(POINT);
+
+      await maps.resolvePlace('p1', 'lv', null);
+      await expect(maps.resolvePlace('p1', 'lv', 's1')).resolves.toEqual(POINT);
+
+      // THE spend case. A hit here would abandon the session those keystrokes
+      // were billed under: at 5 autocomplete requests per field that is
+      // 5 × $2.83/1,000 = $14.15/1,000 instead of one $5.00/1,000 Place
+      // Details call. The cache must NOT save the money here.
+      expect(source.resolvePlace).toHaveBeenCalledTimes(2);
+      expect(source.resolvePlace).toHaveBeenLastCalledWith('p1', 'lv', 's1');
+    });
+
+    it('never caches autocomplete predictions (edge — Places policy)', async () => {
+      const { source, maps } = build();
+      source.searchAddress.mockResolvedValue([
+        { placeId: 'p1', primaryText: 'Brīvības iela 45', secondaryText: '' },
+      ]);
+      const options = {
+        bias: { center: CENTRE, radiusMeters: 30_000 },
+        sessionToken: 's1',
+      };
+
+      await maps.searchAddress('briv', 'lv', options);
+      await maps.searchAddress('briv', 'lv', options);
+
+      // Two identical searches MUST cost two source calls. Caching them would
+      // be cheaper and would breach the policy this codebase reads literally:
+      // the place ID is the exempt field, predictions are content.
+      expect(source.searchAddress).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps one entry per language for the same place (edge)', async () => {
+      const { source, maps } = build();
+      source.resolvePlace.mockResolvedValue(POINT);
+
+      await maps.resolvePlace('p1', 'lv', null);
+      await maps.resolvePlace('p1', 'lv', null);
+      await maps.resolvePlace('p1', 'ru', null);
+
+      // `formattedAddress` comes back localized, so one shared entry would
+      // serve whichever language asked first to everyone after.
+      expect(source.resolvePlace).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not remember a place the provider has forgotten (failure)', async () => {
+      const { source, maps } = build();
+      source.resolvePlace.mockResolvedValue(null);
+
+      await expect(maps.resolvePlace('gone', 'lv', null)).resolves.toBeNull();
+      await expect(maps.resolvePlace('gone', 'lv', null)).resolves.toBeNull();
+
+      // Caching the null would keep a since-corrected place dark for 30 days.
+      expect(source.resolvePlace).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops a corrupt cache entry and re-resolves (failure)', async () => {
+      const { kv, source, maps } = build();
+      source.resolvePlace.mockResolvedValue(POINT);
+      await kv.setWithTtl(
+        placeCacheKey('lv', 'p1'),
+        '{"location":{"lat":"north"}}',
+        PLACE_TTL,
+      );
+
+      await expect(maps.resolvePlace('p1', 'lv', null)).resolves.toEqual(POINT);
+
+      expect(source.resolvePlace).toHaveBeenCalledTimes(1);
+      expect(await kv.get(placeCacheKey('lv', 'p1'))).toBe(
+        JSON.stringify(POINT),
+      );
+    });
   });
 });

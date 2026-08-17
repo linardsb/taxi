@@ -10,6 +10,7 @@ import {
   PRICING_MODELS,
   RIDE_CATEGORIES,
   RIDE_STATUSES,
+  SAVED_PLACE_KINDS,
   USER_ROLES,
 } from '@taxi/shared';
 
@@ -37,6 +38,7 @@ export const commissionSourceEnum = pgEnum(
   COMMISSION_SOURCES,
 );
 export const bookingChannelEnum = pgEnum('booking_channel', BOOKING_CHANNELS);
+export const savedPlaceKindEnum = pgEnum('saved_place_kind', SAVED_PLACE_KINDS);
 
 /** Mirrors `fareQuoteSchema.breakdown` keys — the normalized fare-lines table (#11/#12 consume). */
 export const fareLineTypeEnum = pgEnum('fare_line_type', [

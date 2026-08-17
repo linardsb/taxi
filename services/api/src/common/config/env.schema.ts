@@ -108,6 +108,60 @@ export const envSchema = z
       .max(30_000)
       .default(3_000),
     /**
+     * Binds `GooglePlacesProvider` for the dispatcher's address typeahead
+     * (#19). Absent binds the stub, whose `searchAddress` throws — dev without
+     * a key is expected, and the console falls back to free-text entry.
+     *
+     * `mapsProviderSourceFactory` names its absence in the production refusal:
+     * an address field that throws on Dina's first keystroke is a dead console,
+     * and finding that out from a support call rather than a failed deploy is
+     * the failure this prevents.
+     *
+     * Same `.optional().transform()` shape as `STRIPE_SECRET_KEY` and the
+     * Twilio trio: an EMPTY value is the committed template's way of saying
+     * "unbound", and `.min(1).optional()` would reject it at boot in every dev
+     * checkout that copied the template.
+     */
+    GOOGLE_MAPS_API_KEY: z
+      .string()
+      .optional()
+      .transform((v) => (v === undefined || v === '' ? undefined : v)),
+    /**
+     * Autocomplete bias radius. 30 km from Rīga centre reaches Jūrmala and the
+     * Pierīga ring, which PRD §6 puts in scope. A BIAS, not a restriction:
+     * results outside it still return, ranked lower. Raising it does not cost
+     * money — the price is per request, not per kilometre — it costs relevance,
+     * because a Rīga street name also exists in Liepāja.
+     */
+    PLACES_BIAS_RADIUS_METERS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(30_000),
+    /**
+     * Below this, `GET /geo/address-search` answers `[]` without spending. 3 is
+     * the shortest input that narrows a Latvian street meaningfully ("bri" →
+     * Brīvības); at 1–2 characters the request buys a list nobody can use.
+     *
+     * This is a SPEND control, and the one the client cannot weaken: the
+     * console debounces too, but a broken client loop is bounded here.
+     */
+    PLACES_SEARCH_MIN_CHARS: z.coerce.number().int().positive().default(3),
+    /**
+     * How long a resolved place id keeps its coordinate and formatted address.
+     *
+     * 30 days is `expected`, not verified: the Places policy exempts place IDs
+     * from caching restrictions indefinitely but points at the Maps Service
+     * Terms for how long other content may be held, and that page was not
+     * readable in full on 2026-08-17 (plan Q6). The knob exists so a corrected
+     * figure is one env change. Predictions are NOT cached at any TTL.
+     */
+    MAPS_PLACE_CACHE_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2_592_000),
+    /**
      * TEST MODE ONLY, structurally. `sk_live_…` is refused at boot: the repo
      * rule is "Stripe stays in test mode until the SIA exists", and spike #5
      * confirms a live platform account needs a legal entity we do not have.

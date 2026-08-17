@@ -8,3 +8,4 @@ export * from './ride-tariffs';
 export * from './rides';
 export * from './ledger';
 export * from './dispatch-audit';
+export * from './customers';

@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  AddressPoint,
+  AddressSuggestion,
   GeocodeResult,
   LatLng,
   MapsProvider,
@@ -20,6 +22,16 @@ const AVERAGE_SPEED_KMH = 40;
 
 const NO_GEOCODER =
   'StubMapsProvider has no geocoder: a RideRequest already carries resolved AddressPoints. Bind the Google provider when address search lands (#16).';
+
+/**
+ * Separate from `NO_GEOCODER` because the remedy is different: address search
+ * has a bound implementation (`GooglePlacesProvider`, #19) and reaching this
+ * message means `GOOGLE_MAPS_API_KEY` is absent, not that the feature is
+ * unbuilt. Dev without a key is expected — the console surfaces the throw as
+ * "typeahead unavailable" and free text still reaches the draft.
+ */
+const NO_PLACES =
+  'StubMapsProvider has no address search: set GOOGLE_MAPS_API_KEY to bind GooglePlacesProvider (#19).';
 
 /**
  * Dev/pilot implementation of the MapsProvider seam (@taxi/shared). Computes a
@@ -54,5 +66,13 @@ export class StubMapsProvider implements MapsProvider {
 
   reverseGeocode(): Promise<GeocodeResult | null> {
     throw new Error(NO_GEOCODER);
+  }
+
+  searchAddress(): Promise<AddressSuggestion[]> {
+    throw new Error(NO_PLACES);
+  }
+
+  resolvePlace(): Promise<AddressPoint | null> {
+    throw new Error(NO_PLACES);
   }
 }

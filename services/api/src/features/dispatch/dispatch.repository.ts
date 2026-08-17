@@ -259,4 +259,32 @@ export class DispatchRepository {
       },
     });
   }
+
+  /**
+   * Who booked on whose behalf (#19). A SEPARATE method from `insertAudit`
+   * because it cannot go through `rideAssignmentSchema`: that contract requires
+   * a `driverId`, and a phone order has no driver yet — the cascade gives it one
+   * seconds later, and that assignment writes its own row.
+   *
+   * `driverId: null` is therefore what distinguishes a booking row from an
+   * assignment row on the same ride, without a second enum value.
+   */
+  async insertBookingAudit(entry: {
+    rideId: string;
+    dispatcherId: string;
+    payload?: Record<string, unknown>;
+  }): Promise<void> {
+    await this.db.insert(dispatchAuditLog).values({
+      rideId: entry.rideId,
+      driverId: null,
+      source: 'dispatcher',
+      dispatcherId: entry.dispatcherId,
+      reason: null,
+      payload: {
+        event: 'booked_on_behalf',
+        bookedAt: new Date().toISOString(),
+        ...entry.payload,
+      },
+    });
+  }
 }

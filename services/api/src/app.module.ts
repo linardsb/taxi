@@ -7,6 +7,7 @@ import { DbModule } from './common/db/db.module';
 import { KvModule } from './common/kv/kv.module';
 import { AuthModule, JwtAuthGuard, RolesGuard } from './features/auth';
 import { DispatchModule } from './features/dispatch';
+import { CustomersModule } from './features/customers';
 import { DriversModule } from './features/drivers';
 import { GeozonesModule } from './features/geozones';
 import { LedgerModule } from './features/ledger';
@@ -14,6 +15,7 @@ import { NotificationsModule } from './features/notifications';
 import { PaymentsModule } from './features/payments';
 import { RealtimeModule } from './features/realtime';
 import { RidesModule } from './features/rides';
+import { TelephonyModule } from './features/telephony';
 
 @Module({
   imports: [
@@ -24,6 +26,13 @@ import { RidesModule } from './features/rides';
     RealtimeModule,
     DriversModule,
     GeozonesModule,
+    // Before RidesModule: the dispatcher booking path (in DispatchModule)
+    // resolves a caller through this slice, then delegates to RidesService.
+    CustomersModule,
+    // Order-independent: nothing injects TELEPHONY_PROVIDER yet. Bound anyway
+    // so the seam is live rather than a file (#19) — a gateway lands as a
+    // one-line swap in TelephonyModule.
+    TelephonyModule,
     // Before RidesModule: rides fires the SMS hooks this module owns (#63).
     NotificationsModule,
     // GeoModule, PlatformConfigModule and PricingModule arrive transitively.

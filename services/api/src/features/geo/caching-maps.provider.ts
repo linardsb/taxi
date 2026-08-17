@@ -1,5 +1,8 @@
 import { Logger } from '@nestjs/common';
 import type {
+  AddressPoint,
+  AddressSearchOptions,
+  AddressSuggestion,
   GeocodeResult,
   Language,
   LatLng,
@@ -9,6 +12,7 @@ import type {
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { KeyValueStore } from '../../common/kv/kv.store';
+import { parsePlaceEntry, placeCacheKey } from './place-cache';
 
 /**
  * ~11 m. The hit-rate/accuracy knob: 3 decimals (~111 m) would raise the hit
@@ -206,6 +210,11 @@ export class CachingMapsProvider implements MapsProvider {
     private readonly ttlSeconds: number,
     private readonly failureTtlSeconds: number,
     private readonly timeoutMs: number,
+    /**
+     * Place resolutions, unlike routes, are cached identically by both bound
+     * facades — see `place-cache.ts` for why there is no caller namespace.
+     */
+    private readonly placeTtlSeconds: number,
   ) {
     this.negativeCache = failureTtlSeconds > 0;
   }
@@ -384,7 +393,7 @@ export class CachingMapsProvider implements MapsProvider {
    * free-form and the key it names carries coordinates.
    */
   private cacheWriteFailed(
-    kind: 'route' | 'failure',
+    kind: 'route' | 'failure' | 'place',
     key: string,
     error: unknown,
   ): void {
@@ -409,5 +418,81 @@ export class CachingMapsProvider implements MapsProvider {
     language: Language,
   ): Promise<GeocodeResult | null> {
     return this.inner.reverseGeocode(location, language);
+  }
+
+  /**
+   * UNCACHED BY POLICY, not by omission. Predictions are Places content and the
+   * caching exception covers place IDs only. The spend controls on this path
+   * are the session token (which bills a burst of keystrokes as one session),
+   * the client's 300 ms debounce, the minimum query length and the controller's
+   * rate limit — not a cache.
+   */
+  searchAddress(
+    query: string,
+    language: Language,
+    options: AddressSearchOptions,
+  ): Promise<AddressSuggestion[]> {
+    return this.inner.searchAddress(query, language, options);
+  }
+
+  /**
+   * Cached ONLY when no session is open — and that condition is the whole
+   * design, not a special case.
+   *
+   * Serving a SESSION-BEARING resolve from cache is a spend REGRESSION, which
+   * is the opposite of what a cache is for here. Walk the money (`derived`,
+   * from the prices plan Q5 recorded on 2026-08-17: Autocomplete Requests
+   * $2.83/1,000, Place Details Essentials $5.00/1,000, Autocomplete Session
+   * Usage free):
+   *
+   * - MISS, session terminated: N keystroke requests + 1 details call bill as
+   *   one session + $5.00/1,000 — the N requests cost nothing.
+   * - HIT, session abandoned: no details call, so the session never terminates
+   *   and those same N requests bill individually at $2.83/1,000 each.
+   *
+   * Break-even is N < 5.00 ÷ 2.83 ≈ 1.77, i.e. one request; at the plan's
+   * expected 5 per field a cache hit costs 5 × $2.83 = $14.15/1,000 against
+   * $5.00/1,000 for the miss — roughly 3× worse. So a typed lookup ALWAYS
+   * reaches the provider and terminates its session.
+   *
+   * `sessionToken === null` is the case the cache exists for: re-resolving a
+   * saved place, where nobody typed and no autocomplete request was billed.
+   * Nothing calls that path yet — the saved-place refresh is future work — so
+   * the read below is inert today while the write keeps entries warm for it.
+   * Stated rather than implied, because an inert cache that looks live is
+   * exactly the kind of claim this repo has shipped before.
+   */
+  async resolvePlace(
+    placeId: string,
+    language: Language,
+    sessionToken: string | null,
+  ): Promise<AddressPoint | null> {
+    const key = placeCacheKey(language, placeId);
+    const hit = sessionToken === null ? await this.kv.get(key) : null;
+    if (hit !== null) {
+      const cached = parsePlaceEntry(hit);
+      if (cached !== null) return cached;
+      await this.kv.del(key);
+    }
+
+    const resolved = await this.inner.resolvePlace(
+      placeId,
+      language,
+      sessionToken,
+    );
+    // A null is NOT cached: it means the provider no longer knows the id, and
+    // remembering that would keep a since-corrected place dark for 30 days.
+    if (resolved === null) return null;
+
+    this.logger.log({
+      event: 'geo.maps.place_resolved',
+      caller: this.caller,
+      cell: cellOf(key),
+      at: new Date().toISOString(),
+    });
+    await this.kv
+      .setWithTtl(key, JSON.stringify(resolved), this.placeTtlSeconds)
+      .catch((error: unknown) => this.cacheWriteFailed('place', key, error));
+    return resolved;
   }
 }

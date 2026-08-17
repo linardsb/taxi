@@ -133,6 +133,51 @@ const lv = {
   'console.cancel_confirm': 'Atcelt braucienu',
   'console.cancel_keep': 'Nē, atstāt',
   'console.cancel_failed': 'Neizdevās atcelt. Mēģiniet vēlreiz.',
+  // Phone orders (#19). The keyboard-first booking form: Dina takes the order
+  // while the caller is still speaking, so every label here is read at a
+  // glance, not studied.
+  'console.new_order': 'Jauns pasūtījums',
+  'console.new_order_hotkey': 'Jauns pasūtījums (⌥N)',
+  'console.new_order_title': 'Jauns pasūtījums pa tālruni',
+  'console.caller_phone': 'Zvanītāja tālrunis',
+  'console.caller_name': 'Vārds (nav obligāts)',
+  'console.caller_lookup_none': 'Jauns zvanītājs',
+  'console.caller_lookup_failed': 'Neizdevās atrast zvanītāju',
+  'console.caller_searching': 'Meklē…',
+  'console.recent_jobs': 'Pēdējie braucieni',
+  'console.recent_job_reuse': 'Izmantot: {from} → {to}',
+  'console.venues': 'Iestādes',
+  'console.venues_empty': 'Nav saglabātu iestāžu',
+  'console.venue_pick': 'Izvēlēties {name}',
+  'console.pickup': 'Izbraukšanas vieta',
+  'console.destination': 'Galamērķis',
+  'console.note': 'Piezīme šoferim (nav obligāta)',
+  'console.payment_method': 'Apmaksa',
+  'console.payment_cash': 'Skaidrā naudā',
+  'console.payment_card': 'Ar karti',
+  'console.book': 'Pasūtīt',
+  'console.booking_submitting': 'Pasūta…',
+  'console.booking_created': 'Pasūtījums izveidots',
+  'console.booking_close': 'Aizvērt',
+  // The address combobox. `address_offline` is the offline rule in words: the
+  // typed text is KEPT, the order simply cannot be sent yet.
+  'console.address_search_hint': 'Ierakstiet ielu un mājas numuru',
+  'console.address_searching': 'Meklē adreses…',
+  'console.address_no_results': 'Nav atrastu adrešu',
+  'console.address_failed': 'Adrešu meklēšana nedarbojas',
+  'console.address_offline':
+    'Bezsaistē — adresi saglabāsim, bet pasūtīt varēs pēc savienojuma',
+  'console.address_unresolved': 'Izvēlieties adresi no saraksta',
+  'console.address_expired': 'Adrese ir novecojusi — izvēlieties to no jauna',
+  // Booking errors, in Dina's words. `booking_failed` is the fallback: an
+  // unmapped code renders this, never the raw code.
+  'console.booking_failed': 'Neizdevās pasūtīt. Mēģiniet vēlreiz.',
+  'console.booking_offline_disabled':
+    'Bezsaistē — pasūtīt nevar, kamēr nav savienojuma',
+  'console.booking_error_phone_belongs_to_staff':
+    'Šis numurs pieder šoferim vai dispečeram',
+  'console.booking_error_too_many_requests':
+    'Pārāk daudz pasūtījumu pēc kārtas — mēģiniet pēc {retry} s',
 } as const;
 
 export type MessageKey = keyof typeof lv;
@@ -249,6 +294,44 @@ export const MESSAGES = {
     'console.cancel_confirm': 'Отменить поездку',
     'console.cancel_keep': 'Нет, оставить',
     'console.cancel_failed': 'Не удалось отменить. Попробуйте ещё раз.',
+    'console.new_order': 'Новый заказ',
+    'console.new_order_hotkey': 'Новый заказ (⌥N)',
+    'console.new_order_title': 'Новый заказ по телефону',
+    'console.caller_phone': 'Телефон звонящего',
+    'console.caller_name': 'Имя (необязательно)',
+    'console.caller_lookup_none': 'Новый клиент',
+    'console.caller_lookup_failed': 'Не удалось найти клиента',
+    'console.caller_searching': 'Поиск…',
+    'console.recent_jobs': 'Последние поездки',
+    'console.recent_job_reuse': 'Использовать: {from} → {to}',
+    'console.venues': 'Заведения',
+    'console.venues_empty': 'Нет сохранённых заведений',
+    'console.venue_pick': 'Выбрать {name}',
+    'console.pickup': 'Место подачи',
+    'console.destination': 'Пункт назначения',
+    'console.note': 'Примечание водителю (необязательно)',
+    'console.payment_method': 'Оплата',
+    'console.payment_cash': 'Наличными',
+    'console.payment_card': 'Картой',
+    'console.book': 'Заказать',
+    'console.booking_submitting': 'Заказываем…',
+    'console.booking_created': 'Заказ создан',
+    'console.booking_close': 'Закрыть',
+    'console.address_search_hint': 'Введите улицу и номер дома',
+    'console.address_searching': 'Поиск адресов…',
+    'console.address_no_results': 'Адреса не найдены',
+    'console.address_failed': 'Поиск адресов не работает',
+    'console.address_offline':
+      'Нет связи — адрес сохраним, но заказать можно будет после восстановления',
+    'console.address_unresolved': 'Выберите адрес из списка',
+    'console.address_expired': 'Адрес устарел — выберите его заново',
+    'console.booking_failed': 'Не удалось заказать. Попробуйте ещё раз.',
+    'console.booking_offline_disabled':
+      'Нет связи — заказать нельзя до восстановления соединения',
+    'console.booking_error_phone_belongs_to_staff':
+      'Этот номер принадлежит водителю или диспетчеру',
+    'console.booking_error_too_many_requests':
+      'Слишком много заказов подряд — попробуйте через {retry} с',
   },
   en: {
     'sms.booking_confirmed': 'Your taxi is booked.',
@@ -358,6 +441,44 @@ export const MESSAGES = {
     'console.cancel_confirm': 'Cancel the ride',
     'console.cancel_keep': 'No, keep it',
     'console.cancel_failed': 'Could not cancel. Try again.',
+    'console.new_order': 'New order',
+    'console.new_order_hotkey': 'New order (⌥N)',
+    'console.new_order_title': 'New phone order',
+    'console.caller_phone': 'Caller phone',
+    'console.caller_name': 'Name (optional)',
+    'console.caller_lookup_none': 'New caller',
+    'console.caller_lookup_failed': 'Could not look up the caller',
+    'console.caller_searching': 'Searching…',
+    'console.recent_jobs': 'Recent jobs',
+    'console.recent_job_reuse': 'Reuse: {from} → {to}',
+    'console.venues': 'Venues',
+    'console.venues_empty': 'No saved venues',
+    'console.venue_pick': 'Pick {name}',
+    'console.pickup': 'Pickup',
+    'console.destination': 'Destination',
+    'console.note': 'Note for the driver (optional)',
+    'console.payment_method': 'Payment',
+    'console.payment_cash': 'Cash',
+    'console.payment_card': 'Card',
+    'console.book': 'Book',
+    'console.booking_submitting': 'Booking…',
+    'console.booking_created': 'Order created',
+    'console.booking_close': 'Close',
+    'console.address_search_hint': 'Type the street and house number',
+    'console.address_searching': 'Searching addresses…',
+    'console.address_no_results': 'No addresses found',
+    'console.address_failed': 'Address search is unavailable',
+    'console.address_offline':
+      'Offline — the address is kept, but the order cannot be sent yet',
+    'console.address_unresolved': 'Pick an address from the list',
+    'console.address_expired': 'This address has expired — pick it again',
+    'console.booking_failed': 'Could not book. Try again.',
+    'console.booking_offline_disabled':
+      'Offline — booking is unavailable until the connection is back',
+    'console.booking_error_phone_belongs_to_staff':
+      'That number belongs to a driver or a dispatcher',
+    'console.booking_error_too_many_requests':
+      'Too many orders in a row — try again in {retry} s',
   },
 } as const satisfies Record<Language, Record<MessageKey, string>>;
 

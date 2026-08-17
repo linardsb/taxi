@@ -65,6 +65,22 @@ export class RidesService {
     idempotencyKey: string,
     body: RideRequestBody,
     bookingChannel: BookingChannel = 'app',
+    /**
+     * WHO the rate limit counts against, defaulting to the rider (#19 Q7).
+     *
+     * The cap bounds paid Routes calls, and on the rider path the rider is the
+     * only actor. On the dispatcher path they are the wrong one: a venue
+     * booking 25 cars in ten minutes creates 25 rides for 25 DIFFERENT riders,
+     * so a rider key never trips and the cap does nothing — while one caller
+     * rebooking would trip it and block a legitimate order mid-call. The
+     * dispatcher is the actor whose keyboard produces the spend, and one human
+     * is a natural rate limit; `BookingsService` passes their id.
+     *
+     * Note what does NOT move: `rideIdempotencyKey` stays rider-scoped, because
+     * the thing being deduplicated is a RIDE, and two dispatchers booking the
+     * same caller must not be able to collide on a key.
+     */
+    rateLimitSubject: string = riderId,
   ): Promise<RideCreated> {
     // The server's identity wins. A body-supplied `riderId` was already
     // stripped by `.omit()` — this re-parse is what makes that structural.
@@ -111,7 +127,7 @@ export class RidesService {
     }
 
     try {
-      await this.assertWithinRateLimit(riderId);
+      await this.assertWithinRateLimit(rateLimitSubject);
       return await this.createRide(key, request, riderId, bookingChannel);
     } catch (error) {
       // Release, best-effort. Without it a maps outage — or a single 429 —
@@ -287,8 +303,8 @@ export class RidesService {
    * INCR-then-check like the auth slice: a GET-then-INCR would let a burst all
    * read the same count and every one of them through.
    */
-  private async assertWithinRateLimit(riderId: string): Promise<void> {
-    const key = rideRequestRateKey(riderId);
+  private async assertWithinRateLimit(subjectId: string): Promise<void> {
+    const key = rideRequestRateKey(subjectId);
     const attempts = await this.kv.incrWithTtl(
       key,
       RIDE_REQUEST_WINDOW_SECONDS,
@@ -300,7 +316,10 @@ export class RidesService {
     const retryAfterSeconds = Math.max(1, await this.kv.ttl(key));
     this.logger.warn({
       event: 'ride.request.throttled',
-      riderId,
+      // The rider on the app path, the DISPATCHER on the phone path — whoever
+      // the cap was counted against, so the line names the actor that was
+      // actually throttled rather than a bystander.
+      subjectId,
       attempts,
       at: new Date().toISOString(),
     });
