@@ -379,7 +379,8 @@ describe('DispatchService', () => {
       const { service, emitToDispatch, incrWithTtl } = build({ incrResult: 1 });
       const ride = awaitingRide();
 
-      await service.raiseUnclaimed(ride, 2);
+      // `null` = never released, so the clock runs from the booking.
+      await service.raiseUnclaimed(ride, 2, null);
 
       expect(emitToDispatch).toHaveBeenCalledWith(
         CITY,
@@ -395,7 +396,7 @@ describe('DispatchService', () => {
       // a minute for the same stale order.
       const { service, emitToDispatch } = build({ incrResult: 2 });
 
-      await service.raiseUnclaimed(awaitingRide(), 2);
+      await service.raiseUnclaimed(awaitingRide(), 2, null);
 
       expect(emitToDispatch).not.toHaveBeenCalled();
     });

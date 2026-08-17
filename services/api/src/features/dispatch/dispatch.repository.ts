@@ -117,6 +117,15 @@ export class DispatchRepository {
    * Both callers pass the result to `countAttempts` and to the unclaimed clock,
    * so the cap and the staleness age answer the same question — how long has
    * this ride been without a car SINCE Dina took the last one off it.
+   *
+   * COST: one indexed read per awaiting ride per sweeper pass, and the sweeper
+   * runs this in two of its three passes — `derived`, worst case 2 ×
+   * `AWAITING_BATCH_LIMIT` = 40 extra queries per second, at the full batch.
+   * Both loops were already per-ride (`findPendingForRide`, `countAttempts`),
+   * so this widens an existing N+1 rather than introducing one, and
+   * `dispatch_audit_log_ride_idx` covers the predicate. At pilot volume the
+   * batch is nowhere near 20; if the sweeper ever runs full batches, this and
+   * its two siblings should become one batched read, not three.
    */
   async findLastReleasedAt(rideId: string): Promise<Date | null> {
     const [row] = await this.db
@@ -142,8 +151,15 @@ export class DispatchRepository {
    * without the cutoff a ride that cascaded through a few candidates before it
    * was accepted sits at or over the cap the moment Dina releases it, and the
    * cascade the release hands it to declines to offer at all (#120 review H3).
+   *
+   * `since` IS REQUIRED, AND `null` HAS TO BE WRITTEN OUT. An optional
+   * parameter defaulting to "count everything" is the old behaviour under a new
+   * name: a caller added later would compile, pass the suite, and quietly
+   * reinstate H3 — the same argument `unassignDriver` makes for putting its
+   * guard in the WHERE. Pass `findLastReleasedAt`'s result, or `null` to ask
+   * the genuinely different question "how many offers has this ride ever had".
    */
-  async countAttempts(rideId: string, since?: Date | null): Promise<number> {
+  async countAttempts(rideId: string, since: Date | null): Promise<number> {
     const [row] = await this.db
       .select({ value: count() })
       .from(rideOffers)

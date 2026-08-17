@@ -317,12 +317,15 @@ export class DispatchService {
    * `created_at` for an ordinary booking and the release timestamp for one Dina
    * has taken a car off (#19) — the number Dina reads is "how long has this
    * ride had no car", and after a release the booking time answers a different
-   * question and always a larger one (#120 review M3).
+   * question and always a larger one (#120 review M3). Required rather than
+   * defaulted for the reason `countAttempts` gives: a default of `null` here is
+   * the pre-#120 behaviour, and a caller added later would reinstate it without
+   * failing anything.
    */
   async raiseUnclaimed(
     ride: AwaitingRide,
     attempts: number,
-    pooledSince: Date | null = null,
+    pooledSince: Date | null,
   ): Promise<void> {
     const first = await this.kv.incrWithTtl(
       unclaimedAlertKey(ride.id),

@@ -786,7 +786,7 @@ describe('dispatch (integration)', () => {
       });
     }
     const repo = ctx.app.get(DispatchRepository);
-    expect(await repo.countAttempts(ride.id)).toBeGreaterThanOrEqual(
+    expect(await repo.countAttempts(ride.id, null)).toBeGreaterThanOrEqual(
       MAX_OFFER_ATTEMPTS,
     );
 
@@ -804,7 +804,7 @@ describe('dispatch (integration)', () => {
     // cascade would offer it rather than declare it exhausted.
     const scoped = await repo.countAttempts(ride.id, releasedAt);
     expect(scoped).toBeLessThan(MAX_OFFER_ATTEMPTS);
-    expect(scoped).toBeLessThan(await repo.countAttempts(ride.id));
+    expect(scoped).toBeLessThan(await repo.countAttempts(ride.id, null));
   });
 
   it('refuses to reassign once the driver has reached the pickup (#19, failure)', async () => {
