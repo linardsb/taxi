@@ -6,8 +6,11 @@ type BoardZone = DispatchBoardEvent['zones'][number];
 
 const RIDE = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
 const ZONE_ID = 'e0000000-0000-4000-8000-000000000001';
+/** A second zone that sorts BEFORE `Centrs` — `listForCity` orders by name. */
+const ZONE_AIRPORT = 'e0000000-0000-4000-8000-000000000002';
 const DRIVER_A = 'd0000000-0000-4000-8000-000000000001';
 const DRIVER_B = 'd0000000-0000-4000-8000-000000000002';
+const DRIVER_C = 'd0000000-0000-4000-8000-000000000003';
 const EXPIRES = new Date('2026-08-15T12:00:12.000Z');
 
 const offer = (over: Partial<CascadeOfferRow> = {}): CascadeOfferRow => ({
@@ -58,15 +61,21 @@ const build = (over: {
   offers?: CascadeOfferRow[];
   zones?: BoardZone[];
   contacts?: CascadeContact[];
+  /** The zone the ride was dispatched from — `undefined` means "the default one". */
+  rideGeozoneId?: string | null;
 }) =>
   buildCascades({
     offers: over.offers ?? [offer()],
     zones: over.zones ?? [zone()],
+    rideZones: new Map([
+      [RIDE, over.rideGeozoneId === undefined ? ZONE_ID : over.rideGeozoneId],
+    ]),
     contacts: new Map(
       (
         over.contacts ?? [
           contact(),
           contact({ driverId: DRIVER_B, name: 'Anna Bērziņa' }),
+          contact({ driverId: DRIVER_C, name: 'Kārlis Liepa' }),
         ]
       ).map((c) => [c.driverId, c]),
     ),
@@ -116,15 +125,138 @@ describe('buildCascades', () => {
     expect(cascade?.explanation?.key).toBe('explain.auto_match');
   });
 
-  it('explains a dispatcher override as a choice, not a ranking (edge)', () => {
+  it('projects a dispatcher override as a settled assignment, not an offer (edge)', () => {
+    // The ONLY dispatcher-sourced row any writer produces: `force-assign`
+    // inserts it already `accepted` (the other `insertOffer` call site only
+    // ever writes `auto_match`/`geozone_queue`). A `(dispatcher, pending)`
+    // row does not exist, so `explain.dispatcher` is unreachable from the
+    // board — the key stays justified for #15's driver app, where the offer
+    // card IS pending. If the board should explain an override, that is a
+    // projection change, not a fixture change.
     const cascade = build({
-      offers: [offer({ source: 'dispatcher', queuePosition: null })],
+      offers: [offer({ source: 'dispatcher', status: 'accepted' })],
+    }).get(RIDE);
+
+    expect(cascade).toEqual({
+      offeredToDriverId: null,
+      offeredToName: null,
+      expiresAt: null,
+      nextDriverName: null,
+      attempts: 1,
+      explanation: null,
+    });
+  });
+
+  it('explains the zone the RIDE came from when the holder is in two ranks (edge)', () => {
+    // Jānis is #1 in Centrs and has also picked up an airport job, so he sits
+    // in Lidosta's rank too. Lidosta sorts first (`listForCity` orders by
+    // name), so a scan for "the zone holding this driver" finds the wrong one.
+    const cascade = build({
+      zones: [
+        zone({
+          geozoneId: ZONE_AIRPORT,
+          slug: 'lidosta',
+          name: 'Lidosta RIX',
+          entries: [
+            {
+              driverId: DRIVER_A,
+              name: 'Jānis Ozols',
+              phone: '+37129999001',
+              position: 4,
+              secondsInZone: 180,
+              status: 'online',
+            },
+            {
+              driverId: DRIVER_C,
+              name: 'Kārlis Liepa',
+              phone: '+37129999003',
+              position: 5,
+              secondsInZone: 30,
+              status: 'online',
+            },
+          ],
+        }),
+        zone(),
+      ],
     }).get(RIDE);
 
     expect(cascade?.explanation).toEqual({
-      key: 'explain.dispatcher',
-      params: {},
+      key: 'explain.geozone_queue',
+      params: { zone: 'Centrs', position: 1, minutes: 47, eta: 4 },
     });
+    // And "who is next" walks Centrs' rank, not Lidosta's.
+    expect(cascade?.nextDriverName).toBe('Anna Bērziņa');
+  });
+
+  it('claims no zone at all when the ride carries no stamped one (edge)', () => {
+    // A pickup in no configured zone. Says only the part that is true rather
+    // than borrowing a zone name off whichever rank the holder is in.
+    const cascade = build({ rideGeozoneId: null }).get(RIDE);
+
+    expect(cascade?.explanation).toEqual({
+      key: 'explain.eta_only',
+      params: { eta: 4 },
+    });
+    expect(cascade?.nextDriverName).toBeNull();
+  });
+
+  it('skips an offline driver when naming who is next (failure)', () => {
+    // The queue snapshot keeps offline drivers on purpose — a driver who went
+    // offline holding position 1 is precisely what Dina resolves. The ENGINE's
+    // candidate set does not: `findNearest` returns only the online set, and
+    // `toCandidates` requires `status === 'online'`. Naming Anna here would
+    // point Dina at a driver the cascade can never reach.
+    const cascade = build({
+      zones: [
+        zone({
+          entries: [
+            {
+              driverId: DRIVER_A,
+              name: 'Jānis Ozols',
+              phone: '+37129999001',
+              position: 1,
+              secondsInZone: 2_820,
+              status: 'online',
+            },
+            {
+              driverId: DRIVER_B,
+              name: 'Anna Bērziņa',
+              phone: '+37129999002',
+              position: 2,
+              secondsInZone: 900,
+              status: 'offline',
+            },
+            {
+              driverId: DRIVER_C,
+              name: 'Kārlis Liepa',
+              phone: '+37129999003',
+              position: 3,
+              secondsInZone: 60,
+              status: 'online',
+            },
+          ],
+        }),
+      ],
+    }).get(RIDE);
+
+    expect(cascade?.nextDriverName).toBe('Kārlis Liepa');
+  });
+
+  it('names nobody next once the ride has burned its attempts (failure)', () => {
+    // `MAX_OFFER_ATTEMPTS` is 5: `offerNext` raises the ride as unclaimed
+    // instead of offering a sixth time, so there is no next driver to name.
+    const cascade = build({
+      offers: [
+        offer({ status: 'expired', driverId: DRIVER_C }),
+        offer({ status: 'declined', driverId: DRIVER_C }),
+        offer({ status: 'expired', driverId: DRIVER_C }),
+        offer({ status: 'declined', driverId: DRIVER_C }),
+        offer(), // pending, DRIVER_A — the fifth and last attempt
+      ],
+    }).get(RIDE);
+
+    expect(cascade?.attempts).toBe(5);
+    expect(cascade?.nextDriverName).toBeNull();
   });
 
   it('keeps the attempt count when no offer is currently held (edge)', () => {

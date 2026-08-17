@@ -101,29 +101,51 @@ describe('ZoneGrid', () => {
     render(<ZoneGrid zones={[zone({ entries: [entry({ status: 'offline' })] })]} />);
 
     expect(screen.getByText('1')).toBeInTheDocument();
-    expect(
-      screen.getByLabelText(
-        formatMessage('lv', 'console.driver_status_offline'),
-      ),
-    ).toBeInTheDocument();
+    // `role="img"` genuinely accepts a name, so this one CAN be asserted
+    // against the accessibility tree rather than against an attribute.
+    expect(screen.getByRole('img')).toHaveAccessibleName(
+      formatMessage('lv', 'console.driver_status_offline'),
+    );
   });
 
   it('announces the position rather than reading out a bare digit (expected)', () => {
     render(<ZoneGrid zones={[zone()]} />);
 
+    const chip = screen.getByRole('listitem');
+    // jsdom cannot run a screen reader, so this pins the two DOM properties
+    // that DECIDE what one says, rather than a `getByLabelText` that matches
+    // an attribute on any element regardless of whether its role can carry a
+    // name. The digit is out of the tree; the sentence is in it and rendered
+    // (clip-rect, not `display: none`, which would remove it too).
+    expect(within(chip).getByText('1')).toHaveAttribute('aria-hidden', 'true');
     expect(
-      screen.getByLabelText(
+      within(chip).getByText(
         formatMessage('lv', 'console.zone_queue_position', { position: 1 }),
       ),
-    ).toBeInTheDocument();
+    ).toBeVisible();
   });
 
-  it('renders a message, not an empty table, when no zone is configured (failure)', () => {
+  it('keeps list semantics under list-style: none (edge)', () => {
+    // Safari + VoiceOver drops them otherwise, and the ORDER of this list is
+    // the information — «2 no 4» is the announcement Dina needs. jsdom gives
+    // an `<ol>` the list role either way, so this pins the explicit ATTRIBUTE:
+    // that is the mitigation, and its absence is what jsdom cannot see.
+    render(<ZoneGrid zones={[zone()]} />);
+
+    expect(screen.getByRole('list')).toHaveAttribute('role', 'list');
+  });
+
+  it('says the city has no zones, not that a rank is empty (failure)', () => {
+    // Different facts, different responses: an empty rank means send a car,
+    // no configured zones means ring whoever configures them.
     render(<ZoneGrid zones={[]} />);
 
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(
-      screen.getByText(formatMessage('lv', 'console.zone_empty')),
+      screen.getByText(formatMessage('lv', 'console.zone_none_configured')),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(formatMessage('lv', 'console.zone_empty')),
+    ).not.toBeInTheDocument();
   });
 });

@@ -33,11 +33,35 @@ const cell: React.CSSProperties = {
 };
 
 /**
+ * Off-screen but IN the accessibility tree — the clip-rect idiom, not
+ * `display: none` (which removes it from the tree) and not `visibility:
+ * hidden` (same).
+ */
+const visuallyHidden: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
+
+/**
  * One driver's place in a rank.
  *
- * The position is rendered as digits and ALSO carried in an aria-label, so a
- * screen reader says "queue place 2" rather than "hash two" — Dina works this
- * screen eight hours a day and the a11y bar here is the rider app's.
+ * The position is rendered as digits for sighted use and as a visually-hidden
+ * SENTENCE for a screen reader, which says «Vieta rindā 2» rather than a bare
+ * "2" — Dina works this screen eight hours a day and the a11y bar here is the
+ * rider app's.
+ *
+ * Hidden text plus `aria-hidden` digits rather than an `aria-label` on the
+ * digits: ARIA 1.2 puts role `generic` — what a bare `<span>` maps to — in the
+ * name-PROHIBITED set, so a label there is not guaranteed to be exposed at all.
+ * The status dot above can carry one because `role="img"` accepts a name; a
+ * text node needs no role and no assumption.
  *
  * `queueModeEnabled: false` hides the number entirely rather than greying it:
  * a rank dispatch does not honour is worse than no rank, because it is one
@@ -72,18 +96,23 @@ function QueueChip({
         }}
       />
       {showPosition && (
-        <span
-          aria-label={formatMessage(LANG, 'console.zone_queue_position', {
-            position: entry.position,
-          })}
-          style={{
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 700,
-            color: 'var(--color-accent)',
-          }}
-        >
-          {entry.position}
-        </span>
+        <>
+          <span style={visuallyHidden}>
+            {formatMessage(LANG, 'console.zone_queue_position', {
+              position: entry.position,
+            })}
+          </span>
+          <span
+            aria-hidden="true"
+            style={{
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: 700,
+              color: 'var(--color-accent)',
+            }}
+          >
+            {entry.position}
+          </span>
+        </>
       )}
       <span style={{ fontWeight: 600 }}>{entry.name}</span>
       <span
@@ -156,7 +185,11 @@ function ZoneRow({ zone }: Readonly<{ zone: BoardZone }>) {
             {formatMessage(LANG, 'console.zone_empty')}
           </span>
         ) : (
+          // `role="list"` restated on purpose: Safari + VoiceOver drops list
+          // semantics under `list-style: none`, and on an element whose
+          // ORDERING is its content that is the announcement that matters.
           <ol
+            role="list"
             style={{
               listStyle: 'none',
               margin: 0,
@@ -203,7 +236,11 @@ export function ZoneGrid({ zones }: Readonly<{ zones: BoardZone[] }>) {
           color: 'var(--color-fg-muted)',
         }}
       >
-        {formatMessage(LANG, 'console.zone_empty')}
+        {/* NOT `console.zone_empty` — "this rank is empty" is answered by
+            sending a car, "the city has no zones" by ringing whoever
+            configures them, and a paragraph reading «(tukšs)» is a
+            parenthetical rather than a message. */}
+        {formatMessage(LANG, 'console.zone_none_configured')}
       </p>
     );
   }

@@ -132,6 +132,9 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
     const cascades = buildCascades({
       offers: await this.dispatch.findOffersForRides(rides.map((r) => r.id)),
       zones: zoneRows,
+      // The zone each ride was DISPATCHED from, so the cascade explains that
+      // queue rather than whichever one the holder also happens to sit in.
+      rideZones: new Map(rides.map((r) => [r.id, r.geozoneId])),
       contacts,
     });
     // Reuses the geozone lookup dispatch's queue mode runs (smallest polygon

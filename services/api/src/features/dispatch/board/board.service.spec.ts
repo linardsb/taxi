@@ -17,6 +17,8 @@ const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
 const DRIVER_A = 'd0000000-0000-4000-8000-000000000001';
 const DRIVER_B = 'd0000000-0000-4000-8000-000000000002';
 const ZONE_ID = 'e0000000-0000-4000-8000-000000000001';
+/** A second zone that sorts BEFORE `Centrs` — `listForCity` orders by name. */
+const ZONE_AIRPORT = 'e0000000-0000-4000-8000-000000000002';
 const NOW = new Date('2026-08-15T12:00:00.000Z');
 
 const zone = (over: Partial<ResolvedGeozone> = {}): ResolvedGeozone => ({
@@ -46,6 +48,8 @@ const boardRide = (over: Partial<BoardRide> = {}): BoardRide => ({
   driverName: null,
   bookingChannel: 'phone',
   createdAt: new Date(NOW.getTime() - 90_000),
+  // Stamped by `setGeozone` at first dispatch — the zone the cascade explains.
+  geozoneId: ZONE_ID,
   ...over,
 });
 
@@ -417,6 +421,46 @@ describe('BoardService.buildBoardState', () => {
       key: 'explain.geozone_queue',
       params: { zone: 'Centrs', position: 1, minutes: 47, eta: 4 },
     });
+  });
+
+  it('explains the ride’s own zone when the holder holds two ranks (edge)', async () => {
+    // Jānis worked the airport earlier in the shift, so he is still in
+    // Lidosta's rank — nothing calls `leave()`. Lidosta sorts first, so a
+    // catalog scan for "the zone holding this driver" finds Lidosta and
+    // explains a queue that has nothing to do with this ride. The ride's
+    // stamped `geozoneId` is the only thing that says Centrs.
+    const { service, queue } = build({
+      rides: [boardRide({ status: 'offered' })],
+      catalog: [
+        zone({ id: ZONE_AIRPORT, slug: 'lidosta', name: 'Lidosta RIX' }),
+        zone(),
+      ],
+      contacts: [
+        contact({ driverId: DRIVER_A, name: 'Jānis Ozols' }),
+        contact({
+          driverId: DRIVER_B,
+          name: 'Anna Bērziņa',
+          phone: '+37129999002',
+        }),
+      ],
+      offers: [offer()],
+    });
+    jest.setSystemTime(new Date(NOW.getTime() - 2_820_000));
+    await queue.joinBack(ZONE_ID, DRIVER_A);
+    jest.setSystemTime(new Date(NOW.getTime() - 180_000));
+    await queue.joinBack(ZONE_AIRPORT, DRIVER_A);
+    jest.setSystemTime(NOW);
+    await queue.joinBack(ZONE_ID, DRIVER_B);
+
+    const frame = await service.buildBoardState(CITY);
+    const cascade = frame.rides[0]!.cascade;
+
+    expect(cascade!.explanation).toEqual({
+      key: 'explain.geozone_queue',
+      // Centrs and 47 min — not «Lidosta RIX … 3 min».
+      params: { zone: 'Centrs', position: 1, minutes: 47, eta: 4 },
+    });
+    expect(cascade!.nextDriverName).toBe('Anna Bērziņa');
   });
 
   it('reads every ride’s offers in ONE query, not one per ride (expected)', async () => {

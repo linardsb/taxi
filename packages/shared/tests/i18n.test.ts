@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LANGUAGES } from '../src/enums';
 import { formatMessage } from '../src/format-message';
-import { MESSAGES, type MessageKey } from '../src/i18n';
+import { MESSAGES, isMessageKey, type MessageKey } from '../src/i18n';
 
 const KEYS = Object.keys(MESSAGES.lv) as MessageKey[];
 
@@ -74,5 +74,25 @@ describe('formatMessage', () => {
     expect(formatMessage('ru', 'sms.booking_confirmed')).toBe(
       'Ваше такси забронировано.',
     );
+  });
+});
+
+describe('isMessageKey', () => {
+  it('accepts a key the catalog has (expected)', () => {
+    expect(isMessageKey('explain.geozone_queue')).toBe(true);
+  });
+
+  it('rejects a key it does not (failure)', () => {
+    expect(isMessageKey('explain.telepathy')).toBe(false);
+  });
+
+  it('rejects an inherited Object property (failure)', () => {
+    // The guard exists so an api emitting an explanation key the console does
+    // not know yet cannot reach `.replace` on `undefined`. A prototype-chain
+    // check would let `'toString'` through and reach `.replace` on a FUNCTION
+    // — the same outage by a different input.
+    for (const inherited of ['toString', 'constructor', 'valueOf']) {
+      expect(isMessageKey(inherited), inherited).toBe(false);
+    }
   });
 });

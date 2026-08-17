@@ -113,9 +113,12 @@ export class RedisDispatchQueueStore
 
   /**
    * One `LRANGE` + one `HGETALL`, both unbounded by design: a zone queue is
-   * bounded by the fleet, and the board reads ≤6 zones per frame. Two round
-   * trips per zone rather than one pipeline because the two keys are read
-   * independently and a torn read costs at most one frame's timestamp.
+   * bounded by the fleet, and the board reads one zone per row of the CITY
+   * CATALOG — ≤6 per frame at pilot scale (the Rīga seed has 4), not a limit
+   * anything enforces. Zones are admin-creatable and `listForCity` has no
+   * `LIMIT`, so the per-frame Redis cost tracks whatever the catalog holds.
+   * Two round trips per zone rather than one pipeline because the two keys are
+   * read independently and a torn read costs at most one frame's timestamp.
    */
   async snapshot(geozoneId: string): Promise<QueueSnapshotEntry[]> {
     const [queue, joined] = await Promise.all([

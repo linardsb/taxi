@@ -75,6 +75,17 @@ export interface BoardRide {
   driverName: string | null;
   bookingChannel: BookingChannel;
   createdAt: Date;
+  /**
+   * The zone the ride was DISPATCHED from — stamped once by `setGeozone` at
+   * first dispatch and never moved. The cascade needs it to name the right
+   * queue: a driver accumulates memberships across a shift (lazy enrollment
+   * enrolls, nothing calls `leave()`), so "the zone this driver is queued in"
+   * is ambiguous and only the ride knows which one it meant.
+   *
+   * Null for a ride the engine has not reached yet, and for a pickup that
+   * falls in no configured zone.
+   */
+  geozoneId: string | null;
 }
 
 /** `request` round-trips through jsonb, so it is parsed rather than cast. */
@@ -310,6 +321,7 @@ export class RidesRepository {
           driverName,
           bookingChannel: ride.bookingChannel,
           createdAt: ride.createdAt,
+          geozoneId: ride.geozoneId,
         },
       ];
     });

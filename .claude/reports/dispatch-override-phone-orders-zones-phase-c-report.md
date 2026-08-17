@@ -92,9 +92,13 @@ fan-out is untouched and still carries its own fleet-cap warning. At 2 s cadence
 
 Query count is not the only cost, so the volume behind the flat one: `findOffersForRides`
 reads every offer row for the frame's rides, bounded by `BOARD_RIDES_LIMIT` = 100 rides ×
-`MAX_OFFER_ATTEMPTS` = 5 offers = **≤500 rows per frame** (`derived`, worst case at the
-cap; pilot volume is single-digit live rides so the real figure is ~tens). Seven scalar
-columns, no jsonb — the four blob columns are deliberately not selected.
+`MAX_OFFER_ATTEMPTS` = 5 offers = **≤500 rows per frame from the auto-cascade**
+(`derived`, at the cap and for that path only). Not a whole-system worst case:
+`MAX_OFFER_ATTEMPTS` gates `offerNext` alone, and `force-assign.service.ts` inserts an
+offer row with no attempts check (`ReassignService` routes through it), so the true bound
+is **≤ 500 + Σ dispatcher overrides**. Pilot volume is single-digit live rides, so the
+real figure is ~tens either way. Seven scalar columns, no jsonb — the four blob columns
+are deliberately not selected.
 
 **Frame size is not measured.** C3 asked for a re-measurement rather than inheriting
 #18's "a few kB"; that was not run, so no figure is claimed here in either direction.
@@ -195,3 +199,50 @@ two different rankings on Dina's screen and the driver's phone. The shared rule 
 
 - AC #13's ledger rows and AC #12's phone-channel query belong to Phase D.
 - Frame-size re-measurement (see above) — stated as `expected`, not claimed as observed.
+
+---
+
+## Post-review remediation (PR #121 review, `.claude/code-reviews/pr-121-review.md`)
+
+Ten of the review's thirteen findings are fixed on this branch; three are deferred and
+named below. Every regression case was run against the pre-fix source first and observed
+to fail — the review's own recurring-pattern note is that a test passing on a fixture the
+runtime cannot produce proves nothing, and red-then-green is the only check on that.
+
+| # | What was wrong | Fix | Test that proves it |
+|---|---|---|---|
+| H1 | `zoneHolding` scanned the catalog for the holder, so a driver queued in two zones was explained with whichever zone sorts FIRST — wrong zone name, wrong tenure, and `nextInQueue` then walked the wrong rank | `rides.geozoneId` projected onto `BoardRide` and passed into `buildCascades` as a `rideId → geozoneId` map; the zone is resolved BY ID and `undefined` when the ride carries none (no extra query — `findBoardRides` already selects the whole row) | `cascade.spec.ts` "explains the zone the RIDE came from when the holder is in two ranks", `board.service.spec.ts` "explains the ride's own zone when the holder holds two ranks", plus "claims no zone at all when the ride carries no stamped one" pinning the `explain.eta_only` fallback |
+| H2 | «Nākamais» named offline drivers, who are in the queue snapshot ON PURPOSE but are never in the engine's candidate set (`findNearest` is the online set; `toCandidates` requires `status === 'online'`) | `nextInQueue` requires `status === 'online'`, and returns null once `attempts >= MAX_OFFER_ATTEMPTS` because `offerNext` gives up rather than offering again; docblock now says plainly this is a heuristic over the rank, not a replay of `findCandidates` | `cascade.spec.ts` "skips an offline driver when naming who is next" and "names nobody next once the ride has burned its attempts" |
+| M1 | `cascade.ts`'s docblock claimed the rank was "byte-identical" to the grid's. Only the TENURE is; the rank is `pending.queuePosition` off the offer row | Docblock amended to state the split and why the offer row is the right source (it is the number the driver was actually shown, and `zone-rows.ts` never re-ranks either) | none — a claim, not behaviour |
+| M2 | The `explain.dispatcher` case built a `(dispatcher, pending)` offer row. No writer produces one: `dispatch.service.ts` only writes `auto_match`/`geozone_queue`, `force-assign.service.ts` writes `accepted` | Rebuilt as `(dispatcher, accepted)` and asserts what the projection actually yields (no holder, `attempts: 1`, `explanation: null`), with the reachability noted in the test | `cascade.spec.ts` "projects a dispatcher override as a settled assignment, not an offer" |
+| M3 | The position announcement was an `aria-label` on a roleless `<span>` (ARIA 1.2 puts `generic` in the name-prohibited set), and `getByLabelText` matches the ATTRIBUTE, so the test was green either way | Visually-hidden sentence + `aria-hidden` digits, which needs no role; `role="list"` restated on the `<ol>`; assertions now pin the properties that decide the announcement | `zone-grid.test.tsx` "announces the position rather than reading out a bare digit" and "keeps list semantics under list-style: none"; the status dot upgraded to `toHaveAccessibleName` |
+| M4 | `console.zone_empty` rendered two different facts ("this rank is empty" and "the city has no zones"), and `console.zone_none` had no caller after `zones-panel.tsx` was deleted | New `console.zone_none_configured` across LV/RU/EN for the second fact; `console.zone_none` retired (zero callers repo-wide, `observed`) | `zone-grid.test.tsx` "says the city has no zones, not that a rank is empty" |
+| M5 | `CLAUDE.md:43`'s gated-skip figure (24) predates this diff's 5 new gated cases | 24 → 33, re-derived at this head | see Validation below |
+| L1 | `isMessageKey` used `in`, so `'toString'` passed the guard and reached `.replace` on a function | `Object.hasOwn` | `tests/i18n.test.ts` "rejects an inherited Object property" |
+| L2 | `≤500 rows/frame` was labelled a worst case; `MAX_OFFER_ATTEMPTS` gates `offerNext` only, and `force-assign` inserts with no attempts check | Restated as `≤ 500 + Σ dispatcher overrides`, with the auto-cascade figure labelled as that path only — here and in the PR body | none — a claim |
+| L3 | `snapshot()`'s docblock stated `≤6 zones per frame` flatly; nothing enforces it | Condition attached: pilot scale, catalog-bounded, `listForCity` has no `LIMIT`, seed has 4 | none — a claim |
+
+**Deferred, with the review's agreement that the PR body name them** — L4 (the countdown
+compares the operator's `Date.now()` against the server's `expiresAt` with no skew
+reference; `frame.at` is available, and `ride-queue.tsx` has the same shape and predates
+this PR), L5 (the queue list and its join-timestamp hash are pruned by nothing and have no
+TTL — already documented above as a known gap; the new consequence is that the entry list
+grows with the historical fleet rather than the online one), L6 (the "ONE query" test
+asserts one call to the repository METHOD rather than one SQL round trip, and
+`findOffersForRides` is awaited outside the frame's fan-out though it depends only on
+`rides`).
+
+### Validation of the remediation
+
+`observed`, worktree `/Users/Berzins/Desktop/taxi-zones`:
+`COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force`
+→ **18/18 tasks, exit 0, 56.16 s**. All four totals read off that ONE run: api 546 passed
+/ 59 suites / 0 skipped, shared 184 / 20 files, dispatch 159 / 21 files, db 17 / 3 files.
+Deltas against the pre-remediation gate (`derived`, and each checkable against the table
+above): api +5 (4 `cascade.spec.ts` + 1 `board.service.spec.ts`), shared +3
+(`i18n.test.ts`), dispatch +1 (`zone-grid.test.tsx`; M3's and M4's cases replaced existing
+ones rather than adding), db 0 — **9 new tests**, 546 + 184 + 159 + 17 = 906 total.
+
+The same gate with `REDIS_TEST_URL` unset, `observed` at this head: **33 skipped, 2 skipped
+suites, 546 total** — the figure now in `CLAUDE.md:43`. #120's remediation will move the
+same line independently; whichever lands second re-derives it rather than merging digits.
