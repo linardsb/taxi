@@ -58,12 +58,14 @@ export class DispatchService {
    */
   async offerNext(ride: AwaitingRide): Promise<void> {
     const cityId = this.env.DEFAULT_CITY_ID;
-    const attempts = await this.offers.countAttempts(ride.id);
+    const pooledSince = await this.offers.findLastReleasedAt(ride.id);
+    const attempts = await this.offers.countAttempts(ride.id, pooledSince);
 
     // Bounds a ride that would otherwise cycle candidates forever while the
-    // rider watches nothing happen.
+    // rider watches nothing happen. Counted since the ride last entered the
+    // pool, so a dispatcher release hands the cascade a fresh budget.
     if (attempts >= MAX_OFFER_ATTEMPTS) {
-      await this.raiseUnclaimed(ride, attempts);
+      await this.raiseUnclaimed(ride, attempts, pooledSince);
       return;
     }
 
@@ -109,7 +111,7 @@ export class DispatchService {
     );
 
     if (!candidate) {
-      await this.raiseUnclaimed(ride, attempts);
+      await this.raiseUnclaimed(ride, attempts, pooledSince);
       return;
     }
 
@@ -310,8 +312,18 @@ export class DispatchService {
    * signal it exists to be. `incrWithTtl` is the same atomic-first-writer trick
    * the auth and rides rate limits use; a GET-then-SET would let two ticks both
    * alert. Both callers route through here, so the dedupe covers both.
+   *
+   * `pooledSince` is when the ride last entered the pool. It is the ride's
+   * `created_at` for an ordinary booking and the release timestamp for one Dina
+   * has taken a car off (#19) — the number Dina reads is "how long has this
+   * ride had no car", and after a release the booking time answers a different
+   * question and always a larger one (#120 review M3).
    */
-  async raiseUnclaimed(ride: AwaitingRide, attempts: number): Promise<void> {
+  async raiseUnclaimed(
+    ride: AwaitingRide,
+    attempts: number,
+    pooledSince: Date | null = null,
+  ): Promise<void> {
     const first = await this.kv.incrWithTtl(
       unclaimedAlertKey(ride.id),
       UNCLAIMED_ALERT_DEDUPE_SECONDS,
@@ -320,7 +332,9 @@ export class DispatchService {
 
     const unclaimedSeconds = Math.max(
       0,
-      Math.round((Date.now() - ride.createdAt.getTime()) / 1000),
+      Math.round(
+        (Date.now() - (pooledSince ?? ride.createdAt).getTime()) / 1000,
+      ),
     );
 
     try {

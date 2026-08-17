@@ -109,6 +109,7 @@ function RideRow({
           what the row says. See override/row-actions.tsx. */}
       <RideRowActions
         status={ride.status}
+        address={ride.pickup.address}
         onAssign={() => onAssign(ride)}
         onCancel={() => onCancel(ride)}
       />

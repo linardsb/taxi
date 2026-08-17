@@ -7,7 +7,7 @@ import {
   type Language,
   type MessageKey,
 } from '@taxi/shared';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { filterRoster, sortRoster } from './assign-state';
 
 const LANG: Language = 'lv';
@@ -77,6 +77,17 @@ export function DriverPicker({
 
   const optionId = (index: number) => `driver-option-${index}`;
 
+  // The listbox is ~5 options tall (320px / 44px). Without this ArrowDown moves
+  // `aria-activedescendant` past the fold while the list stays put, so a
+  // sighted keyboard user selects a driver they cannot see — and this is the
+  // slice whose primary user never touches the mouse (#120 review M7).
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    listRef.current
+      ?.querySelector(`#${CSS.escape(optionId(active))}`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
+
   return (
     <div style={{ display: 'grid', gap: 'var(--spacing-sm)' }}>
       <label style={{ display: 'grid', gap: 'var(--spacing-xs)' }}>
@@ -87,7 +98,11 @@ export function DriverPicker({
           type="text"
           role="combobox"
           aria-expanded={visible.length > 0}
-          aria-controls="driver-listbox"
+          // Conditional for the same reason `aria-activedescendant` below is:
+          // the empty state renders no listbox, and an ARIA id reference that
+          // resolves to nothing is an `aria-valid-attr-value` violation
+          // (#120 review L4).
+          aria-controls={visible.length > 0 ? 'driver-listbox' : undefined}
           aria-activedescendant={
             visible.length > 0 ? optionId(active) : undefined
           }
@@ -130,6 +145,7 @@ export function DriverPicker({
         </p>
       ) : (
         <ul
+          ref={listRef}
           id="driver-listbox"
           role="listbox"
           aria-label={formatMessage(LANG, 'console.assign_pick_driver')}

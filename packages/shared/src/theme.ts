@@ -21,6 +21,8 @@ export const colors = {
   danger: '#dc2626',
   success: '#16a34a',
   warning: '#d97706',
+  /** The scrim behind a modal. Semi-transparent by nature, hence rgba. */
+  overlay: 'rgba(0, 0, 0, 0.5)',
 } as const;
 
 /** 4px scale. Numbers, not strings — RN wants numbers; web adds `px`. */

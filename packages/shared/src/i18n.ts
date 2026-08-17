@@ -96,6 +96,12 @@ const lv = {
   // ride with none, «Piešķirt atkārtoti» swaps the car already on it.
   'console.assign': 'Piešķirt',
   'console.reassign': 'Piešķirt atkārtoti',
+  // The row buttons' ACCESSIBLE names. The visible label stays short; these
+  // carry the pickup so twelve rows do not announce as twelve identical
+  // buttons while tabbing (#120 review M6).
+  'console.assign_ride_at': 'Piešķirt braucienu — {address}',
+  'console.reassign_ride_at': 'Piešķirt atkārtoti braucienu — {address}',
+  'console.cancel_ride_at': 'Atcelt braucienu — {address}',
   'console.assign_title': 'Piešķirt šoferi',
   'console.reassign_title': 'Piešķirt braucienu atkārtoti',
   'console.assign_pick_driver': 'Izvēlieties šoferi',
@@ -127,6 +133,10 @@ const lv = {
     'Brauciens jau ir piešķirts citam šoferim',
   'console.assign_error_ride_not_reassignable':
     'Šo braucienu vairs nevar piešķirt atkārtoti — šoferis jau ir klāt vai brauc',
+  'console.assign_error_ride_not_cancellable':
+    'Šo braucienu vairs nevar atcelt — tas jau ir beidzies vai atcelts',
+  'console.assign_error_ride_moved_on':
+    'Brauciena statuss mainījās — saraksts atjaunosies pats',
   'console.cancel_ride': 'Atcelt braucienu',
   'console.cancel_title': 'Atcelt braucienu',
   'console.cancel_reason': 'Atcelšanas iemesls (nav obligāts)',
@@ -218,6 +228,9 @@ export const MESSAGES = {
     'console.admin_placeholder': 'Раздел администрирования появится позже',
     'console.assign': 'Назначить',
     'console.reassign': 'Переназначить',
+    'console.assign_ride_at': 'Назначить поездку — {address}',
+    'console.reassign_ride_at': 'Переназначить поездку — {address}',
+    'console.cancel_ride_at': 'Отменить поездку — {address}',
     'console.assign_title': 'Назначить водителя',
     'console.reassign_title': 'Переназначить поездку',
     'console.assign_pick_driver': 'Выберите водителя',
@@ -243,6 +256,10 @@ export const MESSAGES = {
       'Поездка уже назначена другому водителю',
     'console.assign_error_ride_not_reassignable':
       'Эту поездку уже нельзя переназначить — водитель на месте или в пути',
+    'console.assign_error_ride_not_cancellable':
+      'Эту поездку уже нельзя отменить — она завершена или отменена',
+    'console.assign_error_ride_moved_on':
+      'Статус поездки изменился — список обновится сам',
     'console.cancel_ride': 'Отменить поездку',
     'console.cancel_title': 'Отменить поездку',
     'console.cancel_reason': 'Причина отмены (необязательно)',
@@ -327,6 +344,9 @@ export const MESSAGES = {
     'console.admin_placeholder': 'The admin area arrives later',
     'console.assign': 'Assign',
     'console.reassign': 'Reassign',
+    'console.assign_ride_at': 'Assign the ride at {address}',
+    'console.reassign_ride_at': 'Reassign the ride at {address}',
+    'console.cancel_ride_at': 'Cancel the ride at {address}',
     'console.assign_title': 'Assign a driver',
     'console.reassign_title': 'Reassign the ride',
     'console.assign_pick_driver': 'Pick a driver',
@@ -352,6 +372,10 @@ export const MESSAGES = {
       'The ride is already assigned to another driver',
     'console.assign_error_ride_not_reassignable':
       'This ride can no longer be reassigned — the driver has arrived or is driving',
+    'console.assign_error_ride_not_cancellable':
+      'This ride can no longer be cancelled — it has already ended or been cancelled',
+    'console.assign_error_ride_moved_on':
+      'The ride changed status — the board will catch up',
     'console.cancel_ride': 'Cancel ride',
     'console.cancel_title': 'Cancel ride',
     'console.cancel_reason': 'Cancellation reason (optional)',

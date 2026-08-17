@@ -142,6 +142,37 @@ describe('useAssign — writes', () => {
     );
   });
 
+  it('puts the CANCEL message into state when a cancel fails (failure)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      errJson(500, 'something_unmapped') as never,
+    );
+    const { result } = renderHook(() => useAssign());
+
+    await act(async () => {
+      await result.current.cancel(RIDE_ID, null);
+    });
+
+    // `errorKey` is what the screen renders — the returned Outcome is
+    // discarded by page.tsx. Rewriting only the outcome left «Neizdevās
+    // piešķirt» on the destructive dialog (#120 review H2).
+    expect(result.current.errorKey).toBe('console.cancel_failed');
+  });
+
+  it('maps a cancel-specific api code rather than falling back (edge)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      errJson(409, 'ride_not_cancellable') as never,
+    );
+    const { result } = renderHook(() => useAssign());
+
+    await act(async () => {
+      await result.current.cancel(RIDE_ID, null);
+    });
+
+    expect(result.current.errorKey).toBe(
+      'console.assign_error_ride_not_cancellable',
+    );
+  });
+
   it('maps the mid-cascade 409 to operator language (edge)', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       errJson(409, 'ride_not_assignable') as never,

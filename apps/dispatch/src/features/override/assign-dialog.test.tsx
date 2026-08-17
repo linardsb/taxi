@@ -111,9 +111,59 @@ describe('AssignDialog', () => {
   it('closes on Escape — a dispatcher is never trapped in a dialog (edge)', () => {
     const { onClose } = renderDialog();
 
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    // FIRED FROM THE FOCUSED ELEMENT, not from the dialog node. In a browser a
+    // keydown originates where focus is and bubbles up; dispatching it on the
+    // dialog directly tests a path the browser never takes, and passed even
+    // while focus had escaped the dialog entirely (#120 review H1).
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
 
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('keeps focus inside the dialog when the step changes (edge)', () => {
+    renderDialog();
+
+    fireEvent.click(screen.getByText('Jānis Ozols'));
+
+    // The step swap unmounts the picker — the element that held focus. Without
+    // the shell re-taking it, focus falls to <body>, the shell's key handler
+    // goes deaf, and the confirm button below can never be reached by keyboard.
+    expect(screen.getByRole('dialog')).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+
+    // And the escape hatch still works from wherever focus landed.
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.getByRole('button', { name: 'Apstiprināt' })).toBeEnabled();
+  });
+
+  it('gives focus back to the button that opened it on close (edge)', () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+
+    const { unmount } = render(
+      <AssignDialog
+        verb="assign"
+        pickupZoneName={null}
+        drivers={[driver({})]}
+        loadingRoster={false}
+        submitting={false}
+        errorKey={null}
+        disabledReasonKey={null}
+        onSubmit={vi.fn()}
+        onClearError={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(document.activeElement).not.toBe(opener);
+
+    unmount();
+
+    // Otherwise Dina lands at the top of the page and tabs back down to find
+    // the ride she was working on (WCAG 2.4.3).
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 
   it('refuses to submit while the console is offline, WITH a reason (failure)', () => {

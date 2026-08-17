@@ -40,7 +40,7 @@ pnpm --filter @taxi/shared test   # one package
 pnpm --filter @taxi/db generate   # drizzle-kit: migration from schema changes (then migrate, seed)
 ```
 
-Redis-backed suites are **opt-in**: without `REDIS_TEST_URL` they `describe.skip`, so a green gate can be 24 tests short — spread over 4 gated spec files, 2 of which hold nothing else and so report as *skipped suites* (`observed` — #110's gate without it). CI sets it; set it locally to match your `REDIS_PORT`.
+Redis-backed suites are **opt-in**: without `REDIS_TEST_URL` they `describe.skip`, so a green gate can be 28 tests short — spread over 4 gated spec files, 2 of which hold nothing else and so report as *skipped suites* (`observed` — `@taxi/api` without it on #120's branch: `28 skipped, 492 passed, 520 total`, 2 skipped suites of 57). CI sets it; set it locally to match your `REDIS_PORT`. **This is a moving number** — #19 took it 24 → 28 by adding gated tests, so re-observe it rather than quoting this line.
 
 **Concurrent Claude sessions share this checkout.** Check `git reflog -8` before any branch move; if another session is live, do your work in a `git worktree` from the start — mid-flight branch collisions cost ref surgery. In a worktree, run anything DB-touching (including the gate) with `COMPOSE_PROJECT_NAME=taxi`: compose names its project after the directory, so a worktree otherwise starts a second Postgres against the occupied 5432. Integration runs are mutually destructive across sessions (global-setup drops the shared test DB) — one gate at a time.
 

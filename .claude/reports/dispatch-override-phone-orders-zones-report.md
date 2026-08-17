@@ -24,7 +24,7 @@ Dina's board became actionable. Ride rows now carry assign / reassign / cancel a
 | A10 | `override/dialog-shell.tsx`, `override/driver-picker.tsx` + `.test.tsx`, `override/assign-dialog.tsx` + `.test.tsx` (CREATE) |
 | A11 | `override/cancel-dialog.tsx` + `.test.tsx` (CREATE) |
 | A12 | `override/row-actions.tsx`, `override/index.ts` (CREATE); `board/ride-queue.tsx`, `app/dispatch/page.tsx` (UPDATE) |
-| A13 | `packages/shared/src/i18n.ts` (UPDATE) — 30 `console.*` keys across LV / RU / EN |
+| A13 | `packages/shared/src/i18n.ts` (UPDATE) — 33 `console.*` keys across LV / RU / EN (`observed`: 99 added lines ÷ 3 catalogs, `git diff main -- packages/shared/src/i18n.ts`. Was written as 30 and inherited into the PR body; the commit as reviewed added 28, and the #120 review-fix pass added 5 more) |
 | A14 | Gate — see Validation results |
 | A15 (added during execution) | `services/api/src/features/notifications/ride-notifications.service.ts` (UPDATE) — comment only. Its docblock justified having no dedupe table with "each is reachable at most once per ride (the re-offer loop never passes through either)". A5's dispatcher release falsifies that: a reassign walks `accepted → requested → offered → accepted`, so a phone-booked rider now gets a second `sms.driver_assigned` naming the new driver, plate and ETA. That repeat is the correct behaviour — there is no "your car changed" message and this one states every fact that changed — so the decision stands but its *reason* was rewritten to rest on `emitStatus` firing once per APPLIED transition. Leaving the old sentence would have been the #87/#107 shape: a retired claim still load-bearing for a live decision. |
 
@@ -73,7 +73,9 @@ Time:     49.964s
 | `@taxi/db` test | **17 passed** (3 files) |
 | typecheck · lint · build | clean, all packages |
 
-**Zero skips — the Redis-gated suites RAN.** The worktree still has no `.env`, so `docker compose` could not start `taxi-redis-1`; Redis was supplied directly instead (`docker run -d --name taxi-redis-6381 -p 6381:6379 redis:7-alpine`) and `REDIS_TEST_URL` pointed at it. That matters here specifically: `RosterService` injects `DRIVER_LOCATION_STORE` and calls `listOnline(cityId)` — the Redis presence set — so a Redis-skipped gate would have left the roster's only real-store dependency unexercised, with `roster.service.spec.ts` stubbing the store and proving nothing about it. Root `CLAUDE.md` predicts 24 short over 4 gated files without the variable; this run is 0 short.
+**Zero skips — the Redis-gated suites RAN.** The worktree still has no `.env`, so `docker compose` could not start `taxi-redis-1`; Redis was supplied directly instead (`docker run -d --name taxi-redis-6381 -p 6381:6379 redis:7-alpine`) and `REDIS_TEST_URL` pointed at it. That matters here specifically: `RosterService` injects `DRIVER_LOCATION_STORE` and calls `listOnline(cityId)` — the Redis presence set — so a Redis-skipped gate would have left the roster's only real-store dependency unexercised, with `roster.service.spec.ts` stubbing the store and proving nothing about it. This run is 0 short.
+
+**On "24 short":** root `CLAUDE.md` said 24, and quoting it here was wrong — this branch's own gated tests moved the real figure to 28, which the intermediate `478 passed, 28 skipped` run below already showed and this line inherited past. Re-observed after the #120 review-fix pass: `env -u REDIS_TEST_URL` on this head gives `28 skipped, 492 passed, 520 total`, 2 skipped suites of 57. `CLAUDE.md:43` is corrected to 28 in the same commit.
 
 An earlier Redis-skipped run showed `478 passed, 28 skipped` — recorded here only so the delta is legible, not as this phase's result.
 

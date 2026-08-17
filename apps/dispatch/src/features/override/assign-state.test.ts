@@ -88,10 +88,32 @@ describe('assignErrorKey', () => {
     );
   });
 
+  it('maps the CANCEL route’s codes too (expected)', () => {
+    // Both are genuinely thrown by RideLifecycleService. Unmapped, they read
+    // as «Neizdevās piešķirt» inside the cancel dialog (#120 review H2).
+    expect(assignErrorKey('ride_not_cancellable')).toBe(
+      'console.assign_error_ride_not_cancellable',
+    );
+    expect(assignErrorKey('ride_transition_conflict')).toBe(
+      'console.assign_error_ride_moved_on',
+    );
+  });
+
   it('falls back to the generic message for an unknown code (failure)', () => {
     // A future api error must never render its raw identifier at Dina.
     expect(assignErrorKey('some_new_code')).toBe('console.assign_failed');
     expect(assignErrorKey(undefined)).toBe('console.assign_failed');
+  });
+
+  it('falls back to the CALLER’s verb, not always to assign (failure)', () => {
+    // The cancel path shares this map; an unmapped code there has to read as a
+    // failed cancellation, or the destructive dialog says "could not assign".
+    expect(assignErrorKey('some_new_code', 'console.cancel_failed')).toBe(
+      'console.cancel_failed',
+    );
+    expect(assignErrorKey(undefined, 'console.cancel_failed')).toBe(
+      'console.cancel_failed',
+    );
   });
 });
 

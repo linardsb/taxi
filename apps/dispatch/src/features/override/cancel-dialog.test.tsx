@@ -53,6 +53,25 @@ describe('CancelDialog', () => {
     expect(screen.getByRole('textbox')).toHaveFocus();
   });
 
+  it('does not close on a drag that started inside the dialog (edge)', () => {
+    const { onClose } = renderDialog();
+    const reason = screen.getByRole('textbox');
+    const backdrop = screen.getByRole('dialog').parentElement!;
+
+    // Selecting the reason text and releasing past the dialog's edge fires
+    // `click` at the backdrop — which used to close the dialog and throw the
+    // typed reason away (#120 review L5).
+    fireEvent.mouseDown(reason);
+    fireEvent.click(backdrop);
+
+    expect(onClose).not.toHaveBeenCalled();
+
+    // A press that genuinely starts on the backdrop still closes it.
+    fireEvent.mouseDown(backdrop);
+    fireEvent.click(backdrop);
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('keeps the ride when Dina backs out (edge)', () => {
     const { onClose, onConfirm } = renderDialog();
 

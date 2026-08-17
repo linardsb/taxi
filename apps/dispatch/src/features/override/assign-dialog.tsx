@@ -75,7 +75,16 @@ export function AssignDialog({
   const warning = picked === null ? null : driverWarning(picked);
 
   return (
-    <DialogShell title={title} onClose={onClose}>
+    // The step swap unmounts whichever half held focus, so the shell has to be
+    // told a step changed — see its docblock.
+    <DialogShell
+      title={title}
+      // Same condition as the render below, deliberately: the key has to change
+      // exactly when the rendered step does, including the failed-submit return
+      // to the picker (`picked` is still set, but the picker is what is shown).
+      focusKey={showPicker || picked === null ? 'picker' : picked.driverId}
+      onClose={onClose}
+    >
       {errorKey !== null && (
         <p
           role="alert"

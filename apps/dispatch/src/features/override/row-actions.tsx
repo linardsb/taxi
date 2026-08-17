@@ -23,10 +23,19 @@ const LANG: Language = 'lv';
  */
 export function RideRowActions({
   status,
+  address,
   onAssign,
   onCancel,
 }: Readonly<{
   status: BoardRideStatus;
+  /**
+   * The row's pickup, for the buttons' accessible names (#120 review M6). A
+   * 12-ride board otherwise gives a screen-reader user twelve buttons called
+   * «Piešķirt» and twelve «Atcelt braucienu»: the `<li>` text that tells them
+   * apart is announced in browse mode, not while tabbing, and tabbing is the
+   * mode this slice is built for. Cancelling the wrong ride is the failure.
+   */
+  address: string;
   onAssign: () => void;
   onCancel: () => void;
 }>) {
@@ -47,14 +56,30 @@ export function RideRowActions({
   return (
     <span style={{ display: 'flex', gap: 'var(--spacing-xs)' }}>
       {verb !== null && (
-        <button type="button" onClick={onAssign} style={buttonStyle(false)}>
+        <button
+          type="button"
+          onClick={onAssign}
+          aria-label={formatMessage(
+            LANG,
+            verb === 'assign'
+              ? 'console.assign_ride_at'
+              : 'console.reassign_ride_at',
+            { address },
+          )}
+          style={buttonStyle(false)}
+        >
           {formatMessage(
             LANG,
             verb === 'assign' ? 'console.assign' : 'console.reassign',
           )}
         </button>
       )}
-      <button type="button" onClick={onCancel} style={buttonStyle(true)}>
+      <button
+        type="button"
+        onClick={onCancel}
+        aria-label={formatMessage(LANG, 'console.cancel_ride_at', { address })}
+        style={buttonStyle(true)}
+      >
         {formatMessage(LANG, 'console.cancel_ride')}
       </button>
     </span>

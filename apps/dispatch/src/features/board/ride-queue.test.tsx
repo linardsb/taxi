@@ -147,17 +147,37 @@ describe('RideQueue', () => {
     );
 
     // An unassigned ride gets «Piešķirt»; one with a car gets the reassign verb.
-    fireEvent.click(screen.getByRole('button', { name: 'Piešķirt' }));
+    //
+    // Queried by ACCESSIBLE NAME, which carries the pickup: on a real board
+    // every row's buttons would otherwise be called the same thing, and a
+    // screen-reader user tabbing between them could not tell which ride they
+    // were about to cancel (#120 review M6). That the query needs the address
+    // to disambiguate here is the point.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Piešķirt braucienu — Brīvības 1' }),
+    );
     expect(onAssign).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'requested' }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Piešķirt atkārtoti' }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Piešķirt atkārtoti braucienu — Hanzas 3',
+      }),
+    );
     expect(onAssign).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'accepted' }),
     );
 
-    expect(screen.getAllByRole('button', { name: 'Atcelt braucienu' })).toHaveLength(2);
+    // Two cancel buttons, and no two share a name.
+    const cancels = screen.getAllByRole('button', { name: /^Atcelt braucienu/ });
+    expect(cancels).toHaveLength(2);
+    expect(new Set(cancels.map((b) => b.getAttribute('aria-label'))).size).toBe(
+      2,
+    );
+
+    // The VISIBLE label stays short — the address lives in the accessible name.
+    expect(cancels[0]).toHaveTextContent('Atcelt braucienu');
   });
 
   it('offers no assign verb once the driver has reached the ride (#19, edge)', () => {
@@ -182,10 +202,10 @@ describe('RideQueue', () => {
     // would invite a click that can only 409. Cancel stays: a dispatcher can
     // always kill a ride.
     expect(
-      screen.queryByRole('button', { name: 'Piešķirt atkārtoti' }),
+      screen.queryByRole('button', { name: /^Piešķirt atkārtoti/ }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Atcelt braucienu' }),
+      screen.getByRole('button', { name: 'Atcelt braucienu — Brīvības 1' }),
     ).toBeInTheDocument();
   });
 

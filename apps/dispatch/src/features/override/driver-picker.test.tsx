@@ -82,6 +82,41 @@ describe('DriverPicker', () => {
     expect(combobox).toHaveAttribute('aria-activedescendant', 'driver-option-1');
   });
 
+  it('scrolls the active option into view as ArrowDown moves it (expected)', () => {
+    const scrollIntoView = vi.fn();
+    // jsdom has no layout, so the shared stub in vitest.setup.ts is a no-op —
+    // spied here to assert the call is made at all.
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const { combobox } = renderPicker();
+      scrollIntoView.mockClear();
+
+      fireEvent.keyDown(combobox, { key: 'ArrowDown' });
+
+      // The listbox shows ~5 of the roster at a time. Without this the active
+      // option walks past the fold while the list stays put, and a sighted
+      // keyboard user picks a driver they cannot see (#120 review M7).
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(scrollIntoView.mock.instances[0]).toBe(
+        screen.getByRole('option', { selected: true }),
+      );
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('drops aria-controls when there is no listbox to point at (edge)', () => {
+    const { combobox } = renderPicker();
+
+    fireEvent.change(combobox, { target: { value: 'nobody matches this' } });
+
+    // An ARIA id reference resolving to nothing is an axe
+    // `aria-valid-attr-value` violation (#120 review L4).
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(combobox).not.toHaveAttribute('aria-controls');
+  });
+
   it('filters on plate and phone, not just name (edge)', () => {
     const { combobox } = renderPicker();
 

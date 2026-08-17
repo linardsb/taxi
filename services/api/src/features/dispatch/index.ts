@@ -33,11 +33,13 @@
  *   benignly on a mid-offer-disconnect accept, so read its `driverStatus`
  *   field: `offline` is that ordinary case, `on_ride` is this seam — and an
  *   accept-time guard is the full fix if the seam ever fires in the wild.
- * - NO `reassign` AND NO `cancel`. `dispatch-strategies.md` lists all three
- *   privileged dispatcher commands; #10's AC names only force-assign, and
- *   `reassign` needs a cancellation path (#11) to be coherent. Force-assigning a
- *   ride a driver has ALREADY accepted therefore 409s — `accepted → accepted` is
- *   not a transition.
+ * - ALL THREE DISPATCHER COMMANDS EXIST (#19 closed the gap #10 left). Cancel is
+ *   not here: `POST /rides/:id/cancel` already accepts `dispatcher`/`admin`, so
+ *   the console calls the lifecycle route rather than this slice re-wrapping it.
+ *   `reassign` is a RELEASE followed by a force-assign, as two committed
+ *   transactions — see `ReassignService`, and do not merge them. Force-assigning
+ *   a ride a driver has already accepted still 409s (`accepted → accepted` is
+ *   not a transition); reassign is the verb for that ride.
  * - THE SWEEPER POLLS rather than reacting to ride creation, once a second. It
  *   avoids a circular rides ↔ dispatch module dependency and is restart-safe;
  *   the cost is up to ~1s of added match latency and one indexed query per
