@@ -17,6 +17,7 @@ export { DriversService } from './drivers.service';
 export type {
   DriverBoardContact,
   DriverMatchAttributes,
+  DriverRosterContact,
 } from './drivers.repository';
 export { DriverLocationService } from './location/driver-location.service';
 export { DRIVER_LOCATION_STORE } from './location/driver-location.store';

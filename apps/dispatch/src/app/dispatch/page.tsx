@@ -1,7 +1,11 @@
 'use client';
 
-import { formatMessage, type Language } from '@taxi/shared';
-import { useState } from 'react';
+import {
+  formatMessage,
+  type BoardRideStatus,
+  type Language,
+} from '@taxi/shared';
+import { useCallback, useState } from 'react';
 import {
   AlertsPanel,
   BoardMap,
@@ -11,8 +15,20 @@ import {
   useBoard,
   ZonesPanel,
 } from '@/features/board';
+import {
+  AssignDialog,
+  assignVerb,
+  CancelDialog,
+  pickupZoneOf,
+  useAssign,
+} from '@/features/override';
 
 const LANG: Language = 'lv';
+
+/** Which override dialog is open, and on which ride. */
+type OverrideTarget =
+  | { kind: 'assign'; rideId: string; status: BoardRideStatus }
+  | { kind: 'cancel'; rideId: string };
 
 const timeOf = (ms: number) =>
   new Date(ms).toLocaleTimeString('lv-LV', {
@@ -27,8 +43,38 @@ const timeOf = (ms: number) =>
 export default function DispatchPage() {
   const { board, pill, nowMs, retry, ack } = useBoard();
   const [view, setView] = useState<'zones' | 'map'>('zones');
+  const [target, setTarget] = useState<OverrideTarget | null>(null);
+  const assignApi = useAssign();
+  const { loadRoster, reset } = assignApi;
 
   const frame = board.frame;
+
+  /**
+   * Every write is refused while the pill says «Bezsaistē», WITH a reason.
+   * A dispatcher who force-assigns into a dead socket and sees nothing happen
+   * is the exact silent failure #18 was built to eliminate — and the board she
+   * would be reading to check is itself stale.
+   */
+  const disabledReasonKey =
+    pill === 'offline' ? ('console.assign_offline_disabled' as const) : null;
+
+  const openAssign = useCallback(
+    (ride: { rideId: string; status: BoardRideStatus }) => {
+      reset();
+      setTarget({ kind: 'assign', rideId: ride.rideId, status: ride.status });
+      // Fetched on OPEN, never on the board's cadence — see dispatchRosterSchema.
+      void loadRoster();
+    },
+    [loadRoster, reset],
+  );
+
+  const openCancel = useCallback(
+    (ride: { rideId: string }) => {
+      reset();
+      setTarget({ kind: 'cancel', rideId: ride.rideId });
+    },
+    [reset],
+  );
   const flashRideIds = new Set(
     board.alerts.filter((a) => a.kind === 'unclaimed').map((a) => a.rideId),
   );
@@ -191,6 +237,8 @@ export default function DispatchPage() {
             rides={frame.rides}
             nowMs={nowMs}
             flashRideIds={flashRideIds}
+            onAssign={openAssign}
+            onCancel={openCancel}
           />
           <div style={{ display: 'grid', gap: 'var(--spacing-lg)' }}>
             {view === 'zones' ? (
@@ -201,6 +249,50 @@ export default function DispatchPage() {
             <AlertsPanel alerts={board.alerts} ack={ack} />
           </div>
         </div>
+      )}
+
+      {target?.kind === 'assign' && (
+        <AssignDialog
+          // Remounted per ride, so a dialog opened on the next ride never
+          // inherits the previous one's picked driver or typed reason.
+          key={target.rideId}
+          verb={assignVerb(target.status) ?? 'assign'}
+          pickupZoneName={pickupZoneOf(frame, target.rideId)}
+          drivers={assignApi.roster}
+          loadingRoster={assignApi.loadingRoster}
+          submitting={assignApi.submitting}
+          errorKey={assignApi.errorKey}
+          disabledReasonKey={disabledReasonKey}
+          onClearError={reset}
+          onClose={() => setTarget(null)}
+          onSubmit={(driverId, reason) => {
+            const write =
+              assignVerb(target.status) === 'reassign'
+                ? assignApi.reassign
+                : assignApi.assign;
+            void write(target.rideId, driverId, reason).then((outcome) => {
+              // Closed only on success. A failure keeps the dialog open with
+              // the error visible; the board's next frame (≤2 s) has already
+              // corrected whatever moved underneath.
+              if (outcome.ok) setTarget(null);
+            });
+          }}
+        />
+      )}
+
+      {target?.kind === 'cancel' && (
+        <CancelDialog
+          key={target.rideId}
+          submitting={assignApi.submitting}
+          errorKey={assignApi.errorKey}
+          disabledReasonKey={disabledReasonKey}
+          onClose={() => setTarget(null)}
+          onConfirm={(reason) => {
+            void assignApi.cancel(target.rideId, reason).then((outcome) => {
+              if (outcome.ok) setTarget(null);
+            });
+          }}
+        />
       )}
     </main>
   );

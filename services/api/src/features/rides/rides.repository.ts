@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { rideFareLines, rides, users, vehicles, type Db } from '@taxi/db';
 import {
+  ACTIVE_DRIVER_RIDE_STATUSES,
   BOARD_LIVE_RIDE_STATUSES,
   assertFareQuoteConsistent,
   fareQuoteSchema,
@@ -245,6 +246,29 @@ export class RidesRepository {
    * dispatches off `category`/`options`/`paymentMethod`, so a degraded request
    * there would silently mis-dispatch rather than omit a card.
    */
+  /**
+   * Which drivers are pinned to a ride right now, for #19's override picker —
+   * so Dina is warned before she takes a car off a job it is already on.
+   *
+   * Reads the RIDES table, not `drivers.status`: that column is a derived
+   * cache and this is exactly the read that must not inherit its lie (the same
+   * reason #61 gates going-online on this set rather than on the status).
+   */
+  async findActiveRideIdsByDriver(): Promise<
+    Array<{ driverId: string; rideId: string }>
+  > {
+    const rows = await this.db
+      .select({ driverId: rides.driverId, rideId: rides.id })
+      .from(rides)
+      .where(inArray(rides.status, [...ACTIVE_DRIVER_RIDE_STATUSES]));
+    // `driver_id` is nullable on the table but never null in these statuses —
+    // filtered rather than asserted, because a cast here would be the one
+    // unverified step between the SQL guarantee and the type.
+    return rows.flatMap((r) =>
+      r.driverId === null ? [] : [{ driverId: r.driverId, rideId: r.rideId }],
+    );
+  }
+
   async findBoardRides(limit: number): Promise<BoardRide[]> {
     const rows = await this.db
       .select({ ride: rides, driverName: users.displayName })
@@ -379,6 +403,30 @@ export class RidesRepository {
         )`,
       })
       .where(and(eq(rides.id, rideId), isNull(rides.driverId)))
+      .returning({ id: rides.id });
+    return row !== undefined;
+  }
+
+  /**
+   * Takes the car back off a ride (#19's reassign) — the exact inverse of
+   * `assignDriver`, including the vehicle stamp.
+   *
+   * Conditional on the ride STILL carrying the driver being released, so two
+   * dispatchers reassigning the same ride cannot both proceed: the second
+   * matches nothing and gets a 409 instead of clearing a driver the first one
+   * already replaced. `assignDriver` guards on `isNull(driverId)` for the
+   * mirror-image reason, and the pair is what lets a reassign be a release
+   * followed by an ordinary force-assign.
+   */
+  async unassignDriver(
+    rideId: string,
+    driverId: string,
+    tx?: DbTx,
+  ): Promise<boolean> {
+    const [row] = await (tx ?? this.db)
+      .update(rides)
+      .set({ driverId: null, vehicleId: null })
+      .where(and(eq(rides.id, rideId), eq(rides.driverId, driverId)))
       .returning({ id: rides.id });
     return row !== undefined;
   }

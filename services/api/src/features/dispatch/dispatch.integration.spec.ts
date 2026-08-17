@@ -8,6 +8,7 @@ import {
 import {
   authSessionSchema,
   dispatchBoardEventSchema,
+  dispatchRosterSchema,
   IDEMPOTENCY_KEY_HEADER,
   rideCreatedSchema,
   RT,
@@ -192,6 +193,12 @@ describe('dispatch (integration)', () => {
 
   const rideRow = async (rideId: string) =>
     (await ctx.db.select().from(rides).where(eq(rides.id, rideId)))[0]!;
+
+  /** The drivers-table status, which #19's release has to put back to `online`. */
+  const driverStatus = async (driverId: string) =>
+    (
+      await ctx.db.select().from(drivers).where(eq(drivers.userId, driverId))
+    )[0]!.status;
 
   const pendingOffer = async (rideId: string) =>
     (
@@ -550,8 +557,9 @@ describe('dispatch (integration)', () => {
       .set('authorization', winner.auth)
       .expect(201);
 
-    // `accepted → accepted` is not a transition, and reassignment needs a
-    // cancellation path (#11). The conditional transition refuses.
+    // `accepted → accepted` is not a transition, so the conditional transition
+    // refuses. Swapping the car on an accepted ride is `/reassign` (#19),
+    // which releases the driver first — see the reassign block below.
     await http
       .post(`/dispatch/rides/${ride.id}/assign`)
       .set('authorization', dispatcherAuth)
@@ -559,6 +567,159 @@ describe('dispatch (integration)', () => {
       .expect(409);
 
     expect((await rideRow(ride.id)).driverId).toBe(winner.id);
+  });
+
+  /**
+   * Reassignment (#19), end to end against the real database.
+   *
+   * The unit spec pins the ORDER of the two transactions against a fake `db`;
+   * this pins what the real conditional UPDATEs do, which is the part most
+   * likely to be wrong. `unassignDriver` is guarded on the outgoing driver id
+   * and `assignDriver` on `driver_id IS NULL`, so the pair has to interlock
+   * across two committed transactions — and the vehicle stamp has to be
+   * re-taken for the incoming driver rather than left NULL, because the plate
+   * is what the rider matches at the kerb.
+   */
+  it('reassigns an accepted ride: releases the first driver, stamps the second (#19)', async () => {
+    const first = await onlineDriver(
+      41,
+      near(CENTRE_PICKUP.location, 0.001, 0),
+    );
+    const second = await onlineDriver(
+      42,
+      near(CENTRE_PICKUP.location, 0.02, 0.02),
+    );
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(110),
+      role: 'dispatcher',
+    });
+    const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const ride = await bookRide(43, CENTRE_PICKUP);
+    await sweeper.tick();
+    const live = await pendingOffer(ride.id);
+    await http
+      .post(`/dispatch/offers/${live!.id}/accept`)
+      .set('authorization', first.auth)
+      .expect(201);
+
+    const before = await rideRow(ride.id);
+    expect(before.driverId).toBe(first.id);
+    expect(before.vehicleId).not.toBeNull();
+    expect(await driverStatus(first.id)).toBe('on_ride');
+
+    await http
+      .post(`/dispatch/rides/${ride.id}/reassign`)
+      .set('authorization', dispatcherAuth)
+      .send({ driverId: second.id, reason: 'first driver not moving' })
+      .expect(201);
+
+    const after = await rideRow(ride.id);
+    expect(after.status).toBe('accepted');
+    expect(after.driverId).toBe(second.id);
+    // Cleared by the release, re-taken by the force-assign — NOT left null.
+    expect(after.vehicleId).not.toBeNull();
+    expect(after.vehicleId).not.toBe(before.vehicleId);
+
+    // The outgoing driver is free to be offered work again immediately.
+    expect(await driverStatus(first.id)).toBe('online');
+    expect(await driverStatus(second.id)).toBe('on_ride');
+
+    // Two dispatcher rows against one ride, told apart by the payload — the
+    // reason `AuditEntry.payload` exists at all.
+    const audit = await ctx.db
+      .select()
+      .from(dispatchAuditLog)
+      .where(eq(dispatchAuditLog.rideId, ride.id));
+    const released = audit.find(
+      (a) => (a.payload as { event?: string } | null)?.event === 'released',
+    );
+    expect(released?.driverId).toBe(first.id);
+    expect(released?.dispatcherId).toBe(dispatcher.id);
+    expect(
+      audit.some((a) => a.driverId === second.id && a.source === 'dispatcher'),
+    ).toBe(true);
+  });
+
+  it('refuses to reassign once the driver has reached the pickup (#19, failure)', async () => {
+    const first = await onlineDriver(
+      44,
+      near(CENTRE_PICKUP.location, 0.001, 0),
+    );
+    const second = await onlineDriver(
+      45,
+      near(CENTRE_PICKUP.location, 0.02, 0.02),
+    );
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(111),
+      role: 'dispatcher',
+    });
+    const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const ride = await bookRide(46, CENTRE_PICKUP);
+    await sweeper.tick();
+    const live = await pendingOffer(ride.id);
+    await http
+      .post(`/dispatch/offers/${live!.id}/accept`)
+      .set('authorization', first.auth)
+      .expect(201);
+    await http
+      .post(`/rides/${ride.id}/arriving`)
+      .set('authorization', first.auth)
+      .expect(201);
+    await http
+      .post(`/rides/${ride.id}/arrived`)
+      .set('authorization', first.auth)
+      .expect(201);
+
+    // A driver standing at the pickup is not reassignable — that is a
+    // cancellation, and `arrived → requested` is absent from the table.
+    await http
+      .post(`/dispatch/rides/${ride.id}/reassign`)
+      .set('authorization', dispatcherAuth)
+      .send({ driverId: second.id })
+      .expect(409);
+
+    const row = await rideRow(ride.id);
+    expect(row.status).toBe('arrived');
+    expect(row.driverId).toBe(first.id);
+  });
+
+  it('lists offline drivers in the override roster (#19)', async () => {
+    const gone = await onlineDriver(47, near(CENTRE_PICKUP.location, 0.001, 0));
+    await http
+      .put('/drivers/me/status')
+      .set('authorization', gone.auth)
+      .send({ status: 'offline' })
+      .expect(200);
+    await ctx.locations.markOffline(cityId, gone.id);
+
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(112),
+      role: 'dispatcher',
+    });
+    const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const res = await http
+      .get('/dispatch/drivers')
+      .set('authorization', dispatcherAuth)
+      .expect(200);
+
+    // The board frame carries the ONLINE set; this read must not, or Dina
+    // could never override onto the driver whose app just died (S9-2).
+    const roster = dispatchRosterSchema.parse(res.body);
+    const row = roster.drivers.find((d) => d.driverId === gone.id);
+    expect(row?.status).toBe('offline');
+    expect(row?.zoneName).toBeNull();
+    expect(row?.vehiclePlate).not.toBeNull();
+  });
+
+  it('blocks a driver from reading the override roster (#19, failure)', async () => {
+    const d = await onlineDriver(48, near(CENTRE_PICKUP.location, 0.001, 0));
+    await http
+      .get('/dispatch/drivers')
+      .set('authorization', d.auth)
+      .expect(403);
   });
 
   it('sends the offer over the socket with ISO timestamps (expected)', async () => {

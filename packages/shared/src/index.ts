@@ -11,6 +11,7 @@ export * from './schemas/auth';
 export * from './schemas/driver';
 export * from './schemas/vehicle';
 export * from './schemas/ride';
+export * from './schemas/dispatch';
 export * from './schemas/tariff';
 export * from './schemas/tracking';
 export * from './i18n';

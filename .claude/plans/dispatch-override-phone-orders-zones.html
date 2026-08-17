@@ -282,11 +282,17 @@ apps/dispatch/src/features/
 </table>
 
 <div class="card note">
-  <b>Two things to decide before executing.</b>
-  <b>Q2</b> — the new <code>accepted → requested</code> transition is a cross-surface contract change; a rider will see
-  their accepted ride return to "searching". Acceptable, or is reassign-as-cancel better?
-  <b>Q4</b> — #18's ticket says both plans should be reviewed against Dina's S9-1 console drawing before executing.
-  It still hasn't arrived. Check, then proceed either way — the Autocab/TaxiCaller anatomy is a strong substitute.
+  <b>Both open decisions closed 2026-08-17.</b>
+  <b>Q2 — ratified: release, not reassign-as-cancel.</b> The tracking token is minted once per ride and #17 reuses it,
+  so cancel-and-rebook takes the rider's live link away at the moment their car changes; "searching" is the smaller
+  loss, and the tracking page already maps <code>requested → searching</code>. Blast radius re-derived, not inherited:
+  <code>apps/rider</code> and <code>apps/driver</code> have no <code>src/</code> yet. Two forward-only assumptions the
+  transition breaks are decided in the plan — the payment-method lock re-opens during the release window (kept, nothing
+  is written to the ledger at <code>accepted</code>), and <code>onStatus</code>'s "at most once per ride" premise is now
+  false, which is the stated reason there is no dedupe table (follow-up A15: rewrite that argument).
+  <b>Q4 — not arrived; proceeding on the Autocab/TaxiCaller substitute.</b> Responses sheet untouched since the
+  precizējumi send minute, no inbound mail in 90 days, no Drive drawing, and the <code>uzdevumi Dinai</code> sheet is
+  empty — dropped, not pending. It gates Phase B/C layout only, nothing in Phase A.
 </div>
 
 <h2>Go deeper</h2>

@@ -27,6 +27,13 @@ export interface AuditEntry {
   source: AssignmentSource;
   dispatcherId?: string | null;
   reason?: string | null;
+  /**
+   * Extra context merged into the row's jsonb payload. #19's reassign writes
+   * `{ event: 'released', from }` here so the trail distinguishes "a car was
+   * taken OFF this ride" from "a car was put ON it" — both are dispatcher
+   * rows against the same ride, and without this they read identically.
+   */
+  payload?: Record<string, unknown>;
 }
 
 const toRef = (row: OfferRow): OfferRef => ({
@@ -246,7 +253,10 @@ export class DispatchRepository {
       source: assignment.source,
       dispatcherId: assignment.dispatcherId,
       reason: assignment.reason,
-      payload: { assignedAt: assignment.assignedAt.toISOString() },
+      payload: {
+        assignedAt: assignment.assignedAt.toISOString(),
+        ...entry.payload,
+      },
     });
   }
 }

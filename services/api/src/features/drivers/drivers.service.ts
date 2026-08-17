@@ -10,6 +10,7 @@ import type { DbTx } from '../../common/db/db.module';
 import {
   DriversRepository,
   type DriverBoardContact,
+  type DriverRosterContact,
   type DriverMatchAttributes,
 } from './drivers.repository';
 import {
@@ -208,5 +209,10 @@ export class DriversService {
   /** #18's entry point: who the online set IS — name, phone, status. */
   findBoardContacts(driverIds: string[]): Promise<DriverBoardContact[]> {
     return this.drivers.findBoardContacts(driverIds);
+  }
+
+  /** #19's entry point: EVERY driver, offline ones included — the override picker. */
+  findRosterContacts(): Promise<DriverRosterContact[]> {
+    return this.drivers.findRosterContacts();
   }
 }
