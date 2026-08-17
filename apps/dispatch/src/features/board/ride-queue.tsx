@@ -10,6 +10,7 @@ import {
   type RideStatus,
 } from '@taxi/shared';
 import { RideRowActions } from '@/features/override';
+import { CascadeStrip } from '@/features/zones';
 
 const LANG: Language = 'lv';
 
@@ -46,6 +47,18 @@ const STATUS_COLOR: Record<BoardRideStatus, string> = {
 };
 
 const ACTIVE = new Set<RideStatus>(ACTIVE_DRIVER_RIDE_STATUSES);
+
+/**
+ * Where the cascade strip is drawn — the same two statuses the «Piedāvāti»
+ * bucket holds.
+ *
+ * The frame carries a `cascade` for a `requested` ride that has already been
+ * tried and dropped (attempts > 0, nobody holding), which is honest wire data
+ * and a real distinction. It is deliberately not drawn: AC #15 scopes the
+ * strip to a LIVE cascade, and a row is either counting down or it is Dina's
+ * to act on — `dispatch:unclaimed` is what escalates the second case.
+ */
+const CASCADE_STATUSES = new Set<RideStatus>(['offered', 'queued']);
 
 /** mm:ss since the ride was requested — digits only, no words to translate. */
 function ageOf(nowMs: number, requestedAt: string): string {
@@ -105,6 +118,12 @@ function RideRow({
           {ageOf(nowMs, ride.requestedAt)}
         </span>
       </span>
+      {/* The zones slice owns WHY this driver and how long they have; this
+          slice owns what the row says. Drawn only where a cascade is running
+          — an accepted ride's history is not live state. */}
+      {ride.cascade !== null && CASCADE_STATUSES.has(ride.status) && (
+        <CascadeStrip cascade={ride.cascade} nowMs={nowMs} />
+      )}
       {/* The override slice owns what Dina can DO to a row; this slice owns
           what the row says. See override/row-actions.tsx. */}
       <RideRowActions

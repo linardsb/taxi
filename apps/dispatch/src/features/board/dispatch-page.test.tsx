@@ -44,6 +44,7 @@ const frame = () => ({
   cityId: CITY,
   at: new Date(NOW).toISOString(),
   rides: [],
+  zones: [],
   drivers: [],
 });
 

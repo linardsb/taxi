@@ -5,7 +5,7 @@ import {
   type AssignmentSource,
   type RideOffer,
 } from '@taxi/shared';
-import { and, count, desc, eq, gt, lte, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 import type { DbTx } from '../rides';
 
@@ -18,6 +18,17 @@ export interface OfferRef {
   driverId: string;
   status: OfferRow['status'];
   source: AssignmentSource;
+  queuePosition: number | null;
+}
+
+/** One offer row as the board's cascade projection reads it (#19). */
+export interface CascadeOfferRow {
+  rideId: string;
+  driverId: string;
+  status: OfferRow['status'];
+  source: AssignmentSource;
+  expiresAt: Date;
+  etaSeconds: number;
   queuePosition: number | null;
 }
 
@@ -101,6 +112,37 @@ export class DispatchRepository {
       .from(rideOffers)
       .where(eq(rideOffers.rideId, rideId));
     return rows.map((r) => r.driverId);
+  }
+
+  /**
+   * EVERY offer row for a set of rides, in ONE query — the board's cascade
+   * projection (#19).
+   *
+   * Deliberately not three calls. `findPendingForRide`, `countAttempts` and
+   * `findTriedDriverIds` each answer part of this and are each per-RIDE; the
+   * board rebuilds every 2 s over up to `BOARD_RIDES_LIMIT` rides, so using
+   * them would put 3 × N queries on a 30-per-minute loop. Every one of those
+   * three answers is derivable from these rows in JS (see `board/cascade.ts`),
+   * so the extra round trips buy nothing.
+   *
+   * The jsonb columns are NOT selected: the cascade strip shows names and a
+   * countdown, and dragging four blobs per offer through the frame builder
+   * would be the expensive part of an otherwise trivial read.
+   */
+  async findOffersForRides(rideIds: string[]): Promise<CascadeOfferRow[]> {
+    if (rideIds.length === 0) return [];
+    return this.db
+      .select({
+        rideId: rideOffers.rideId,
+        driverId: rideOffers.driverId,
+        status: rideOffers.status,
+        source: rideOffers.source,
+        expiresAt: rideOffers.expiresAt,
+        etaSeconds: rideOffers.etaSeconds,
+        queuePosition: rideOffers.queuePosition,
+      })
+      .from(rideOffers)
+      .where(inArray(rideOffers.rideId, rideIds));
   }
 
   /**

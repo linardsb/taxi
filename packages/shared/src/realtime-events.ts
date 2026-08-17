@@ -5,6 +5,7 @@ import {
   DRIVER_STATUSES,
   SMS_KINDS,
 } from './enums';
+import { dispatchExplanationSchema } from './dispatch-explanation';
 import { BOARD_LIVE_RIDE_STATUSES, RIDE_STATUSES } from './ride-state-machine';
 import { addressPointSchema, latLngSchema } from './schemas/geo';
 import { rideOfferSchema } from './schemas/ride';
@@ -148,6 +149,15 @@ export type RideAssignedEvent = z.infer<typeof rideAssignedEventSchema>;
  * predicates, so a status added to the query would arrive on the wire and
  * render in no bucket: live work silently missing from the board, with every
  * check green. Narrow, adding one is a compile error in both packages.
+ *
+ * `zones` and per-ride `cascade` are #19's additions and change nothing about
+ * how the frame is APPLIED: still a wholesale replace, still ≤2 s apart, still
+ * self-healing. `applyDriverLocation` patches `frame.drivers` only — it does
+ * NOT move a driver between `zones` entries, and must not start to. A queue
+ * rank is earned by joining a zone, not by a GPS ping crossing its boundary,
+ * so a patch that reordered zones would invent positions the store never
+ * issued. The next full frame carries the real ranks, on the same self-healing
+ * rule `drivers` already runs on.
  */
 export const dispatchBoardEventSchema = z.object({
   cityId: z.string().uuid(),
@@ -162,6 +172,61 @@ export const dispatchBoardEventSchema = z.object({
       bookingChannel: z.enum(BOOKING_CHANNELS),
       requestedAt: z.string().datetime(),
       unclaimedSeconds: z.number().int().nonnegative(),
+      /**
+       * Who currently holds this ride's offer and who is behind them (#19).
+       *
+       * Null for a ride with no live offer — a `requested` ride the engine has
+       * not reached yet, or an `accepted` one where the cascade is over. The
+       * console draws nothing rather than an empty strip, so "no cascade" and
+       * "a cascade with no data" cannot look the same.
+       */
+      cascade: z
+        .object({
+          offeredToDriverId: z.string().uuid().nullable(),
+          offeredToName: z.string().nullable(),
+          expiresAt: z.string().datetime().nullable(),
+          nextDriverName: z.string().nullable(),
+          attempts: z.number().int().nonnegative(),
+          explanation: dispatchExplanationSchema.nullable(),
+        })
+        .nullable(),
+    }),
+  ),
+  /**
+   * EVERY configured zone in the city, including ones with nobody in them —
+   * sourced from the `geozones` catalog, not from the drivers present. An
+   * empty rank is information: it is where Dina sends the next free car.
+   * `zones-panel.tsx` could not draw those because the frame carried no
+   * catalog; this is that catalog.
+   *
+   * `entries` is the QUEUE, head first — not "drivers currently inside the
+   * polygon". A driver who has gone offline while holding position 1 still
+   * appears, with `status: 'offline'`, because that is precisely the thing
+   * Dina needs to see and resolve. Positions are the store's, unmodified.
+   */
+  zones: z.array(
+    z.object({
+      geozoneId: z.string().uuid(),
+      slug: z.string().min(1),
+      name: z.string().min(1),
+      queueModeEnabled: z.boolean(),
+      entries: z.array(
+        z.object({
+          driverId: z.string().uuid(),
+          name: z.string(),
+          /**
+           * Carried per ENTRY, not looked up in `drivers`, because the entry
+           * that most needs a phone number is the one `drivers` does not have:
+           * a driver who went offline still holding a place. Same PII rule as
+           * the driver list — the console exists so Dina can dispatch by voice.
+           */
+          phone: z.string(),
+          position: z.number().int().min(1),
+          /** Time in the QUEUE, not since the driver's last job. */
+          secondsInZone: z.number().int().nonnegative(),
+          status: z.enum(DRIVER_STATUSES),
+        }),
+      ),
     }),
   ),
   drivers: z.array(

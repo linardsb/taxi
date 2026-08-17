@@ -63,6 +63,15 @@ export const UNCLAIMED_ALERT_DEDUPE_SECONDS = 300;
 export const dispatchQueueKey = (geozoneId: string) =>
   `dispatch:queue:${geozoneId}`;
 
+/**
+ * Companion HASH to the list above: driverId → ISO instant they took their
+ * current place. A second key rather than a richer list member, because the
+ * list is addressed by member value throughout (`LPOS`/`LREM … 0`) and packing
+ * a timestamp into the member would break every one of those lookups.
+ */
+export const dispatchQueueJoinedKey = (geozoneId: string) =>
+  `dispatch:queue:${geozoneId}:joined`;
+
 /** Dedupe marker for one ride's unclaimed alert. */
 export const unclaimedAlertKey = (rideId: string) =>
   `dispatch:unclaimed:${rideId}`;

@@ -13,8 +13,8 @@ import {
   isStale,
   RideQueue,
   useBoard,
-  ZonesPanel,
 } from '@/features/board';
+import { ZoneGrid } from '@/features/zones';
 import {
   AssignDialog,
   assignVerb,
@@ -261,7 +261,7 @@ export default function DispatchPage() {
           />
           <div style={{ display: 'grid', gap: 'var(--spacing-lg)' }}>
             {view === 'zones' ? (
-              <ZonesPanel drivers={frame.drivers} />
+              <ZoneGrid zones={frame.zones} />
             ) : (
               <BoardMap drivers={frame.drivers} />
             )}

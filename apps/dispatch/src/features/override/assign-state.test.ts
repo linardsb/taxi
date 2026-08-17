@@ -199,6 +199,7 @@ describe('pickupZoneOf', () => {
     cityId: '00000000-0000-4000-8000-000000000001',
     at: '2026-08-17T12:00:00.000Z',
     rides: [],
+    zones: [],
     drivers: [],
     ...over,
   });
@@ -216,6 +217,7 @@ describe('pickupZoneOf', () => {
             bookingChannel: 'app',
             requestedAt: '2026-08-17T11:59:00.000Z',
             unclaimedSeconds: 0,
+            cascade: null,
           },
         ],
         drivers: [

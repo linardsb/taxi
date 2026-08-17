@@ -1,4 +1,8 @@
-import type { DispatchQueueStore } from './dispatch-queue.store';
+import {
+  snapshotFrom,
+  type DispatchQueueStore,
+  type QueueSnapshotEntry,
+} from './dispatch-queue.store';
 
 /**
  * TEST-ONLY mirror of `RedisDispatchQueueStore`.
@@ -11,6 +15,8 @@ import type { DispatchQueueStore } from './dispatch-queue.store';
  */
 export class InMemoryDispatchQueueStore implements DispatchQueueStore {
   private readonly queues = new Map<string, string[]>();
+  /** Mirrors the Redis companion hash: zone → driverId → ISO instant. */
+  private readonly joined = new Map<string, Map<string, string>>();
 
   private queue(geozoneId: string): string[] {
     let queue = this.queues.get(geozoneId);
@@ -21,9 +27,22 @@ export class InMemoryDispatchQueueStore implements DispatchQueueStore {
     return queue;
   }
 
+  private joinedAt(geozoneId: string): Map<string, string> {
+    let stamps = this.joined.get(geozoneId);
+    if (!stamps) {
+      stamps = new Map();
+      this.joined.set(geozoneId, stamps);
+    }
+    return stamps;
+  }
+
   joinBack(geozoneId: string, driverId: string): Promise<void> {
     const queue = this.queue(geozoneId);
-    if (!queue.includes(driverId)) queue.push(driverId);
+    if (queue.includes(driverId)) return Promise.resolve();
+    queue.push(driverId);
+    // Mirrors `HSETNX`: never overwrite an existing stamp.
+    const stamps = this.joinedAt(geozoneId);
+    if (!stamps.has(driverId)) stamps.set(driverId, new Date().toISOString());
     return Promise.resolve();
   }
 
@@ -36,6 +55,8 @@ export class InMemoryDispatchQueueStore implements DispatchQueueStore {
       index = queue.indexOf(driverId);
     }
     queue.push(driverId);
+    // Mirrors `HSET`: the back of the queue is a fresh clock.
+    this.joinedAt(geozoneId).set(driverId, new Date().toISOString());
     return Promise.resolve();
   }
 
@@ -46,6 +67,7 @@ export class InMemoryDispatchQueueStore implements DispatchQueueStore {
       queue.splice(index, 1);
       index = queue.indexOf(driverId);
     }
+    this.joinedAt(geozoneId).delete(driverId);
     return Promise.resolve();
   }
 
@@ -63,5 +85,12 @@ export class InMemoryDispatchQueueStore implements DispatchQueueStore {
       }
     });
     return Promise.resolve(positions);
+  }
+
+  snapshot(geozoneId: string): Promise<QueueSnapshotEntry[]> {
+    const stamps = this.joinedAt(geozoneId);
+    return Promise.resolve(
+      snapshotFrom(this.queue(geozoneId), (id) => stamps.get(id) ?? null),
+    );
   }
 }

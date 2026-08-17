@@ -8,4 +8,3 @@ export type { BoardAlert, BoardState, PillState } from './board-state';
 export { ConnectionPill } from './connection-pill';
 export { RideQueue } from './ride-queue';
 export { useBoard } from './use-board';
-export { ZonesPanel } from './zones-panel';

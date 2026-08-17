@@ -2,16 +2,41 @@ import { dispatchBoardEventSchema, type LatLng } from '@taxi/shared';
 import type { Env } from '../../../common/config/env.schema';
 import { InMemoryDriverLocationStore } from '../../../../test/harness';
 import type { DriversService, DriverBoardContact } from '../../drivers';
-import type { GeozonesService } from '../../geozones';
+import type { GeozonesService, ResolvedGeozone } from '../../geozones';
 import type { RealtimeService } from '../../realtime';
 import type { BoardRide, RidesRepository } from '../../rides';
+import type {
+  CascadeOfferRow,
+  DispatchRepository,
+} from '../dispatch.repository';
+import { InMemoryDispatchQueueStore } from '../queue/in-memory-dispatch-queue.store';
 import { BoardService } from './board.service';
 
 const CITY = '00000000-0000-4000-8000-000000000001';
 const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
 const DRIVER_A = 'd0000000-0000-4000-8000-000000000001';
 const DRIVER_B = 'd0000000-0000-4000-8000-000000000002';
+const ZONE_ID = 'e0000000-0000-4000-8000-000000000001';
 const NOW = new Date('2026-08-15T12:00:00.000Z');
+
+const zone = (over: Partial<ResolvedGeozone> = {}): ResolvedGeozone => ({
+  id: ZONE_ID,
+  slug: 'centrs',
+  name: 'Centrs',
+  queueModeEnabled: true,
+  ...over,
+});
+
+const offer = (over: Partial<CascadeOfferRow> = {}): CascadeOfferRow => ({
+  rideId: RIDE_ID,
+  driverId: DRIVER_A,
+  status: 'pending',
+  source: 'geozone_queue',
+  expiresAt: new Date(NOW.getTime() + 12_000),
+  etaSeconds: 240,
+  queuePosition: 1,
+  ...over,
+});
 
 const boardRide = (over: Partial<BoardRide> = {}): BoardRide => ({
   id: RIDE_ID,
@@ -47,9 +72,13 @@ function build(
     zonesByPoint?: Record<string, string>;
     roomSize?: number;
     buildThrows?: boolean;
+    /** The city's zone CATALOG — what the grid draws, empty ranks included. */
+    catalog?: ResolvedGeozone[];
+    offers?: CascadeOfferRow[];
   } = {},
 ) {
   const locations = new InMemoryDriverLocationStore();
+  const queue = new InMemoryDispatchQueueStore();
 
   const findBoardRides = over.buildThrows
     ? jest.fn(() => Promise.reject(new Error('postgres blinked')))
@@ -65,6 +94,7 @@ function build(
       ? over.zonesByPoint[`${point.lat},${point.lng}`]
       : (over.zoneName ?? undefined);
 
+  const listForCity = jest.fn(() => Promise.resolve(over.catalog ?? []));
   const geozones = {
     resolveForPoint: jest.fn((_cityId: string, point: LatLng) => {
       const name = zoneNameFor(point);
@@ -74,7 +104,11 @@ function build(
           : { id: CITY, slug: 'centre', name, queueModeEnabled: false },
       );
     }),
+    listForCity,
   } as unknown as GeozonesService;
+
+  const findOffersForRides = jest.fn(() => Promise.resolve(over.offers ?? []));
+  const dispatch = { findOffersForRides } as unknown as DispatchRepository;
 
   const emitToDispatch = jest.fn();
   const realtime = {
@@ -90,9 +124,19 @@ function build(
     locations,
     geozones,
     realtime,
+    dispatch,
+    queue,
     env,
   );
-  return { service, locations, emitToDispatch, findBoardRides, geozones };
+  return {
+    service,
+    locations,
+    queue,
+    emitToDispatch,
+    findBoardRides,
+    findOffersForRides,
+    geozones,
+  };
 }
 
 beforeEach(() => {
@@ -257,6 +301,166 @@ describe('BoardService.buildBoardState', () => {
 
     const frame = await service.buildBoardState(CITY);
     expect(frame.drivers.map((d) => d.driverId)).toEqual([DRIVER_A]);
+  });
+
+  it('carries a configured zone that nobody is queued in (expected)', async () => {
+    // The exact thing `zones-panel.tsx` documented it could not do. An empty
+    // rank is where Dina sends the next free car; a grid that only draws
+    // occupied zones hides the answer to the question she is asking.
+    const { service } = build({
+      catalog: [zone(), zone({ id: CITY, slug: 'lidosta', name: 'Lidosta' })],
+    });
+
+    const frame = dispatchBoardEventSchema.parse(
+      await service.buildBoardState(CITY),
+    );
+    expect(frame.zones.map((z) => z.slug)).toEqual(['centrs', 'lidosta']);
+    expect(frame.zones.every((z) => z.entries.length === 0)).toBe(true);
+  });
+
+  it('reports queue rank and time-in-queue for each queued driver (expected)', async () => {
+    const { service, queue } = build({
+      catalog: [zone()],
+      contacts: [
+        contact({ driverId: DRIVER_A, name: 'Jānis Ozols' }),
+        contact({
+          driverId: DRIVER_B,
+          name: 'Anna Bērziņa',
+          phone: '+37129999002',
+        }),
+      ],
+    });
+    // A joined 47 minutes before B, on the frame's own clock.
+    jest.setSystemTime(new Date(NOW.getTime() - 2_820_000));
+    await queue.joinBack(ZONE_ID, DRIVER_A);
+    jest.setSystemTime(NOW);
+    await queue.joinBack(ZONE_ID, DRIVER_B);
+
+    const frame = dispatchBoardEventSchema.parse(
+      await service.buildBoardState(CITY),
+    );
+    expect(frame.zones[0]!.entries).toEqual([
+      {
+        driverId: DRIVER_A,
+        name: 'Jānis Ozols',
+        phone: '+37129999001',
+        position: 1,
+        secondsInZone: 2_820,
+        status: 'online',
+      },
+      {
+        driverId: DRIVER_B,
+        name: 'Anna Bērziņa',
+        phone: '+37129999002',
+        position: 2,
+        secondsInZone: 0,
+        status: 'online',
+      },
+    ]);
+  });
+
+  it('keeps a queued driver who has gone offline in the rank (edge)', async () => {
+    // They are NOT in the online set, so their name can only come from the
+    // union contacts read — and someone holding position 1 while offline is
+    // the single most useful thing the grid can tell Dina.
+    const { service, queue } = build({
+      catalog: [zone()],
+      contacts: [contact({ status: 'offline' })],
+    });
+    await queue.joinBack(ZONE_ID, DRIVER_A);
+
+    const frame = await service.buildBoardState(CITY);
+    expect(frame.drivers).toEqual([]); // not online
+    expect(frame.zones[0]!.entries[0]).toMatchObject({
+      driverId: DRIVER_A,
+      position: 1,
+      status: 'offline',
+    });
+  });
+
+  it('explains a live offer with the rank the grid shows beside it (expected)', async () => {
+    const { service, queue } = build({
+      rides: [boardRide({ status: 'offered' })],
+      catalog: [zone()],
+      contacts: [
+        contact({ driverId: DRIVER_A, name: 'Jānis Ozols' }),
+        contact({
+          driverId: DRIVER_B,
+          name: 'Anna Bērziņa',
+          phone: '+37129999002',
+        }),
+      ],
+      offers: [offer()],
+    });
+    jest.setSystemTime(new Date(NOW.getTime() - 2_820_000));
+    await queue.joinBack(ZONE_ID, DRIVER_A);
+    jest.setSystemTime(NOW);
+    await queue.joinBack(ZONE_ID, DRIVER_B);
+
+    const frame = dispatchBoardEventSchema.parse(
+      await service.buildBoardState(CITY),
+    );
+    const cascade = frame.rides[0]!.cascade;
+    expect(cascade).toMatchObject({
+      offeredToDriverId: DRIVER_A,
+      offeredToName: 'Jānis Ozols',
+      nextDriverName: 'Anna Bērziņa',
+      attempts: 1,
+    });
+    expect(cascade!.expiresAt).toBe(
+      new Date(NOW.getTime() + 12_000).toISOString(),
+    );
+    // The explanation's minutes are the grid's secondsInZone, not a second
+    // reading of the clock — that identity is the whole point of composing it
+    // from the already-built zone rows.
+    expect(cascade!.explanation).toEqual({
+      key: 'explain.geozone_queue',
+      params: { zone: 'Centrs', position: 1, minutes: 47, eta: 4 },
+    });
+  });
+
+  it('reads every ride’s offers in ONE query, not one per ride (expected)', async () => {
+    // This runs 30 times a minute forever. A per-ride read would make the
+    // board's cost scale with the queue depth it exists to display.
+    const { service, findOffersForRides } = build({
+      rides: [
+        boardRide(),
+        boardRide({ id: '4f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c' }),
+        boardRide({ id: '5f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c' }),
+      ],
+    });
+
+    await service.buildBoardState(CITY);
+    expect(findOffersForRides).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries a tried-and-unheld ride as a cascade with no holder (edge)', async () => {
+    const { service } = build({
+      rides: [boardRide()], // back to `requested` between offers
+      offers: [
+        offer({ status: 'expired' }),
+        offer({ status: 'declined', driverId: DRIVER_B }),
+      ],
+    });
+
+    const frame = await service.buildBoardState(CITY);
+    // Two attempts and nobody holding it is a different fact from never having
+    // been offered, and Dina acts on the difference.
+    expect(frame.rides[0]!.cascade).toEqual({
+      offeredToDriverId: null,
+      offeredToName: null,
+      expiresAt: null,
+      nextDriverName: null,
+      attempts: 2,
+      explanation: null,
+    });
+  });
+
+  it('carries no cascade at all for a ride nothing has been offered on (failure)', async () => {
+    const { service } = build({ rides: [boardRide()] });
+
+    const frame = await service.buildBoardState(CITY);
+    expect(frame.rides[0]!.cascade).toBeNull();
   });
 });
 

@@ -1,7 +1,11 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
-import { dispatchQueueKey } from '../dispatch.policy';
-import type { DispatchQueueStore } from './dispatch-queue.store';
+import { dispatchQueueJoinedKey, dispatchQueueKey } from '../dispatch.policy';
+import {
+  snapshotFrom,
+  type DispatchQueueStore,
+  type QueueSnapshotEntry,
+} from './dispatch-queue.store';
 
 /**
  * The production queue: one Redis LIST per geozone, head = position 1.
@@ -34,18 +38,51 @@ export class RedisDispatchQueueStore
     const key = dispatchQueueKey(geozoneId);
     const existing = await this.redis.lpos(key, driverId);
     if (existing !== null) return;
-    await this.redis.rpush(key, driverId);
+    // ONE `MULTI`, unlike the `LPOS` above: a crash between the RPUSH and the
+    // stamp would leave a live queue entry with no timestamp, and the early
+    // return means no later `joinBack` would ever fill it — the driver would
+    // read as having just arrived for as long as they held the place.
+    //
+    // HSETNX, not HSET: the double-append race described above can still land
+    // two RPUSHes for one driver, and the second must not overwrite the
+    // first's timestamp — the same first-occurrence-wins rule `positions()`
+    // applies to the list.
+    await this.redis
+      .multi()
+      .rpush(key, driverId)
+      .hsetnx(
+        dispatchQueueJoinedKey(geozoneId),
+        driverId,
+        new Date().toISOString(),
+      )
+      .exec();
   }
 
   async sendToBack(geozoneId: string, driverId: string): Promise<void> {
     const key = dispatchQueueKey(geozoneId);
     // Remove-then-append, so a driver who was not queued still lands at the
     // back rather than nowhere.
-    await this.redis.multi().lrem(key, 0, driverId).rpush(key, driverId).exec();
+    //
+    // HSET, not HSETNX: the timestamp is REWRITTEN here. Losing the time you
+    // earned is what going to the back means.
+    await this.redis
+      .multi()
+      .lrem(key, 0, driverId)
+      .rpush(key, driverId)
+      .hset(
+        dispatchQueueJoinedKey(geozoneId),
+        driverId,
+        new Date().toISOString(),
+      )
+      .exec();
   }
 
   async leave(geozoneId: string, driverId: string): Promise<void> {
-    await this.redis.lrem(dispatchQueueKey(geozoneId), 0, driverId);
+    await this.redis
+      .multi()
+      .lrem(dispatchQueueKey(geozoneId), 0, driverId)
+      .hdel(dispatchQueueJoinedKey(geozoneId), driverId)
+      .exec();
   }
 
   /**
@@ -72,6 +109,20 @@ export class RedisDispatchQueueStore
     });
 
     return positions;
+  }
+
+  /**
+   * One `LRANGE` + one `HGETALL`, both unbounded by design: a zone queue is
+   * bounded by the fleet, and the board reads ≤6 zones per frame. Two round
+   * trips per zone rather than one pipeline because the two keys are read
+   * independently and a torn read costs at most one frame's timestamp.
+   */
+  async snapshot(geozoneId: string): Promise<QueueSnapshotEntry[]> {
+    const [queue, joined] = await Promise.all([
+      this.redis.lrange(dispatchQueueKey(geozoneId), 0, -1),
+      this.redis.hgetall(dispatchQueueJoinedKey(geozoneId)),
+    ]);
+    return snapshotFrom(queue, (driverId) => joined[driverId] ?? null);
   }
 
   /** Mirrors `RedisDriverLocationStore`: never let a failed quit abort shutdown. */

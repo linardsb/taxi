@@ -64,4 +64,27 @@ export class GeozonesRepository {
 
     return row;
   }
+
+  /**
+   * The city's whole zone CATALOG, ordered by name — what the board frame
+   * needs so Dina sees every configured zone, not only the ones with a car in
+   * them (#19). An empty rank is where the next free car goes; a zone that
+   * vanishes from the grid when it empties is the opposite of that signal.
+   *
+   * No polygon, same as `findContaining`: the grid draws a table, not a map.
+   * Ordered here rather than in the projection because Postgres has the
+   * collation and JS's `localeCompare('lv')` disagrees with it on ā/č/š.
+   */
+  async listForCity(cityId: string): Promise<ResolvedGeozone[]> {
+    return this.db
+      .select({
+        id: geozones.id,
+        slug: geozones.slug,
+        name: geozones.name,
+        queueModeEnabled: geozones.queueModeEnabled,
+      })
+      .from(geozones)
+      .where(eq(geozones.cityId, cityId))
+      .orderBy(geozones.name);
+  }
 }

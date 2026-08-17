@@ -50,8 +50,11 @@ export const lv = {
   'console.empty_queue': 'Nav braucienu',
   'console.zones': 'Zonas',
   'console.map': 'Karte',
+  // Two different facts, deliberately two keys: an empty RANK is answered by
+  // sending a car, a city with no configured zones by ringing whoever
+  // configures them.
   'console.zone_empty': '(tukšs)',
-  'console.zone_none': 'Ārpus zonām',
+  'console.zone_none_configured': 'Nevienai zonai nav konfigurācijas',
   'console.map_alt':
     'Karte ar šoferu atrašanās vietām. Saraksts pieejams zonu skatā.',
   'console.status_requested': 'Meklē šoferi',
@@ -139,6 +142,27 @@ export const lv = {
   'console.cancel_confirm': 'Atcelt braucienu',
   'console.cancel_keep': 'Nē, atstāt',
   'console.cancel_failed': 'Neizdevās atcelt. Mēģiniet vēlreiz.',
+  // Zone grid + cascade strip (#19 Phase C).
+  'console.zone_col_zone': 'Zona',
+  'console.zone_col_mode': 'Režīms',
+  'console.zone_col_queue': 'Rinda',
+  'console.zone_queue_mode': 'Rindas kārtībā',
+  'console.zone_queue_mode_off': 'Bez rindas',
+  'console.zone_queue_position': 'Vieta rindā {position}',
+  'console.zone_time': '{minutes} min zonā',
+  'console.cascade_offered_to': 'Piedāvāts: {driver}',
+  'console.cascade_next': 'Nākamais: {driver}',
+  'console.cascade_attempts': 'Mēģinājumi: {count}',
+  'console.cascade_unheld': 'Neviens netur',
+  // "Why this driver" (#19 Phase C). NOT under `console.` — the driver app
+  // (#15) renders these same keys, and the whole point of composing them once
+  // in `explainAssignment` is that Dina and the driver read one sentence.
+  // «zonā» is time in the QUEUE, not time since the driver's last job.
+  'explain.geozone_queue':
+    '{zone} rinda #{position} · zonā {minutes} min · {eta} min attālumā',
+  'explain.auto_match': 'Tuvākais · {eta} min attālumā',
+  'explain.dispatcher': 'Dispečera izvēle',
+  'explain.eta_only': '{eta} min attālumā',
   // Phone orders (#19). The keyboard-first booking form: Dina takes the order
   // while the caller is still speaking, so every label here is read at a
   // glance, not studied.

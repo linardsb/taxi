@@ -174,6 +174,22 @@ describe('dispatchBoardEventSchema', () => {
     zoneName: 'Centrs',
     status: 'online',
   };
+  const zone = {
+    geozoneId: uuid,
+    slug: 'centrs',
+    name: 'Centrs',
+    queueModeEnabled: true,
+    entries: [
+      {
+        driverId: otherUuid,
+        name: 'Jānis Ozols',
+        phone: '+37129999001',
+        position: 1,
+        secondsInZone: 2_820,
+        status: 'online',
+      },
+    ],
+  };
   const base = {
     cityId: uuid,
     at,
@@ -187,8 +203,10 @@ describe('dispatchBoardEventSchema', () => {
         bookingChannel: 'phone',
         requestedAt: at,
         unclaimedSeconds: 42,
+        cascade: null,
       },
     ],
+    zones: [zone],
     drivers: [driver],
   };
 
@@ -223,6 +241,67 @@ describe('dispatchBoardEventSchema', () => {
     });
     expect(parsed.drivers[0]!.location).toBeNull();
     expect(parsed.drivers[0]!.name).toBe('Jānis Ozols');
+  });
+
+  it('carries a configured zone with nobody queued in it (expected)', () => {
+    // The thing `zones-panel.tsx` could not draw: an empty rank is where Dina
+    // sends the next free car, so it has to survive the wire as a zone with
+    // no entries — not be dropped for having none.
+    const parsed = dispatchBoardEventSchema.parse({
+      ...base,
+      drivers: [],
+      zones: [{ ...zone, entries: [] }],
+    });
+    expect(parsed.zones).toHaveLength(1);
+    expect(parsed.zones[0]!.entries).toEqual([]);
+  });
+
+  it('carries a queued driver who has gone offline (edge)', () => {
+    const parsed = dispatchBoardEventSchema.parse({
+      ...base,
+      zones: [
+        { ...zone, entries: [{ ...zone.entries[0]!, status: 'offline' }] },
+      ],
+    });
+    // Holding position 1 while offline is exactly what Dina must see.
+    expect(parsed.zones[0]!.entries[0]!.status).toBe('offline');
+    expect(parsed.zones[0]!.entries[0]!.position).toBe(1);
+  });
+
+  it('carries a live cascade with its explanation (expected)', () => {
+    const parsed = dispatchBoardEventSchema.parse({
+      ...base,
+      rides: [
+        {
+          ...base.rides[0]!,
+          status: 'offered',
+          cascade: {
+            offeredToDriverId: otherUuid,
+            offeredToName: 'Jānis Ozols',
+            expiresAt: at,
+            nextDriverName: 'Māra Liepa',
+            attempts: 2,
+            explanation: {
+              key: 'explain.geozone_queue',
+              params: { zone: 'Centrs', position: 1, minutes: 47, eta: 4 },
+            },
+          },
+        },
+      ],
+    });
+    expect(parsed.rides[0]!.cascade?.attempts).toBe(2);
+    expect(parsed.rides[0]!.cascade?.explanation?.key).toBe(
+      'explain.geozone_queue',
+    );
+  });
+
+  it('rejects a zone position of 0 — the port is 1-based (failure)', () => {
+    expect(
+      dispatchBoardEventSchema.safeParse({
+        ...base,
+        zones: [{ ...zone, entries: [{ ...zone.entries[0]!, position: 0 }] }],
+      }).success,
+    ).toBe(false);
   });
 
   it('rejects an unknown driver status (failure)', () => {
