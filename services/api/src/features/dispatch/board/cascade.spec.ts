@@ -11,6 +11,9 @@ const ZONE_AIRPORT = 'e0000000-0000-4000-8000-000000000002';
 const DRIVER_A = 'd0000000-0000-4000-8000-000000000001';
 const DRIVER_B = 'd0000000-0000-4000-8000-000000000002';
 const DRIVER_C = 'd0000000-0000-4000-8000-000000000003';
+const DRIVER_D = 'd0000000-0000-4000-8000-000000000004';
+const DRIVER_E = 'd0000000-0000-4000-8000-000000000005';
+const DRIVER_F = 'd0000000-0000-4000-8000-000000000006';
 const EXPIRES = new Date('2026-08-15T12:00:12.000Z');
 
 const offer = (over: Partial<CascadeOfferRow> = {}): CascadeOfferRow => ({
@@ -151,6 +154,11 @@ describe('buildCascades', () => {
     // Jānis is #1 in Centrs and has also picked up an airport job, so he sits
     // in Lidosta's rank too. Lidosta sorts first (`listForCity` orders by
     // name), so a scan for "the zone holding this driver" finds the wrong one.
+    //
+    // Positions are 1 and 2 because a rank is always 1..n — `snapshotFrom`
+    // derives them as `index + 1` over the whole list, so a two-entry zone
+    // cannot hold a #4. Nothing here reads Lidosta's positions; they are
+    // producible so the fixture stays one the runtime could have emitted.
     const cascade = build({
       zones: [
         zone({
@@ -162,7 +170,7 @@ describe('buildCascades', () => {
               driverId: DRIVER_A,
               name: 'Jānis Ozols',
               phone: '+37129999001',
-              position: 4,
+              position: 1,
               secondsInZone: 180,
               status: 'online',
             },
@@ -170,7 +178,7 @@ describe('buildCascades', () => {
               driverId: DRIVER_C,
               name: 'Kārlis Liepa',
               phone: '+37129999003',
-              position: 5,
+              position: 2,
               secondsInZone: 30,
               status: 'online',
             },
@@ -245,13 +253,77 @@ describe('buildCascades', () => {
   it('names nobody next once the ride has burned its attempts (failure)', () => {
     // `MAX_OFFER_ATTEMPTS` is 5: `offerNext` raises the ride as unclaimed
     // instead of offering a sixth time, so there is no next driver to name.
+    //
+    // Five rows means five DISTINCT drivers, because that is the only shape a
+    // cascade can write: `findTriedDriverIds` returns every driver already
+    // offered this ride, any status, and `offerNext` filters on it — "a driver
+    // gets one shot at a given ride".
+    //
+    // The sixth entry is online and untried ON PURPOSE. Without it the rank is
+    // exhausted and `nextInQueue` would return null via the `find`, so the case
+    // would pass whether or not the cap guard exists. Fēlikss is what makes
+    // this discriminate the guard.
     const cascade = build({
       offers: [
-        offer({ status: 'expired', driverId: DRIVER_C }),
+        offer({ status: 'expired', driverId: DRIVER_B }),
         offer({ status: 'declined', driverId: DRIVER_C }),
-        offer({ status: 'expired', driverId: DRIVER_C }),
-        offer({ status: 'declined', driverId: DRIVER_C }),
+        offer({ status: 'expired', driverId: DRIVER_D }),
+        offer({ status: 'declined', driverId: DRIVER_E }),
         offer(), // pending, DRIVER_A — the fifth and last attempt
+      ],
+      zones: [
+        zone({
+          entries: [
+            {
+              driverId: DRIVER_A,
+              name: 'Jānis Ozols',
+              phone: '+37129999001',
+              position: 1,
+              secondsInZone: 2_820,
+              status: 'online',
+            },
+            {
+              driverId: DRIVER_B,
+              name: 'Anna Bērziņa',
+              phone: '+37129999002',
+              position: 2,
+              secondsInZone: 900,
+              status: 'online',
+            },
+            {
+              driverId: DRIVER_C,
+              name: 'Kārlis Liepa',
+              phone: '+37129999003',
+              position: 3,
+              secondsInZone: 600,
+              status: 'online',
+            },
+            {
+              driverId: DRIVER_D,
+              name: 'Dace Krūmiņa',
+              phone: '+37129999004',
+              position: 4,
+              secondsInZone: 420,
+              status: 'online',
+            },
+            {
+              driverId: DRIVER_E,
+              name: 'Edgars Zariņš',
+              phone: '+37129999005',
+              position: 5,
+              secondsInZone: 300,
+              status: 'online',
+            },
+            {
+              driverId: DRIVER_F,
+              name: 'Fēlikss Bērzkalns',
+              phone: '+37129999006',
+              position: 6,
+              secondsInZone: 120,
+              status: 'online',
+            },
+          ],
+        }),
       ],
     }).get(RIDE);
 
