@@ -35,7 +35,7 @@ The `main` column is `observed` too: the api figure is the gate run at #122's he
 
 **Two conflict resolutions changed shipped source** beyond the merge itself:
 
-- Phase C's 80 lines of catalog strings moved into #122's per-language `src/i18n/{lv,ru,en}.ts`; `isMessageKey` stayed with `MESSAGES` in the assembly file. `dispatch-explanation.test.ts`'s `formatMessage` import was repointed to `../src/format-message`.
+- Phase C's **59** lines of catalog strings moved into #122's per-language `src/i18n/{lv,ru,en}.ts` (`lv +25`, `en +17`, `ru +17`; 80 was the four-file total, including 21 non-string assembly lines in `i18n.ts` — corrected 2026-08-18); `isMessageKey` stayed with `MESSAGES` in the assembly file. `dispatch-explanation.test.ts`'s `formatMessage` import was repointed to `../src/format-message`.
 - `rides.repository.ts` hit **504 lines** — a `max-lines` error — once Phase C's 12-line `geozoneId` field landed on #120's `unassignDriver` guard. Its board projection (`boardPickupSchema`, `isBoardStatus`, `BoardRide`) moved to a sibling `features/rides/board-ride.ts`; the file is **464** lines after, and `features/rides/index.ts` re-exports `BoardRide` so no consumer changed.
 
 **History caveat:** conflict resolution folded the whole catalog end-state into the first rebased commit, so later commits' i18n hunks are now empty while their messages still describe those edits. The tree is correct at every step; the per-commit attribution is not.

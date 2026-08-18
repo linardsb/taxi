@@ -19,7 +19,7 @@ Resolve the input to a PR number (a number, a URL, or a branch via
 `gh pr list --head <branch> --json number -q '.[0].number'`). Then:
 
 ```bash
-gh pr view {N} --json number,title,body,author,headRefName,baseRefName,state,additions,deletions,changedFiles,files
+gh pr view {N} --json number,title,body,author,headRefName,baseRefName,baseRefOid,state,additions,deletions,changedFiles,files
 gh pr diff {N}
 gh pr checkout {N}
 ```
@@ -95,8 +95,18 @@ A rebase onto a merged base sweeps *figures* well, because figures look like fig
 because both sides were re-run, and only the *relationship* between them broke. #121 shipped one to review
 in a file whose own comment named the exact condition that would invalidate it.
 
+**The trigger, so it is observable rather than remembered:** compare Phase 1's `baseRefOid` against the
+`**Base** … @ <sha>` recorded in the newest existing `.claude/code-reviews/pr-{N}-review*.md`. Different → the
+base moved, run this pass. No prior report → first round, skip it. `baseRefName` alone cannot answer this: a
+rebase leaves the name identical.
+
 For every PR whose base changed since the last review round:
 
+- **Re-read the previous round's own rebase notes and close each by re-derivation, not by a green run.** A note
+  that says "after this rebase, re-run X and Y" is discharged only when the *relationship* it names has been
+  re-derived. #121's round 1 named the `countAttempts` coupling exactly and was closed by re-running two specs;
+  they passed, because the divergence was structurally untestable, and the guarantee shipped broken to round 3.
+  A passing suite is not evidence about a relationship no fixture can express.
 - Grep the diff for **conditional comments** — "if X changes, this needs re-deriving", "as long as",
   "assuming", "the same row set". Each is a tripwire someone set deliberately. Check whether the condition
   fired; if it did, the comment is now a warning about something that has already happened.
@@ -117,7 +127,9 @@ For every PR whose base changed since the last review round:
 ## Phase 6 — Post to GitHub + save the report
 
 Write the report to `.claude/code-reviews/pr-{N}-review.md` (summary · issues by severity with `file:line` + fix ·
-validation table · what's good · recommendation). Then post it:
+validation table · what's good · recommendation). **The header must carry `**Head** <sha> · **Base** <ref> @
+`<baseRefOid>`** — the base SHA is what makes the next round's guarantees pass triggerable; a base *name* is
+unchanged by a rebase and so cannot detect one. Then post it:
 
 ```bash
 # approve

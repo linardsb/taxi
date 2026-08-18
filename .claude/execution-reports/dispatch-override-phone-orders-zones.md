@@ -1,5 +1,7 @@
 # Execution Report — #19 Phase A: dispatch force-assign / reassign / cancel
 
+**As of:** 2026-08-18, written **before** #121 merged. #121 has since merged as `30a0662` (12:19 UTC); every "#121 is open" statement below is as-written, not current. Phase C's own artifacts state the post-merge position correctly.
+
 **Scope of this report:** Phase A only (PR #120, merged `369b953` on 2026-08-18). Phases B (#122, merged `d444c72`) and C (#121, open at `feed712`) appear only where they falsified something Phase A wrote down.
 
 - **Plan file**: `.claude/plans/dispatch-override-phone-orders-zones.md` (Tasks A1–A13)
@@ -90,7 +92,7 @@ This is the primary input for the evolution review that follows.
 | 2 | #107 | `30 = 6 cells × 5 polls` printed under **Observed**, correctly derived, but no run produced it — and it credited #87's ETA grid while every position already sat on the grid, making it an identity function. |
 | 3 | #122 review round 1 | Three figures that did not reconcile with each other. |
 | 4 | The fix pass for (3) | A `+5` delta pasted next to a 24-file absolute drawn from a different run. |
-| 5 | This session | The handoff prompt carried `54.3 s` where the PR body said `55.15 s`. Separately, two claims were false *in kind*, not stale in digit: "GitHub retargets this to `main` automatically" (it does not — this repo has `deleteBranchOnMerge: false`), and `CLAUDE.md:43`'s "a green gate can be N tests short" (the gate is now **red** without `REDIS_TEST_URL` — Phase B shipped ungated Redis-dependent specs, filed as #127). |
+| 5 | This session | The handoff prompt carried `54.3 s` where the PR body said `55.15 s`. Separately, two claims were false *in kind*, not stale in digit: "GitHub retargets this to `main` automatically" (it does not — this repo has `deleteBranchOnMerge: false`), and `CLAUDE.md:43`'s "a green gate can be N tests short" (the gate is now **red** without `REDIS_TEST_URL` — Phase B shipped ungated Redis-dependent specs, filed as #127). **Superseded** — the *replacement* was itself false, which makes this the sharper instance: `CLAUDE.md:43`'s original sentence holds and was restored in `794d602`, because `test/harness.ts` overrides `KV_STORE` with `InMemoryKeyValueStore` and the mechanism cannot fire. What made 8 integration tests fail is still unknown; #127 is re-scoped to finding it. The retargeting half stands. See `…-phase-c.md` D5. |
 
 **The common mechanism is inheritance, not mislabelling.** In every instance a figure or claim was copied from one surface to the next — plan → implementation → report → PR body → handoff prompt — and re-derived at none of them. Provenance labels were often *present*; they simply named a run that was no longer the current one.
 
