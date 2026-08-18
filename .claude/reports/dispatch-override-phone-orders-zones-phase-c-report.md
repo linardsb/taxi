@@ -2,8 +2,46 @@
 
 **Plan**: `.claude/plans/dispatch-override-phone-orders-zones.md` (Tasks C1–C7)
 **Branch**: `feature/dispatch-zones-cascade` (worktree `/Users/Berzins/Desktop/taxi-zones`)
-**Base**: `feature/dispatch-override-phone-orders` @ `ced2d30` — **not `main`**, see Deviations D1
+**Base**: `main` @ `d444c72` since the 2026-08-18 rebase — was `feature/dispatch-override-phone-orders` @ `ced2d30`, see Deviations D1 and the addendum below
 **Status**: COMPLETE
+
+---
+
+## Addendum — 2026-08-18 rebase onto `main`
+
+> **Every figure below this addendum was measured on the pre-rebase tree and is superseded.** They are left in place rather than edited, because editing a digit inside a sentence that has also stopped being true is the exact defect this project keeps repeating. Read them as a record of the pre-rebase state; read this section for what is true now.
+
+The branch was rebased from `ced2d30` onto `main` at `d444c72`, which carries Phase A (#120) and Phase B (#122). Resolution commit: `0a7c519`.
+
+**Gate at the rebased head** — `observed`, `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force`, exit 0:
+
+| | This head (`0a7c519`) | `main` baseline (`d444c72`) | Delta |
+|---|---|---|---|
+| Tasks | 18 successful / 18, 58.724 s, 0 cached | — | — |
+| `@taxi/api` | 615 passed, 66 suites, 0 skipped | 579 passed, 64 suites | +36, +2 suites |
+| `@taxi/shared` | 195 passed, 21 files | 178 passed, 20 files | +17 |
+| `@taxi/dispatch` | 222 passed, 27 files | 210 passed, 26 files | +12 |
+| `@taxi/db` | 17 passed, 3 files | 17 passed, 3 files | 0 |
+
+The `main` column is `observed` too: the api figure is the gate run at #122's head immediately before it merged; shared and dispatch are a direct run of those two packages in that worktree.
+
+**Mutation evidence re-derived**, because the SHAs the original runs named no longer exist. Same method, against the rebased pre-fix commit `67e5697`: api **5 failed** / 610 passed / 615 total; shared **1 failed** / 194 passed / 195; dispatch **3 failed** / 219 passed / 222. The red *counts* are unchanged from the pre-rebase runs, so the "7 of the 9 new cases red pre-fix, plus 2 rewritten in place" claim survives — only the totals around it moved.
+
+**Two claims in the pre-rebase report and PR body were false, not merely stale:**
+
+1. **GitHub does not auto-retarget stacked PRs when the base merges.** This repo has `deleteBranchOnMerge: false`; retargeting fires only on branch deletion. Both #121 and #122 still pointed at `feature/dispatch-override-phone-orders` after #120 merged, and `gh pr edit --base main` was run by hand for each.
+2. **The `CLAUDE.md` gated-skip paragraph needed its sentence retired, not its digit corrected.** Without `REDIS_TEST_URL` the api suite is now RED, not green-and-short: Phase B's `bookings.integration.spec.ts` and `customers.integration.spec.ts` need Redis and are not gated. `observed` twice, identically: `8 failed, 33 skipped, 574 passed, 615 total`. Filed as **#127**. The 24 → 33 correction recorded at M5 below would have left a true number inside a false sentence.
+
+**Two conflict resolutions changed shipped source** beyond the merge itself:
+
+- Phase C's 80 lines of catalog strings moved into #122's per-language `src/i18n/{lv,ru,en}.ts`; `isMessageKey` stayed with `MESSAGES` in the assembly file. `dispatch-explanation.test.ts`'s `formatMessage` import was repointed to `../src/format-message`.
+- `rides.repository.ts` hit **504 lines** — a `max-lines` error — once Phase C's 12-line `geozoneId` field landed on #120's `unassignDriver` guard. Its board projection (`boardPickupSchema`, `isBoardStatus`, `BoardRide`) moved to a sibling `features/rides/board-ride.ts`; the file is **464** lines after, and `features/rides/index.ts` re-exports `BoardRide` so no consumer changed.
+
+**History caveat:** conflict resolution folded the whole catalog end-state into the first rebased commit, so later commits' i18n hunks are now empty while their messages still describe those edits. The tree is correct at every step; the per-commit attribution is not.
+
+**Also filed from this work:** #126 (dispatch `index.ts` claims balance eligibility is `>= 0` while `candidate-filter.ts` implements a debt limit — pre-existing), #127 (above).
+
+---
 
 ## Summary
 
