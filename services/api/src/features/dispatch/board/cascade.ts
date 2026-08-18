@@ -38,10 +38,13 @@ export interface BuildCascadesInput {
  *   · TENURE («zonā 47 min») is the grid's, read off the same zone rows the
  *     panel beside it renders, so those two cannot disagree.
  *   · RANK («rinda #1») is `queuePosition` off the OFFER ROW — the number the
- *     driver was actually shown when the offer was written, which is also what
- *     the driver app reads. A `sendToBack` between offer-write and frame-build
- *     moves the live grid rank while the offer row keeps the old number, so the
- *     grid can legitimately say #2 beside a sentence saying #3. That is the
+ *     driver was actually shown when the offer was written, and the one the
+ *     driver app is MEANT to read once it exists (`apps/driver` has no `src/`
+ *     yet; `schemas/ride.ts:160` already carries `queuePosition` on the offer,
+ *     so that is design intent, not current behaviour). A `sendToBack` between
+ *     offer-write and frame-build moves the live grid rank while the offer row
+ *     keeps the old number, so the grid can legitimately say #2 beside a
+ *     sentence saying #3. That is the
  *     right way round: `zone-rows.ts` never re-ranks either, because a grid
  *     that renumbered drivers would have Dina arbitrating a queue nobody
  *     else can see.
@@ -147,10 +150,17 @@ function zoneHolding(
  * starts from `findNearest` (the Redis online set with a live position) and
  * then filters by category, child seat, female-driver preference, debt limit
  * and the one-live-card-per-driver rule. None of that is modelled here, so
- * this can still name someone the engine will skip. What it no longer does is
- * name someone the engine CANNOT reach at all: `zone.entries` deliberately
- * keeps offline drivers — that is the thing Dina resolves — and an offline
- * driver is never a candidate.
+ * this can still name someone the engine will skip.
+ *
+ * The `status === 'online'` filter NARROWS that class, it does not close it.
+ * `zone.entries` deliberately keeps offline drivers — that is the thing Dina
+ * resolves — and `drivers.status` is the column `toCandidates` rejects on, so
+ * an offline driver is never a candidate. But the engine's universe is
+ * narrower still: `findNearest` also drops positions older than
+ * `DRIVER_LOCATION_TTL_SECONDS` (60 s, `driver-location.policy.ts:15`), and
+ * `drivers.status` is not tied to that window. An app that stopped pinging
+ * while still marked online — backgrounded, permission revoked, a swallowed
+ * `ingest` — is unreachable outright and can still be named here.
  *
  * Null outside queue mode, and that is honest rather than lazy — under
  * auto-match "who is next" depends on where every candidate is when the offer

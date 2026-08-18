@@ -205,9 +205,29 @@ two different rankings on Dina's screen and the driver's phone. The shared rule 
 ## Post-review remediation (PR #121 review, `.claude/code-reviews/pr-121-review.md`)
 
 Ten of the review's thirteen findings are fixed on this branch; three are deferred and
-named below. Every regression case was run against the pre-fix source first and observed
-to fail — the review's own recurring-pattern note is that a test passing on a fixture the
-runtime cannot produce proves nothing, and red-then-green is the only check on that.
+named below. The red-then-green check matters here because the review's own
+recurring-pattern note is that a test passing on a fixture the runtime cannot produce
+proves nothing.
+
+**Red-then-green, `observed`** — three mutation runs at `525b1b2`, each reverting only the
+source its fix touched (tests held at HEAD), so each run isolates one mechanism:
+
+| Run | Reverted to `d607043` | Result |
+|---|---|---|
+| api | `cascade.ts`, `board.service.ts`, `rides.repository.ts` | `5 failed, 23 passed, 28 total` — all 5 new api cases, and only those |
+| shared | `isMessageKey`'s guard back to `key in MESSAGES.lv` | 1 of its 3 new cases failed: "rejects an inherited Object property" |
+| dispatch | `zone-grid.tsx` | 3 failed: the new "states the list role explicitly", plus M3's and M4's rewritten cases |
+
+So **7 of the 9 new cases run red on the pre-fix source**, as do 2 more rewritten in place
+(M3, M4). The exceptions are named rather than papered over:
+
+- `isMessageKey`'s "accepts a key the catalog has" / "rejects a key it does not" pass
+  pre-fix. `isMessageKey` predates this diff; only L1's prototype-chain case is a
+  regression test, the other two are coverage for a function the diff did not change.
+- M2's rebuilt `(dispatcher, accepted)` fixture passes pre-fix, and should — M2 was a
+  **fixture defect**, not a behaviour defect. The old fixture asserted correct output from
+  a row no writer emits; the new one asserts the same output from a row `force-assign`
+  actually writes. Nothing about the projection changed.
 
 | # | What was wrong | Fix | Test that proves it |
 |---|---|---|---|
@@ -215,7 +235,7 @@ runtime cannot produce proves nothing, and red-then-green is the only check on t
 | H2 | «Nākamais» named offline drivers, who are in the queue snapshot ON PURPOSE but are never in the engine's candidate set (`findNearest` is the online set; `toCandidates` requires `status === 'online'`) | `nextInQueue` requires `status === 'online'`, and returns null once `attempts >= MAX_OFFER_ATTEMPTS` because `offerNext` gives up rather than offering again; docblock now says plainly this is a heuristic over the rank, not a replay of `findCandidates` | `cascade.spec.ts` "skips an offline driver when naming who is next" and "names nobody next once the ride has burned its attempts" |
 | M1 | `cascade.ts`'s docblock claimed the rank was "byte-identical" to the grid's. Only the TENURE is; the rank is `pending.queuePosition` off the offer row | Docblock amended to state the split and why the offer row is the right source (it is the number the driver was actually shown, and `zone-rows.ts` never re-ranks either) | none — a claim, not behaviour |
 | M2 | The `explain.dispatcher` case built a `(dispatcher, pending)` offer row. No writer produces one: `dispatch.service.ts` only writes `auto_match`/`geozone_queue`, `force-assign.service.ts` writes `accepted` | Rebuilt as `(dispatcher, accepted)` and asserts what the projection actually yields (no holder, `attempts: 1`, `explanation: null`), with the reachability noted in the test | `cascade.spec.ts` "projects a dispatcher override as a settled assignment, not an offer" |
-| M3 | The position announcement was an `aria-label` on a roleless `<span>` (ARIA 1.2 puts `generic` in the name-prohibited set), and `getByLabelText` matches the ATTRIBUTE, so the test was green either way | Visually-hidden sentence + `aria-hidden` digits, which needs no role; `role="list"` restated on the `<ol>`; assertions now pin the properties that decide the announcement | `zone-grid.test.tsx` "announces the position rather than reading out a bare digit" and "keeps list semantics under list-style: none"; the status dot upgraded to `toHaveAccessibleName` |
+| M3 | The position announcement was an `aria-label` on a roleless `<span>` (ARIA 1.2 puts `generic` in the name-prohibited set), and `getByLabelText` matches the ATTRIBUTE, so the test was green either way | Visually-hidden sentence + `aria-hidden` digits, which needs no role; `role="list"` restated on the `<ol>`; assertions now pin the properties that decide the announcement | `zone-grid.test.tsx` "announces the position rather than reading out a bare digit" and "states the list role explicitly rather than relying on the tag"; the status dot upgraded to `toHaveAccessibleName` |
 | M4 | `console.zone_empty` rendered two different facts ("this rank is empty" and "the city has no zones"), and `console.zone_none` had no caller after `zones-panel.tsx` was deleted | New `console.zone_none_configured` across LV/RU/EN for the second fact; `console.zone_none` retired (zero callers repo-wide, `observed`) | `zone-grid.test.tsx` "says the city has no zones, not that a rank is empty" |
 | M5 | `CLAUDE.md:43`'s gated-skip figure (24) predates this diff's 5 new gated cases | 24 → 33, re-derived at this head | see Validation below |
 | L1 | `isMessageKey` used `in`, so `'toString'` passed the guard and reached `.replace` on a function | `Object.hasOwn` | `tests/i18n.test.ts` "rejects an inherited Object property" |
@@ -246,3 +266,28 @@ ones rather than adding), db 0 — **9 new tests**, 546 + 184 + 159 + 17 = 906 t
 The same gate with `REDIS_TEST_URL` unset, `observed` at this head: **33 skipped, 2 skipped
 suites, 546 total** — the figure now in `CLAUDE.md:43`. #120's remediation will move the
 same line independently; whichever lands second re-derives it rather than merging digits.
+
+---
+
+## Round-2 review remediation (`.claude/code-reviews/pr-121-review-round2.md`)
+
+Round 2 recommended approve — no Critical, High or code-level Medium; one process Medium
+(M6) and six Low. Four Lows are fixed.
+
+| # | What was wrong | Fix | Test that proves it |
+|---|---|---|---|
+| L10 | "Every regression case was run against the pre-fix source first and observed to fail" was true of most cases but not M2's rebuilt fixture, and the M3 row named a test `525b1b2` had already renamed | Replaced in **both** the report (above) and the **PR body** with the three isolated mutation runs and their two named exceptions; test name re-synced | none — a claim. The runs behind it are in "Post-review remediation" above |
+| L7 | `nextInQueue`'s docblock said the online filter means it no longer names anyone the engine CANNOT reach. `findNearest` also drops positions older than `DRIVER_LOCATION_TTL_SECONDS` (60 s, `driver-location.policy.ts:15`), which `drivers.status` is not tied to — an app that stopped pinging while still marked online is unreachable outright | Docblock now says the filter **narrows** the class rather than closing it, and names the freshness window | none — a claim, not behaviour. No code change: an ordinary quit clears presence via `handleDisconnect`, which is why this is Low |
+| L9 | Two fixtures built rows no writer emits — the round-1 pattern restated inside the commit answering it. Lidosta's two-entry rank held positions 4 and 5 (`snapshotFrom` derives `index + 1`, so a two-entry rank is 1 and 2); the attempts case wrote four offer rows for one driver (`findTriedDriverIds` + `offerNext` mean five rows are five distinct drivers) | Positions 1/2; five distinct tried drivers **plus a sixth online untried one** — without it the rank is exhausted and the case passes whether or not the cap guard exists | `cascade.spec.ts` "explains the zone the RIDE came from when the holder is in two ranks" and "names nobody next once the ride has burned its attempts", both still red on the pre-fix source |
+| L11 | `cascade.ts` said the offer row's `queuePosition` is "also what the driver app reads". `apps/driver` has no `src/` at this head (`observed`) | Restated as design intent, citing `schemas/ride.ts:160`, which does carry `queuePosition` on the wire offer | none — a claim |
+
+**Deferred:** L8 (`nextInQueue` gates on `zone.queueModeEnabled` while `explainAssignment`
+keys off `pending.source`; those diverge when a zone opts out and the city default is
+`geozone_queue`) — logged as **#124**, because its second half needs the board event to
+carry an *effective* mode, a `packages/shared` contract change rather than a predicate
+swap. L12 (the list-role assertion reads circular) — the review noted rather than raised
+it. The misplaced comment block in `rides.repository.ts` is #120's.
+
+**M6** — the branch had no CI run on the remediated head; the push carrying these fixes is
+the remedy, with `gh workflow run ci.yml --ref feature/dispatch-zones-cascade` as the
+fallback if `synchronize` again fires nothing.
