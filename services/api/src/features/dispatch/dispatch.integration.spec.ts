@@ -807,6 +807,53 @@ describe('dispatch (integration)', () => {
     expect(scoped).toBeLessThan(await repo.countAttempts(ride.id, null));
   });
 
+  /**
+   * (failure) The pre-flight, end to end (#120 review M2).
+   *
+   * `forceAssign` raises `driver_not_found` in the SECOND transaction, after the
+   * release has already committed — so without the pre-flight a stale roster row
+   * left the ride with no car while Dina read an error that says nothing
+   * happened. The assertion that matters is not the 404: it is that the ride
+   * still has its original driver afterwards.
+   */
+  it('404s a reassign onto an unknown driver WITHOUT releasing the ride (#19, failure)', async () => {
+    const first = await onlineDriver(
+      66,
+      near(CENTRE_PICKUP.location, 0.001, 0),
+    );
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(116),
+      role: 'dispatcher',
+    });
+    const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const ride = await bookRide(67, CENTRE_PICKUP);
+    await sweeper.tick();
+    const live = await pendingOffer(ride.id);
+    await http
+      .post(`/dispatch/offers/${live!.id}/accept`)
+      .set('authorization', first.auth)
+      .expect(201);
+
+    // A well-formed uuid that is not a driver — the shape a deactivated roster
+    // row leaves behind on a console that has not refreshed.
+    await http
+      .post(`/dispatch/rides/${ride.id}/reassign`)
+      .set('authorization', dispatcherAuth)
+      .send({ driverId: randomUUID() })
+      .expect(404);
+
+    const row = await rideRow(ride.id);
+    expect(row.status).toBe('accepted');
+    expect(row.driverId).toBe(first.id);
+    expect(row.vehicleId).not.toBeNull();
+    expect(await driverStatus(first.id)).toBe('on_ride');
+    // And the release never happened, so no release audit row was written.
+    expect(
+      await ctx.app.get(DispatchRepository).findLastReleasedAt(ride.id),
+    ).toBeNull();
+  });
+
   it('refuses to reassign once the driver has reached the pickup (#19, failure)', async () => {
     const first = await onlineDriver(
       44,
