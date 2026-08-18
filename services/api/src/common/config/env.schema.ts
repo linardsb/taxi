@@ -121,6 +121,17 @@ export const envSchema = z
      * Twilio trio: an EMPTY value is the committed template's way of saying
      * "unbound", and `.min(1).optional()` would reject it at boot in every dev
      * checkout that copied the template.
+     *
+     * DELIBERATELY UNCHECKED BEYOND THAT, and #125 is the ticket that argued
+     * otherwise. Not in `SECRET_KEYS`/`PUBLISHED_SECRETS` for the reason
+     * `STRIPE_SECRET_KEY` is not: those guard length and reuse of a committed
+     * placeholder for OUR secrets, and this key has neither — the template
+     * commits it empty. No `.refine()` either, unlike the Stripe and Twilio
+     * prefixes: Google documents no format for a Maps Platform key, so a prefix
+     * test would encode a guess as a boot gate. What a WRONG key gets instead
+     * is `geo.places.request_failed reason=key_rejected` at `error` level from
+     * `GooglePlacesProvider` on the first call — the shape a 401/403 has, told
+     * apart from an outage.
      */
     GOOGLE_MAPS_API_KEY: z
       .string()

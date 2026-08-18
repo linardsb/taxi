@@ -46,6 +46,12 @@ const DETAILS_FIELD_MASK = 'location,formattedAddress';
 const PLACES_UNAVAILABLE = 'maps_places_unavailable';
 const PLACES_TIMEOUT = 'maps_places_timeout';
 const PLACES_CONTRACT_VIOLATION = 'maps_places_contract_violation';
+/**
+ * The key, not the weather (#125). Separate from `PLACES_UNAVAILABLE` because
+ * the two need opposite responses: an outage is waited out, a rejected key is
+ * an operator error that fails every call until someone changes it.
+ */
+const PLACES_KEY_REJECTED = 'maps_places_key_rejected';
 
 /**
  * `structuredFormat` nests its text two levels deep, and a suggestion may carry
@@ -221,6 +227,22 @@ export class GooglePlacesProvider implements PlacesProvider {
       });
 
       if (response.status === 404) return null;
+      // `error`, not `warn`, and its own reason: 401/403 is a key that is
+      // missing a service, restricted to another referrer, or simply wrong, and
+      // nothing about it self-heals. Folded into `PLACES_UNAVAILABLE` it read
+      // as "Google is degraded" — the misconfiguration that `env.schema.ts`
+      // flags as one to learn about from a failed deploy rather than a support
+      // call, arriving instead as a support call.
+      if (response.status === 401 || response.status === 403) {
+        this.logger.error({
+          event: 'geo.places.request_failed',
+          sku,
+          reason: 'key_rejected',
+          status: response.status,
+          at: new Date().toISOString(),
+        });
+        throw new Error(PLACES_KEY_REJECTED);
+      }
       if (!response.ok) throw new Error(PLACES_UNAVAILABLE);
       return await response.json();
     } catch (error) {
@@ -238,7 +260,8 @@ export class GooglePlacesProvider implements PlacesProvider {
       if (
         error instanceof Error &&
         (error.message === PLACES_UNAVAILABLE ||
-          error.message === PLACES_CONTRACT_VIOLATION)
+          error.message === PLACES_CONTRACT_VIOLATION ||
+          error.message === PLACES_KEY_REJECTED)
       ) {
         throw error;
       }
