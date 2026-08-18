@@ -4,7 +4,7 @@ import {
   explainAssignment,
   type ExplainAssignmentInput,
 } from '../src/dispatch-explanation';
-import { formatMessage } from '../src/i18n';
+import { formatMessage } from '../src/format-message';
 
 const input = (
   overrides: Partial<ExplainAssignmentInput> = {},

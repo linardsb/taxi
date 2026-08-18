@@ -849,16 +849,46 @@ cascade: z.object({
 
 ## PHASE D — Acceptance closure
 
+> **Reconciled 2026-08-18, after Phase A (#120) and Phase B (#122) merged.** Task
+> D1's three scenarios are largely already delivered — two by tests that predate
+> #19, one by Phase B — and Phase A added four integration tests of its own that
+> D1 never listed. Nothing below has been deleted; each item says where it went.
+> Tests are cited **by name, not by line**, because later commits move the lines.
+
 ### Task D1 — WRITE the three AC scenarios as integration tests
+
+**Status: two delivered, one partial. Do not re-write the delivered two.**
 
 - **IMPLEMENT**: In `services/api/src/features/dispatch/dispatch.integration.spec.ts` (or a new `bookings.integration.spec.ts`):
   - **expected** — a phone order created via `POST /dispatch/bookings` enters the cascade and is offered to a driver exactly as an app booking is, with `bookingChannel === 'phone'` on the row.
+    → **PARTIAL — delivered by Phase B (#122)** in `services/api/src/features/dispatch/bookings/bookings.integration.spec.ts`, test *"creates a phone-channel ride for a caller who has never rung (expected — AC #5, AC #12)"*. It asserts `bookingChannel === 'phone'`, `status === 'requested'`, a positive `totalCents`, the rider + customer records, and the dispatcher audit row. **Still open:** it does not drive `DispatchSweeper.tick()`, so the "enters the cascade and is offered to a driver" half is unproven. That half is the only remaining work in D1.
   - **edge** — force-assign lands cleanly mid-cascade: a ride in `offered` with a pending offer to driver X is force-assigned to driver Y; X's offer is revoked, Y holds the ride, the audit row names the dispatcher.
+    → **ALREADY DELIVERED, pre-#19.** `dispatch.integration.spec.ts`, test *"force-assigns mid-cascade and clears the overridden card (AC #4)"*, shipped with #10. Phase A checked it and deliberately did not duplicate it.
   - **failure** — force-assign onto a driver who went offline **succeeds** (per #10's documented design) and the audit row records it; the console-side failure is the 409 when the ride has already moved on, which re-enters the cascade. See Open Question Q1.
+    → **ALREADY DELIVERED, pre-#19.** Same file, test *"force-assigns a pooled ride to an OFFLINE driver and still audits it (edge)"*, shipped with #10.
 - **PATTERN**: `dispatch.integration.spec.ts`'s existing harness.
 - **GOTCHA**: Integration runs are mutually destructive across sessions (global-setup drops the shared test DB). One gate at a time.
 - **VALIDATE**: `REDIS_TEST_URL=redis://localhost:6381 pnpm --filter @taxi/api test -- integration`
-- **SATISFIES**: AC #1, AC #3, AC #5
+- **SATISFIES**: AC #1, AC #3, AC #5 — AC #3 and AC #5 are met by the above; AC #1's cascade-entry half is what remains.
+
+### Task D1b — Phase A's four integration tests (DELIVERED IN PHASE A, listed so D does not re-scope them)
+
+D1 never named these four. Phase A judged them necessary because
+`reassign.service.spec.ts` asserts the two-transaction **order** against a fake
+`db.transaction` that merely invokes its callback, and so cannot prove how the
+real conditional UPDATEs interlock — `unassignDriver` guarded on
+`eq(rides.driverId, previousDriverId)`, `assignDriver` on
+`isNull(rides.driverId)`, across two separately-committed transactions. All four
+live in `services/api/src/features/dispatch/dispatch.integration.spec.ts`:
+
+1. *"reassigns an accepted ride: releases the first driver, stamps the second (#19)"*
+2. *"refuses to reassign once the driver has reached the pickup (#19, failure)"*
+3. *"lists offline drivers in the override roster (#19)"*
+4. *"blocks a driver from reading the override roster (#19, failure)"*
+
+The changelog below calls these "pulled forward from Phase D". That phrasing is
+loose and is corrected here: they were **added in Phase A**, not moved from a
+Phase D task, because no Phase D task listed them.
 
 ### Task D2 — WRITE DOWN the phone-channel-share query
 
@@ -876,9 +906,10 @@ cascade: z.object({
 
 ### Task D4 — FINAL gate + PR
 
-- **VALIDATE**: `cd /Users/Berzins/Desktop/taxi-dispatch-override && REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force`
+- **VALIDATE**: `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force`
 - **GOTCHA**: A backticked `` `Closes #19` `` merges without closing the issue. Write it unbackticked and verify with `gh pr view <n> --json closingIssuesReferences`.
 - **GOTCHA**: `gh pr review --approve` always fails on this repo (solo, self-authored) — use `gh pr comment`.
+- **GOTCHA**: GitHub did **not** auto-retarget the stacked PRs when #120 merged — this repo has `deleteBranchOnMerge: false`, and retargeting only fires when the base branch is deleted. `gh pr edit <n> --base main` had to be run by hand for both #121 and #122 (`observed` 2026-08-18). Verify the base; do not assume it.
 - **SATISFIES**: AC #11, AC #16
 
 ---

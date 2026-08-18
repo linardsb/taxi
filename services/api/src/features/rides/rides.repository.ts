@@ -7,8 +7,6 @@ import {
   fareQuoteSchema,
   rideRequestSchema,
   rideSchema,
-  type AddressPoint,
-  type BoardRideStatus,
   type BookingChannel,
   type FareQuote,
   type Ride,
@@ -17,6 +15,7 @@ import {
 } from '@taxi/shared';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
+import { boardPickupSchema, isBoardStatus, type BoardRide } from './board-ride';
 import { assertEntryStatus, type RideEntryStatus } from './ride-entry';
 import type { DbTx } from './ride-transition.service';
 
@@ -40,14 +39,6 @@ export interface AwaitingRide {
 }
 
 /**
- * The board needs the pickup and nothing else off the request snapshot, so it
- * validates the pickup and nothing else — see `findBoardRides`.
- */
-const boardPickupSchema = rideRequestSchema.pick({ pickup: true });
-
-const BOARD_STATUS_SET = new Set<string>(BOARD_LIVE_RIDE_STATUSES);
-
-/**
  * The statuses `unassignDriver` will take a car off — see its docblock for why
  * `requested` is in the set and `arrived`/`in_progress` are not.
  */
@@ -56,37 +47,6 @@ const UNASSIGNABLE_RIDE_STATUSES = [
   'accepted',
   'arriving',
 ] as const satisfies readonly RideStatus[];
-
-/**
- * The board query's `inArray` already constrains this, but that guarantee
- * lives in SQL where the type system cannot see it. A checked guard rather
- * than a cast: `BoardRide.status` is what the wire schema demands, and an
- * assertion here would be the one unverified step between the two.
- */
-const isBoardStatus = (status: RideStatus): status is BoardRideStatus =>
-  BOARD_STATUS_SET.has(status);
-
-/** One board row: the ride, its pickup, and who (if anyone) is on it. */
-export interface BoardRide {
-  id: string;
-  status: BoardRideStatus;
-  pickup: AddressPoint;
-  driverId: string | null;
-  driverName: string | null;
-  bookingChannel: BookingChannel;
-  createdAt: Date;
-  /**
-   * The zone the ride was DISPATCHED from — stamped once by `setGeozone` at
-   * first dispatch and never moved. The cascade needs it to name the right
-   * queue: a driver accumulates memberships across a shift (lazy enrollment
-   * enrolls, nothing calls `leave()`), so "the zone this driver is queued in"
-   * is ambiguous and only the ride knows which one it meant.
-   *
-   * Null for a ride the engine has not reached yet, and for a pickup that
-   * falls in no configured zone.
-   */
-  geozoneId: string | null;
-}
 
 /** `request` round-trips through jsonb, so it is parsed rather than cast. */
 function toAwaiting(row: RideRow): AwaitingRide {
