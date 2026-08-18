@@ -10,6 +10,7 @@ import {
   type TestApp,
 } from '../../../test/harness';
 import { AuthTokenService } from '../auth';
+import { CUSTOMER_LOOKUP_MAX_PER_WINDOW } from './customers.policy';
 
 /** `+371254` is this spec file's E.164 range — see phoneFor(). */
 const p = (n: number) => phoneFor('+371254', n);
@@ -148,6 +149,38 @@ describe('customers (#19)', () => {
       .set('authorization', dispatcherAuth);
 
     expect(res.status).toBe(400);
+  });
+
+  it('caps a dispatcher walking the number range (failure — M6)', async () => {
+    // The role guard stops a DRIVER reading this; nothing stopped a dispatcher
+    // token enumerating it. Unbounded, `GET /customers/lookup` is a
+    // phone-number → identity-and-address oracle over the whole Latvian mobile
+    // range, and the access log records that as ordinary work.
+    // A FRESH dispatcher, because the cap is keyed per dispatcher and the
+    // shared token above has already spent quota in the tests before this one.
+    const walker = await insertUser(ctx.db, {
+      phone: p(99),
+      role: 'dispatcher',
+    });
+    const walkerAuth = `Bearer ${
+      (await tokens.issue({ id: walker.id, role: 'dispatcher' })).accessToken
+    }`;
+    const walk = (n: number) =>
+      http
+        .get('/customers/lookup')
+        .query({ phone: p(200 + (n % 50)) })
+        .set('authorization', walkerAuth);
+
+    for (let i = 0; i < CUSTOMER_LOOKUP_MAX_PER_WINDOW; i += 1) {
+      expect((await walk(i)).status).toBe(200);
+    }
+
+    const throttled = await walk(CUSTOMER_LOOKUP_MAX_PER_WINDOW);
+    expect(throttled.status).toBe(429);
+    // Never 0 — a `retryAfterSeconds` of 0 reads as "retry now" to the client
+    // that was just refused.
+    const refused = throttled.body as { retryAfterSeconds: number };
+    expect(refused.retryAfterSeconds).toBeGreaterThan(0);
   });
 
   it('is closed to drivers — it returns their passengers PII (failure)', async () => {

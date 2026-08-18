@@ -81,13 +81,18 @@ Every file carries ≥1 expected + 1 edge + 1 failure case.
   - `@taxi/dispatch` — 24 files / **185 tests** passed
   - `@taxi/db` — 3 files / 17 tests passed
 
-  The `@taxi/dispatch` line first read "+3 files"; the delta is **+5**
-  (`observed`: 20 tracked test files at the base commit `ced2d30`, 25 now). The
-  *Tests added* table two entries above already listed four new dispatch test
-  files, and the review-fix pass adds a fifth. The absolute 24/185 was correct
-  for the run it describes. No test-count delta is printed here because the
-  baseline test total was never measured on this branch — only the file count
-  was.
+  The `@taxi/dispatch` line first read "+3 files". For the run it describes the
+  delta is **+4** — `observed`: 20 tracked test files at the base commit
+  `ced2d30`, 24 in this run — which matches the *Tests added* table two entries
+  above, listing exactly four new dispatch test files. The absolute 24/185 was
+  always correct; only the delta was wrong.
+
+  Both figures must name the same run, which is the trap this correction nearly
+  fell into: **+5/25 files is the post-review-fix state**, recorded in its own
+  block below, and pairing it with the 24 above would substitute one
+  wrong-epoch number for another. No test-count delta is printed for either,
+  because the baseline test total was never measured on this branch — only the
+  file count was.
 
 - **RE-RUN after the PR #122 review fixes** (`observed`, same worktree and same
   incantation, 2026-08-18): **18/18 turbo tasks successful, 58.1 s**, again with
