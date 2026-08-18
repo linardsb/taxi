@@ -25,8 +25,10 @@ import { KV_STORE, type KeyValueStore } from '../../common/kv/kv.store';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
 import {
+  ADDRESS_RESOLVE_MAX_PER_WINDOW,
   ADDRESS_SEARCH_MAX_PER_WINDOW,
   ADDRESS_SEARCH_WINDOW_SECONDS,
+  addressResolveRateKey,
   addressSearchRateKey,
 } from './address-search.policy';
 import { MAPS_PROVIDER } from './maps.tokens';
@@ -76,7 +78,12 @@ export class AddressSearchController {
     const trimmed = query.q.trim();
     if (trimmed.length < this.env.PLACES_SEARCH_MIN_CHARS) return [];
 
-    await this.assertWithinRateLimit(user.sub);
+    await this.assertWithinRateLimit(
+      addressSearchRateKey(user.sub),
+      ADDRESS_SEARCH_MAX_PER_WINDOW,
+      'geo.search.throttled',
+      user.sub,
+    );
 
     return this.maps.searchAddress(trimmed, 'lv', {
       bias: {
@@ -92,8 +99,10 @@ export class AddressSearchController {
    * a bookable point — `rideRequestSchema` needs a `location`, which a
    * suggestion does not carry.
    *
-   * Rate-limited on the same key as the search: a resolve is the dearer SKU, so
-   * exempting it would leave the expensive half of the pair uncapped.
+   * Rate-limited on its OWN key, not the search's. Sharing one meant the cap
+   * fell on whichever call came last, and a resolve is always last — so the cap
+   * refused precisely the call that closes the billed session and makes the
+   * preceding searches free. See `ADDRESS_RESOLVE_MAX_PER_WINDOW`.
    */
   @Post('places/:placeId/resolve')
   @Roles('dispatcher', 'admin')
@@ -102,7 +111,12 @@ export class AddressSearchController {
     @Param('placeId') placeId: string,
     @Body(new ZodValidationPipe(resolvePlaceBodySchema)) body: ResolvePlaceBody,
   ): Promise<AddressPoint> {
-    await this.assertWithinRateLimit(user.sub);
+    await this.assertWithinRateLimit(
+      addressResolveRateKey(user.sub),
+      ADDRESS_RESOLVE_MAX_PER_WINDOW,
+      'geo.resolve.throttled',
+      user.sub,
+    );
 
     const point = await this.maps.resolvePlace(placeId, 'lv', body.session);
     // 404, not an empty 200: the console must be able to tell "this place is
@@ -118,17 +132,21 @@ export class AddressSearchController {
    * the `Math.max(1, …)` floor — a `retryAfterSeconds` of 0 reads as "retry
    * now" to the client that just got throttled.
    */
-  private async assertWithinRateLimit(dispatcherId: string): Promise<void> {
-    const key = addressSearchRateKey(dispatcherId);
+  private async assertWithinRateLimit(
+    key: string,
+    maxPerWindow: number,
+    event: 'geo.search.throttled' | 'geo.resolve.throttled',
+    dispatcherId: string,
+  ): Promise<void> {
     const attempts = await this.kv.incrWithTtl(
       key,
       ADDRESS_SEARCH_WINDOW_SECONDS,
     );
-    if (attempts <= ADDRESS_SEARCH_MAX_PER_WINDOW) return;
+    if (attempts <= maxPerWindow) return;
 
     const retryAfterSeconds = Math.max(1, await this.kv.ttl(key));
     this.logger.warn({
-      event: 'geo.search.throttled',
+      event,
       dispatcherId,
       attempts,
       at: new Date().toISOString(),

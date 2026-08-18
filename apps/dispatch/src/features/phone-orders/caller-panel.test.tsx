@@ -1,7 +1,6 @@
-import type { CallerLookup } from '@taxi/shared';
+import type { CallerLookup, VenueEntry } from '@taxi/shared';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { VenueEntry } from './booking-api';
 import { CallerPanel } from './caller-panel';
 
 const PICKUP = {

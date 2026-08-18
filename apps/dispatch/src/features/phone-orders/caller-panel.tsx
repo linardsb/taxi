@@ -6,8 +6,8 @@ import {
   type CallerLookup,
   type Language,
   type RecentRide,
+  type VenueEntry,
 } from '@taxi/shared';
-import type { VenueEntry } from './booking-api';
 
 const LANG: Language = 'lv';
 

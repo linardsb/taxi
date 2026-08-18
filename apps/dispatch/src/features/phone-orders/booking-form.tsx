@@ -41,7 +41,15 @@ export function BookingForm({
 
   if (form.bookedRideId !== null) {
     return (
+      // A DISTINCT KEY, so React remounts the shell rather than reconciling it.
+      // Both branches return `DialogShell` at the same position, so without
+      // this the shell is reused, its focus effect (`[]` deps) never re-runs,
+      // and the focused «Pasūtīt» unmounts under the dispatcher: focus falls to
+      // `document.body`, the dialog's new `aria-label` is never announced, and
+      // the next Tab restarts from the top of the document — on the screen
+      // whose acceptance criterion is that it works without a mouse.
       <DialogShell
+        key="booked"
         title={formatMessage(LANG, 'console.booking_created')}
         onClose={onClose}
       >
@@ -70,6 +78,7 @@ export function BookingForm({
 
   return (
     <DialogShell
+      key="form"
       title={formatMessage(LANG, 'console.new_order_title')}
       onClose={onClose}
     >

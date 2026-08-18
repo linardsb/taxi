@@ -74,6 +74,21 @@ export const callerLookupSchema = z.object({
 });
 export type CallerLookup = z.infer<typeof callerLookupSchema>;
 
+/**
+ * One row of `GET /customers/venues` — a filed venue and the addresses on it.
+ *
+ * The ENVELOPE is the cross-surface contract, which is why it lives here rather
+ * than being composed independently on each side. Both ends already build it
+ * from `customerSchema` and `savedPlaceSchema`; two hand-written wrappers around
+ * the same leaves still let a rename pass typecheck on both packages and fail
+ * at the dispatcher's first form open, because nothing links them.
+ */
+export const venueEntrySchema = z.object({
+  customer: customerSchema,
+  places: z.array(savedPlaceSchema),
+});
+export type VenueEntry = z.infer<typeof venueEntrySchema>;
+
 /** Naming a caller or flagging a venue — Dina's own edits to the record. */
 export const customerUpsertBodySchema = z.object({
   phone: phoneSchema,

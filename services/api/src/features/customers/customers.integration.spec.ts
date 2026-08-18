@@ -97,7 +97,12 @@ describe('customers (#19)', () => {
       .set('authorization', dispatcherAuth);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({});
+    // THE WIRE SHAPE, asserted deliberately rather than incidentally: Nest
+    // answers a `null` return with a ZERO-LENGTH body, never the JSON literal
+    // `null`. `booking-api.authedFetch` maps an empty body back to `null` for
+    // exactly this route — `res.json()` rejects on it, which is what made every
+    // first-time caller render as a lookup failure.
+    expect(res.text).toBe('');
     // A pure READ: the lookup must not file the caller it failed to find.
     const rows = await ctx.db
       .select()

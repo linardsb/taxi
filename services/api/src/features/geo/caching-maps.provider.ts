@@ -456,11 +456,10 @@ export class CachingMapsProvider implements MapsProvider {
    * reaches the provider and terminates its session.
    *
    * `sessionToken === null` is the case the cache exists for: re-resolving a
-   * saved place, where nobody typed and no autocomplete request was billed.
-   * Nothing calls that path yet — the saved-place refresh is future work — so
-   * the read below is inert today while the write keeps entries warm for it.
-   * Stated rather than implied, because an inert cache that looks live is
-   * exactly the kind of claim this repo has shipped before.
+   * saved place, where nobody typed. BOTH read and write are gated on it, so
+   * the cache is inert until the saved-place refresh exists — that first call
+   * misses, fetches and writes, losing nothing. A session-bearing write only
+   * stored 30 days of Places CONTENT for a reader that cannot reach it.
    */
   async resolvePlace(
     placeId: string,
@@ -490,6 +489,7 @@ export class CachingMapsProvider implements MapsProvider {
       cell: cellOf(key),
       at: new Date().toISOString(),
     });
+    if (sessionToken !== null) return resolved;
     await this.kv
       .setWithTtl(key, JSON.stringify(resolved), this.placeTtlSeconds)
       .catch((error: unknown) => this.cacheWriteFailed('place', key, error));

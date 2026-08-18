@@ -1,5 +1,6 @@
 import { BadRequestException, Logger } from '@nestjs/common';
 import type { Customer, RecentRide, SavedPlace } from '@taxi/shared';
+import { maskPhone } from '../auth';
 import type { CustomersRepository } from './customers.repository';
 import { CustomersService } from './customers.service';
 
@@ -72,18 +73,24 @@ describe('CustomersService', () => {
       });
     });
 
-    it('never puts the phone number in the log line (edge)', async () => {
+    it('names the subject on the PII log, masked (edge)', async () => {
       const { repository, service } = build();
       repository.findUserByPhone.mockResolvedValue(undefined);
       const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
 
       await service.lookup('dispatcher-1', '+37129999000');
 
+      // The FULL number never appears — `logging-standard.md` forbids it.
       expect(JSON.stringify(log.mock.calls)).not.toContain('37129999000');
+      // But the subject must, masked to the last 3 digits, or the record
+      // cannot answer the one question a PII-access log exists to answer:
+      // WHOSE record was read. `dispatcherId` + `found` made a dispatcher
+      // enumerating numbers indistinguishable from one doing her job.
       expect(log).toHaveBeenCalledWith(
         expect.objectContaining({
-          event: 'customers.lookup',
+          event: 'dispatch.customers.lookup_completed',
           dispatcherId: 'dispatcher-1',
+          phone: maskPhone('+37129999000'),
           found: false,
         }),
       );

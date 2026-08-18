@@ -190,15 +190,23 @@ export function AddressField({
       return;
     }
     if (event.key === 'Escape') {
-      // Closes first, clears second — an Escape meant for the popup must not
-      // also throw away what was typed. The dialog's own Escape handler sees
-      // it only once the popup is shut, which is why this stops propagation.
-      event.stopPropagation();
+      // Closes first, clears second, CLOSES THE DIALOG third.
+      //
+      // Propagation stops only where this field actually consumes the key.
+      // `DialogShell`'s handler is a React `onKeyDown` on an ancestor, so an
+      // unconditional `stopPropagation()` here made "Escape ALWAYS closes"
+      // false for every field in the form: the third Escape cleared an already
+      // empty input and was swallowed, and the dispatcher had to Tab to
+      // «Aizvērt» to leave a dialog she may have opened by accident.
       if (open) {
+        event.stopPropagation();
         setClosedFor(query);
         return;
       }
-      onTextChange('');
+      if (typed !== '') {
+        event.stopPropagation();
+        onTextChange('');
+      }
     }
   };
 

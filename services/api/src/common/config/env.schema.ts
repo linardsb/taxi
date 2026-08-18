@@ -132,11 +132,20 @@ export const envSchema = z
      * results outside it still return, ranked lower. Raising it does not cost
      * money — the price is per request, not per kilometre — it costs relevance,
      * because a Rīga street name also exists in Liepāja.
+     *
+     * The `.max()` is the enforcement, not a comment, exactly as
+     * `MAPS_ROUTE_TIMEOUT_MS` above puts it. 50 000 m is GOOGLE'S OWN bound —
+     * `locationBias.circle.radius` "must be between 0.0 and 50000.0, inclusive"
+     * (Places API (New) Autocomplete reference, read 2026-08-18) — and above it
+     * the provider is rejected per request. Without the bound an operator who
+     * widens the bias to cover Latvia boots cleanly and 500s on Dina's first
+     * keystroke: a support call instead of a failed deploy.
      */
     PLACES_BIAS_RADIUS_METERS: z.coerce
       .number()
       .int()
       .positive()
+      .max(50_000)
       .default(30_000),
     /**
      * Below this, `GET /geo/address-search` answers `[]` without spending. 3 is

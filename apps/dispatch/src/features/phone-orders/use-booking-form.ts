@@ -6,6 +6,7 @@ import {
   type CallerLookup,
   type DispatcherBookingBody,
   type MessageKey,
+  type VenueEntry,
 } from '@taxi/shared';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -16,13 +17,13 @@ import {
   book,
   listVenues,
   lookupCaller,
-  type VenueEntry,
 } from './booking-api';
 import {
   bookingErrorKey,
   deserializeDraft,
   emptyDraft,
   isBookable,
+  normalizePhone,
   serializeDraft,
   setAddressPoint,
   setAddressText,
@@ -49,6 +50,22 @@ interface LookupRecord {
   phone: string;
   status: 'searching' | 'done' | 'failed';
   value: CallerLookup | null;
+}
+
+/**
+ * Drops the persisted draft NOW, without waiting for the debounce.
+ *
+ * The persist effect is a 200 ms timer cleared on unmount, so a dispatcher who
+ * closes the dialog straight after booking would otherwise cancel the write
+ * that was going to clear the spent key and the caller's details.
+ */
+function clearStoredDraft(): void {
+  try {
+    window.localStorage.removeItem(BOOKING_DRAFT_STORAGE_KEY);
+  } catch {
+    // A storage write can throw in a locked-down browser profile — the same
+    // rule the persist effect follows. The in-memory draft is already fresh.
+  }
 }
 
 /** The persisted draft, or a fresh one. Runs client-side only — see below. */
@@ -157,7 +174,12 @@ export function useBookingForm(offline: boolean): BookingForm {
       });
   }, [handleAuthFailure]);
 
-  const phone = draft.phone;
+  // NORMALIZED, not raw: the lookup and the booking both key on E.164, and a
+  // dispatcher who types the number the way it is spoken («+371 29 999 000»)
+  // or the way it is dialled locally («29999000») otherwise gets no caller pop
+  // at all — `lookupState: 'idle'`, which on screen is indistinguishable from
+  // "still typing" — and then a 400 on submit, mid-call.
+  const phone = normalizePhone(draft.phone);
   const phoneValid = phoneSchema.safeParse(phone).success;
 
   useEffect(() => {
@@ -267,11 +289,7 @@ export function useBookingForm(offline: boolean): BookingForm {
     setErrorKey(null);
     setErrorRetrySeconds(null);
     setBookedRideId(null);
-    try {
-      window.localStorage.removeItem(BOOKING_DRAFT_STORAGE_KEY);
-    } catch {
-      /* see the persist effect */
-    }
+    clearStoredDraft();
   }, []);
 
   const submit = useCallback(async () => {
@@ -285,7 +303,7 @@ export function useBookingForm(offline: boolean): BookingForm {
     setErrorRetrySeconds(null);
     try {
       const body: DispatcherBookingBody = {
-        callerPhone: draft.phone,
+        callerPhone: normalizePhone(draft.phone),
         ...(draft.callerName === '' ? {} : { callerName: draft.callerName }),
         dispatcherNote: draft.note === '' ? null : draft.note,
         pickup: draft.pickup.point,
@@ -298,6 +316,25 @@ export function useBookingForm(offline: boolean): BookingForm {
       };
       const { rideId } = await book(body, draft.idempotencyKey);
       setBookedRideId(rideId);
+      // THE KEY IS SPENT — rotate it here, not only in `reset()`.
+      //
+      // `reset()` is reachable only from «Jauns pasūtījums»; «Aizvērt» beside
+      // it unmounts the form, which destroys `bookedRideId` while the draft —
+      // and its spent key — survive in `localStorage`. The repeat caller then
+      // reopens an editable form whose key the api has already settled, so the
+      // second booking replays the FIRST ride: the console shows success, and
+      // no car is dispatched. Rotating on success also clears the caller's
+      // phone, name and both addresses, which is the PII claim `session.ts`
+      // makes and only `clearSession()` was honouring.
+      //
+      // Safe at this point because the success screen renders no draft field —
+      // it is a title and two buttons.
+      //
+      // Storage is cleared SYNCHRONOUSLY as well: «Aizvērt» unmounts the form,
+      // and the unmount cancels the debounced persist that would otherwise have
+      // written the fresh draft — leaving the spent key on disk after all.
+      setDraft(emptyDraft(newUuid()));
+      clearStoredDraft();
     } catch (error: unknown) {
       if (error instanceof AuthExpiredError) {
         handleAuthFailure();

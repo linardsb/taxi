@@ -32,7 +32,7 @@ an API kill.
 - **B12** combobox → `address-field.tsx`, `ids.ts` (CREATE)
 - **B13** caller panel → `caller-panel.tsx` (CREATE)
 - **B14** hook + form → `use-booking-form.ts`, `booking-api.ts`, `booking-form.tsx`, `new-order-button.tsx`, `index.ts` (CREATE), `app/dispatch/page.tsx` (UPDATE)
-- **B15** LV/RU/EN strings → `packages/shared/src/i18n.ts` (UPDATE — 38 keys × 3 languages)
+- **B15** LV/RU/EN strings → `packages/shared/src/i18n.ts` (UPDATE — 34 keys × 3 languages)
 
 ## Tests added
 
@@ -78,8 +78,29 @@ Every file carries ≥1 expected + 1 edge + 1 failure case.
   - `@taxi/api` — 64 suites / **559 tests** passed (baseline 57 / 510: +7 suites,
     +49 tests)
   - `@taxi/shared` — 20 files / **178 tests** passed (+1 file, +11 tests)
-  - `@taxi/dispatch` — 24 files / **185 tests** passed (+3 files, +38 tests)
+  - `@taxi/dispatch` — 24 files / **185 tests** passed
   - `@taxi/db` — 3 files / 17 tests passed
+
+  The `@taxi/dispatch` line first read "+3 files"; the delta is **+5**
+  (`observed`: 20 tracked test files at the base commit `ced2d30`, 25 now). The
+  *Tests added* table two entries above already listed four new dispatch test
+  files, and the review-fix pass adds a fifth. The absolute 24/185 was correct
+  for the run it describes. No test-count delta is printed here because the
+  baseline test total was never measured on this branch — only the file count
+  was.
+
+- **RE-RUN after the PR #122 review fixes** (`observed`, same worktree and same
+  incantation, 2026-08-18): **18/18 turbo tasks successful, 58.1 s**, again with
+  **zero skipped suites**.
+  - `@taxi/api` — 64 suites / **564 tests** passed
+  - `@taxi/shared` — 20 files / **178 tests** passed
+  - `@taxi/dispatch` — **25 files / 194 tests** passed
+  - `@taxi/db` — 3 files / 17 tests passed
+
+  Two intermediate runs failed first with `relation "customers" does not exist`
+  and then a `drivers (integration)` case — both the concurrent-session test-DB
+  collision `CLAUDE.md` documents, both cleared on re-run with nothing changed.
+  Recorded rather than quietly re-run.
 - **Skipped-suite count: 0** (AC #11 asks for it to be reported). `REDIS_TEST_URL`
   was set, so the four Redis-gated spec files ran.
 - One earlier run failed with `database "taxi_api_test" does not exist` — a
@@ -120,10 +141,16 @@ retypes — bill autocomplete with no booking attached and are absent from the
 433 denominator.
 
 **The 5-requests-per-field figure is `expected`, not measured.** The counter
-that makes month 2 `observed` ships here: `geo.places.request` logs one line per
-call that cost money, carrying `sku` (`autocomplete` | `details`) and the HTTP
-status — the two SKUs counted separately, because one combined number could not
-be checked against either price.
+that makes month 2 `observed` ships here: `geo.places.request_completed` logs one
+line per call THAT RETURNED A STATUS, carrying `sku` (`autocomplete` |
+`details`) and the HTTP status — the two SKUs counted separately, because one
+combined number could not be checked against either price.
+
+That is not the same set as "every call that cost money", and the counter is a
+FLOOR rather than a total: a timeout or a network fault throws before the line
+is emitted, and an aborted request may still have billed. Read it alongside
+`geo.places.request_failed`, which is where the missing calls go — the gap
+widens exactly when Google is degraded.
 
 **Correction to the plan's cache design** (found in review, fixed in code):
 caching a *session-bearing* `resolvePlace` is a spend REGRESSION, not a saving.
@@ -232,6 +259,10 @@ the code rather than left to look like a working cache.
 - **AC #13** — **not measured.** The four Dispatch ledger rows need a timed run
   against a live console (plan Level 4, steps 1–9). Explicitly deferred, not
   quietly skipped.
-- **AC #16** — met for changed shipped source; largest new file is
-  `google-places.provider.ts` at 241 lines. `i18n.ts` at 498 is the constraint
-  Phase C inherits.
+- **AC #16** — met for changed shipped source. Largest new file is
+  `use-booking-form.ts` at **372** lines (`observed`, `wc -l` after the review
+  fixes; `google-places.provider.ts` is 256, and the 241 this report first
+  printed was wrong for both the file and the superlative). Cap is 500.
+  TWO files sit at the ceiling for Phase C to inherit, not one: `i18n.ts` at
+  498 and `caching-maps.provider.ts` at 498. `max-lines` is configured
+  `skipBlankLines: false, skipComments: false`, so `wc -l` is the right measure.

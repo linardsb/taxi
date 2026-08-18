@@ -18,6 +18,38 @@ export const rideRequestRateKey = (riderId: string): string =>
   `rides:rate:${riderId}`;
 
 /**
+ * The DISPATCHER path's cap (#19). Sized for a console, not for a rider — the
+ * cap above was written for "a real rider re-quotes a handful of times at
+ * most", and a dispatcher is not that actor.
+ *
+ * `derived`, from the model `address-search.policy.ts` already uses for the
+ * same human, and stated with what it assumes:
+ * - That policy puts a busy dispatcher at ~3 bookings/minute → 3 × 10 = **30
+ *   bookings** in one 600 s window.
+ * - Plan Q7's motivating case, the reason this subject moved at all, is **a
+ *   venue booking 25 cars in ten minutes**.
+ * - Worst case the cap must NOT refuse is the two coinciding: 30 + 25 = **55**.
+ * - 60 clears that with ~9% headroom (60 ÷ 55 = 1.09).
+ *
+ * The window is FIXED, not sliding (`incrWithTtl` sets the TTL only when the
+ * key is absent), so a cap that is merely "usually enough" locks a dispatcher
+ * out for the remainder of the window mid-shift. That is why it is sized to the
+ * sum rather than to the larger of the two.
+ *
+ * Still a guess in the same way the rider cap is — there is no traffic yet.
+ * Tune against the first Google bill, the trigger `COORD_PRECISION` carries.
+ */
+export const DISPATCHER_BOOKING_MAX_PER_WINDOW = 60;
+
+/**
+ * A SEPARATE key, so the two caps cannot mix. One person can hold both roles in
+ * a small operator, and sharing `rides:rate:<id>` would spend a dispatcher's
+ * booking quota on their own rider requests.
+ */
+export const dispatcherBookingRateKey = (dispatcherId: string): string =>
+  `rides:rate:dispatcher:${dispatcherId}`;
+
+/**
  * A booking attempt's key outlives the attempt by a day.
  *
  * Long is safe here in a way it would NOT be for server-side dedupe: the client

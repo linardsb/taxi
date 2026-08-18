@@ -1,4 +1,5 @@
 import {
+  addressPointSchema,
   phoneSchema,
   type AddressPoint,
   type BookablePaymentMethod,
@@ -134,6 +135,33 @@ export function expireStalePoints(
 }
 
 /**
+ * What Dina typed → E.164, for the two places that need it: the caller lookup
+ * and the booking body.
+ *
+ * The TYPED TEXT is never rewritten — normalizing the field under the cursor
+ * moves it mid-number, and this module's whole job is not losing what was
+ * entered. Only the value read out of the draft is normalized.
+ *
+ * Deliberately here and NOT a `.transform()` on shared `phoneSchema`: that
+ * schema is `otpRequestSchema`'s too, and widening what the auth path accepts
+ * is a change to who can request an OTP, not a console convenience.
+ *
+ * Three spellings a dispatcher actually types, and nothing more:
+ * `+371 29 999 000` (grouped), `0037129999000` (international prefix) and
+ * `29999000` (a bare Latvian mobile — 8 digits from 2, per `phoneSchema`'s own
+ * "+371 2xxxxxxx"). Anything else is returned compacted and left to fail
+ * validation, because guessing a country for it would file the caller under a
+ * number that is not theirs.
+ */
+export function normalizePhone(typed: string): string {
+  const compact = typed.replace(/[\s()\-.]/g, '');
+  const digits = compact.replace(/^(?:\+|00)/, '');
+  if (!/^\d+$/.test(digits)) return compact;
+  if (compact.startsWith('+') || compact.startsWith('00')) return `+${digits}`;
+  return /^2\d{7}$/.test(digits) ? `+371${digits}` : compact;
+}
+
+/**
  * BOTH points resolved and the phone valid. Connection state is deliberately
  * NOT part of this: the pill is the hook's business, and mixing it in here
  * would make a pure function depend on a socket.
@@ -142,7 +170,7 @@ export function isBookable(draft: BookingDraft): boolean {
   return (
     draft.pickup.point !== null &&
     draft.destination.point !== null &&
-    phoneSchema.safeParse(draft.phone).success
+    phoneSchema.safeParse(normalizePhone(draft.phone)).success
   );
 }
 
@@ -157,14 +185,13 @@ export function isEmptyDraft(draft: BookingDraft): boolean {
   );
 }
 
+// The SHARED schema, not a hand-written twin: its `address` minimum and its
+// lat/lng bounds are the difference between a restored draft that looks
+// bookable and one the api will actually accept. A local copy drifts silently,
+// and the drift surfaces as a generic failure at a dispatcher mid-call.
 const draftAddressSchema = z.object({
   text: z.string(),
-  point: z
-    .object({
-      location: z.object({ lat: z.number(), lng: z.number() }),
-      address: z.string(),
-    })
-    .nullable(),
+  point: addressPointSchema.nullable(),
   placeId: z.string().nullable(),
   resolvedAtMs: z.number().nullable(),
 });

@@ -203,12 +203,18 @@ export class GooglePlacesProvider implements PlacesProvider {
         signal: controller.signal,
       });
 
-      // THE paid-call counter, one line per call that cost money — emitted
-      // before the body is read, because the money is spent by the time the
-      // status arrives. No query text and no address: the input to this call is
-      // where a caller lives (`.claude/references/logging-standard.md`).
+      // THE paid-call counter — one line per call THAT RETURNED A STATUS,
+      // which is not the same set as "every call that cost money": a timeout or
+      // a network fault throws before this line, and an aborted request may
+      // still have billed. So the counter UNDER-reports exactly when Google is
+      // degraded, and the spend model read off it is a floor, not a total.
+      // Pair it with `geo.places.request_failed` to see the whole picture.
+      //
+      // Emitted before the body is read, because the money is spent by the time
+      // the status arrives. No query text and no address: the input to this
+      // call is where a caller lives (`.claude/references/logging-standard.md`).
       this.logger.log({
-        event: 'geo.places.request',
+        event: 'geo.places.request_completed',
         sku,
         status: response.status,
         at: new Date().toISOString(),
@@ -222,7 +228,7 @@ export class GooglePlacesProvider implements PlacesProvider {
       // which is an address. Reduced to the two closed reasons this file owns.
       if (error instanceof Error && error.name === 'AbortError') {
         this.logger.warn({
-          event: 'geo.places.failed',
+          event: 'geo.places.request_failed',
           sku,
           reason: 'timeout',
           at: new Date().toISOString(),
@@ -237,7 +243,7 @@ export class GooglePlacesProvider implements PlacesProvider {
         throw error;
       }
       this.logger.warn({
-        event: 'geo.places.failed',
+        event: 'geo.places.request_failed',
         sku,
         reason: 'source_rejected',
         at: new Date().toISOString(),

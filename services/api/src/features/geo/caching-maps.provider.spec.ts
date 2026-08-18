@@ -585,6 +585,34 @@ describe('CachingMapsProvider', () => {
       expect(source.resolvePlace).toHaveBeenLastCalledWith('p1', 'lv', 's1');
     });
 
+    it('never STORES a session-bearing resolve either (edge — M1)', async () => {
+      const { kv, source, maps } = build();
+      source.resolvePlace.mockResolvedValue(POINT);
+
+      await maps.resolvePlace('p1', 'lv', 's1');
+
+      // The read was already gated; the write was not, so every typed lookup
+      // persisted Places CONTENT — `formattedAddress` plus a coordinate, not
+      // the retention-exempt place ID — for 30 days into a cache with no
+      // reachable reader. Nothing is lost by refusing: the null-token path
+      // that CAN read misses, fetches and writes its own entry.
+      expect(await kv.get(placeCacheKey('lv', 'p1'))).toBeNull();
+    });
+
+    it('still stores the resolve the cache exists for (expected — M1)', async () => {
+      const { kv, source, maps } = build();
+      source.resolvePlace.mockResolvedValue(POINT);
+
+      // No session token: a saved-place re-resolve, where nobody typed and no
+      // autocomplete request was billed. This is the only path the entry can
+      // ever be read back on.
+      await maps.resolvePlace('p1', 'lv', null);
+
+      expect(await kv.get(placeCacheKey('lv', 'p1'))).not.toBeNull();
+      await maps.resolvePlace('p1', 'lv', null);
+      expect(source.resolvePlace).toHaveBeenCalledTimes(1);
+    });
+
     it('never caches autocomplete predictions (edge — Places policy)', async () => {
       const { source, maps } = build();
       source.searchAddress.mockResolvedValue([

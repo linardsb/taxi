@@ -22,11 +22,13 @@ import { PricingService } from '../pricing';
 import { RealtimeService } from '../realtime';
 import { entryStatusFor } from './ride-entry';
 import {
+  DISPATCHER_BOOKING_MAX_PER_WINDOW,
   RIDE_IDEMPOTENCY_PENDING,
   RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS,
   RIDE_IDEMPOTENCY_TTL_SECONDS,
   RIDE_REQUEST_MAX_PER_WINDOW,
   RIDE_REQUEST_WINDOW_SECONDS,
+  dispatcherBookingRateKey,
   rideIdempotencyKey,
   rideRequestRateKey,
 } from './rides.policy';
@@ -75,6 +77,11 @@ export class RidesService {
      * rebooking would trip it and block a legitimate order mid-call. The
      * dispatcher is the actor whose keyboard produces the spend, and one human
      * is a natural rate limit; `BookingsService` passes their id.
+     *
+     * The MAGNITUDE moves with the subject, and must: the rider cap of 20 is
+     * sized for someone who "re-quotes a handful of times at most", and leaving
+     * it in place would 429 the 25-car venue this argument is built on.
+     * `bookingChannel` selects `DISPATCHER_BOOKING_MAX_PER_WINDOW` instead.
      *
      * Note what does NOT move: `rideIdempotencyKey` stays rider-scoped, because
      * the thing being deduplicated is a RIDE, and two dispatchers booking the
@@ -127,7 +134,7 @@ export class RidesService {
     }
 
     try {
-      await this.assertWithinRateLimit(rateLimitSubject);
+      await this.assertWithinRateLimit(rateLimitSubject, bookingChannel);
       return await this.createRide(key, request, riderId, bookingChannel);
     } catch (error) {
       // Release, best-effort. Without it a maps outage — or a single 429 —
@@ -303,13 +310,27 @@ export class RidesService {
    * INCR-then-check like the auth slice: a GET-then-INCR would let a burst all
    * read the same count and every one of them through.
    */
-  private async assertWithinRateLimit(subjectId: string): Promise<void> {
-    const key = rideRequestRateKey(subjectId);
+  private async assertWithinRateLimit(
+    subjectId: string,
+    bookingChannel: BookingChannel,
+  ): Promise<void> {
+    // The CHANNEL picks both, because the subject alone does not say which
+    // actor's model the cap was sized against. A rider's 20 is far below what
+    // one dispatcher's shift produces — see `DISPATCHER_BOOKING_MAX_PER_WINDOW`
+    // for the arithmetic, and plan Q7 for the 25-car venue it exists to admit.
+    const viaDispatcher = bookingChannel === 'phone';
+    const key = viaDispatcher
+      ? dispatcherBookingRateKey(subjectId)
+      : rideRequestRateKey(subjectId);
+    const maxPerWindow = viaDispatcher
+      ? DISPATCHER_BOOKING_MAX_PER_WINDOW
+      : RIDE_REQUEST_MAX_PER_WINDOW;
+
     const attempts = await this.kv.incrWithTtl(
       key,
       RIDE_REQUEST_WINDOW_SECONDS,
     );
-    if (attempts <= RIDE_REQUEST_MAX_PER_WINDOW) return;
+    if (attempts <= maxPerWindow) return;
 
     // The key can expire between the INCR and this read, and a
     // retryAfterSeconds of 0 would read as "retry now" on a rejection.

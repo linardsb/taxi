@@ -175,6 +175,59 @@ describe('AddressField', () => {
     expect(onTextChange).toHaveBeenCalledWith('');
   });
 
+  it('lets the terminal Escape reach the dialog (edge — H5)', async () => {
+    // The field is rendered inside a stub standing in for `DialogShell`: its
+    // Escape handler is a React `onKeyDown` on an ANCESTOR, so a
+    // `stopPropagation()` in the field is what decides whether the dispatcher
+    // can close the form she is typing in. Nothing asserted this, which is how
+    // an unconditional `stopPropagation()` shipped past a green gate while
+    // three separate comments promised "Escape ALWAYS closes".
+    const onClose = vi.fn();
+    render(
+      <div onKeyDown={(event) => event.key === 'Escape' && onClose()}>
+        <AddressField
+          label="Izbraukšana"
+          value={emptyValue()}
+          offline={false}
+          onTextChange={vi.fn()}
+          onResolved={vi.fn()}
+          search={vi.fn().mockResolvedValue([])}
+          resolve={vi.fn().mockResolvedValue(null)}
+        />
+      </div>,
+    );
+
+    // An EMPTY field with no popup: this Escape consumes nothing, so it belongs
+    // to the dialog.
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the popup Escape away from the dialog (edge — H5)', async () => {
+    const onClose = vi.fn();
+    render(
+      <div onKeyDown={(event) => event.key === 'Escape' && onClose()}>
+        <AddressField
+          label="Izbraukšana"
+          value={emptyValue({ text: 'brivibas' })}
+          offline={false}
+          onTextChange={vi.fn()}
+          onResolved={vi.fn()}
+          search={vi.fn().mockResolvedValue(SUGGESTIONS)}
+          resolve={vi.fn().mockResolvedValue(POINT)}
+        />
+      </div>,
+    );
+    vi.advanceTimersByTime(300);
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+
+    // An Escape the popup consumes must NOT also close the dialog behind it.
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('does not query below the minimum length (edge)', () => {
     const { search } = renderField({ value: emptyValue({ text: 'br' }) });
 

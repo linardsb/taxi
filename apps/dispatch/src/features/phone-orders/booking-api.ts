@@ -1,14 +1,15 @@
 'use client';
 
 import {
+  addressPointSchema,
   addressSuggestionsSchema,
   callerLookupSchema,
-  customerSchema,
-  savedPlaceSchema,
+  venueEntrySchema,
   type AddressPoint,
   type AddressSuggestion,
   type CallerLookup,
   type DispatcherBookingBody,
+  type VenueEntry,
 } from '@taxi/shared';
 import { z } from 'zod';
 import { apiUrl, loadSession } from '@/features/auth';
@@ -50,12 +51,6 @@ export class ApiError extends Error {
   }
 }
 
-const venueEntrySchema = z.object({
-  customer: customerSchema,
-  places: z.array(savedPlaceSchema),
-});
-export type VenueEntry = z.infer<typeof venueEntrySchema>;
-
 const errorBodySchema = z.object({
   message: z.string().optional(),
   retryAfterSeconds: z.number().optional(),
@@ -93,7 +88,14 @@ async function authedFetch(
   });
   if (res.status === 401 || res.status === 403) throw new AuthExpiredError();
   if (!res.ok) throw await apiErrorOf(res);
-  return res.json();
+
+  // An EMPTY BODY arrives as `null`, never as a rejected promise. Nest answers
+  // a `null` return with a zero-length body rather than the JSON literal
+  // `null`, and `res.json()` rejects on that — which turned the ORDINARY answer
+  // from `/customers/lookup` (a first-time caller) into a failed lookup, and
+  // made the panel's "new caller" state unreachable in production.
+  const body = await res.text();
+  return body === '' ? null : (JSON.parse(body) as unknown);
 }
 
 export function searchAddress(
@@ -115,14 +117,7 @@ export function resolvePlace(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ session }),
   })
-    .then((body) =>
-      z
-        .object({
-          location: z.object({ lat: z.number(), lng: z.number() }),
-          address: z.string(),
-        })
-        .parse(body),
-    )
+    .then((body) => addressPointSchema.parse(body))
     .catch((error: unknown) => {
       // A 404 means the provider forgot the place id — a stale saved place,
       // not a failure. The field re-searches; everything else propagates.

@@ -3,14 +3,10 @@ import type {
   CallerLookup,
   Customer,
   CustomerUpsertBody,
-  SavedPlace,
+  VenueEntry,
 } from '@taxi/shared';
+import { maskPhone } from '../auth';
 import { CustomersRepository } from './customers.repository';
-
-export interface VenueEntry {
-  customer: Customer;
-  places: SavedPlace[];
-}
 
 /**
  * The caller-ID path (#19). Its whole job is turning a phone number Dina typed
@@ -38,12 +34,19 @@ export class CustomersService {
     const user = await this.repository.findUserByPhone(phone);
 
     // The lookup returns another person's PII, so it is logged as an event with
-    // the dispatcher who asked — and NO phone number, per
-    // `.claude/references/logging-standard.md`. `found` is what makes the line
-    // useful without it.
+    // the dispatcher who asked AND the number they asked about — MASKED to the
+    // last 3 digits, which is what `.claude/references/logging-standard.md`
+    // actually requires ("mask to last 3 digits", not omit) and what
+    // `auth.service.ts` already does.
+    //
+    // The subject is the point of the record. `dispatcherId` + `found` alone
+    // cannot answer the only question a PII-access log exists to answer —
+    // WHOSE record was read — so a dispatcher walking the number range looked
+    // exactly like a dispatcher working.
     this.logger.log({
-      event: 'customers.lookup',
+      event: 'dispatch.customers.lookup_completed',
       dispatcherId,
+      phone: maskPhone(phone),
       found: user !== undefined,
       at: new Date().toISOString(),
     });
