@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { GooglePlacesProvider } from './google-places.provider';
 
 const BIAS = {
@@ -143,6 +144,51 @@ describe('GooglePlacesProvider', () => {
 
     it('reduces a provider 5xx to a coordinate-free message (failure)', async () => {
       stubFetch(jsonResponse({ error: 'at 56.9496,24.1052' }, 500));
+
+      await expect(
+        places.searchAddress('brivibas', 'lv', {
+          bias: BIAS,
+          sessionToken: 's',
+        }),
+      ).rejects.toThrow('maps_places_unavailable');
+    });
+
+    it('names a rejected key rather than reporting an outage (failure)', async () => {
+      stubFetch(jsonResponse({ error: { status: 'PERMISSION_DENIED' } }, 403));
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        places.searchAddress('brivibas', 'lv', {
+          bias: BIAS,
+          sessionToken: 's',
+        }),
+      ).rejects.toThrow('maps_places_key_rejected');
+
+      expect(logged).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'geo.places.request_failed',
+          reason: 'key_rejected',
+          status: 403,
+        }),
+      );
+    });
+
+    it('treats a 401 the same as a 403 — both are the key (edge)', async () => {
+      stubFetch(jsonResponse({}, 401));
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+      await expect(
+        places.searchAddress('brivibas', 'lv', {
+          bias: BIAS,
+          sessionToken: 's',
+        }),
+      ).rejects.toThrow('maps_places_key_rejected');
+    });
+
+    it('leaves every other non-2xx as an outage (edge)', async () => {
+      stubFetch(jsonResponse({}, 429));
 
       await expect(
         places.searchAddress('brivibas', 'lv', {
