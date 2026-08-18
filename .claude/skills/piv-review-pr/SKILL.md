@@ -76,10 +76,36 @@ When a figure credits a mechanism ("proves the cache saves 5×"), ask **what was
 it**. If the experiment cannot distinguish the credited mechanism from something else in the path, the
 attribution is the defect even when the count is right.
 
+The same applies to a **failure and its cause**. Real red output plus an inferred cause is still an
+unverified claim: ask what in the code *permits* the cause just named, and read that code. #121 saw 8
+integration tests fail, named Redis, and wrote it into `CLAUDE.md`, the implementation report, the PR body
+and a new GitHub issue — while `test/harness.ts` overrides the store in question with an in-memory one, so
+the mechanism could not fire. **A digit that survives re-observation is not licence to rewrite the sentence
+around it.**
+
 Check the claim's **subject**, not just its digits — grep the noun (`quantiz`, `grid`, the issue number)
 and read every hit. A retired claim survives as a verb ("the cache this script *measures*") long after its
 number is gone, and it survives in the **PR body**, which is the most-read surface and the only one not in
 the working tree.
+
+### The guarantees pass — when the base moved under this PR
+
+A rebase onto a merged base sweeps *figures* well, because figures look like figures. It does not sweep
+**guarantees**, and a guarantee invalidated by a sibling merge fails silently — the suite stays green
+because both sides were re-run, and only the *relationship* between them broke. #121 shipped one to review
+in a file whose own comment named the exact condition that would invalidate it.
+
+For every PR whose base changed since the last review round:
+
+- Grep the diff for **conditional comments** — "if X changes, this needs re-deriving", "as long as",
+  "assuming", "the same row set". Each is a tripwire someone set deliberately. Check whether the condition
+  fired; if it did, the comment is now a warning about something that has already happened.
+- Grep for **absolute claims** in docblocks, the report and the PR body — "returns null when", "always",
+  "never", "the same as", "cannot". Re-derive each against the merged base, not the pre-rebase tree they
+  were written on.
+- Where two surfaces count or compare the same thing, name the case where they **stop** agreeing. A pure
+  function whose inputs cannot distinguish that case is a seam problem, not a fixture problem — say so,
+  because no test can be added to catch it.
 
 ## Phase 5 — Decide
 
