@@ -49,10 +49,14 @@
  *   under-estimates on a river city with four bridges. A `MapsProvider.route`
  *   call per candidate per cascade round would be a paid Routes call straight
  *   through the <€100/mo guardrail.
- * - BALANCE ELIGIBILITY IS `>= 0`. The reference says "positive-balance check",
- *   but until #12's ledger exists every driver sits at 0 and a strict `> 0`
- *   would match nobody. The real threshold is a product decision for that
- *   ticket.
+ * - BALANCE ELIGIBILITY IS A DEBT LIMIT, NOT ZERO. A driver carries commission
+ *   owed between settlements and every cash ride debits it (#12), so blocking
+ *   at the first cent would strand a cash-only driver after one fare. The
+ *   threshold is `platform_config.driver_debt_limit_cents`, carried to the
+ *   strategies on `DispatchContext` and applied by `toCandidates`
+ *   (`strategies/candidate-filter.ts`) — never a literal. The pilot's seed sets
+ *   it to 5000 (`db/src/seed/riga.ts`, `observed`); that is seed data, not a
+ *   constant, and an operator can change it without touching this slice.
  * - THE SWEEPER DOES NOT AUTO-START UNDER `NODE_ENV=test`. Specs drive `tick()`
  *   by hand, so a background pass cannot race the one a test called.
  */
