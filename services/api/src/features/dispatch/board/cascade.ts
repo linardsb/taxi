@@ -1,5 +1,4 @@
 import { explainAssignment, type DispatchBoardEvent } from '@taxi/shared';
-import { MAX_OFFER_ATTEMPTS } from '../dispatch.policy';
 import type { CascadeOfferRow } from '../dispatch.repository';
 
 type BoardRideCascade = DispatchBoardEvent['rides'][number]['cascade'];
@@ -105,7 +104,7 @@ function cascadeFor(
     offeredToDriverId: pending.driverId,
     offeredToName: nameOf(input.contacts, pending.driverId),
     expiresAt: pending.expiresAt.toISOString(),
-    nextDriverName: nextInQueue(holderZone, tried, offers.length),
+    nextDriverName: nextInQueue(holderZone, tried),
     attempts: offers.length,
     explanation: explainAssignment({
       strategy: pending.source,
@@ -168,25 +167,31 @@ function zoneHolding(
  * Re-running the strategy per ride per 2 s frame to find out is not a trade
  * the board is worth.
  *
- * Null too once the ride has burned `MAX_OFFER_ATTEMPTS`: `offerNext` gives up
- * and raises it as unclaimed instead of offering again, so there is no next
- * driver to name — the strip must not point Dina at one while the engine is
- * handing the ride to her.
+ * NO `MAX_OFFER_ATTEMPTS` GUARD, and that is a stated limitation rather than an
+ * oversight. The engine's remaining budget is RELEASE-SCOPED: both call sites
+ * read `findLastReleasedAt` and pass it to `countAttempts`, which then counts
+ * only rows with `sentAt` after that instant (`dispatch.repository.ts:205-215`,
+ * #120's H3). The board's `attempts` is deliberately CUMULATIVE SINCE BOOKING —
+ * `findOffersForRides` selects every row for the ride, any status, and no
+ * `sentAt` — because "how many drivers has this ride been through" is what Dina
+ * is asking. The two counts agree only while the ride has never been released,
+ * and the frame cannot reconcile them: the release instant lives in
+ * `dispatch_audit_log`, and a per-ride read per frame is exactly the cost
+ * `board.service.ts:170-175` already declines to pay for `unclaimedSeconds`.
  *
- * `attempts` here is `offers.length` — the ROW COUNT for the ride, which is
- * what the board already reports as `attempts`. `offerNext` compares
- * `countAttempts` against the same cap but reads it BEFORE writing the new row,
- * so 5 rows with one pending means the engine gives up on the next tick rather
- * than this one. #120's H3 redefines what `countAttempts` counts; if it stops
- * meaning "rows for this ride", this comparison needs re-deriving with it.
+ * So a cap comparison here would name nobody next for a released ride whose
+ * cascade the engine has just restarted with a full budget — the strip reading
+ * «the cascade is spent, this one is mine» while the engine is mid-cascade.
+ * Naming a driver the engine may not reach is the imprecision this heuristic
+ * already accepts; telling Dina the cascade is over when it is not inverts the
+ * strip's whole point. Do not reinstate the guard without a release-scoped
+ * count in the frame.
  */
 function nextInQueue(
   zone: BoardZone | undefined,
   tried: ReadonlySet<string>,
-  attempts: number,
 ): string | null {
   if (!zone?.queueModeEnabled) return null;
-  if (attempts >= MAX_OFFER_ATTEMPTS) return null;
   return (
     zone.entries.find((e) => e.status === 'online' && !tried.has(e.driverId))
       ?.name ?? null

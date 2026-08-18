@@ -250,19 +250,27 @@ describe('buildCascades', () => {
     expect(cascade?.nextDriverName).toBe('Kārlis Liepa');
   });
 
-  it('names nobody next once the ride has burned its attempts (failure)', () => {
-    // `MAX_OFFER_ATTEMPTS` is 5: `offerNext` raises the ride as unclaimed
-    // instead of offering a sixth time, so there is no next driver to name.
+  it('still names who is next at the attempt cap, because the board cannot see the engine budget (edge)', () => {
+    // `MAX_OFFER_ATTEMPTS` is 5 and this ride has 5 rows — but the board does
+    // NOT stop naming a next driver here, and that is the rule under test.
+    //
+    // The engine's budget is release-scoped: `offerNext` counts only rows
+    // written after `findLastReleasedAt` (#120's H3). This function counts every
+    // row since booking. After a dispatcher release the two diverge — the engine
+    // restarts at 0 while these 5 rows stay on the ride forever — so a cap
+    // comparison here would tell Dina the cascade is spent while the engine is
+    // mid-cascade. The frame carries no release timestamp to tell the two cases
+    // apart, so the board declines to guess.
     //
     // Five rows means five DISTINCT drivers, because that is the only shape a
     // cascade can write: `findTriedDriverIds` returns every driver already
     // offered this ride, any status, and `offerNext` filters on it — "a driver
     // gets one shot at a given ride".
     //
-    // The sixth entry is online and untried ON PURPOSE. Without it the rank is
-    // exhausted and `nextInQueue` would return null via the `find`, so the case
-    // would pass whether or not the cap guard exists. Fēlikss is what makes
-    // this discriminate the guard.
+    // The sixth entry is online and untried ON PURPOSE, and now carries the
+    // assertion rather than discriminating against a guard: without Fēlikss the
+    // rank is exhausted and `nextInQueue` returns null via the `find`, so the
+    // case would pass whether or not a cap guard existed.
     const cascade = build({
       offers: [
         offer({ status: 'expired', driverId: DRIVER_B }),
@@ -328,7 +336,7 @@ describe('buildCascades', () => {
     }).get(RIDE);
 
     expect(cascade?.attempts).toBe(5);
-    expect(cascade?.nextDriverName).toBeNull();
+    expect(cascade?.nextDriverName).toBe('Fēlikss Bērzkalns');
   });
 
   it('keeps the attempt count when no offer is currently held (edge)', () => {
