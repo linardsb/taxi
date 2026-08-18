@@ -4,8 +4,8 @@ import {
   formatMessage,
   type DispatchBoardEvent,
 } from '@taxi/shared';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { RideQueue } from './ride-queue';
 
 type BoardRide = DispatchBoardEvent['rides'][number];
@@ -25,6 +25,9 @@ const ride = (over: Partial<BoardRide>): BoardRide => ({
 });
 
 const none: ReadonlySet<string> = new Set();
+
+/** #19 threads two callbacks through; tests that don't exercise them say so. */
+const noop = () => undefined;
 
 describe('RideQueue', () => {
   it('buckets rides and shows status, driver and age in place (expected)', () => {
@@ -54,6 +57,8 @@ describe('RideQueue', () => {
         ]}
         nowMs={NOW}
         flashRideIds={none}
+        onAssign={noop}
+        onCancel={noop}
       />,
     );
 
@@ -75,7 +80,15 @@ describe('RideQueue', () => {
   });
 
   it('shows catalog empty-copy per empty bucket (edge)', () => {
-    render(<RideQueue rides={[]} nowMs={NOW} flashRideIds={none} />);
+    render(
+      <RideQueue
+        rides={[]}
+        nowMs={NOW}
+        flashRideIds={none}
+        onAssign={noop}
+        onCancel={noop}
+      />,
+    );
     expect(
       screen.getAllByText(formatMessage('lv', 'console.empty_queue')),
     ).toHaveLength(3);
@@ -96,6 +109,8 @@ describe('RideQueue', () => {
         ]}
         nowMs={NOW}
         flashRideIds={new Set(['3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c'])}
+        onAssign={noop}
+        onCancel={noop}
       />,
     );
 
@@ -103,6 +118,95 @@ describe('RideQueue', () => {
     const calm = screen.getByText('Hanzas 3').closest('li');
     expect(flashed).toHaveClass('console-flash');
     expect(calm).not.toHaveClass('console-flash');
+  });
+
+  it('offers the right verb per row and reports the ride back (#19, expected)', () => {
+    const onAssign = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <RideQueue
+        rides={[
+          ride({}),
+          ride({
+            rideId: '4f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c',
+            status: 'accepted',
+            driverId: 'd0000000-0000-4000-8000-000000000001',
+            driverName: 'Jānis Ozols',
+            pickup: {
+              location: { lat: 56.96, lng: 24.12 },
+              address: 'Hanzas 3',
+            },
+            unclaimedSeconds: 0,
+          }),
+        ]}
+        nowMs={NOW}
+        flashRideIds={none}
+        onAssign={onAssign}
+        onCancel={onCancel}
+      />,
+    );
+
+    // An unassigned ride gets «Piešķirt»; one with a car gets the reassign verb.
+    //
+    // Queried by ACCESSIBLE NAME, which carries the pickup: on a real board
+    // every row's buttons would otherwise be called the same thing, and a
+    // screen-reader user tabbing between them could not tell which ride they
+    // were about to cancel (#120 review M6). That the query needs the address
+    // to disambiguate here is the point.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Piešķirt braucienu — Brīvības 1' }),
+    );
+    expect(onAssign).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'requested' }),
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Piešķirt atkārtoti braucienu — Hanzas 3',
+      }),
+    );
+    expect(onAssign).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'accepted' }),
+    );
+
+    // Two cancel buttons, and no two share a name.
+    const cancels = screen.getAllByRole('button', { name: /^Atcelt braucienu/ });
+    expect(cancels).toHaveLength(2);
+    expect(new Set(cancels.map((b) => b.getAttribute('aria-label'))).size).toBe(
+      2,
+    );
+
+    // The VISIBLE label stays short — the address lives in the accessible name.
+    expect(cancels[0]).toHaveTextContent('Atcelt braucienu');
+  });
+
+  it('offers no assign verb once the driver has reached the ride (#19, edge)', () => {
+    render(
+      <RideQueue
+        rides={[
+          ride({
+            status: 'arrived',
+            driverId: 'd0000000-0000-4000-8000-000000000001',
+            driverName: 'Jānis Ozols',
+            unclaimedSeconds: 0,
+          }),
+        ]}
+        nowMs={NOW}
+        flashRideIds={none}
+        onAssign={noop}
+        onCancel={noop}
+      />,
+    );
+
+    // The api refuses it (RELEASABLE_STATUSES), so no button — a disabled one
+    // would invite a click that can only 409. Cancel stays: a dispatcher can
+    // always kill a ride.
+    expect(
+      screen.queryByRole('button', { name: /^Piešķirt atkārtoti/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Atcelt braucienu — Brīvības 1' }),
+    ).toBeInTheDocument();
   });
 
   it('cannot be handed a terminal ride — the wire schema refuses it (failure)', () => {
@@ -140,6 +244,8 @@ describe('RideQueue', () => {
         )}
         nowMs={NOW}
         flashRideIds={none}
+        onAssign={noop}
+        onCancel={noop}
       />,
     );
 

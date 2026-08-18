@@ -35,6 +35,19 @@ describe('ride state machine', () => {
     expect(canTransition('queued', 'offered')).toBe(true); // geozone queue front
   });
 
+  it('allows the dispatcher release back into the cascade (#19, edge)', () => {
+    // Reassignment is a release, not a cancellation — the ride keeps its id,
+    // its tracking token and the rider's SMS thread.
+    expect(canTransition('accepted', 'requested')).toBe(true);
+    expect(canTransition('arriving', 'requested')).toBe(true);
+  });
+
+  it('refuses to release a ride the driver has physically reached (#19, failure)', () => {
+    // A driver at the pickup, or carrying the passenger, is not reassignable.
+    expect(canTransition('arrived', 'requested')).toBe(false);
+    expect(canTransition('in_progress', 'requested')).toBe(false);
+  });
+
   it('rejects impossible transitions (failure)', () => {
     expect(canTransition('requested', 'in_progress')).toBe(false);
     expect(canTransition('settled', 'requested')).toBe(false);

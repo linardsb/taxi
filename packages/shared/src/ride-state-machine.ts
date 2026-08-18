@@ -95,12 +95,28 @@ export const ALLOWED_TRANSITIONS: Readonly<
   ],
   accepted: [
     'arriving',
+    // THE DISPATCHER RELEASE (#19). The only path back into the cascade after
+    // a driver has taken the ride, and it exists so a reassignment is not a
+    // cancellation: Dina puts a different car on the job while the ride keeps
+    // its id, its tracking token and the rider's SMS thread.
+    //
+    // Only a dispatcher may walk it. That is enforced at the SERVICE layer
+    // (`ReassignService`), not here and not in the DDL — the same split as
+    // `rideAssignmentSchema`'s dispatcher refine, because this table answers
+    // "is the hop legal", never "who is allowed to make it".
+    //
+    // Deliberately absent from `arrived` and `in_progress`: a driver standing
+    // at the pickup, or carrying the passenger, is not reassignable. That is a
+    // cancellation, and pretending otherwise would strand a rider mid-ride.
+    'requested',
     'cancelled_by_rider',
     'cancelled_by_driver',
     'cancelled_by_dispatcher',
   ],
   arriving: [
     'arrived',
+    /** The dispatcher release again — see the `accepted` row. */
+    'requested',
     'cancelled_by_rider',
     'cancelled_by_driver',
     'cancelled_by_dispatcher',

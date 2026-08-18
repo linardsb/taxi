@@ -17,6 +17,8 @@ import { RedisDispatchQueueStore } from './queue/redis-dispatch-queue.store';
 import { AutoMatchStrategy } from './strategies/auto-match.strategy';
 import { DispatchStrategyResolver } from './strategies/dispatch-strategy.resolver';
 import { GeozoneQueueStrategy } from './strategies/geozone-queue.strategy';
+import { ReassignService } from './reassign.service';
+import { RosterService } from './roster.service';
 
 /**
  * `DISPATCH_QUEUE_STORE` is UNCONDITIONALLY the Redis implementation, mirroring
@@ -40,6 +42,8 @@ import { GeozoneQueueStrategy } from './strategies/geozone-queue.strategy';
     DispatchService,
     DispatchNotifier,
     ForceAssignService,
+    ReassignService,
+    RosterService,
     DispatchRepository,
     DispatchSweeper,
     BoardService,

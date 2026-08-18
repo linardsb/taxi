@@ -7,30 +7,23 @@ import {
   ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
-import type { DispatchBoardEvent, JwtClaims } from '@taxi/shared';
-import { z } from 'zod';
+import {
+  forceAssignBodySchema,
+  reassignBodySchema,
+  type DispatchBoardEvent,
+  type DispatchRoster,
+  type ForceAssignBody,
+  type JwtClaims,
+  type ReassignBody,
+} from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
 import { BoardService } from './board/board.service';
 import { DispatchService } from './dispatch.service';
 import { ForceAssignService } from './force-assign.service';
-
-/**
- * Locally defined, deliberately NOT a shared contract: this body never crosses a
- * surface boundary until #19 draws the override UI, and that ticket can promote
- * it then. #10 adds no new shared contract.
- *
- * No `dispatcherId` field, by construction — the same rule as
- * `rideRequestBodySchema` omitting `riderId`. A body-supplied dispatcher id
- * would make the S9-2 audit trail forgeable, which is the one thing the audit
- * row exists to prevent.
- */
-const forceAssignBodySchema = z.object({
-  driverId: z.string().uuid(),
-  reason: z.string().max(280).nullable().default(null),
-});
-type ForceAssignBody = z.infer<typeof forceAssignBodySchema>;
+import { ReassignService } from './reassign.service';
+import { RosterService } from './roster.service';
 
 /**
  * `@Roles` is per-ROUTE here, not per-controller: drivers and dispatchers share
@@ -42,6 +35,8 @@ export class DispatchController {
   constructor(
     private readonly dispatch: DispatchService,
     private readonly forceAssignService: ForceAssignService,
+    private readonly reassignService: ReassignService,
+    private readonly rosterService: RosterService,
     private readonly board: BoardService,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
@@ -56,6 +51,18 @@ export class DispatchController {
   @Roles('dispatcher', 'admin')
   boardSnapshot(): Promise<DispatchBoardEvent> {
     return this.board.buildBoardState(this.env.DEFAULT_CITY_ID);
+  }
+
+  /**
+   * The override picker's roster (#19) — EVERY driver, offline ones included,
+   * which is precisely what the board frame is not. Request-scoped: fetched
+   * when the picker opens, never pushed on the 2 s cadence. Same single-city
+   * rule as the board above.
+   */
+  @Get('drivers')
+  @Roles('dispatcher', 'admin')
+  roster(): Promise<DispatchRoster> {
+    return this.rosterService.listRoster(this.env.DEFAULT_CITY_ID);
   }
 
   @Post('offers/:offerId/accept')
@@ -93,6 +100,27 @@ export class DispatchController {
     @Body(new ZodValidationPipe(forceAssignBodySchema)) body: ForceAssignBody,
   ): Promise<{ rideId: string }> {
     return this.forceAssignService.forceAssign({
+      dispatcherId: user.sub,
+      rideId,
+      driverId: body.driverId,
+      reason: body.reason,
+    });
+  }
+
+  /**
+   * Swap the car on a ride that already has one (#19). A separate route from
+   * `assign` rather than a mode of it: the two mean different things to the
+   * ride — one puts a car on an unassigned ride, the other takes one off and
+   * replaces it — and only this one can 409 with `ride_not_reassignable`.
+   */
+  @Post('rides/:rideId/reassign')
+  @Roles('dispatcher', 'admin')
+  reassign(
+    @CurrentUser() user: JwtClaims,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+    @Body(new ZodValidationPipe(reassignBodySchema)) body: ReassignBody,
+  ): Promise<{ rideId: string }> {
+    return this.reassignService.reassign({
       dispatcherId: user.sub,
       rideId,
       driverId: body.driverId,

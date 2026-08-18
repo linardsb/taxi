@@ -81,9 +81,19 @@ export class RideNotificationsService {
 
   /**
    * Post-commit hook #2, fired by `emitStatus` on EVERY transition and
-   * filtered here to the two that carry an SMS. Each is reachable at most
-   * once per ride (the re-offer loop never passes through either), so there
-   * is no dedupe table — see the plan's NOTES on the rejected outbox.
+   * filtered here to the two that carry an SMS.
+   *
+   * `accepted` is reachable MORE THAN ONCE per ride since #19 added the
+   * dispatcher release (`accepted|arriving → requested`): a reassign walks the
+   * ride back into the cascade and a second driver accepts it. That repeat is
+   * intended — each `driver_assigned` names the ride's CURRENT driver, plate
+   * and ETA, so the second message is a correction rather than a duplicate,
+   * and it is the only way the rider learns their car changed.
+   *
+   * Still no dedupe table, but NOT because the statuses fire once: `emitStatus`
+   * runs once per APPLIED transition, race-guarded by the conditional UPDATE,
+   * so a duplicate SMS would mean a duplicate assignment. See the plan's NOTES
+   * on the rejected outbox.
    */
   async onStatus(ride: TransitionedRide, from: RideStatus): Promise<void> {
     if (ride.status !== 'accepted' && ride.status !== 'arrived') return;

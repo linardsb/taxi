@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>#19 build brief — override, phone orders, zones</title>
+<style>
+  :root {
+    --bg: #14161a; --surface: #1c1f26; --surface2: #232833;
+    --fg: #e8eaed; --muted: #9aa3b2; --line: #2f3540;
+    --accent: #ffc94d; --ok: #62c28e; --warn: #e8935c; --bad: #d9636b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.25rem 5rem;
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.65rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+  h2 { font-size: 1.15rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 1rem; margin: 1.5rem 0 .4rem; color: var(--accent); }
+  p { margin: .6rem 0; }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; font-size: .95rem; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.15rem; margin: 1rem 0; }
+  .card.note { border-left: 3px solid var(--accent); }
+  .card.warn { border-left: 3px solid var(--warn); }
+  pre { background: var(--surface2); border: 1px solid var(--line); border-radius: 8px;
+        padding: .85rem 1rem; overflow-x: auto; font: 13px/1.55 var(--mono); margin: .75rem 0; }
+  code { font: .89em var(--mono); background: var(--surface2); padding: .1em .35em; border-radius: 4px; }
+  pre code { background: none; padding: 0; }
+  .why { color: var(--muted); font-size: .92rem; border-left: 2px solid var(--line); padding-left: .8rem; margin: .7rem 0 0; }
+  .why b { color: var(--fg); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin: .9rem 0; font-size: .92rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
+  .phases { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
+  .phase { flex: 1 1 220px; background: var(--surface); border: 1px solid var(--line);
+           border-top: 3px solid var(--accent); border-radius: 8px; padding: .85rem 1rem; }
+  .phase h4 { margin: 0 0 .3rem; font-size: .95rem; }
+  .phase p { margin: 0; font-size: .88rem; color: var(--muted); }
+  .tag { display: inline-block; font: 600 .72rem var(--mono); padding: .12em .5em; border-radius: 4px;
+         background: var(--surface2); color: var(--muted); border: 1px solid var(--line); }
+  .tag.ok { color: var(--ok); border-color: #2c4a3b; }
+  .tag.warn { color: var(--warn); border-color: #4a3a2c; }
+  ul { margin: .5rem 0; padding-left: 1.2rem; }
+  li { margin: .3rem 0; }
+  .deeper { display: grid; gap: .5rem; }
+  .deeper div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: .6rem .9rem; font-size: .92rem; }
+  .deeper b { color: var(--accent); }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>#19 — Dispatch console: override, phone orders, zones</h1>
+<p class="sub">Build brief · plan at <code>.claude/plans/dispatch-override-phone-orders-zones.md</code> (the source of truth) · 5-minute read</p>
+
+<h2>What we're building, and why</h2>
+<p>
+  #18 gave Dina a board she can <b>watch</b>. #19 makes it a board she can <b>act</b> on: take a booking call and
+  create the ride, see who the algorithm is offering it to and why, and put a different car on it when she knows better.
+</p>
+<p>
+  It matters because the phone channel is half the product thesis. "Can both call and use the app" is riders' #2 reason
+  to switch (S10-3), and Dina — who ran planning at Lady Taxi — is the differentiator Bolt structurally can't match and
+  Panda can't staff. Right now there is literally no way to book a ride by phone: <code>POST /rides</code> is
+  <code>@Roles('rider')</code>, rider-self only.
+</p>
+
+<h2>The five concepts this plan rests on</h2>
+
+<h3>1 · Two assignment verbs, and one guarded state machine</h3>
+<p>
+  Every shipped dispatch product splits assignment into two verbs. <b>Offer</b> asks a driver — they may accept or
+  decline inside a timer. <b>Force-assign</b> tells them — no accept step, the driver is simply notified. Onro and Onde
+  both ship exactly this pair, independently.
+</p>
+<p>
+  In our code both are just walks through <code>ALLOWED_TRANSITIONS</code>, the one guarded state machine in the repo.
+  <code>requested → accepted</code> is illegal, so <code>ForceAssignService</code> walks the ride
+  <code>requested → offered → accepted</code>, writing an already-accepted offer row on the way. That second hop is the
+  real guard: a ride that already moved on fails there with a 409 instead of being forced.
+</p>
+<pre><code>requested ──offer──> offered ──accept──> accepted ──> arriving ──> arrived ──> in_progress
+    ^                    │                    │
+    └──decline/timeout───┘                    │
+    └───────────── #19 adds this ─────────────┘   (dispatcher release, for reassign)</code></pre>
+<p class="why">
+  <b>Why this plan needs it:</b> reassigning an <i>already accepted</i> ride has no legal path today — the only exit is
+  cancellation, which kills the rider's ride, tracking token and SMS thread. Phase A adds one transition
+  (<code>accepted|arriving → requested</code>) so a reassign is a release back into the cascade. It's a cross-surface
+  contract change, which is why it's Open Question Q2 rather than a quiet edit.
+</p>
+<div class="card warn">
+  <b>Where the ticket and the code disagree.</b> #19's failure-case AC says assigning a just-went-offline driver should
+  give "a clear error + re-offer". #10 deliberately built the opposite: force-assign bypasses eligibility entirely,
+  because overriding onto an offline driver <i>is</i> the feature — Dina has Jānis on the phone, his app crashed, she
+  still needs to send him. <b>Resolution:</b> the console warns and asks for a second confirm; the API is unchanged;
+  the 409 (ride already moved on) is the real error, and the cascade resuming is the "re-offer".
+</div>
+
+<h3>2 · Autocomplete session tokens — why address search is free at pilot volume</h3>
+<p>
+  Google bills address typeahead per keystroke, which is terrifying until you know about session tokens. A
+  <b>session</b> is one user finding one address: you mint a token, send it with every keystroke request, and send it
+  once more with the final "give me the coordinates" call. Google then bills the group as one unit rather than as
+  <i>n</i> independent requests.
+</p>
+<pre><code>mint token ──┐
+             ├─ "Brīv"        ─┐
+             ├─ "Brīvības"     ├─ Autocomplete (New)   $2.83 / 1,000
+             ├─ "Brīvības ie"  ─┘
+             └─ resolve placeId ─ Place Details Essentials  $5.00 / 1,000
+                                  ↑ TERMINATES the session
+
+Free tier: 10,000 calls per SKU per month (Essentials)</code></pre>
+<p>
+  At the PRD's month-3 target — 100 rides/week, worst case all of them phone-booked, 2 address fields each, ~5 debounced
+  keystrokes reaching the API per field — that's <b>4,330</b> autocomplete calls and <b>866</b> details calls per month.
+  Both sit inside the free 10,000-per-SKU allowance, so the expected cost is <b>€0</b>.
+</p>
+<p class="why">
+  <b>Where the analogy breaks:</b> a token doesn't make requests free, it makes them <i>groupable</i> — and only if the
+  session terminates with the right SKU. Terminating with <b>Place Details Essentials (IDs Only)</b>, which sounds
+  cheaper because it's $0, actually <i>voids</i> the session and bills every keystroke individually. That single
+  wrong field mask is the difference between €0 and a real bill.
+</p>
+<p class="why">
+  <b>Why this plan needs it:</b> <code>StubMapsProvider.geocode()</code> throws today and the seam has no autocomplete
+  method at all — there is no way to turn "Brīvības iela 45" into a bookable point. Everything downstream (quote, ETA,
+  zone, auto-match) needs coordinates, because <code>addressPointSchema</code> requires a <code>location</code>.
+</p>
+
+<h3>3 · Seams — why a stub is a real deliverable</h3>
+<p>
+  A seam is an interface in <code>packages/shared/src/seams/</code> that every call site goes through, so the thing
+  behind it can be swapped without touching the callers. <code>sms-provider.ts</code> is nine lines and no
+  implementation; that's the shape.
+</p>
+<pre><code>packages/shared/src/seams/
+├── maps-provider.ts        ← #19 adds searchAddress() + resolvePlace()
+├── sms-provider.ts         ← the shape to copy
+└── telephony-provider.ts   ← #19 CREATES this (the architecture's named gap)
+                               dial() · currentCaller()
+                               bound to a stub; SIP screen-pop lands later,
+                               same UI either way</code></pre>
+<p class="why">
+  <b>Why this plan needs it:</b> the evidence is unambiguous that SIP screen-pop can wait (week-2+, not day-1) but that
+  caller-ID prefill cannot — it's the one phone feature with measured savings, 15–45 s per call. The seam is what makes
+  those two statements compatible: Dina types the number today, a gateway supplies it later, and the console code
+  doesn't change.
+</p>
+
+<h3>4 · Alarm discipline — status is not an alarm</h3>
+<p>
+  ISA-18.2 and EEMUA 191 came out of Piper Alpha and give hard numbers: an operator processes about one alarm a minute;
+  more than ten in ten minutes is a flood; a well-managed console averages under six an hour. The rationalization rule
+  is one sentence — <b>an alarm exists only if it requires an operator response.</b>
+</p>
+<pre><code>ALARM  (toast · flash · beep)      STATUS  (recolor in place)
+  dispatch:unclaimed                 ride accepted / arriving / arrived
+  dispatch:sms_failed                cascade countdown ticking
+  socket went offline                queue positions changing
+                                     assign succeeded
+  ── budget: &lt; 6 / hour ──</code></pre>
+<p class="why">
+  <b>Why this plan needs it:</b> everything #19 adds is on the right-hand column, and the single most natural thing to
+  build is a cheerful "ride assigned!" toast. That toast is the regression. Dina left a console that "often freezes" and
+  a wall of blinking; calm is the feature.
+</p>
+
+<h3>5 · One explanation string, shared by two audiences</h3>
+<p>
+  Every auto-pick answers "why this driver" in one line: <i>«Āgenskalns rinda #1 · zonā 47 min · 4 min attālumā»</i>.
+  Dispatchers override confidently only when they can see the logic; drivers, per the transparency research, want the
+  same explanation after the fact.
+</p>
+<pre><code>packages/shared/dispatch-explanation.ts
+        explainAssignment({ strategy, zoneName, queuePosition,
+                            secondsInZone, etaSeconds })
+                     │
+        ┌────────────┴────────────┐
+   Dina's console            Driver app (#15)
+   (cascade strip)           (why you got it / didn't)
+        └──── byte-identical ────┘</code></pre>
+<p class="why">
+  <b>Why this plan needs it:</b> the identity is the whole mechanism. It turns "why did Jānis get that job?" from a
+  phone argument into a self-service answer — S7-2 fairness, Dina's top carry-over from the autoosta. If it ever gets
+  composed twice, the feature quietly stops working while every test stays green.
+</p>
+
+<h2>How the pieces fit</h2>
+<pre><code>  Dina's console (/dispatch)                       services/api
+  ┌──────────────────────────────┐                 ┌───────────────────────────────┐
+  │ board/     ← #18, unchanged  │                 │ dispatch/                     │
+  │   use-board · board-state    │◄── frame 2s ────│   board.service               │
+  │   connection pill            │    REST snap    │   + zone-rows.ts   (C)        │
+  │                              │                 │   + cascade.ts     (C)        │
+  │ override/          (A)       │── assign ──────►│   force-assign.service (#10)  │
+  │   assign-dialog              │── reassign ────►│   + reassign.service   (A)    │
+  │   driver-picker              │── roster ──────►│   + roster.service     (A)    │
+  │                              │                 │                               │
+  │ phone-orders/      (B)       │── book ────────►│ dispatch/bookings/     (B)    │
+  │   booking-form               │                 │   └─► RidesService.request()  │
+  │   address-field  ─ typeahead │── search ──────►│ geo/google-places      (B)    │
+  │   caller-panel   ─ lookup    │── customer ────►│ customers/             (B)    │
+  │                              │                 │                               │
+  │ zones/             (C)       │                 │ dispatch/queue/               │
+  │   zone-grid · cascade-strip  │                 │   + snapshot() + joinedAt (C) │
+  └──────────────────────────────┘                 └───────────────────────────────┘
+              │                                                   │
+              └──────────── packages/shared ──────────────────────┘
+                 schemas/dispatch · schemas/customer
+                 seams/telephony-provider · seams/maps-provider
+                 dispatch-explanation · ride-state-machine · i18n</code></pre>
+
+<h2>The plan at a glance</h2>
+
+<div class="phases">
+  <div class="phase">
+    <h4>Phase A — Override</h4>
+    <p>Force-assign UI, driver picker incl. offline drivers, reassign, cancel. One state-machine row added.</p>
+  </div>
+  <div class="phase">
+    <h4>Phase B — Phone orders</h4>
+    <p>Dispatcher booking endpoint, customers + venues, Places typeahead, telephony seam, keyboard-first form.</p>
+  </div>
+  <div class="phase">
+    <h4>Phase C — Zones</h4>
+    <p>Queue snapshot + join times, zone grid, cascade strip, the shared explanation string.</p>
+  </div>
+</div>
+<p>
+  The three phases are <b>independent</b> — none blocks another, each ends on its own green gate. Recommended execution
+  is three PRs. Phase D is acceptance closure: the AC scenarios as integration tests, the phone-share query, and the
+  ledger rows measured.
+</p>
+
+<h3>What changes on disk</h3>
+<pre><code>packages/shared/src/
+├── schemas/dispatch.ts        NEW  forceAssign + roster + reassign bodies
+├── schemas/customer.ts        NEW  customer · savedPlace · dispatcherBooking
+├── seams/telephony-provider.ts NEW the architecture's named gap
+├── seams/maps-provider.ts      +   searchAddress() · resolvePlace()
+├── dispatch-explanation.ts    NEW  the one "why this driver" composer
+├── ride-state-machine.ts       +   accepted|arriving → requested
+└── i18n.ts                     +   ~30 console.* keys (LV first)
+
+db/src/schema/customers.ts     NEW  customers · saved_places  (+1 migration)
+
+services/api/src/features/
+├── dispatch/roster.service.ts     NEW
+├── dispatch/reassign.service.ts   NEW
+├── dispatch/bookings/             NEW  POST /dispatch/bookings
+├── dispatch/board/zone-rows.ts    NEW
+├── dispatch/board/cascade.ts      NEW
+├── dispatch/queue/*.store.ts       +   snapshot() + joinedAt hash
+├── customers/                     NEW  caller-ID lookup, venues
+├── geo/google-places.provider.ts  NEW
+├── geo/address-search.controller  NEW
+└── telephony/                     NEW  stub provider
+
+apps/dispatch/src/features/
+├── override/      NEW   assign-state · use-assign · dialogs · picker
+├── phone-orders/  NEW   booking-draft · form · address-field · caller-panel
+├── zones/         NEW   zone-grid · cascade-strip
+└── board/zones-panel.tsx  RETIRED — replaced by zones/zone-grid</code></pre>
+
+<h3>Acceptance criteria, compressed</h3>
+<table>
+  <tr><th>#</th><th>Criterion</th><th>Kind</th></tr>
+  <tr><td>5</td><td>A phone order flows through normal dispatch, indistinguishable from an app booking except <code>bookingChannel</code></td><td><span class="tag ok">expected</span></td></tr>
+  <tr><td>1,3</td><td>Force-assign overrides an in-flight cascade cleanly; reassign releases the first driver</td><td><span class="tag warn">edge</span></td></tr>
+  <tr><td>2</td><td>Offline driver → warning + confirm (not a block); 409 → clear error, cascade resumes</td><td><span class="tag warn">failure</span></td></tr>
+  <tr><td>9</td><td>Booking draft survives API kill, socket drop and full refresh — 0 lost</td><td><span class="tag">ledger</span></td></tr>
+  <tr><td>13</td><td>Repeat caller ≤ 30 s · new caller ≤ 60 s · venue ≤ 15 s, measured and marked <code>observed</code></td><td><span class="tag">ledger</span></td></tr>
+  <tr><td>12</td><td>Phone-channel share countable from <code>rides.booking_channel</code> — a query, not a counter</td><td><span class="tag">PRD §7</span></td></tr>
+  <tr><td>11</td><td><code>pnpm turbo run typecheck lint test build --force</code> green <b>with <code>REDIS_TEST_URL</code> set</b></td><td><span class="tag">gate</span></td></tr>
+</table>
+
+<div class="card note">
+  <b>Both open decisions closed 2026-08-17.</b>
+  <b>Q2 — ratified: release, not reassign-as-cancel.</b> The tracking token is minted once per ride and #17 reuses it,
+  so cancel-and-rebook takes the rider's live link away at the moment their car changes; "searching" is the smaller
+  loss, and the tracking page already maps <code>requested → searching</code>. Blast radius re-derived, not inherited:
+  <code>apps/rider</code> and <code>apps/driver</code> have no <code>src/</code> yet. Two forward-only assumptions the
+  transition breaks are decided in the plan — the payment-method lock re-opens during the release window (kept, nothing
+  is written to the ledger at <code>accepted</code>), and <code>onStatus</code>'s "at most once per ride" premise is now
+  false, which is the stated reason there is no dedupe table (follow-up A15: rewrite that argument).
+  <b>Q4 — not arrived; proceeding on the Autocab/TaxiCaller substitute.</b> Responses sheet untouched since the
+  precizējumi send minute, no inbound mail in 90 days, no Drive drawing, and the <code>uzdevumi Dinai</code> sheet is
+  empty — dropped, not pending. It gates Phase B/C layout only, nothing in Phase A.
+</div>
+
+<h2>Go deeper</h2>
+<div class="deeper">
+  <div><b>/learn state machines as guards</b> — why <code>assertTransition()</code> beats status writes, and how the conditional UPDATE makes the race impossible rather than unlikely.</div>
+  <div><b>/learn Google Places session tokens</b> — the billing model, field masks, and the IDs-Only trap that voids a session.</div>
+  <div><b>/learn seams and ports</b> — when an interface earns its keep (swap-ability, testability) and when it's an abstraction tax.</div>
+  <div><b>/learn ISA-18.2 alarm management</b> — alarm floods, the &lt;6/hour budget, and rationalization as a design discipline.</div>
+  <div><b>/learn ARIA combobox pattern</b> — <code>aria-activedescendant</code>, the keyboard table, and why zero-mouse is an acceptance criterion here.</div>
+</div>
+
+<footer>
+  Sakta Cab · issue #19 · brief generated 2026-08-17 alongside
+  <code>.claude/plans/dispatch-override-phone-orders-zones.md</code>. The markdown plan is the single source of truth;
+  this page is disposable.
+</footer>
+
+</main>
+</body>
+</html>

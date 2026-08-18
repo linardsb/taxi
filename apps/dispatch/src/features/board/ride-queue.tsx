@@ -9,6 +9,7 @@ import {
   type MessageKey,
   type RideStatus,
 } from '@taxi/shared';
+import { RideRowActions } from '@/features/override';
 
 const LANG: Language = 'lv';
 
@@ -61,7 +62,15 @@ function RideRow({
   ride,
   nowMs,
   flash,
-}: Readonly<{ ride: BoardRide; nowMs: number; flash: boolean }>) {
+  onAssign,
+  onCancel,
+}: Readonly<{
+  ride: BoardRide;
+  nowMs: number;
+  flash: boolean;
+  onAssign: (ride: BoardRide) => void;
+  onCancel: (ride: BoardRide) => void;
+}>) {
   return (
     <li
       className={flash ? 'console-flash' : undefined}
@@ -96,6 +105,14 @@ function RideRow({
           {ageOf(nowMs, ride.requestedAt)}
         </span>
       </span>
+      {/* The override slice owns what Dina can DO to a row; this slice owns
+          what the row says. See override/row-actions.tsx. */}
+      <RideRowActions
+        status={ride.status}
+        address={ride.pickup.address}
+        onAssign={() => onAssign(ride)}
+        onCancel={() => onCancel(ride)}
+      />
     </li>
   );
 }
@@ -105,11 +122,15 @@ function Bucket({
   rides,
   nowMs,
   flashRideIds,
+  onAssign,
+  onCancel,
 }: Readonly<{
   title: string;
   rides: BoardRide[];
   nowMs: number;
   flashRideIds: ReadonlySet<string>;
+  onAssign: (ride: BoardRide) => void;
+  onCancel: (ride: BoardRide) => void;
 }>) {
   return (
     <section style={{ display: 'grid', gap: 'var(--spacing-sm)' }}>
@@ -149,6 +170,8 @@ function Bucket({
               ride={ride}
               nowMs={nowMs}
               flash={flashRideIds.has(ride.rideId)}
+              onAssign={onAssign}
+              onCancel={onCancel}
             />
           ))}
         </ul>
@@ -167,10 +190,14 @@ export function RideQueue({
   rides,
   nowMs,
   flashRideIds,
+  onAssign,
+  onCancel,
 }: Readonly<{
   rides: BoardRide[];
   nowMs: number;
   flashRideIds: ReadonlySet<string>;
+  onAssign: (ride: BoardRide) => void;
+  onCancel: (ride: BoardRide) => void;
 }>) {
   const requested = rides.filter((r) => r.status === 'requested');
   const offered = rides.filter(
@@ -178,26 +205,22 @@ export function RideQueue({
   );
   const active = rides.filter((r) => ACTIVE.has(r.status));
 
+  const bucket = (title: MessageKey, bucketRides: BoardRide[]) => (
+    <Bucket
+      title={formatMessage(LANG, title)}
+      rides={bucketRides}
+      nowMs={nowMs}
+      flashRideIds={flashRideIds}
+      onAssign={onAssign}
+      onCancel={onCancel}
+    />
+  );
+
   return (
     <div style={{ display: 'grid', gap: 'var(--spacing-lg)' }}>
-      <Bucket
-        title={formatMessage(LANG, 'console.queue_requested')}
-        rides={requested}
-        nowMs={nowMs}
-        flashRideIds={flashRideIds}
-      />
-      <Bucket
-        title={formatMessage(LANG, 'console.queue_offered')}
-        rides={offered}
-        nowMs={nowMs}
-        flashRideIds={flashRideIds}
-      />
-      <Bucket
-        title={formatMessage(LANG, 'console.queue_active')}
-        rides={active}
-        nowMs={nowMs}
-        flashRideIds={flashRideIds}
-      />
+      {bucket('console.queue_requested', requested)}
+      {bucket('console.queue_offered', offered)}
+      {bucket('console.queue_active', active)}
     </div>
   );
 }

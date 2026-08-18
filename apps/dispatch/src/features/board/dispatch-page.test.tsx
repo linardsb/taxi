@@ -14,6 +14,13 @@ vi.mock('@/features/board', async (importOriginal) => ({
   useBoard: () => useBoardMock(),
 }));
 
+// #19's override slice calls `useRouter` (to bounce a dead session to /login),
+// and outside the app-router runtime that throws "invariant expected app
+// router to be mounted" before the page renders at all.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+}));
+
 // The zones view is the default, so leaflet never mounts — but the module is
 // still imported, and jsdom has no real leaflet runtime.
 vi.mock('leaflet', () => ({

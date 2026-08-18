@@ -92,6 +92,57 @@ const lv = {
   'console.wrong_code': 'Nepareizs vai novecojis kods',
   'console.request_failed': 'Neizdevās nosūtīt kodu. Mēģiniet vēlreiz.',
   'console.admin_placeholder': 'Administrēšanas sadaļa tiks pievienota vēlāk',
+  // Force-assign / override (#19, S9-2). Two verbs: «Piešķirt» puts a car on a
+  // ride with none, «Piešķirt atkārtoti» swaps the car already on it.
+  'console.assign': 'Piešķirt',
+  'console.reassign': 'Piešķirt atkārtoti',
+  // The row buttons' ACCESSIBLE names. The visible label stays short; these
+  // carry the pickup so twelve rows do not announce as twelve identical
+  // buttons while tabbing (#120 review M6).
+  'console.assign_ride_at': 'Piešķirt braucienu — {address}',
+  'console.reassign_ride_at': 'Piešķirt atkārtoti braucienu — {address}',
+  'console.cancel_ride_at': 'Atcelt braucienu — {address}',
+  'console.assign_title': 'Piešķirt šoferi',
+  'console.reassign_title': 'Piešķirt braucienu atkārtoti',
+  'console.assign_pick_driver': 'Izvēlieties šoferi',
+  'console.assign_filter': 'Meklēt pēc vārda, numura zīmes vai tālruņa',
+  'console.assign_no_drivers': 'Nav neviena šofera',
+  'console.assign_reason': 'Iemesls (nav obligāts)',
+  'console.assign_confirm': 'Apstiprināt',
+  'console.assign_back': 'Atpakaļ',
+  'console.assign_cancel': 'Atcelt',
+  'console.assign_submitting': 'Piešķir…',
+  'console.assign_on_ride': 'Izpilda braucienu',
+  // The override is deliberately NOT filtered through the eligibility rules
+  // (S9-2) — so an ineligible driver is a WARNING plus a second confirm, never
+  // a block. Dina has the driver on the phone; his app crashed.
+  'console.assign_offline_warning':
+    '{name} nav tiešsaistē — piešķirt tik un tā?',
+  'console.assign_on_ride_warning':
+    '{name} jau izpilda braucienu — piešķirt tik un tā?',
+  'console.assign_offline_disabled':
+    'Bezsaistē — piešķiršana nav iespējama, kamēr nav savienojuma',
+  // The API's error codes, in Dina's words. `assign_failed` is the fallback:
+  // an unmapped code renders this, never the raw code.
+  'console.assign_failed': 'Neizdevās piešķirt. Mēģiniet vēlreiz.',
+  'console.assign_error_ride_not_found': 'Brauciens vairs neeksistē',
+  'console.assign_error_driver_not_found': 'Šoferis nav atrasts',
+  'console.assign_error_ride_not_assignable':
+    'Brauciens jau ir piešķirts vai atcelts — saraksts atjaunosies pats',
+  'console.assign_error_ride_already_assigned':
+    'Brauciens jau ir piešķirts citam šoferim',
+  'console.assign_error_ride_not_reassignable':
+    'Šo braucienu vairs nevar piešķirt atkārtoti — šoferis jau ir klāt vai brauc',
+  'console.assign_error_ride_not_cancellable':
+    'Šo braucienu vairs nevar atcelt — tas jau ir beidzies vai atcelts',
+  'console.assign_error_ride_moved_on':
+    'Brauciena statuss mainījās — saraksts atjaunosies pats',
+  'console.cancel_ride': 'Atcelt braucienu',
+  'console.cancel_title': 'Atcelt braucienu',
+  'console.cancel_reason': 'Atcelšanas iemesls (nav obligāts)',
+  'console.cancel_confirm': 'Atcelt braucienu',
+  'console.cancel_keep': 'Nē, atstāt',
+  'console.cancel_failed': 'Neizdevās atcelt. Mēģiniet vēlreiz.',
 } as const;
 
 export type MessageKey = keyof typeof lv;
@@ -175,6 +226,46 @@ export const MESSAGES = {
     'console.wrong_code': 'Неверный или устаревший код',
     'console.request_failed': 'Не удалось отправить код. Попробуйте ещё раз.',
     'console.admin_placeholder': 'Раздел администрирования появится позже',
+    'console.assign': 'Назначить',
+    'console.reassign': 'Переназначить',
+    'console.assign_ride_at': 'Назначить поездку — {address}',
+    'console.reassign_ride_at': 'Переназначить поездку — {address}',
+    'console.cancel_ride_at': 'Отменить поездку — {address}',
+    'console.assign_title': 'Назначить водителя',
+    'console.reassign_title': 'Переназначить поездку',
+    'console.assign_pick_driver': 'Выберите водителя',
+    'console.assign_filter': 'Поиск по имени, номеру или телефону',
+    'console.assign_no_drivers': 'Водителей нет',
+    'console.assign_reason': 'Причина (необязательно)',
+    'console.assign_confirm': 'Подтвердить',
+    'console.assign_back': 'Назад',
+    'console.assign_cancel': 'Отмена',
+    'console.assign_submitting': 'Назначаем…',
+    'console.assign_on_ride': 'На заказе',
+    'console.assign_offline_warning': '{name} не в сети — всё равно назначить?',
+    'console.assign_on_ride_warning':
+      '{name} уже на заказе — всё равно назначить?',
+    'console.assign_offline_disabled':
+      'Нет связи — назначение недоступно, пока соединение не восстановлено',
+    'console.assign_failed': 'Не удалось назначить. Попробуйте ещё раз.',
+    'console.assign_error_ride_not_found': 'Поездки больше не существует',
+    'console.assign_error_driver_not_found': 'Водитель не найден',
+    'console.assign_error_ride_not_assignable':
+      'Поездка уже назначена или отменена — список обновится сам',
+    'console.assign_error_ride_already_assigned':
+      'Поездка уже назначена другому водителю',
+    'console.assign_error_ride_not_reassignable':
+      'Эту поездку уже нельзя переназначить — водитель на месте или в пути',
+    'console.assign_error_ride_not_cancellable':
+      'Эту поездку уже нельзя отменить — она завершена или отменена',
+    'console.assign_error_ride_moved_on':
+      'Статус поездки изменился — список обновится сам',
+    'console.cancel_ride': 'Отменить поездку',
+    'console.cancel_title': 'Отменить поездку',
+    'console.cancel_reason': 'Причина отмены (необязательно)',
+    'console.cancel_confirm': 'Отменить поездку',
+    'console.cancel_keep': 'Нет, оставить',
+    'console.cancel_failed': 'Не удалось отменить. Попробуйте ещё раз.',
   },
   en: {
     'sms.booking_confirmed': 'Your taxi is booked.',
@@ -251,6 +342,46 @@ export const MESSAGES = {
     'console.wrong_code': 'Wrong or expired code',
     'console.request_failed': 'Could not send the code. Try again.',
     'console.admin_placeholder': 'The admin area arrives later',
+    'console.assign': 'Assign',
+    'console.reassign': 'Reassign',
+    'console.assign_ride_at': 'Assign the ride at {address}',
+    'console.reassign_ride_at': 'Reassign the ride at {address}',
+    'console.cancel_ride_at': 'Cancel the ride at {address}',
+    'console.assign_title': 'Assign a driver',
+    'console.reassign_title': 'Reassign the ride',
+    'console.assign_pick_driver': 'Pick a driver',
+    'console.assign_filter': 'Search by name, plate or phone',
+    'console.assign_no_drivers': 'No drivers',
+    'console.assign_reason': 'Reason (optional)',
+    'console.assign_confirm': 'Confirm',
+    'console.assign_back': 'Back',
+    'console.assign_cancel': 'Cancel',
+    'console.assign_submitting': 'Assigning…',
+    'console.assign_on_ride': 'On a ride',
+    'console.assign_offline_warning': '{name} is offline — assign anyway?',
+    'console.assign_on_ride_warning':
+      '{name} is already on a ride — assign anyway?',
+    'console.assign_offline_disabled':
+      'Offline — assigning is unavailable until the connection is back',
+    'console.assign_failed': 'Could not assign. Try again.',
+    'console.assign_error_ride_not_found': 'That ride no longer exists',
+    'console.assign_error_driver_not_found': 'Driver not found',
+    'console.assign_error_ride_not_assignable':
+      'The ride is already assigned or cancelled — the board will catch up',
+    'console.assign_error_ride_already_assigned':
+      'The ride is already assigned to another driver',
+    'console.assign_error_ride_not_reassignable':
+      'This ride can no longer be reassigned — the driver has arrived or is driving',
+    'console.assign_error_ride_not_cancellable':
+      'This ride can no longer be cancelled — it has already ended or been cancelled',
+    'console.assign_error_ride_moved_on':
+      'The ride changed status — the board will catch up',
+    'console.cancel_ride': 'Cancel ride',
+    'console.cancel_title': 'Cancel ride',
+    'console.cancel_reason': 'Cancellation reason (optional)',
+    'console.cancel_confirm': 'Cancel the ride',
+    'console.cancel_keep': 'No, keep it',
+    'console.cancel_failed': 'Could not cancel. Try again.',
   },
 } as const satisfies Record<Language, Record<MessageKey, string>>;
 

@@ -41,6 +41,16 @@ export const SWEEP_INTERVAL_MS = 1_000;
 export const AWAITING_BATCH_LIMIT = 20;
 
 /**
+ * How many drivers the override picker's roster read returns (#19).
+ *
+ * The one read in this slice whose cost scales with the drivers table — every
+ * sibling is bounded (`CANDIDATE_LIMIT`, `AWAITING_BATCH_LIMIT`, the board's
+ * own limit), and this one was not (#120 review L1). Well above the ≤10-driver
+ * pilot, so nothing is hidden from Dina today; it is a ceiling, not a page.
+ */
+export const ROSTER_LIMIT = 200;
+
+/**
  * How long an unclaimed alert suppresses its own repeats.
  *
  * At one tick per second an un-deduped alert would flash Dina's board 60 times

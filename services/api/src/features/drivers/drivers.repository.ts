@@ -51,6 +51,16 @@ export interface DriverBoardContact {
 }
 
 /**
+ * `DriverBoardContact` plus the plate, for #19's override picker. A separate
+ * interface rather than an optional field on the board's: the board renders
+ * the ONLINE set 30 times a minute and has no use for a plate, and widening
+ * its shape would put an unread column on every frame's query.
+ */
+export interface DriverRosterContact extends DriverBoardContact {
+  vehiclePlate: string | null;
+}
+
+/**
  * An UPDATE whose WHERE matched nothing returns no row, and `toProfile(row!)`
  * made that a bare "cannot read properties of undefined" 500 (L7). Unreachable
  * today — every caller runs `findOrCreate` first and `drivers` has no delete
@@ -298,6 +308,44 @@ export class DriversRepository {
       .from(drivers)
       .innerJoin(users, eq(users.id, drivers.userId))
       .where(inArray(drivers.userId, driverIds));
+  }
+
+  /**
+   * EVERY driver, for #19's override picker — deliberately unfiltered.
+   *
+   * `findBoardContacts` above answers "who is in the online set"; this answers
+   * "who exists at all", because force-assign is documented as NOT filtered
+   * through the eligibility rules and a picker that hid offline drivers could
+   * not express S9-2. There is no approval flag to filter on yet either —
+   * driver onboarding review is #20's.
+   *
+   * `min(plate)` rather than a row per vehicle: a driver may own several cars
+   * and the picker shows one identifying plate, so aggregating here keeps the
+   * result one row per driver. Which plate wins is arbitrary and stated to be
+   * — the plate is a hint for Dina, not the vehicle stamped on the ride (#86
+   * picks that at assignment, by category).
+   *
+   * BOUNDED, like every other read in the dispatch slice (#120 review L1). The
+   * caller's ceiling, not a page: there is no cursor and nothing here reads a
+   * second page, so a roster over the limit silently loses drivers from the
+   * picker. Sized well above the pilot so that cannot happen before someone
+   * has to build paging anyway. Ordered so the truncation is at least stable.
+   */
+  async findRosterContacts(limit: number): Promise<DriverRosterContact[]> {
+    return this.db
+      .select({
+        driverId: drivers.userId,
+        name: users.displayName,
+        phone: users.phone,
+        status: drivers.status,
+        vehiclePlate: sql<string | null>`min(${vehicles.plate})`,
+      })
+      .from(drivers)
+      .innerJoin(users, eq(users.id, drivers.userId))
+      .leftJoin(vehicles, eq(vehicles.driverId, drivers.userId))
+      .groupBy(drivers.userId, users.displayName, users.phone, drivers.status)
+      .orderBy(users.displayName)
+      .limit(limit);
   }
 
   /**

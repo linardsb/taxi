@@ -132,21 +132,37 @@ export class DispatchSweeper implements OnModuleInit, OnModuleDestroy {
     const now = Date.now();
 
     for (const ride of awaiting) {
-      const attempts = await this.offers.countAttempts(ride.id);
-      if (!this.isStale(ride, attempts, config.unclaimedAlertSeconds, now)) {
+      const pooledSince = await this.offers.findLastReleasedAt(ride.id);
+      const attempts = await this.offers.countAttempts(ride.id, pooledSince);
+      if (
+        !this.isStale(
+          ride,
+          attempts,
+          config.unclaimedAlertSeconds,
+          now,
+          pooledSince,
+        )
+      ) {
         continue;
       }
-      await this.dispatch.raiseUnclaimed(ride, attempts);
+      await this.dispatch.raiseUnclaimed(ride, attempts, pooledSince);
     }
   }
 
+  /**
+   * Both halves are measured from the ride's CURRENT time in the pool, not from
+   * its booking: a ride booked 15 minutes ago, accepted, then released is not
+   * 15 minutes stale, and its attempt count starts again (#120 review M3/H3).
+   */
   private isStale(
     ride: AwaitingRide,
     attempts: number,
     thresholdSeconds: number,
     nowMs: number,
+    pooledSince: Date | null,
   ): boolean {
-    const waitedSeconds = (nowMs - ride.createdAt.getTime()) / 1000;
+    const waitedSeconds =
+      (nowMs - (pooledSince ?? ride.createdAt).getTime()) / 1000;
     return waitedSeconds >= thresholdSeconds || attempts >= MAX_OFFER_ATTEMPTS;
   }
 }

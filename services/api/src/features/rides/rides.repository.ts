@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { rideFareLines, rides, users, vehicles, type Db } from '@taxi/db';
 import {
+  ACTIVE_DRIVER_RIDE_STATUSES,
   BOARD_LIVE_RIDE_STATUSES,
   assertFareQuoteConsistent,
   fareQuoteSchema,
@@ -45,6 +46,16 @@ export interface AwaitingRide {
 const boardPickupSchema = rideRequestSchema.pick({ pickup: true });
 
 const BOARD_STATUS_SET = new Set<string>(BOARD_LIVE_RIDE_STATUSES);
+
+/**
+ * The statuses `unassignDriver` will take a car off — see its docblock for why
+ * `requested` is in the set and `arrived`/`in_progress` are not.
+ */
+const UNASSIGNABLE_RIDE_STATUSES = [
+  'requested',
+  'accepted',
+  'arriving',
+] as const satisfies readonly RideStatus[];
 
 /**
  * The board query's `inArray` already constrains this, but that guarantee
@@ -227,6 +238,29 @@ export class RidesRepository {
   }
 
   /**
+   * Which drivers are pinned to a ride right now, for #19's override picker —
+   * so Dina is warned before she takes a car off a job it is already on.
+   *
+   * Reads the RIDES table, not `drivers.status`: that column is a derived
+   * cache and this is exactly the read that must not inherit its lie (the same
+   * reason #61 gates going-online on this set rather than on the status).
+   */
+  async findActiveRideIdsByDriver(): Promise<
+    Array<{ driverId: string; rideId: string }>
+  > {
+    const rows = await this.db
+      .select({ driverId: rides.driverId, rideId: rides.id })
+      .from(rides)
+      .where(inArray(rides.status, [...ACTIVE_DRIVER_RIDE_STATUSES]));
+    // `driver_id` is nullable on the table but never null in these statuses —
+    // filtered rather than asserted, because a cast here would be the one
+    // unverified step between the SQL guarantee and the type.
+    return rows.flatMap((r) =>
+      r.driverId === null ? [] : [{ driverId: r.driverId, rideId: r.rideId }],
+    );
+  }
+
+  /**
    * Every LIVE ride for Dina's board (#18), oldest first — `findAwaitingDispatch`
    * widened to the whole pre-terminal lifecycle, plus the driver's display name
    * in the same read (the board would otherwise need a query per assigned ride
@@ -379,6 +413,51 @@ export class RidesRepository {
         )`,
       })
       .where(and(eq(rides.id, rideId), isNull(rides.driverId)))
+      .returning({ id: rides.id });
+    return row !== undefined;
+  }
+
+  /**
+   * Takes the car back off a ride (#19's reassign) — the exact inverse of
+   * `assignDriver`, including the vehicle stamp.
+   *
+   * Conditional on the ride STILL carrying the driver being released, so two
+   * dispatchers reassigning the same ride cannot both proceed: the second
+   * matches nothing and gets a 409 instead of clearing a driver the first one
+   * already replaced. `assignDriver` guards on `isNull(driverId)` for the
+   * mirror-image reason, and the pair is what lets a reassign be a release
+   * followed by an ordinary force-assign.
+   *
+   * The STATUS predicate defends the method rather than the caller. Today the
+   * only caller is behind `assertTransition`, so the "no car off a ride the
+   * driver has reached" rule already holds — but this is exported through the
+   * rides barrel, and the next caller inherits nothing from that guard. Its
+   * sibling `setOnlineIfEligible` makes the same argument at length: the check
+   * belongs in the WHERE (#120 review L2).
+   *
+   * IT IS NOT `['accepted','arriving']`, which is what the caller's own guard
+   * checks. `ReassignService` moves the ride to `requested` FIRST and clears
+   * the driver second, both inside one transaction, so by the time this runs
+   * the row already reads `requested` — that set would match nothing and every
+   * release would 409. What this refuses is the case the rule is about: a
+   * driver standing at the pickup (`arrived`), carrying the passenger
+   * (`in_progress`), or on a ride that has already ended.
+   */
+  async unassignDriver(
+    rideId: string,
+    driverId: string,
+    tx?: DbTx,
+  ): Promise<boolean> {
+    const [row] = await (tx ?? this.db)
+      .update(rides)
+      .set({ driverId: null, vehicleId: null })
+      .where(
+        and(
+          eq(rides.id, rideId),
+          eq(rides.driverId, driverId),
+          inArray(rides.status, [...UNASSIGNABLE_RIDE_STATUSES]),
+        ),
+      )
       .returning({ id: rides.id });
     return row !== undefined;
   }

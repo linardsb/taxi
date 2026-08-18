@@ -5,7 +5,7 @@ import {
   type AssignmentSource,
   type RideOffer,
 } from '@taxi/shared';
-import { and, count, eq, lte, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, lte, ne, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 import type { DbTx } from '../rides';
 
@@ -27,6 +27,13 @@ export interface AuditEntry {
   source: AssignmentSource;
   dispatcherId?: string | null;
   reason?: string | null;
+  /**
+   * Extra context merged into the row's jsonb payload. #19's reassign writes
+   * `{ event: 'released', from }` here so the trail distinguishes "a car was
+   * taken OFF this ride" from "a car was put ON it" — both are dispatcher
+   * rows against the same ride, and without this they read identically.
+   */
+  payload?: Record<string, unknown>;
 }
 
 const toRef = (row: OfferRow): OfferRef => ({
@@ -96,11 +103,73 @@ export class DispatchRepository {
     return rows.map((r) => r.driverId);
   }
 
-  async countAttempts(rideId: string): Promise<number> {
+  /**
+   * When the ride last re-entered the pool by a DISPATCHER RELEASE (#19), or
+   * `null` if it never has — which is every ride that was booked and cascaded
+   * normally.
+   *
+   * Read off the release audit row rather than a column on `rides`, because the
+   * row is already written and a column would be a migration carrying a fact
+   * the audit trail holds anyway. Matched on `payload->>'event'` and not on
+   * `source = 'dispatcher'`: a force-assign writes a dispatcher row too, and
+   * that one marks the ride LEAVING the pool.
+   *
+   * Both callers pass the result to `countAttempts` and to the unclaimed clock,
+   * so the cap and the staleness age answer the same question — how long has
+   * this ride been without a car SINCE Dina took the last one off it.
+   *
+   * COST: one indexed read per awaiting ride per sweeper pass, and the sweeper
+   * runs this in two of its three passes — `derived`, worst case 2 ×
+   * `AWAITING_BATCH_LIMIT` = 40 extra queries per second, at the full batch.
+   * Both loops were already per-ride (`findPendingForRide`, `countAttempts`),
+   * so this widens an existing N+1 rather than introducing one.
+   * `dispatch_audit_log_ride_idx` covers the `ride_id` half; the jsonb filter
+   * and the sort then run over that ride's handful of audit rows. At pilot volume the
+   * batch is nowhere near 20; if the sweeper ever runs full batches, this and
+   * its two siblings should become one batched read, not three.
+   */
+  async findLastReleasedAt(rideId: string): Promise<Date | null> {
+    const [row] = await this.db
+      .select({ at: dispatchAuditLog.createdAt })
+      .from(dispatchAuditLog)
+      .where(
+        and(
+          eq(dispatchAuditLog.rideId, rideId),
+          sql`${dispatchAuditLog.payload}->>'event' = 'released'`,
+        ),
+      )
+      .orderBy(desc(dispatchAuditLog.createdAt))
+      .limit(1);
+    return row?.at ?? null;
+  }
+
+  /**
+   * Cascade attempts on a ride, counted from `since` when the ride has been
+   * released back into the pool.
+   *
+   * `MAX_OFFER_ATTEMPTS` bounds "a ride that would otherwise cycle candidates
+   * forever" — a bound on ONE dispatch problem. A released ride is a new one:
+   * without the cutoff a ride that cascaded through a few candidates before it
+   * was accepted sits at or over the cap the moment Dina releases it, and the
+   * cascade the release hands it to declines to offer at all (#120 review H3).
+   *
+   * `since` IS REQUIRED, AND `null` HAS TO BE WRITTEN OUT. An optional
+   * parameter defaulting to "count everything" is the old behaviour under a new
+   * name: a caller added later would compile, pass the suite, and quietly
+   * reinstate H3 — the same argument `unassignDriver` makes for putting its
+   * guard in the WHERE. Pass `findLastReleasedAt`'s result, or `null` to ask
+   * the genuinely different question "how many offers has this ride ever had".
+   */
+  async countAttempts(rideId: string, since: Date | null): Promise<number> {
     const [row] = await this.db
       .select({ value: count() })
       .from(rideOffers)
-      .where(eq(rideOffers.rideId, rideId));
+      .where(
+        and(
+          eq(rideOffers.rideId, rideId),
+          ...(since ? [gt(rideOffers.sentAt, since)] : []),
+        ),
+      );
     return row?.value ?? 0;
   }
 
@@ -220,6 +289,44 @@ export class DispatchRepository {
   }
 
   /**
+   * Retires the OUTGOING driver's accepted offer when a dispatcher releases the
+   * ride (#19). `revokePendingForRide` cannot do this — it matches `pending`,
+   * and by acceptance the row is `accepted`.
+   *
+   * THE AT-MOST-ONE-ACCEPTED-OFFER INVARIANT IS A MONEY INVARIANT, not
+   * bookkeeping. `findAcceptedOfferSplit` reads the accepted row with `LIMIT 1`
+   * and no `ORDER BY` to settle the ride, and the split it reads is
+   * driver-specific (`resolveCommissionPct` applies the driver's override). Two
+   * accepted rows and completion settles on whichever the heap yields — the
+   * outgoing driver's commission paid to the incoming one, silently, with the
+   * rider-facing total unchanged so no total-cents guard fires (#120 review C1).
+   *
+   * `false` means there was no accepted row to retire, which is a data
+   * impossibility rather than a state to handle: both assignment paths write
+   * one. Reported to the caller to log rather than thrown — refusing the
+   * release would pin the ride to the driver Dina has already rejected, the
+   * exact outcome `ReassignService`'s two-transaction split exists to avoid.
+   */
+  async supersedeAcceptedOffer(
+    rideId: string,
+    driverId: string,
+    tx?: DbTx,
+  ): Promise<boolean> {
+    const rows = await (tx ?? this.db)
+      .update(rideOffers)
+      .set({ status: 'revoked' })
+      .where(
+        and(
+          eq(rideOffers.rideId, rideId),
+          eq(rideOffers.driverId, driverId),
+          eq(rideOffers.status, 'accepted'),
+        ),
+      )
+      .returning({ offerId: rideOffers.id });
+    return rows.length > 0;
+  }
+
+  /**
    * The S9-2 audit trail. Parsed through `rideAssignmentSchema` FIRST so the
    * "dispatcher assignments require dispatcherId" refine fires at the write
    * boundary — the DDL deliberately does not enforce it (see the table
@@ -246,7 +353,10 @@ export class DispatchRepository {
       source: assignment.source,
       dispatcherId: assignment.dispatcherId,
       reason: assignment.reason,
-      payload: { assignedAt: assignment.assignedAt.toISOString() },
+      payload: {
+        assignedAt: assignment.assignedAt.toISOString(),
+        ...entry.payload,
+      },
     });
   }
 }
