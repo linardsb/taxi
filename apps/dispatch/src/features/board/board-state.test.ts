@@ -28,6 +28,7 @@ const frame = (over: Partial<DispatchBoardEvent> = {}): DispatchBoardEvent => ({
   cityId: CITY,
   at: AT,
   rides: [],
+  zones: [],
   drivers: [
     {
       driverId: DRIVER,

@@ -24,3 +24,24 @@ export const MESSAGES = {
   ru,
   en,
 } as const satisfies Record<Language, Record<MessageKey, string>>;
+
+/**
+ * Is this string a key the catalog actually has?
+ *
+ * For the ONE boundary where a key arrives over the wire rather than being
+ * written in source: `dispatchExplanationSchema.key`, composed by the api and
+ * rendered by the console and the driver app. An api deployed with a new
+ * explanation key in front of a console still running the previous bundle
+ * would otherwise reach `MESSAGES[lang][key]` as `undefined` and throw inside
+ * `.replace`, taking down the whole ride queue over one missing sentence.
+ *
+ * Not a general escape hatch: everywhere else, a key is a literal and the type
+ * checker is the check.
+ *
+ * `Object.hasOwn`, not `in`: `in` walks the prototype chain, so `'toString'`,
+ * `'constructor'` and `'valueOf'` would all pass this guard and then reach
+ * `.replace` on a FUNCTION — the same outage by a different input.
+ */
+export function isMessageKey(key: string): key is MessageKey {
+  return Object.hasOwn(MESSAGES.lv, key);
+}

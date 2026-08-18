@@ -21,6 +21,7 @@ const ride = (over: Partial<BoardRide>): BoardRide => ({
   bookingChannel: 'phone',
   requestedAt: '2026-08-15T11:58:00.000Z',
   unclaimedSeconds: 120,
+  cascade: null,
   ...over,
 });
 
@@ -207,6 +208,71 @@ describe('RideQueue', () => {
     expect(
       screen.getByRole('button', { name: 'Atcelt braucienu — Brīvības 1' }),
     ).toBeInTheDocument();
+  });
+
+  it('mounts the cascade strip under an offered ride (expected)', () => {
+    render(
+      <RideQueue
+        rides={[
+          ride({
+            status: 'offered',
+            cascade: {
+              offeredToDriverId: 'd0000000-0000-4000-8000-000000000001',
+              offeredToName: 'Jānis Ozols',
+              expiresAt: new Date(NOW + 12_000).toISOString(),
+              nextDriverName: 'Māra Liepa',
+              attempts: 1,
+              explanation: { key: 'explain.auto_match', params: { eta: 4 } },
+            },
+          }),
+        ]}
+        nowMs={NOW}
+        flashRideIds={none}
+        onAssign={noop}
+        onCancel={noop}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        formatMessage('lv', 'console.cascade_offered_to', {
+          driver: 'Jānis Ozols',
+        }),
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+  });
+
+  it('draws no strip on an accepted ride, whose cascade is over (edge)', () => {
+    // The frame may still carry a cascade for a ride outside the «Piedāvāti»
+    // bucket; a countdown on a ride nobody is being offered would be status
+    // that means nothing, spent from the same attention budget as the alarms.
+    render(
+      <RideQueue
+        rides={[
+          ride({
+            status: 'accepted',
+            driverName: 'Jānis Ozols',
+            cascade: {
+              offeredToDriverId: null,
+              offeredToName: null,
+              expiresAt: null,
+              nextDriverName: null,
+              attempts: 3,
+              explanation: null,
+            },
+          }),
+        ]}
+        nowMs={NOW}
+        flashRideIds={none}
+        onAssign={noop}
+        onCancel={noop}
+      />,
+    );
+
+    expect(
+      screen.queryByText(formatMessage('lv', 'console.cascade_unheld')),
+    ).not.toBeInTheDocument();
   });
 
   it('cannot be handed a terminal ride — the wire schema refuses it (failure)', () => {

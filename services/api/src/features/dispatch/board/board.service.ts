@@ -15,7 +15,15 @@ import {
 import { GeozonesService } from '../../geozones';
 import { RealtimeService } from '../../realtime';
 import { RidesRepository } from '../../rides';
+import { DispatchRepository } from '../dispatch.repository';
+import {
+  DISPATCH_QUEUE_STORE,
+  type DispatchQueueStore,
+  type QueueSnapshotEntry,
+} from '../queue/dispatch-queue.store';
 import { BOARD_EMIT_INTERVAL_MS, BOARD_RIDES_LIMIT } from './board.policy';
+import { buildCascades } from './cascade';
+import { buildZoneRows } from './zone-rows';
 
 /**
  * One snapshot builder, two transports (#18): `GET /dispatch/board` serves it
@@ -40,6 +48,9 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
     private readonly locations: DriverLocationStore,
     private readonly geozones: GeozonesService,
     private readonly realtime: RealtimeService,
+    private readonly dispatch: DispatchRepository,
+    @Inject(DISPATCH_QUEUE_STORE)
+    private readonly queue: DispatchQueueStore,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
@@ -62,22 +73,70 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * The whole city in one read pass: live rides (with driver names, one
-   * joined query), the Redis online set (with whatever positions exist), and
-   * a zone per positioned driver. Every timestamp is serialized here, off the
-   * server clock — the wire schema takes ISO strings only.
+   * joined query), the Redis online set (with whatever positions exist), a
+   * zone per positioned driver, the zone catalog with its queues, and each
+   * ride's cascade. Every timestamp is serialized here, off the server clock —
+   * the wire schema takes ISO strings only.
+   *
+   * POSTGRES QUERIES PER FRAME (`derived`, and the number that matters because
+   * this runs 30 times a minute forever):
+   *   1 rides · 1 zone catalog · 1 driver contacts · 1 offers · N `ST_Contains`
+   * = **4 + N**, where N is the number of ONLINE drivers with a position.
+   * #19 added 2 of those 4 and neither scales with rides or drivers: the
+   * catalog is one row set, and every offer for every live ride comes back in
+   * one `findOffersForRides`. Before #19 the same frame cost 2 + N.
+   *
+   * REDIS PER FRAME: 1 `listOnline` + one `snapshot()` per catalog zone (each
+   * an LRANGE + an HGETALL). Z zones, not Z × drivers — the queue is read
+   * whole, once per zone.
+   *
+   * The `Promise.all` below is the same fan-out the pre-#19 frame ran, with
+   * the flat reads folded in beside it. It is still bounded by the FLEET, not
+   * by anything #19 added — see the warning on the `ST_Contains` fan-out.
    */
   async buildBoardState(cityId: string): Promise<DispatchBoardEvent> {
     const nowMs = Date.now();
-    const [rides, online] = await Promise.all([
+    const [rides, online, catalog] = await Promise.all([
       this.rides.findBoardRides(BOARD_RIDES_LIMIT),
       this.locations.listOnline(cityId),
+      this.geozones.listForCity(cityId),
     ]);
 
-    const contacts = new Map(
-      (await this.drivers.findBoardContacts(online.map((d) => d.driverId))).map(
-        (c) => [c.driverId, c],
+    // Per ZONE, never per driver: ≤6 pairs of Redis calls at pilot scale, and
+    // the count is bounded by the catalog rather than by the fleet.
+    const snapshots = new Map<string, QueueSnapshotEntry[]>(
+      await Promise.all(
+        catalog.map(
+          async (zone) =>
+            [zone.id, await this.queue.snapshot(zone.id)] as const,
+        ),
       ),
     );
+
+    // ONE contacts read for both the online set and the queues. A driver who
+    // went offline still holding position 1 is exactly what the grid must
+    // show, and they are not in `online` — so their name has to come from
+    // here or the row would be dropped as a ghost.
+    const queuedIds = [...snapshots.values()].flatMap((entries) =>
+      entries.map((e) => e.driverId),
+    );
+    const contacts = new Map(
+      (
+        await this.drivers.findBoardContacts([
+          ...new Set([...online.map((d) => d.driverId), ...queuedIds]),
+        ])
+      ).map((c) => [c.driverId, c]),
+    );
+
+    const zoneRows = buildZoneRows({ catalog, snapshots, contacts, nowMs });
+    const cascades = buildCascades({
+      offers: await this.dispatch.findOffersForRides(rides.map((r) => r.id)),
+      zones: zoneRows,
+      // The zone each ride was DISPATCHED from, so the cascade explains that
+      // queue rather than whichever one the holder also happens to sit in.
+      rideZones: new Map(rides.map((r) => [r.id, r.geozoneId])),
+      contacts,
+    });
     // Reuses the geozone lookup dispatch's queue mode runs (smallest polygon
     // wins, in SQL) rather than a second point-in-polygon path. ≤10 pilot
     // drivers × one indexed query each per 2 s frame — bounded and boring.
@@ -120,7 +179,9 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
           r.status === 'requested'
             ? Math.max(0, Math.round((nowMs - r.createdAt.getTime()) / 1000))
             : 0,
+        cascade: cascades.get(r.id) ?? null,
       })),
+      zones: zoneRows,
       drivers: online.flatMap((d, i) => {
         const contact = contacts.get(d.driverId);
         // A member of the Redis online set without a drivers/users row would

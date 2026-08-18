@@ -25,6 +25,15 @@ export const CONTRACT_QUEUE_DRIVERS = {
 export const CONTRACT_QUEUE_DRIVER_IDS = Object.values(CONTRACT_QUEUE_DRIVERS);
 
 /**
+ * A real (not faked) pause, so two timestamps taken either side of it differ.
+ *
+ * Fake timers are not an option here: half these cases run against a live Redis
+ * and faking the clock would hang the client's own timers. 5 ms is above the
+ * ISO string's 1 ms resolution with margin, and costs the suite ~15 ms total.
+ */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+/**
  * @param makeStore runs before EVERY case and must hand back an empty queue.
  * @param opts.geozoneId namespace for the key — a real-Redis run passes a
  *   per-worker value, because jest workers share the one server.
@@ -136,6 +145,73 @@ export function runDispatchQueueStoreContract(
 
       const ranks = [...positions.values()].sort((x, y) => x - y);
       expect(ranks).toEqual([1, 2, 3, 4]);
+    });
+
+    /**
+     * `snapshot()` (#19). The grid's whole claim is that the rank it shows Dina
+     * is the rank the driver's app shows them, so every case below asserts
+     * against `positions()` rather than against a hand-written number.
+     */
+    it('reports the whole queue head-first, agreeing with positions() (expected)', async () => {
+      await join(a, b, c);
+
+      const snapshot = await store.snapshot(zone);
+      expect(snapshot.map((e) => e.driverId)).toEqual([a, b, c]);
+
+      const positions = await positionsOf(a, b, c);
+      for (const entry of snapshot) {
+        expect(entry.position).toBe(positions.get(entry.driverId));
+      }
+      // Every driver enrolled through joinBack carries a real instant.
+      expect(snapshot.every((e) => e.joinedAt !== null)).toBe(true);
+    });
+
+    it('does NOT reset joinedAt when an already-queued driver re-joins (expected)', async () => {
+      await join(a, b);
+      const before = (await store.snapshot(zone))[0]?.joinedAt;
+
+      await tick();
+      await store.joinBack(zone, a); // the lazy-enrollment re-join
+
+      const after = (await store.snapshot(zone))[0]?.joinedAt;
+      // Byte-identical, not merely close: a re-join must be a no-op on the
+      // clock, or being offered a ride would cost a driver their earned time.
+      expect(after).toBe(before);
+    });
+
+    it('DOES reset joinedAt when a driver is sent to the back (edge)', async () => {
+      await join(a, b);
+      const before = (await store.snapshot(zone)).find(
+        (e) => e.driverId === a,
+      )?.joinedAt;
+
+      await tick();
+      await store.sendToBack(zone, a); // what a decline costs
+
+      const entry = (await store.snapshot(zone)).find((e) => e.driverId === a);
+      expect(entry?.position).toBe(2);
+      expect(entry?.joinedAt).not.toBe(before);
+      expect(Date.parse(entry?.joinedAt ?? '') > Date.parse(before ?? '')).toBe(
+        true,
+      );
+    });
+
+    it('drops the timestamp on leave, so a re-join starts a new clock (edge)', async () => {
+      await join(a);
+      const before = (await store.snapshot(zone))[0]?.joinedAt;
+
+      await store.leave(zone, a);
+      expect(await store.snapshot(zone)).toEqual([]);
+
+      await tick();
+      await store.joinBack(zone, a);
+
+      const after = (await store.snapshot(zone))[0]?.joinedAt;
+      expect(after).not.toBe(before);
+    });
+
+    it('returns an empty array for a zone nobody has queued in (failure)', async () => {
+      await expect(store.snapshot(zone)).resolves.toEqual([]);
     });
   });
 }

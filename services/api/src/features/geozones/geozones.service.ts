@@ -22,4 +22,9 @@ export class GeozonesService {
   ): Promise<ResolvedGeozone | undefined> {
     return this.repository.findContaining(cityId, point);
   }
+
+  /** The city's zone catalog — one query, for the board's zone grid (#19). */
+  listForCity(cityId: string): Promise<ResolvedGeozone[]> {
+    return this.repository.listForCity(cityId);
+  }
 }

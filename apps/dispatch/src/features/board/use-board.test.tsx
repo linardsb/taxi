@@ -59,6 +59,7 @@ const frame = (over: Partial<DispatchBoardEvent> = {}): DispatchBoardEvent => ({
   cityId: CITY,
   at: NOW.toISOString(),
   rides: [],
+  zones: [],
   drivers: [],
   ...over,
 });
