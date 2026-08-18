@@ -122,8 +122,9 @@ export class DispatchRepository {
    * runs this in two of its three passes — `derived`, worst case 2 ×
    * `AWAITING_BATCH_LIMIT` = 40 extra queries per second, at the full batch.
    * Both loops were already per-ride (`findPendingForRide`, `countAttempts`),
-   * so this widens an existing N+1 rather than introducing one, and
-   * `dispatch_audit_log_ride_idx` covers the predicate. At pilot volume the
+   * so this widens an existing N+1 rather than introducing one.
+   * `dispatch_audit_log_ride_idx` covers the `ride_id` half; the jsonb filter
+   * and the sort then run over that ride's handful of audit rows. At pilot volume the
    * batch is nowhere near 20; if the sweeper ever runs full batches, this and
    * its two siblings should become one batched read, not three.
    */

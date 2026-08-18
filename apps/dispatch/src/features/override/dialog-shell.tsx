@@ -44,7 +44,21 @@ export function DialogShell({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    return () => opener.current?.focus();
+    return () => {
+      // The opener can be GONE by the time we close: a board frame arrives
+      // every 2 s, and one that drops this ride — completed under her, or
+      // cancelled by another dispatcher — unmounts the row button we captured.
+      // `.focus()` on a detached node silently does nothing and focus lands on
+      // `<body>`, which is the WCAG 2.4.3 failure this effect exists to
+      // prevent. Fall back to the page heading so focus stays somewhere a
+      // screen reader can announce.
+      const target = opener.current;
+      if (target && document.body.contains(target)) {
+        target.focus();
+        return;
+      }
+      document.querySelector<HTMLElement>('h1')?.focus();
+    };
   }, []);
 
   // Focus the first control on open AND on every step change. Without this the

@@ -166,6 +166,39 @@ describe('AssignDialog', () => {
     opener.remove();
   });
 
+  it('falls back to the heading when the opener was unmounted mid-dialog (edge)', () => {
+    const heading = document.createElement('h1');
+    heading.tabIndex = -1;
+    const opener = document.createElement('button');
+    document.body.append(heading, opener);
+    opener.focus();
+
+    const { unmount } = render(
+      <AssignDialog
+        verb="assign"
+        pickupZoneName={null}
+        drivers={[driver({})]}
+        loadingRoster={false}
+        submitting={false}
+        errorKey={null}
+        disabledReasonKey={null}
+        onSubmit={vi.fn()}
+        onClearError={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // A 2 s board frame drops this ride — completed under her, or cancelled by
+    // another dispatcher — and the row button she opened from goes with it.
+    opener.remove();
+    unmount();
+
+    // `.focus()` on a detached node is a silent no-op, so without the fallback
+    // focus would sit on <body> and a screen reader would announce nothing.
+    expect(document.activeElement).toBe(heading);
+    heading.remove();
+  });
+
   it('refuses to submit while the console is offline, WITH a reason (failure)', () => {
     const { onSubmit } = renderDialog({
       disabledReasonKey: 'console.assign_offline_disabled',

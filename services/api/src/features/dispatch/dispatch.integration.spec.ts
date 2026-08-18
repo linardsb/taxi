@@ -799,9 +799,15 @@ describe('dispatch (integration)', () => {
     const releasedAt = await repo.findLastReleasedAt(ride.id);
     expect(releasedAt).not.toBeNull();
 
-    // What `offerNext` and the sweeper both read. Only the override's own row
-    // postdates the release, so the ride is nowhere near the cap and the
-    // cascade would offer it rather than declare it exhausted.
+    // The REPOSITORY half, against the real release and the real rows: only
+    // the override's own offer postdates the release, so the scoped count is
+    // far below the cap while the unscoped one is at it.
+    //
+    // This asserts the number, NOT that the cascade then offers the ride —
+    // nothing in this test runs `offerNext`. That `offerNext` passes
+    // `findLastReleasedAt`'s result through is pinned separately, in
+    // `dispatch.service.spec.ts`; an earlier version of this comment claimed
+    // the outcome here and no run in this file produced it.
     const scoped = await repo.countAttempts(ride.id, releasedAt);
     expect(scoped).toBeLessThan(MAX_OFFER_ATTEMPTS);
     expect(scoped).toBeLessThan(await repo.countAttempts(ride.id, null));

@@ -142,7 +142,10 @@ export default function DispatchPage() {
           flexWrap: 'wrap',
         }}
       >
-        <h1 style={{ margin: 0, fontSize: 'var(--font-size-lg)' }}>
+        {/* `-1` so `DialogShell` can land focus here when the row button it
+            captured was unmounted by a board frame while the dialog was open.
+            Programmatic only — never a tab stop. */}
+        <h1 tabIndex={-1} style={{ margin: 0, fontSize: 'var(--font-size-lg)' }}>
           {formatMessage(LANG, 'console.title')}
         </h1>
         <div
