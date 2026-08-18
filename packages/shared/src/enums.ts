@@ -100,6 +100,14 @@ export const BOOKING_CHANNELS = ['app', 'phone'] as const;
 export type BookingChannel = (typeof BOOKING_CHANNELS)[number];
 
 /**
+ * What a saved address is FOR (#19). A venue's fixed address is a `pickup`; a
+ * regular's "home" can be either, so the kind is per SAVED PLACE and not per
+ * customer. Two values only — a third ("stop") waits for multi-stop bookings.
+ */
+export const SAVED_PLACE_KINDS = ['pickup', 'dropoff'] as const;
+export type SavedPlaceKind = (typeof SAVED_PLACE_KINDS)[number];
+
+/**
  * The rider SMS messages the platform owes on a ride (#63). Lives here rather
  * than in the api because `dispatch:sms_failed` puts the kind on the wire and
  * the console renders a label per kind — three surfaces, one tuple.

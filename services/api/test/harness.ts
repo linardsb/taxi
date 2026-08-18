@@ -2,7 +2,11 @@ import { INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { users, type Db } from '@taxi/db';
 import type {
+  AddressPoint,
+  AddressSearchOptions,
+  AddressSuggestion,
   GeocodeResult,
+  Language,
   LatLng,
   MapsProvider,
   PaymentChargeRequest,
@@ -299,6 +303,48 @@ export class CountingMapsProvider implements MapsProvider {
 
   reverseGeocode(): Promise<GeocodeResult | null> {
     return this.inner.reverseGeocode();
+  }
+
+  /**
+   * Address search is SEEDED rather than delegated, because the stub throws:
+   * `StubMapsProvider` has no Places binding, and an integration test of
+   * `GET /geo/address-search` needs a source that answers.
+   *
+   * Both counters are separate from `routeCalls` on purpose — Autocomplete
+   * Requests and Place Details Essentials are two SKUs with two prices, so one
+   * combined number could not check either against the spend model (plan Q5).
+   */
+  searchCalls = 0;
+  resolveCalls = 0;
+  readonly places = new Map<string, AddressPoint>();
+  readonly searchedSessions: string[] = [];
+
+  seedPlace(placeId: string, point: AddressPoint): void {
+    this.places.set(placeId, point);
+  }
+
+  searchAddress(
+    query: string,
+    _language: Language,
+    options: AddressSearchOptions,
+  ): Promise<AddressSuggestion[]> {
+    this.searchCalls += 1;
+    this.searchedSessions.push(options.sessionToken);
+    const matches = [...this.places.entries()]
+      .filter(([, point]) =>
+        point.address.toLowerCase().includes(query.toLowerCase()),
+      )
+      .map(([placeId, point]) => ({
+        placeId,
+        primaryText: point.address,
+        secondaryText: 'Rīga, Latvija',
+      }));
+    return Promise.resolve(matches);
+  }
+
+  resolvePlace(placeId: string): Promise<AddressPoint | null> {
+    this.resolveCalls += 1;
+    return Promise.resolve(this.places.get(placeId) ?? null);
   }
 }
 

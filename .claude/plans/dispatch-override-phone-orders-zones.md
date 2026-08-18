@@ -586,7 +586,7 @@ resolvePlace(
 - **IMPLEMENT**: `GooglePlacesProvider` implementing only `searchAddress` and `resolvePlace` (compose it beside the routes provider; it is not a full `MapsProvider`).
   - Autocomplete: `POST https://places.googleapis.com/v1/places:autocomplete`, headers `X-Goog-Api-Key`, `Content-Type: application/json`, `X-Goog-FieldMask: suggestions.placePrediction.placeId,suggestions.placePrediction.structuredFormat`. Body: `{ input, languageCode: 'lv', includedRegionCodes: ['lv'], locationBias: { circle: { center, radius } }, sessionToken }`.
   - Resolve: `GET https://places.googleapis.com/v1/places/{placeId}?sessionToken=…` with `X-Goog-FieldMask: location,formattedAddress`.
-  - Both wrapped in the same `AbortController` timeout race as `CachingMapsProvider.route()` uses, and both emitting the structured miss-path log `geo.places.request`.
+  - Both wrapped in the same `AbortController` timeout race as `CachingMapsProvider.route()` uses, and both emitting the structured miss-path log `geo.places.request_completed` (renamed in the #122 review — `domain.component.action_state` wants a verb AND a state; failures are `geo.places.request_failed`). It counts calls that RETURNED A STATUS, so it is a floor on spend, not a total: a timeout throws before it.
 - **PATTERN**: `caching-maps.provider.ts` — the timeout race, `MapsFailureReason`'s closed-enum discipline, and the coordinate-free error rule (never let a provider's free-text message reach a log).
 - **IMPORTS**: `node:crypto` for `randomUUID()` session tokens; global `fetch` (Node 20+).
 - **GOTCHA**: Terminate every session with **Place Details Essentials** (field mask including `location`), not IDs-Only. IDs-Only voids the session and bills every keystroke individually — the opposite of the intent.
@@ -668,7 +668,7 @@ export const savedPlaces = pgTable('saved_places', {
   - `GET /customers/venues` → venue customers for the quick-book list.
   - `POST /customers` / `PATCH /customers/:id` for Dina to name a caller or flag a venue.
 - **PATTERN**: `services/api/src/features/drivers/` slice layout (controller/service/repository/module/index) and its `@Roles` discipline.
-- **GOTCHA**: The lookup returns another person's PII. Log the lookup as a structured event (`customers.lookup`) with the dispatcher id and **no phone number** — `.claude/references/logging-standard.md` forbids the identifier in the line.
+- **GOTCHA**: The lookup returns another person's PII. Log the lookup as a structured event (`dispatch.customers.lookup_completed` — renamed in the #122 review; `customers.lookup` was two segments against a closed domain list) with the dispatcher id **and the phone MASKED to its last 3 digits**. `.claude/references/logging-standard.md` says mask, not omit: a record with no subject cannot answer whose data was read, which is the only question a PII-access log exists to answer. The route is also rate-limited per dispatcher, or the endpoint is a phone-number → identity oracle.
 - **GOTCHA**: Normalize the phone to E.164 before lookup, and validate with the same schema `otpRequestSchema` uses — two normalizations would make a caller invisible to their own record.
 - **VALIDATE**: `pnpm --filter @taxi/api test -- customers`
 - **SATISFIES**: AC #5

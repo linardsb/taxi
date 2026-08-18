@@ -22,6 +22,11 @@ import {
   pickupZoneOf,
   useAssign,
 } from '@/features/override';
+import {
+  BookingForm,
+  NewOrderButton,
+  useNewOrderHotkey,
+} from '@/features/phone-orders';
 
 const LANG: Language = 'lv';
 
@@ -44,8 +49,15 @@ export default function DispatchPage() {
   const { board, pill, nowMs, retry, ack } = useBoard();
   const [view, setView] = useState<'zones' | 'map'>('zones');
   const [target, setTarget] = useState<OverrideTarget | null>(null);
+  const [bookingOpen, setBookingOpen] = useState(false);
   const assignApi = useAssign();
   const { loadRoster, reset } = assignApi;
+
+  const openBookingForm = useCallback(() => setBookingOpen(true), []);
+  // Closing keeps the draft: it lives in localStorage, so ⌥N reopens it exactly
+  // where the last call left off.
+  const closeBookingForm = useCallback(() => setBookingOpen(false), []);
+  useNewOrderHotkey(openBookingForm);
 
   const frame = board.frame;
 
@@ -173,6 +185,10 @@ export default function DispatchPage() {
               {formatMessage(LANG, 'console.map')}
             </button>
           </div>
+          {/* Before the pill in the tab order: taking an order is the one
+              thing on this screen that cannot wait for a caller to repeat
+              themselves. */}
+          <NewOrderButton onOpen={openBookingForm} />
           <ConnectionPill pill={pill} />
         </div>
       </header>
@@ -281,6 +297,13 @@ export default function DispatchPage() {
             });
           }}
         />
+      )}
+
+      {bookingOpen && (
+        // NOT keyed and NOT remounted per open: the draft is the whole point,
+        // and a fresh mount would restore it from storage anyway — this just
+        // avoids the flicker of doing so.
+        <BookingForm offline={pill === 'offline'} onClose={closeBookingForm} />
       )}
 
       {target?.kind === 'cancel' && (

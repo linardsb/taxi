@@ -47,6 +47,7 @@ const buildFacades = () => {
     MAPS_ETA_CACHE_TTL_SECONDS: 300,
     MAPS_ETA_FAILURE_TTL_SECONDS: 60,
     MAPS_ROUTE_TIMEOUT_MS: 3_000,
+    MAPS_PLACE_CACHE_TTL_SECONDS: 2_592_000,
   } as Env;
   const make = (token: string) =>
     providerFor(token).useFactory!(source, kv, fakeEnv) as MapsProvider;
@@ -75,6 +76,35 @@ describe('mapsProviderSourceFactory', () => {
     expect(() => mapsProviderSourceFactory(env('production'))).toThrow(
       /No production MapsProvider is bound/,
     );
+  });
+
+  it('names the missing Places key in the production refusal (failure)', () => {
+    // The address-search gap is reported alongside the routes gap rather than
+    // after it: a deploy that fixes routes must not then discover the typeahead
+    // 500s from Dina's first keystroke.
+    expect(() => mapsProviderSourceFactory(env('production'))).toThrow(
+      /GOOGLE_MAPS_API_KEY/,
+    );
+
+    const withKey = { NODE_ENV: 'production', GOOGLE_MAPS_API_KEY: 'k' } as Env;
+    expect(() => mapsProviderSourceFactory(withKey)).not.toThrow(
+      /GOOGLE_MAPS_API_KEY/,
+    );
+  });
+
+  it('binds the Places provider when a key is present (edge)', () => {
+    const withKey = {
+      NODE_ENV: 'development',
+      GOOGLE_MAPS_API_KEY: 'test-key',
+      MAPS_ROUTE_TIMEOUT_MS: 3_000,
+    } as Env;
+
+    const source = mapsProviderSourceFactory(withKey);
+
+    // Composed, not the stub: routes still come from `StubMapsProvider` while
+    // address search reaches Google, which is exactly the pilot's shape.
+    expect(source).not.toBeInstanceOf(StubMapsProvider);
+    expect(typeof source.searchAddress).toBe('function');
   });
 
   it('is what the module actually binds MAPS_PROVIDER_SOURCE to (edge)', () => {

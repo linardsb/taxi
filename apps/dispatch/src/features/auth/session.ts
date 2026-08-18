@@ -24,6 +24,15 @@ const STORAGE_KEY = SESSION_STORAGE_KEY;
  */
 export const BOARD_SNAPSHOT_STORAGE_KEY = 'taxi.console.board-snapshot';
 
+/**
+ * The phone-order draft (#19) — declared here for the same reason as the board
+ * snapshot above, and with a stronger PII claim: it holds the CALLER's phone
+ * number, their name and both addresses, typed by hand and persisted on every
+ * keystroke. A draft left on a shared operator workstation after logout is
+ * exactly the leak `clearSession()` exists to prevent.
+ */
+export const BOOKING_DRAFT_STORAGE_KEY = 'taxi.console.booking-draft';
+
 /** Who may see the console at all — `/admin` narrows further to admin. */
 export const CONSOLE_ROLES: readonly UserRole[] = ['dispatcher', 'admin'];
 
@@ -42,6 +51,7 @@ export function saveSession(session: AuthSession): void {
 export function clearSession(): void {
   window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(BOARD_SNAPSHOT_STORAGE_KEY);
+  window.localStorage.removeItem(BOOKING_DRAFT_STORAGE_KEY);
 }
 
 /**

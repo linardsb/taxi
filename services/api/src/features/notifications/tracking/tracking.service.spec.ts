@@ -59,6 +59,8 @@ describe('TrackingService — the tracking page throttle', () => {
       route,
       geocode: jest.fn(),
       reverseGeocode: jest.fn(),
+      searchAddress: jest.fn(),
+      resolvePlace: jest.fn(),
     } as MapsProvider;
     const env = { DEFAULT_CITY_ID: 'city' } as Env;
 

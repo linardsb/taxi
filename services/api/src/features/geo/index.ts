@@ -19,8 +19,12 @@
  *   plausible and deterministic but not real. Production cannot boot until
  *   #13/#16 bind the Google Routes provider — the factory throws.
  * - `geocode`/`reverseGeocode` throw. A `RideRequest` already carries resolved
- *   `AddressPoint`s, so nothing needs them yet; address search (#16) must bind
- *   the Google implementation first.
+ *   `AddressPoint`s, so nothing needs them yet. Address SEARCH no longer waits
+ *   on them: #19 binds `GooglePlacesProvider` (Places API New) for
+ *   `searchAddress`/`resolvePlace` while routes stay on the stub — two APIs,
+ *   two price lists, composed into one seam by `mapsProviderSourceFactory`.
+ * - Predictions are never cached, by policy rather than by omission. Only a
+ *   RESOLVED place id is (`place-cache.ts`), under a TTL.
  * - IN-FLIGHT COALESCING IS STILL ABSENT, and it is the remaining spend gap.
  *   #94 gave the seam a timeout, a negative cache (`eta` only) and a miss-path
  *   counter, but requests arriving before the first `setWithTtl` lands still

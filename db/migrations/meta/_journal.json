@@ -64,6 +64,13 @@
       "when": 1786453418279,
       "tag": "0008_lying_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786999553824,
+      "tag": "0009_glossy_fantastic_four",
+      "breakpoints": true
     }
   ]
 }

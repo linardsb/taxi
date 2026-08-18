@@ -12,6 +12,7 @@ import type { RideNotificationsService } from '../notifications';
 import type { PricingService } from '../pricing';
 import type { RealtimeService } from '../realtime';
 import {
+  DISPATCHER_BOOKING_MAX_PER_WINDOW,
   RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS,
   RIDE_IDEMPOTENCY_TTL_SECONDS,
   RIDE_REQUEST_MAX_PER_WINDOW,
@@ -22,6 +23,7 @@ import { RidesService } from './rides.service';
 import type { RidesRepository } from './rides.repository';
 
 const RIDER_ID = '8d1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e5f';
+const DISPATCHER_ID = '9e2a3b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c';
 const CREATED_AT = new Date('2026-08-05T10:00:00.000Z');
 
 const body = {
@@ -236,6 +238,52 @@ describe('RidesService', () => {
 
     // The rejected request cost nothing — no quote, no row.
     expect(calls.length).toBe(spentWhileAllowed);
+  });
+
+  it('lets a dispatcher book past the RIDER cap on the phone path (edge — H2)', async () => {
+    // The subject moved to the dispatcher in Phase B; the MAGNITUDE had not.
+    // Plan Q7's motivating case is a venue booking 25 cars in ten minutes, and
+    // against the rider's 20 those bookings 21–25 answered 429 — the exact
+    // scenario the subject was moved to serve. The window is FIXED, not
+    // sliding, so that is a ~9-minute lockout mid-shift, not a brief ceiling.
+    const { service } = build();
+    const bookAsDispatcher = () =>
+      service.request(RIDER_ID, randomUUID(), body, 'phone', DISPATCHER_ID);
+
+    for (let i = 0; i < RIDE_REQUEST_MAX_PER_WINDOW + 5; i += 1) {
+      await expect(bookAsDispatcher()).resolves.toBeDefined();
+    }
+  });
+
+  it('still throttles a dispatcher at her own cap (failure — H2)', async () => {
+    const { service, calls } = build();
+    const bookAsDispatcher = () =>
+      service.request(RIDER_ID, randomUUID(), body, 'phone', DISPATCHER_ID);
+
+    for (let i = 0; i < DISPATCHER_BOOKING_MAX_PER_WINDOW; i += 1) {
+      await bookAsDispatcher();
+    }
+    const spentWhileAllowed = calls.length;
+
+    await expect(bookAsDispatcher()).rejects.toThrow(/too_many_requests/);
+    // Raised, not removed: the rejected booking still costs no paid Routes call.
+    expect(calls.length).toBe(spentWhileAllowed);
+  });
+
+  it('keeps the rider and dispatcher counters apart (edge — H2)', async () => {
+    // One person can hold both roles in a small operator. A shared key would
+    // spend a dispatcher's booking quota on their own rider requests.
+    const { service } = build();
+
+    for (let i = 0; i < RIDE_REQUEST_MAX_PER_WINDOW; i += 1) {
+      await req(service);
+    }
+    await expect(req(service)).rejects.toThrow(/too_many_requests/);
+
+    // The dispatcher path, keyed on the SAME id, is untouched by that.
+    await expect(
+      service.request(RIDER_ID, randomUUID(), body, 'phone', RIDER_ID),
+    ).resolves.toBeDefined();
   });
 
   it('lets the same rider through once the window rolls over (edge)', async () => {

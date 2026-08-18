@@ -85,3 +85,10 @@ export type { DbTx, TransitionedRide } from './ride-transition.service';
  * slice itself. One owner for the status, one place to read how it is claimed.
  */
 export { RideLifecycleService } from './lifecycle/ride-lifecycle.service';
+/**
+ * Same exception again, for a decorator rather than a service: #19's dispatcher
+ * booking takes the SAME required `Idempotency-Key` header as `POST /rides`,
+ * and a second copy of the decorator would be a second place that decides what
+ * a missing header means. One reader of the header, one 400.
+ */
+export { IdempotencyKeyHeader } from './idempotency-key.decorator';

@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
+import { CustomersModule } from '../customers';
 import { DriversModule } from '../drivers';
 import { GeozonesModule } from '../geozones';
 import { PlatformConfigModule } from '../platform-config';
 import { RealtimeModule } from '../realtime';
 import { RidesModule } from '../rides';
 import { BoardService } from './board/board.service';
+import { BookingsController } from './bookings/bookings.controller';
+import { BookingsService } from './bookings/bookings.service';
 import { DispatchNotifier } from './dispatch-notifier';
 import { DispatchController } from './dispatch.controller';
 import { DispatchRepository } from './dispatch.repository';
@@ -36,10 +39,14 @@ import { RosterService } from './roster.service';
     GeozonesModule,
     PlatformConfigModule,
     RealtimeModule,
+    // #19's phone orders resolve the caller's identity through the customers
+    // slice, then hand the ride itself to `RidesService` unchanged.
+    CustomersModule,
   ],
-  controllers: [DispatchController],
+  controllers: [DispatchController, BookingsController],
   providers: [
     DispatchService,
+    BookingsService,
     DispatchNotifier,
     ForceAssignService,
     ReassignService,

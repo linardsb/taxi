@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LANGUAGES } from '../src/enums';
-import { MESSAGES, formatMessage, type MessageKey } from '../src/i18n';
+import { formatMessage } from '../src/format-message';
+import { MESSAGES, type MessageKey } from '../src/i18n';
 
 const KEYS = Object.keys(MESSAGES.lv) as MessageKey[];
 
