@@ -92,11 +92,26 @@ export function useAssign(): {
     }
   }, [handleAuthFailure]);
 
+  /**
+   * `fallback` is the CALLER's generic message, and it is threaded this far in
+   * on purpose. The screen renders `errorKey` — this hook's state — and discards
+   * the returned `Outcome`, so rewriting the outcome afterwards changes nothing
+   * Dina sees (#120 review H2). The state write is the only one that counts, so
+   * the verb has to be known where it happens.
+   */
   const post = useCallback(
-    async (path: string, body: unknown): Promise<Outcome> => {
+    async (
+      path: string,
+      body: unknown,
+      fallback: MessageKey = 'console.assign_failed',
+    ): Promise<Outcome> => {
+      const fail = (key: MessageKey = fallback): Outcome => ({
+        ok: false,
+        key,
+      });
       const session = loadSession();
-      if (session === null) return { ok: false, key: 'console.assign_failed' };
-      if (inFlight.current) return { ok: false, key: 'console.assign_failed' };
+      if (session === null) return fail();
+      if (inFlight.current) return fail();
 
       inFlight.current = true;
       setSubmitting(true);
@@ -112,17 +127,17 @@ export function useAssign(): {
         });
         if (res.status === 401 || res.status === 403) {
           handleAuthFailure();
-          return { ok: false, key: 'console.assign_failed' };
+          return fail();
         }
         if (!res.ok) {
-          const key = assignErrorKey(await errorCodeOf(res));
+          const key = assignErrorKey(await errorCodeOf(res), fallback);
           setErrorKey(key);
-          return { ok: false, key };
+          return fail(key);
         }
         return { ok: true };
       } catch {
-        setErrorKey('console.assign_failed');
-        return { ok: false, key: 'console.assign_failed' };
+        setErrorKey(fallback);
+        return fail();
       } finally {
         inFlight.current = false;
         setSubmitting(false);
@@ -147,9 +162,7 @@ export function useAssign(): {
     (rideId: string, reason: string | null) =>
       // The lifecycle route, not a dispatch one: `POST /rides/:id/cancel`
       // already accepts `dispatcher`/`admin`, so cancelling is UI-only work.
-      post(`/rides/${rideId}/cancel`, { reason }).then((outcome) =>
-        outcome.ok ? outcome : { ok: false as const, key: 'console.cancel_failed' as MessageKey },
-      ),
+      post(`/rides/${rideId}/cancel`, { reason }, 'console.cancel_failed'),
     [post],
   );
 

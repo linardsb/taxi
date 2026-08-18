@@ -81,6 +81,9 @@ export const en = {
   'console.admin_placeholder': 'The admin area arrives later',
   'console.assign': 'Assign',
   'console.reassign': 'Reassign',
+  'console.assign_ride_at': 'Assign the ride at {address}',
+  'console.reassign_ride_at': 'Reassign the ride at {address}',
+  'console.cancel_ride_at': 'Cancel the ride at {address}',
   'console.assign_title': 'Assign a driver',
   'console.reassign_title': 'Reassign the ride',
   'console.assign_pick_driver': 'Pick a driver',
@@ -106,6 +109,10 @@ export const en = {
     'The ride is already assigned to another driver',
   'console.assign_error_ride_not_reassignable':
     'This ride can no longer be reassigned — the driver has arrived or is driving',
+  'console.assign_error_ride_not_cancellable':
+    'This ride can no longer be cancelled — it has already ended or been cancelled',
+  'console.assign_error_ride_moved_on':
+    'The ride changed status — the board will catch up',
   'console.cancel_ride': 'Cancel ride',
   'console.cancel_title': 'Cancel ride',
   'console.cancel_reason': 'Cancellation reason (optional)',

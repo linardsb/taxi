@@ -324,8 +324,14 @@ export class DriversRepository {
    * result one row per driver. Which plate wins is arbitrary and stated to be
    * — the plate is a hint for Dina, not the vehicle stamped on the ride (#86
    * picks that at assignment, by category).
+   *
+   * BOUNDED, like every other read in the dispatch slice (#120 review L1). The
+   * caller's ceiling, not a page: there is no cursor and nothing here reads a
+   * second page, so a roster over the limit silently loses drivers from the
+   * picker. Sized well above the pilot so that cannot happen before someone
+   * has to build paging anyway. Ordered so the truncation is at least stable.
    */
-  async findRosterContacts(): Promise<DriverRosterContact[]> {
+  async findRosterContacts(limit: number): Promise<DriverRosterContact[]> {
     return this.db
       .select({
         driverId: drivers.userId,
@@ -337,7 +343,9 @@ export class DriversRepository {
       .from(drivers)
       .innerJoin(users, eq(users.id, drivers.userId))
       .leftJoin(vehicles, eq(vehicles.driverId, drivers.userId))
-      .groupBy(drivers.userId, users.displayName, users.phone, drivers.status);
+      .groupBy(drivers.userId, users.displayName, users.phone, drivers.status)
+      .orderBy(users.displayName)
+      .limit(limit);
   }
 
   /**

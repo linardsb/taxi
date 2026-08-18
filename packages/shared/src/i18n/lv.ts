@@ -92,6 +92,12 @@ export const lv = {
   // ride with none, «Piešķirt atkārtoti» swaps the car already on it.
   'console.assign': 'Piešķirt',
   'console.reassign': 'Piešķirt atkārtoti',
+  // The row buttons' ACCESSIBLE names. The visible label stays short; these
+  // carry the pickup so twelve rows do not announce as twelve identical
+  // buttons while tabbing (#120 review M6).
+  'console.assign_ride_at': 'Piešķirt braucienu — {address}',
+  'console.reassign_ride_at': 'Piešķirt atkārtoti braucienu — {address}',
+  'console.cancel_ride_at': 'Atcelt braucienu — {address}',
   'console.assign_title': 'Piešķirt šoferi',
   'console.reassign_title': 'Piešķirt braucienu atkārtoti',
   'console.assign_pick_driver': 'Izvēlieties šoferi',
@@ -123,6 +129,10 @@ export const lv = {
     'Brauciens jau ir piešķirts citam šoferim',
   'console.assign_error_ride_not_reassignable':
     'Šo braucienu vairs nevar piešķirt atkārtoti — šoferis jau ir klāt vai brauc',
+  'console.assign_error_ride_not_cancellable':
+    'Šo braucienu vairs nevar atcelt — tas jau ir beidzies vai atcelts',
+  'console.assign_error_ride_moved_on':
+    'Brauciena statuss mainījās — saraksts atjaunosies pats',
   'console.cancel_ride': 'Atcelt braucienu',
   'console.cancel_title': 'Atcelt braucienu',
   'console.cancel_reason': 'Atcelšanas iemesls (nav obligāts)',

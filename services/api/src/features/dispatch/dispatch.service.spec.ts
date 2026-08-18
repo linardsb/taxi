@@ -14,6 +14,7 @@ import type {
   TransitionedRide,
 } from '../rides';
 import { DispatchNotifier } from './dispatch-notifier';
+import { MAX_OFFER_ATTEMPTS } from './dispatch.policy';
 import type { DispatchRepository, OfferRef } from './dispatch.repository';
 import { DispatchService } from './dispatch.service';
 import { InMemoryDispatchQueueStore } from './queue/in-memory-dispatch-queue.store';
@@ -66,6 +67,10 @@ function build(
     assignDriver?: boolean;
     revoked?: { offerId: string; driverId: string }[];
     incrResult?: number;
+    /** Cascade attempts already made on the ride, as `countAttempts` reports them. */
+    attempts?: number;
+    /** When the ride last re-entered the pool by a dispatcher release (#19). */
+    lastReleasedAt?: Date | null;
     /** `false` models a force-assigned OFFLINE driver: ordinary, never a throw. */
     claimDriver?: boolean;
     /** What the drivers slice reports for the accepted driver at warn time. */
@@ -95,6 +100,10 @@ function build(
   const revokePendingForRide = jest.fn(() =>
     Promise.resolve(over.revoked ?? []),
   );
+  const countAttempts = jest.fn(() => Promise.resolve(over.attempts ?? 0));
+  const findLastReleasedAt = jest.fn(() =>
+    Promise.resolve(over.lastReleasedAt ?? null),
+  );
   const offers = {
     acceptOffer: jest.fn(() =>
       Promise.resolve('acceptOffer' in over ? over.acceptOffer : offerRef()),
@@ -105,7 +114,9 @@ function build(
     insertAudit,
     revokePendingForRide,
     insertOffer: jest.fn(() => Promise.resolve()),
-    countAttempts: jest.fn(() => Promise.resolve(0)),
+    countAttempts,
+    findLastReleasedAt,
+    findDriverIdsWithLiveOffers: jest.fn(() => Promise.resolve([])),
     findTriedDriverIds: jest.fn(() => Promise.resolve([])),
   } as unknown as DispatchRepository;
 
@@ -191,6 +202,8 @@ function build(
     emitToDriver,
     emitToDispatch,
     incrWithTtl,
+    countAttempts,
+    findLastReleasedAt,
   };
 }
 
@@ -374,12 +387,59 @@ describe('DispatchService', () => {
     });
   });
 
+  describe('offerNext — the cascade budget after a release (#19, #120 review H3)', () => {
+    it('counts attempts only since the ride was released (expected)', async () => {
+      const pooledSince = new Date('2026-08-17T10:00:00.000Z');
+      const t = build({ lastReleasedAt: pooledSince });
+
+      await t.service.offerNext(awaitingRide());
+
+      // THIS is the assertion H3 is about. `offerNext` gates on the count, so
+      // an unscoped read here is the whole defect regardless of what the
+      // repository can do — the sweeper's own call and the repository test both
+      // pass with this line reverted.
+      expect(t.findLastReleasedAt).toHaveBeenCalledWith(RIDE_ID);
+      expect(t.countAttempts).toHaveBeenCalledWith(RIDE_ID, pooledSince);
+    });
+
+    it('passes the pooled-since through to the unclaimed alert at the cap (edge)', async () => {
+      const pooledSince = new Date('2026-08-17T10:00:00.000Z');
+      const t = build({
+        lastReleasedAt: pooledSince,
+        attempts: MAX_OFFER_ATTEMPTS,
+      });
+      const ride = awaitingRide();
+
+      await t.service.offerNext(ride);
+
+      // Or Dina's alert reports time-since-booking on a ride that was released
+      // seconds ago (M3), on the one path that reaches the alert from here.
+      expect(t.emitToDispatch).toHaveBeenCalledWith(
+        CITY,
+        'dispatch:unclaimed',
+        expect.objectContaining({ rideId: RIDE_ID }),
+      );
+      expect(t.countAttempts).toHaveBeenCalledWith(RIDE_ID, pooledSince);
+    });
+
+    it('reads the whole history for a ride that was never released (edge)', async () => {
+      const t = build({ lastReleasedAt: null });
+
+      await t.service.offerNext(awaitingRide());
+
+      // The ordinary booking: `null` means the cap counts every offer ever
+      // made, which is the pre-#19 behaviour and must not change.
+      expect(t.countAttempts).toHaveBeenCalledWith(RIDE_ID, null);
+    });
+  });
+
   describe('raiseUnclaimed', () => {
     it('alerts Dina once and stays silent on repeat ticks (expected + edge)', async () => {
       const { service, emitToDispatch, incrWithTtl } = build({ incrResult: 1 });
       const ride = awaitingRide();
 
-      await service.raiseUnclaimed(ride, 2);
+      // `null` = never released, so the clock runs from the booking.
+      await service.raiseUnclaimed(ride, 2, null);
 
       expect(emitToDispatch).toHaveBeenCalledWith(
         CITY,
@@ -395,7 +455,7 @@ describe('DispatchService', () => {
       // a minute for the same stale order.
       const { service, emitToDispatch } = build({ incrResult: 2 });
 
-      await service.raiseUnclaimed(awaitingRide(), 2);
+      await service.raiseUnclaimed(awaitingRide(), 2, null);
 
       expect(emitToDispatch).not.toHaveBeenCalled();
     });

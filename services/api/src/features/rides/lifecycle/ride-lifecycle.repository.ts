@@ -61,6 +61,14 @@ export class RideLifecycleRepository {
    * invariant, and this is the one place a corrupted split would otherwise
    * reach a driver's earnings. The column stores the WIRE shape and the schema
    * has no `Date` fields, so a plain `.parse()` round-trips cleanly.
+   *
+   * `LIMIT 1` WITH NO `ORDER BY` IS ONLY SAFE BECAUSE A RIDE HOLDS AT MOST ONE
+   * ACCEPTED OFFER. The split is driver-specific — `resolveCommissionPct`
+   * applies the driver's override — so a second accepted row would settle the
+   * ride on whichever the heap yields, at a commission the platform never
+   * agreed. `ReassignService` upholds the invariant by retiring the outgoing
+   * driver's row (`supersedeAcceptedOffer`); an `ORDER BY` here would hide an
+   * ambiguity rather than remove it.
    */
   async findAcceptedOfferSplit(rideId: string): Promise<FareSplit | undefined> {
     const [row] = await this.db

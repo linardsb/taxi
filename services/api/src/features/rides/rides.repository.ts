@@ -48,6 +48,16 @@ const boardPickupSchema = rideRequestSchema.pick({ pickup: true });
 const BOARD_STATUS_SET = new Set<string>(BOARD_LIVE_RIDE_STATUSES);
 
 /**
+ * The statuses `unassignDriver` will take a car off — see its docblock for why
+ * `requested` is in the set and `arrived`/`in_progress` are not.
+ */
+const UNASSIGNABLE_RIDE_STATUSES = [
+  'requested',
+  'accepted',
+  'arriving',
+] as const satisfies readonly RideStatus[];
+
+/**
  * The board query's `inArray` already constrains this, but that guarantee
  * lives in SQL where the type system cannot see it. A checked guard rather
  * than a cast: `BoardRide.status` is what the wire schema demands, and an
@@ -228,25 +238,6 @@ export class RidesRepository {
   }
 
   /**
-   * Every LIVE ride for Dina's board (#18), oldest first — `findAwaitingDispatch`
-   * widened to the whole pre-terminal lifecycle, plus the driver's display name
-   * in the same read (the board would otherwise need a query per assigned ride
-   * every 2 s frame). `rides_status_idx` covers the predicate here too.
-   *
-   * ONE UNREADABLE ROW COSTS ONE CARD, NEVER THE BOARD. `rides.request` is an
-   * audit snapshot written at creation and never migrated, so a later required
-   * field on `rideRequestSchema` makes older live rows unparseable. A whole-
-   * schema `.parse()` here would then reject the read on both transports at
-   * once — `GET /dispatch/board` 500s and every 2 s beat emits nothing — until
-   * that row leaves the live window, which includes `accepted`/`in_progress`
-   * and can be a long time. So: validate only the field the board renders, per
-   * row, and drop the row that fails.
-   *
-   * `toAwaiting`'s full parse deliberately stays strict — the sweeper
-   * dispatches off `category`/`options`/`paymentMethod`, so a degraded request
-   * there would silently mis-dispatch rather than omit a card.
-   */
-  /**
    * Which drivers are pinned to a ride right now, for #19's override picker —
    * so Dina is warned before she takes a car off a job it is already on.
    *
@@ -269,6 +260,25 @@ export class RidesRepository {
     );
   }
 
+  /**
+   * Every LIVE ride for Dina's board (#18), oldest first — `findAwaitingDispatch`
+   * widened to the whole pre-terminal lifecycle, plus the driver's display name
+   * in the same read (the board would otherwise need a query per assigned ride
+   * every 2 s frame). `rides_status_idx` covers the predicate here too.
+   *
+   * ONE UNREADABLE ROW COSTS ONE CARD, NEVER THE BOARD. `rides.request` is an
+   * audit snapshot written at creation and never migrated, so a later required
+   * field on `rideRequestSchema` makes older live rows unparseable. A whole-
+   * schema `.parse()` here would then reject the read on both transports at
+   * once — `GET /dispatch/board` 500s and every 2 s beat emits nothing — until
+   * that row leaves the live window, which includes `accepted`/`in_progress`
+   * and can be a long time. So: validate only the field the board renders, per
+   * row, and drop the row that fails.
+   *
+   * `toAwaiting`'s full parse deliberately stays strict — the sweeper
+   * dispatches off `category`/`options`/`paymentMethod`, so a degraded request
+   * there would silently mis-dispatch rather than omit a card.
+   */
   async findBoardRides(limit: number): Promise<BoardRide[]> {
     const rows = await this.db
       .select({ ride: rides, driverName: users.displayName })
@@ -417,6 +427,21 @@ export class RidesRepository {
    * already replaced. `assignDriver` guards on `isNull(driverId)` for the
    * mirror-image reason, and the pair is what lets a reassign be a release
    * followed by an ordinary force-assign.
+   *
+   * The STATUS predicate defends the method rather than the caller. Today the
+   * only caller is behind `assertTransition`, so the "no car off a ride the
+   * driver has reached" rule already holds — but this is exported through the
+   * rides barrel, and the next caller inherits nothing from that guard. Its
+   * sibling `setOnlineIfEligible` makes the same argument at length: the check
+   * belongs in the WHERE (#120 review L2).
+   *
+   * IT IS NOT `['accepted','arriving']`, which is what the caller's own guard
+   * checks. `ReassignService` moves the ride to `requested` FIRST and clears
+   * the driver second, both inside one transaction, so by the time this runs
+   * the row already reads `requested` — that set would match nothing and every
+   * release would 409. What this refuses is the case the rule is about: a
+   * driver standing at the pickup (`arrived`), carrying the passenger
+   * (`in_progress`), or on a ride that has already ended.
    */
   async unassignDriver(
     rideId: string,
@@ -426,7 +451,13 @@ export class RidesRepository {
     const [row] = await (tx ?? this.db)
       .update(rides)
       .set({ driverId: null, vehicleId: null })
-      .where(and(eq(rides.id, rideId), eq(rides.driverId, driverId)))
+      .where(
+        and(
+          eq(rides.id, rideId),
+          eq(rides.driverId, driverId),
+          inArray(rides.status, [...UNASSIGNABLE_RIDE_STATUSES]),
+        ),
+      )
       .returning({ id: rides.id });
     return row !== undefined;
   }

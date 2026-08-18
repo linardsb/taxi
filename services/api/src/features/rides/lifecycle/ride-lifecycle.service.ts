@@ -138,7 +138,7 @@ export class RideLifecycleService {
     const split = await this.lifecycle.findAcceptedOfferSplit(rideId);
     if (!split) {
       throw new Error(
-        `Ride ${rideId} reached completion with no accepted ride_offers row. Both assignment paths write exactly one; inventing a split here would pay a driver a number nobody ever showed them.`,
+        `Ride ${rideId} reached completion with no accepted ride_offers row. Every assignment path writes one and the dispatcher release retires it, so a completed ride holds exactly one; inventing a split here would pay a driver a number nobody ever showed them.`,
       );
     }
     if (split.totalCents !== ride.totalCents) {

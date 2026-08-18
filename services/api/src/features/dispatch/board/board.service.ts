@@ -108,8 +108,14 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
         driverName: r.driverName,
         bookingChannel: r.bookingChannel,
         requestedAt: r.createdAt.toISOString(),
-        // Same arithmetic as the sweeper's isStale, but only a `requested`
-        // ride is "unclaimed" — an offered/queued ride has the engine on it.
+        // NO LONGER the same arithmetic as the sweeper's `isStale`: #120's M3
+        // re-based the ALERT's clock on the ride's last entry into the pool,
+        // and this one is still time-since-booking. Deliberate for now — the
+        // board reads this per ride on a 2 s frame, and re-basing it would cost
+        // a `findLastReleasedAt` per row per frame for a field no screen in
+        // `apps/dispatch/src` renders today. Re-base it with the first consumer.
+        // Only a `requested` ride is "unclaimed" — an offered/queued ride has
+        // the engine on it.
         unclaimedSeconds:
           r.status === 'requested'
             ? Math.max(0, Math.round((nowMs - r.createdAt.getTime()) / 1000))

@@ -4,10 +4,13 @@
 
 ```
 scheduled ─────► requested ──► offered ──► accepted ──► arriving ──► arrived ──► in_progress ──► completed ──► settled
- (timer)            │  ▲          │ (decline/timeout
-                    │  └──────────┘  re-offer loop)
+ (timer)            │  ▲  ▲       │ (decline/timeout
+                    │  └──┼───────┘  re-offer loop)
+                    │     └──────────────────┴─── dispatcher release (#19)
                     └──► queued ──► offered            (geozone_queue mode)
 ```
+
+- **Dispatcher release** is the one BACKWARD edge in the machine: `accepted → requested` and `arriving → requested`, written by `ReassignService` when Dina swaps the car on a ride that already has one. Deliberately absent from `arrived` and `in_progress` — a driver standing at the pickup, or carrying the passenger, is a cancellation. Consumers written against a forward-only lifecycle need to know this edge exists; `isPaymentMethodLocked()` is a pure function of status, so the release re-opens payment editing for the seconds before a driver re-accepts (decided, see #120).
 
 - **Entry**: instant rides enter at `requested`; scheduled rides ("izsaukumi uz laiku") enter at `scheduled` and a timer promotes them to `requested`.
 - **Multi-taxi orders**: one order → N rides sharing `orderId`, each running the machine independently.

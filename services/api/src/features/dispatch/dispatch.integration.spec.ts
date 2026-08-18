@@ -9,6 +9,7 @@ import {
   authSessionSchema,
   dispatchBoardEventSchema,
   dispatchRosterSchema,
+  fareSplitSchema,
   IDEMPOTENCY_KEY_HEADER,
   rideCreatedSchema,
   RT,
@@ -33,6 +34,7 @@ import {
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { AuthTokenService } from '../auth';
 import { DriversService } from '../drivers';
+import { DispatchRepository } from './dispatch.repository';
 import { MAX_OFFER_ATTEMPTS } from './dispatch.policy';
 import { DispatchSweeper } from './dispatch.sweeper';
 
@@ -639,6 +641,223 @@ describe('dispatch (integration)', () => {
     expect(
       audit.some((a) => a.driverId === second.id && a.source === 'dispatcher'),
     ).toBe(true);
+  });
+
+  /**
+   * (expected) THE MONEY ASSERTION FOR THE RELEASE (#120 review C1).
+   *
+   * The two drivers are on DIFFERENT commission rates deliberately: the split
+   * is driver-specific, so with both on the platform base the two offer rows
+   * agree and the defect this pins is invisible. `findAcceptedOfferSplit` reads
+   * the accepted row with `LIMIT 1` and no `ORDER BY`, so a release that left
+   * the outgoing driver's row `accepted` would settle the ride on whichever the
+   * heap yielded — and the rider-facing total is identical either way, so the
+   * `totalCents` guard at completion never fires.
+   */
+  it('settles a reassigned ride on the INCOMING driver’s commission (#19)', async () => {
+    const first = await onlineDriver(
+      60,
+      near(CENTRE_PICKUP.location, 0.001, 0),
+    );
+    const second = await onlineDriver(
+      61,
+      near(CENTRE_PICKUP.location, 0.02, 0.02),
+    );
+    // 10 vs 40, and neither is the platform base — so the assertion fails on a
+    // stale row whichever of the two the query happens to return.
+    await ctx.db
+      .update(drivers)
+      .set({ commissionPctOverride: 10 })
+      .where(eq(drivers.userId, first.id));
+    await ctx.db
+      .update(drivers)
+      .set({ commissionPctOverride: 40 })
+      .where(eq(drivers.userId, second.id));
+
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(114),
+      role: 'dispatcher',
+    });
+    const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const ride = await bookRide(62, CENTRE_PICKUP);
+    await sweeper.tick();
+    const live = await pendingOffer(ride.id);
+    await http
+      .post(`/dispatch/offers/${live!.id}/accept`)
+      .set('authorization', first.auth)
+      .expect(201);
+
+    const outgoing = (await offersFor(ride.id)).find(
+      (o) => o.status === 'accepted',
+    )!;
+    expect(fareSplitSchema.parse(outgoing.split).commissionPct).toBe(10);
+
+    await http
+      .post(`/dispatch/rides/${ride.id}/reassign`)
+      .set('authorization', dispatcherAuth)
+      .send({ driverId: second.id })
+      .expect(201);
+
+    // ONE accepted row, and it is the incoming driver's. The outgoing row is
+    // retired rather than deleted — the audit trail keeps what was shown.
+    const afterOffers = await offersFor(ride.id);
+    const accepted = afterOffers.filter((o) => o.status === 'accepted');
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]!.driverId).toBe(second.id);
+    expect(afterOffers.find((o) => o.id === outgoing.id)!.status).toBe(
+      'revoked',
+    );
+
+    const incoming = fareSplitSchema.parse(accepted[0]!.split);
+    expect(incoming.commissionPct).toBe(40);
+
+    for (const step of ['arriving', 'arrived', 'start', 'complete'] as const) {
+      await http
+        .post(`/rides/${ride.id}/${step}`)
+        .set('authorization', second.auth)
+        .expect(201);
+    }
+
+    const settled = await rideRow(ride.id);
+    expect(settled.status).toBe('completed');
+    // The driver who did the work, at the rate they were shown.
+    expect(settled.commissionPct).toBe(40);
+    expect(settled.commissionCents).toBe(incoming.commissionCents);
+    expect(settled.driverNetCents).toBe(incoming.driverNetCents);
+    // And explicitly NOT the released driver's number.
+    expect(settled.commissionCents).not.toBe(
+      fareSplitSchema.parse(outgoing.split).commissionCents,
+    );
+    expect(settled.commissionCents! + settled.driverNetCents!).toBe(
+      settled.totalCents,
+    );
+  });
+
+  /**
+   * (expected) The release resets the cascade's budget (#120 review H3).
+   *
+   * The docblock on `ReassignService` justifies its two-transaction split with
+   * "the ride sits in `requested` and the cascade picks it up". Counted over
+   * every offer row ever made on the ride, a ride that cascaded through a few
+   * candidates before it was accepted is at or over `MAX_OFFER_ATTEMPTS` the
+   * moment it is released, and `offerNext` returns without offering — the
+   * fallback the split is built on does not run.
+   *
+   * Asserted against the real release rather than a hand-written audit row:
+   * `findLastReleasedAt` has to find what `reassign` actually wrote.
+   */
+  it('resets the cascade attempt budget when a ride is released (#19)', async () => {
+    const first = await onlineDriver(
+      63,
+      near(CENTRE_PICKUP.location, 0.001, 0),
+    );
+    const second = await onlineDriver(
+      64,
+      near(CENTRE_PICKUP.location, 0.02, 0.02),
+    );
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(115),
+      role: 'dispatcher',
+    });
+    const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const ride = await bookRide(65, CENTRE_PICKUP);
+    await sweeper.tick();
+    const live = await pendingOffer(ride.id);
+    await http
+      .post(`/dispatch/offers/${live!.id}/accept`)
+      .set('authorization', first.auth)
+      .expect(201);
+
+    // Backdate the cascade's rows and pad them to the cap — what a ride that
+    // was offered around before somebody took it looks like.
+    await ctx.db
+      .update(rideOffers)
+      .set({ sentAt: new Date(Date.now() - 600_000) })
+      .where(eq(rideOffers.rideId, ride.id));
+    const existing = await offersFor(ride.id);
+    for (let i = existing.length; i < MAX_OFFER_ATTEMPTS; i++) {
+      await ctx.db.insert(rideOffers).values({
+        ...existing[0]!,
+        id: randomUUID(),
+        status: 'expired',
+        sentAt: new Date(Date.now() - 600_000),
+      });
+    }
+    const repo = ctx.app.get(DispatchRepository);
+    expect(await repo.countAttempts(ride.id, null)).toBeGreaterThanOrEqual(
+      MAX_OFFER_ATTEMPTS,
+    );
+
+    await http
+      .post(`/dispatch/rides/${ride.id}/reassign`)
+      .set('authorization', dispatcherAuth)
+      .send({ driverId: second.id })
+      .expect(201);
+
+    const releasedAt = await repo.findLastReleasedAt(ride.id);
+    expect(releasedAt).not.toBeNull();
+
+    // The REPOSITORY half, against the real release and the real rows: only
+    // the override's own offer postdates the release, so the scoped count is
+    // far below the cap while the unscoped one is at it.
+    //
+    // This asserts the number, NOT that the cascade then offers the ride —
+    // nothing in this test runs `offerNext`. That `offerNext` passes
+    // `findLastReleasedAt`'s result through is pinned separately, in
+    // `dispatch.service.spec.ts`; an earlier version of this comment claimed
+    // the outcome here and no run in this file produced it.
+    const scoped = await repo.countAttempts(ride.id, releasedAt);
+    expect(scoped).toBeLessThan(MAX_OFFER_ATTEMPTS);
+    expect(scoped).toBeLessThan(await repo.countAttempts(ride.id, null));
+  });
+
+  /**
+   * (failure) The pre-flight, end to end (#120 review M2).
+   *
+   * `forceAssign` raises `driver_not_found` in the SECOND transaction, after the
+   * release has already committed — so without the pre-flight a stale roster row
+   * left the ride with no car while Dina read an error that says nothing
+   * happened. The assertion that matters is not the 404: it is that the ride
+   * still has its original driver afterwards.
+   */
+  it('404s a reassign onto an unknown driver WITHOUT releasing the ride (#19, failure)', async () => {
+    const first = await onlineDriver(
+      66,
+      near(CENTRE_PICKUP.location, 0.001, 0),
+    );
+    const dispatcher = await insertUser(ctx.db, {
+      phone: p(116),
+      role: 'dispatcher',
+    });
+    const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
+
+    const ride = await bookRide(67, CENTRE_PICKUP);
+    await sweeper.tick();
+    const live = await pendingOffer(ride.id);
+    await http
+      .post(`/dispatch/offers/${live!.id}/accept`)
+      .set('authorization', first.auth)
+      .expect(201);
+
+    // A well-formed uuid that is not a driver — the shape a deactivated roster
+    // row leaves behind on a console that has not refreshed.
+    await http
+      .post(`/dispatch/rides/${ride.id}/reassign`)
+      .set('authorization', dispatcherAuth)
+      .send({ driverId: randomUUID() })
+      .expect(404);
+
+    const row = await rideRow(ride.id);
+    expect(row.status).toBe('accepted');
+    expect(row.driverId).toBe(first.id);
+    expect(row.vehicleId).not.toBeNull();
+    expect(await driverStatus(first.id)).toBe('on_ride');
+    // And the release never happened, so no release audit row was written.
+    expect(
+      await ctx.app.get(DispatchRepository).findLastReleasedAt(ride.id),
+    ).toBeNull();
   });
 
   it('refuses to reassign once the driver has reached the pickup (#19, failure)', async () => {

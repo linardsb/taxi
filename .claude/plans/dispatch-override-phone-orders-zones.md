@@ -348,7 +348,7 @@ Use information-dense keywords for clarity:
 - **IMPLEMENT**: A worktree already exists at `/Users/Berzins/Desktop/taxi-dispatch-override` on branch `feature/dispatch-override-phone-orders`, cut from `origin/main` at `30d057b`. Copy `.env` in from the main checkout (`cp ../taxi/.env .env`), then `pnpm install`.
 - **PATTERN**: Root `CLAUDE.md`, "Concurrent Claude sessions share this checkout".
 - **GOTCHA**: A worktree with no `.env` fails `@taxi/db#test`, and turbo then kills every sibling task — the failure reads as unrelated. Also export `COMPOSE_PROJECT_NAME=taxi` (already in `.claude/settings.local.json` env) or compose starts a second Postgres against the occupied 5432.
-- **GOTCHA**: Set `REDIS_TEST_URL` to match your `REDIS_PORT` (6381 locally). Without it the Redis-backed suites `describe.skip` and the gate is green 24 tests short — the queue-store work in Phase C is exactly what gets skipped.
+- **GOTCHA**: Set `REDIS_TEST_URL` to match your `REDIS_PORT` (6381 locally). Without it the Redis-backed suites `describe.skip` and the gate is green 28 tests short (`observed` on this branch, `env -u REDIS_TEST_URL`: `28 skipped, 492 passed, 520 total`) — the queue-store work in Phase C is exactly what gets skipped.
 - **VALIDATE**: `cd /Users/Berzins/Desktop/taxi-dispatch-override && docker compose up -d --wait && pnpm install && pnpm turbo run typecheck lint test build --force`
 - **SATISFIES**: prerequisite for every AC.
 

@@ -9,6 +9,7 @@ import type { Db } from '@taxi/db';
 import type { RideStatus } from '@taxi/shared';
 import { DRIZZLE } from '../../common/db/db.module';
 import { DriversService } from '../drivers';
+import { RealtimeService } from '../realtime';
 import { RidesRepository, RideTransitionService } from '../rides';
 import { DispatchRepository } from './dispatch.repository';
 import { ForceAssignService } from './force-assign.service';
@@ -38,9 +39,17 @@ const RELEASABLE_STATUSES = new Set<RideStatus>(['accepted', 'arriving']);
  *
  * One transaction would be tidier and strictly worse. A failure in the second
  * half would roll back the release, leaving the ride pinned to the driver Dina
- * has already decided is wrong. Split, the failure mode is "the ride sits in
- * `requested` and the cascade picks it up" — the rider gets a car by the
- * normal route, which is the outcome anyone would choose. Do NOT merge these.
+ * has already decided is wrong. Split, the ride sits in `requested` and the
+ * cascade works it as an ordinary awaiting ride. Do NOT merge these.
+ *
+ * WHAT THAT FALLBACK DOES AND DOES NOT PROMISE. It promises the ride is offered
+ * again: `countAttempts` is scoped to `findLastReleasedAt`, so the release
+ * resets the `MAX_OFFER_ATTEMPTS` budget and a ride that cascaded before it was
+ * accepted is not already at the cap (#120 review H3, which found the earlier
+ * wording promising more than the code did). It does NOT promise a car:
+ * `findTriedDriverIds` is one-shot-per-driver-per-ride by design, so at pilot
+ * scale the candidate set can exhaust — and then the ride surfaces as unclaimed
+ * on Dina's board, which is the same escalation an unaccepted booking gets.
  */
 @Injectable()
 export class ReassignService {
@@ -52,6 +61,7 @@ export class ReassignService {
     private readonly transitions: RideTransitionService,
     private readonly drivers: DriversService,
     private readonly offers: DispatchRepository,
+    private readonly realtime: RealtimeService,
     private readonly forceAssignService: ForceAssignService,
   ) {}
 
@@ -85,6 +95,15 @@ export class ReassignService {
       throw new ConflictException('ride_already_assigned');
     }
 
+    // PRE-FLIGHT, because the two-transaction split makes a late 404 expensive:
+    // `forceAssign` throws `driver_not_found` after the release has committed,
+    // so a stale roster row would read to Dina as "nothing happened" while the
+    // ride had already lost its car (#120 review M2). `forceAssign` still makes
+    // its own check — this narrows the window, it does not own the guard.
+    const [incoming] = await this.drivers.findMatchAttributes([input.driverId]);
+    if (!incoming) throw new NotFoundException('driver_not_found');
+
+    let supersededOffer = false;
     const released = await this.db.transaction(async (tx) => {
       const ride = await this.transitions.transitionInTx(
         tx,
@@ -107,6 +126,17 @@ export class ReassignService {
       // while offline was never claimed, so there is nothing to release.
       await this.drivers.releaseFromRide(previousDriverId, tx);
 
+      // Retire the offer acceptance was built on, or the ride carries two
+      // `accepted` rows and settles on whichever one the heap yields — see
+      // `supersedeAcceptedOffer`. `false` is a data impossibility, not a state
+      // to handle, so it is logged rather than thrown: refusing the release
+      // here would pin the ride to the driver Dina has already rejected.
+      supersededOffer = await this.offers.supersedeAcceptedOffer(
+        input.rideId,
+        previousDriverId,
+        tx,
+      );
+
       await this.offers.insertAudit(
         {
           rideId: input.rideId,
@@ -124,7 +154,38 @@ export class ReassignService {
 
     // ── committed ── the ride is back in the pool from here on; a throw below
     // leaves it there for the cascade rather than stranding it.
-    this.transitions.emitStatus(released, from, input.reason ?? null);
+
+    // NO REASON ON THE WIRE. `emitStatus` puts it on `ride:status`, which goes
+    // to the ride room — the rider and the driver, per realtime-events.md. Dina
+    // types that box for the record, not for the passenger ("first driver not
+    // moving"), and `dispatch_audit_log` already has it (#120 review M1).
+    this.transitions.emitStatus(released, from);
+
+    // The mirror of `emitAssigned`'s join. Without it the released driver's
+    // sockets keep receiving every later `ride:status` for a ride they are no
+    // longer party to, the incoming driver's `ride:assigned`, and the rider's
+    // position leg once it lands (#120 review H4). Never throws, for the reason
+    // `emitStatus` documents: the release is committed either way.
+    try {
+      this.realtime.leaveRideRoom(previousDriverId, input.rideId);
+    } catch (error) {
+      this.logger.warn({
+        event: 'dispatch.assign.leave_failed',
+        rideId: input.rideId,
+        driverId: previousDriverId,
+        reason: error instanceof Error ? error.message : 'unknown',
+        at: new Date().toISOString(),
+      });
+    }
+
+    if (!supersededOffer) {
+      this.logger.warn({
+        event: 'dispatch.assign.no_accepted_offer',
+        rideId: input.rideId,
+        driverId: previousDriverId,
+        at: new Date().toISOString(),
+      });
+    }
 
     this.logger.log({
       event: 'dispatch.assign.released',

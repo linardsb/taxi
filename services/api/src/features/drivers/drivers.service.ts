@@ -212,7 +212,7 @@ export class DriversService {
   }
 
   /** #19's entry point: EVERY driver, offline ones included — the override picker. */
-  findRosterContacts(): Promise<DriverRosterContact[]> {
-    return this.drivers.findRosterContacts();
+  findRosterContacts(limit: number): Promise<DriverRosterContact[]> {
+    return this.drivers.findRosterContacts(limit);
   }
 }

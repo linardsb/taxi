@@ -8,6 +8,7 @@ import {
 } from '../drivers';
 import { GeozonesService } from '../geozones';
 import { RidesRepository } from '../rides';
+import { ROSTER_LIMIT } from './dispatch.policy';
 
 /**
  * Who Dina can put on a ride (#19) — EVERY driver, not the online set.
@@ -45,7 +46,7 @@ export class RosterService {
   async listRoster(cityId: string): Promise<DispatchRoster> {
     const nowMs = Date.now();
     const [contacts, online, activeRides] = await Promise.all([
-      this.drivers.findRosterContacts(),
+      this.drivers.findRosterContacts(ROSTER_LIMIT),
       this.locations.listOnline(cityId),
       this.rides.findActiveRideIdsByDriver(),
     ]);

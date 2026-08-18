@@ -28,6 +28,8 @@ function build(
     overdue?: { id: string; rideId: string; driverId: string }[];
     onFindOverdue?: () => never;
     attempts?: number;
+    /** When the ride last re-entered the pool by a dispatcher release (#19). */
+    lastReleasedAt?: Date | null;
   } = {},
 ) {
   const offerNext = jest.fn(() => Promise.resolve());
@@ -46,10 +48,15 @@ function build(
   const findPendingForRide = jest.fn((): Promise<{ id: string } | undefined> =>
     Promise.resolve(undefined),
   );
+  const findLastReleasedAt = jest.fn(() =>
+    Promise.resolve(over.lastReleasedAt ?? null),
+  );
+  const countAttempts = jest.fn(() => Promise.resolve(over.attempts ?? 0));
   const offers = {
     findOverdue,
     findPendingForRide,
-    countAttempts: jest.fn(() => Promise.resolve(over.attempts ?? 0)),
+    findLastReleasedAt,
+    countAttempts,
   } as unknown as DispatchRepository;
 
   const findAwaitingDispatch = jest.fn(() =>
@@ -75,6 +82,7 @@ function build(
     findOverdue,
     findPendingForRide,
     findAwaitingDispatch,
+    countAttempts,
   };
 }
 
@@ -145,7 +153,7 @@ describe('DispatchSweeper', () => {
     await sweeper.tick();
 
     // The threshold is `platform_config.unclaimedAlertSeconds`, never a literal.
-    expect(raiseUnclaimed).toHaveBeenCalledWith(stale, 0);
+    expect(raiseUnclaimed).toHaveBeenCalledWith(stale, 0, null);
   });
 
   it('does not alert a ride that is still within the threshold (edge)', async () => {
@@ -155,6 +163,37 @@ describe('DispatchSweeper', () => {
     await sweeper.tick();
 
     expect(raiseUnclaimed).not.toHaveBeenCalled();
+  });
+
+  it('measures staleness from the RELEASE, not the booking (edge)', async () => {
+    // Booked 15 minutes ago, accepted, released 5 seconds ago. Against
+    // `createdAt` it is instantly stale and reports 900 s of waiting for a car
+    // it had for most of that time (#120 review M3).
+    const released = awaiting({ createdAt: new Date(Date.now() - 900_000) });
+    const { sweeper, raiseUnclaimed } = build({
+      awaitingRides: [released],
+      lastReleasedAt: new Date(Date.now() - 5_000),
+    });
+
+    await sweeper.tick();
+
+    expect(raiseUnclaimed).not.toHaveBeenCalled();
+  });
+
+  it('counts cascade attempts only since the release (edge)', async () => {
+    const pooledSince = new Date(Date.now() - 5_000);
+    const released = awaiting({ createdAt: new Date(Date.now() - 900_000) });
+    const { sweeper, countAttempts } = build({
+      awaitingRides: [released],
+      lastReleasedAt: pooledSince,
+    });
+
+    await sweeper.tick();
+
+    // Unscoped, a ride that cascaded before it was accepted sits at
+    // MAX_OFFER_ATTEMPTS the moment Dina releases it and is alerted as
+    // exhausted without one fresh offer having been made.
+    expect(countAttempts).toHaveBeenCalledWith(released.id, pooledSince);
   });
 
   it('keeps running the remaining passes when one throws (failure)', async () => {

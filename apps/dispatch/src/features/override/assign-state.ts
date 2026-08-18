@@ -89,11 +89,22 @@ const ERROR_KEYS: Record<string, MessageKey> = {
   ride_not_assignable: 'console.assign_error_ride_not_assignable',
   ride_already_assigned: 'console.assign_error_ride_already_assigned',
   ride_not_reassignable: 'console.assign_error_ride_not_reassignable',
+  // The CANCEL path's two codes (#120 review H2). Unmapped, both fell through
+  // to the generic assign message — "could not assign" rendered inside the
+  // cancel dialog, on the destructive action, for a ride that already ended.
+  ride_not_cancellable: 'console.assign_error_ride_not_cancellable',
+  ride_transition_conflict: 'console.assign_error_ride_moved_on',
 };
 
-export const assignErrorKey = (code: string | undefined): MessageKey =>
-  (code !== undefined ? ERROR_KEYS[code] : undefined) ??
-  'console.assign_failed';
+/**
+ * `fallback` is the verb's own generic message. It is a parameter and not a
+ * constant because the cancel path shares this map: an unmapped code there must
+ * read as a failed cancellation, not a failed assignment.
+ */
+export const assignErrorKey = (
+  code: string | undefined,
+  fallback: MessageKey = 'console.assign_failed',
+): MessageKey => (code !== undefined ? ERROR_KEYS[code] : undefined) ?? fallback;
 
 /**
  * Picker order: assignable-now first, then the driver already near the job,

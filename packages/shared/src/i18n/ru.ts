@@ -83,6 +83,9 @@ export const ru = {
   'console.admin_placeholder': 'Раздел администрирования появится позже',
   'console.assign': 'Назначить',
   'console.reassign': 'Переназначить',
+  'console.assign_ride_at': 'Назначить поездку — {address}',
+  'console.reassign_ride_at': 'Переназначить поездку — {address}',
+  'console.cancel_ride_at': 'Отменить поездку — {address}',
   'console.assign_title': 'Назначить водителя',
   'console.reassign_title': 'Переназначить поездку',
   'console.assign_pick_driver': 'Выберите водителя',
@@ -108,6 +111,10 @@ export const ru = {
     'Поездка уже назначена другому водителю',
   'console.assign_error_ride_not_reassignable':
     'Эту поездку уже нельзя переназначить — водитель на месте или в пути',
+  'console.assign_error_ride_not_cancellable':
+    'Эту поездку уже нельзя отменить — она завершена или отменена',
+  'console.assign_error_ride_moved_on':
+    'Статус поездки изменился — список обновится сам',
   'console.cancel_ride': 'Отменить поездку',
   'console.cancel_title': 'Отменить поездку',
   'console.cancel_reason': 'Причина отмены (необязательно)',
