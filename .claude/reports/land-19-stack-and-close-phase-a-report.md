@@ -16,7 +16,7 @@ Merged the #19 stack in order (#120 → #122), rebased #121 onto the merged `mai
 - **#121/#122 retargeted to `main`** → by hand; GitHub did **not** auto-retarget
 - **#122 merged** → `d444c72`, after a fresh gate at its head
 - **#121 rebased** `ced2d30` → `d444c72` → `0a7c519`, `feed712` (UPDATE, force-pushed)
-- **i18n conflict** → 59 lines of catalog strings into `packages/shared/src/i18n/{lv,ru,en}.ts` (UPDATE, `+17/+25/+17`), `isMessageKey` kept in `i18n.ts` (UPDATE, `+21` assembly and type lines — 80 is the four-file total, not the string count). `observed` — `git diff --numstat d444c72 59b3feb -- packages/shared/src/i18n/ packages/shared/src/i18n.ts`
+- **i18n conflict** → **16 new keys per language, net +15** (`console.zone_none` reworded to `console.zone_none_configured`), each of `packages/shared/src/i18n/{lv,ru,en}.ts` going 136 → 151 keys (UPDATE); `isMessageKey` kept in `i18n.ts` (UPDATE). `observed` — key counts at `d444c72` and `59b3feb`. The "80 lines" originally written here counted *added lines across four files*, not strings; the three-dictionary line total is 59, and neither number is the key count.
 - **500-line cap** → `services/api/src/features/rides/board-ride.ts` (CREATE), `rides.repository.ts` 504 → 464 (UPDATE), `rides/index.ts` re-export (UPDATE)
 - **`CLAUDE.md` Redis paragraph** → rewritten, sentence and all (UPDATE)
 - **Phase D reconciliation** → `.claude/plans/dispatch-override-phone-orders-zones.md` (UPDATE), new Task D1b
