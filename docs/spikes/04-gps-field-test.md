@@ -1,6 +1,6 @@
 # Spike #4 — Expo background GPS field test
 
-**Status: harness + protocol ready — field drive pending (Linards).** Issue [#4](https://github.com/linardsb/taxi/issues/4), gates #14/#15.
+**Status: deferred (2026-08-26) — no field run; #14 proceeds on the mounted-phone default and is no longer blocked.** The decisive Android run needs Atis's phone (unavailable; the APK kit stays live for any pilot Android phone). The iOS run needs either a cable install from the Mac or, for a link install like the Android kit, the paid Apple Developer Program (Apple's ad-hoc rule) — deferred to the driver app's first TestFlight build, which carries the same location code, as an early #14 QA drive. #14's design is therefore the superset: the harness's exact `startLocationUpdatesAsync` options **plus** keep-awake while online, background best-effort, server-side gap tolerance — a later PASS changes nothing. Issue [#4](https://github.com/linardsb/taxi/issues/4) stays open until one leg runs; #15 unaffected.
 
 ## Research verdict
 
@@ -25,13 +25,17 @@ npx expo run:android              # or: npx expo run:ios (device plugged in)
 
 `expo run:*` prebuilds a dev client with the background-location entitlements from `app.json`. When prompted, grant location **"Allow all the time"** (Android) / **"Always"** (iOS) — the harness requests foreground then background permission on first "Go online".
 
+**iOS from this Mac** (observed 2026-08-25: iMac19,1, macOS 15.7.3, Xcode 26.3 — the last Xcode this machine can run). SDK 57 does **not** compile here: `expo-modules-jsi@57.0.4` fails on a Swift `abs()` ambiguity (`JavaScriptCodable+Date.swift:53`) and `57.0.5` on `SWIFT_RETURNS_RETAINED` applied to a constructor (`RuntimeScheduler.h:61`); both need Xcode 26.4's compiler. What builds: an `rsync` copy of the harness outside the repo (the PR #115 Android recipe — never build in place), downgraded with `npx expo install expo@~55.0.0 --fix` (SDK 55, RN 0.83.10, iOS floor 15.1; `--fix` also adds `expo-sharing` to the copy's `app.json` plugins), then `CI=1 npx expo run:ios --configuration Release --device <udid>` — `CI=1` and an explicit `--device` keep the CLI from opening a picker. Release embeds `main.jsbundle`, so the phone runs without Metro; products land in `~/Library/Developer/Xcode/DerivedData/GPSSpike-*/Build/Products/`, not `ios/build`. The SDK 57 Podfile defaults `RCT_USE_PREBUILT_RNCORE` and `EXPO_USE_PRECOMPILED_MODULES` to 1; export `EXPO_USE_PRECOMPILED_MODULES=0` to force Expo modules from source (SDK 55's Podfile has only the first switch). Do not downgrade the committed harness — the Android APK was built from SDK 57. A device install additionally needs an Apple ID in Xcode (free Personal Team: `xed ios` → Signing & Capabilities → pick the team; `security find-identity -v -p codesigning` must then list an `Apple Development` identity), Developer Mode on the phone, a cable, and it expires after 7 days. A link install (the Android-kit experience) needs the paid Apple Developer Program and EAS internal distribution.
+
+**Simulator pre-flight** (plumbing check, not evidence — SDK 55 build launched 2026-08-25, route not yet run): `xcrun simctl privacy booted grant location-always lv.saktacab.gpsspike`, tap Go online, then `xcrun simctl location booted start --speed=14 --interval=1 56.9515,24.1132 56.9468,24.1210 56.9440,24.1150 56.9470,24.1050 56.9410,24.0950 56.9545,24.0960 56.9515,24.1132`, background the app (`xcrun simctl launch booted com.apple.Preferences`), wait ≥120 s, foreground it (`xcrun simctl launch booted lv.saktacab.gpsspike`) — the fix counter must have grown while backgrounded; `xcrun simctl location booted clear`. Read the file with `xcrun simctl get_app_container booted lv.saktacab.gpsspike data` → `Documents/fixes.jsonl`.
+
 ### Analyzing a run
 
 ```bash
 node spikes/gps-harness/analyze.mjs spikes/gps-harness/data/<run>.jsonl
 ```
 
-Drop exported `fixes.jsonl` files into `spikes/gps-harness/data/`, named per run: `android-default.jsonl`, `android-unrestricted.jsonl`, `ios.jsonl`. The script is zero-dependency (bare Node ≥18, `--selftest` built in): it splits sessions at >10 min `ts` jumps (forgotten "Clear"), separates moving from stationary gaps (`distanceInterval: 10` means a stopped phone legitimately goes quiet — only moving gaps are gated), and prints a ready-to-paste markdown block per session with a PASS / FAIL / INCONCLUSIVE verdict against the table below. Borderline zones (max gap 60–120 s, battery 8–12 %/hr) come out INCONCLUSIVE deliberately — that call is human.
+Drop exported `fixes.jsonl` files into `spikes/gps-harness/data/`, named per run: `android-default.jsonl`, `android-unrestricted.jsonl`, `ios.jsonl`, `ios-forcequit.jsonl` (resumption check — analyzer FAIL expected, not gated), `ios-plugged.jsonl` (only when battery was the sole failing metric). The script is zero-dependency (bare Node ≥18, `--selftest` built in): it splits sessions at >10 min `ts` jumps (forgotten "Clear"), separates moving from stationary gaps (`distanceInterval: 10` means a stopped phone legitimately goes quiet — only moving gaps are gated), and prints a ready-to-paste markdown block per session with a PASS / FAIL / INCONCLUSIVE verdict against the table below. Borderline zones (max gap 60–120 s, battery 8–12 %/hr) come out INCONCLUSIVE deliberately — that call is human.
 
 ## Field protocol
 
@@ -40,8 +44,8 @@ Per platform (Android on Atis's actual phone is the one that matters):
 1. Charge phone to a known level, note the %. Go online **while the app is open**.
 2. Drive ~30–45 min through central Rīga (mix of Vecrīga narrow streets, bridges, open boulevards). App backgrounded, **screen locked** the whole drive.
 3. Android second run: repeat with battery-optimization exemption granted for the harness (Settings → Battery → Unrestricted) to compare.
-4. iOS extra: force-quit mid-route once, relaunch, confirm tracking resumes after tapping "Go online" again.
-5. Back home: export `fixes.jsonl`, note the battery %.
+4. iOS specifics: first "Go online" shows two prompts back to back — **Allow While Using App**, then **Change to Always Allow**. The second is one-shot: "Keep Only While Using" or "Allow Once" gives a run with zero background fixes and the app cannot ask again — fix it in Settings → Privacy & Security → Location Services → GPS Spike (must read **Always**, **Precise Location: On**), or delete and reinstall (this also deletes `fixes.jsonl`). Low Power Mode off, Background App Refresh on. Before locking, press Home and confirm the **blue location pill** in the status bar (`showsBackgroundLocationIndicator`; no pill = no background updates). Run unplugged despite Apple's "BestForNavigation only while plugged in" — battery is a gated metric; if battery is the *only* failing metric, add a 15 min plugged-in run (`ios-plugged.jsonl`) to show continuity with the battery variable removed. The force-quit check is its own short run (`ios-forcequit.jsonl`): online, drive ~5 min, force-quit, drive 2–3 min, relaunch, tap "Go online" again, drive ~5 min — the analyzer prints FAIL on the gap by design; judge it on one boolean, fixes resumed after relaunch.
+5. Back home: **Export before every Clear** (Clear deletes the file); confirm the export landed on the Mac (`wc -l`) before touching the phone again; note the battery %.
 
 **Record:** fix-gap distribution (median/p95/p99/max, from consecutive `ts` deltas), batch sizes (fixes sharing one `recvTs`), battery %/hr.
 
@@ -61,12 +65,12 @@ PASS → #14 proceeds as designed with these exact `startLocationUpdatesAsync` o
 
 ### Android — default settings (decisive run)
 
-_Pending field drive._
+_Not run — Atis unavailable (2026-08-25). The APK kit at gps-spike.linardsberzins.workers.dev stays live; run it when a pilot Android phone is in hand (early #14 task)._
 
 ### Android — battery-optimization exemption (Unrestricted)
 
-_Pending field drive._
+_Not run — same as above._
 
 ### iOS
 
-_Pending field drive._
+_Not run — a link install needs the paid Apple Developer Program, deferred to the driver app's first TestFlight build (early #14 QA drive); cable install declined (2026-08-26). Simulator: SDK 55 Release build launches on the iOS 26.2 simulator (observed 2026-08-25); the scripted background route was not run._

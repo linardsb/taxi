@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spike #4 — iOS field run: build brief</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1a1a1a; --muted:#666; --line:#e3e3df; --go:#2a7; --stop:#c33; --aux:#345; --warn:#fff8e6; --warnline:#eadfb8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141414; --card:#1e1e1e; --ink:#e8e8e4; --muted:#9a9a94; --line:#333; --warn:#2a2618; --warnline:#4a4020; } }
+  body { margin:0; padding:20px; background:var(--bg); color:var(--ink); font:16px/1.55 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:820px; margin:0 auto; }
+  h1 { font-size:1.4em; margin:0 0 4px; } h2 { font-size:1.1em; margin:28px 0 10px; } h3 { font-size:1em; margin:14px 0 6px; }
+  .sub { color:var(--muted); margin:0 0 18px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin-bottom:12px; }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; font:13px/1.45 ui-monospace,Menlo,monospace; }
+  code { font:0.92em ui-monospace,Menlo,monospace; }
+  .note { background:var(--warn); border:1px solid var(--warnline); border-radius:8px; padding:8px 12px; margin:10px 0; }
+  .btn { display:inline-block; padding:0 9px; border-radius:6px; color:#fff; font-weight:600; font-size:.85em; }
+  .go{background:var(--go)} .stop{background:var(--stop)} .aux{background:var(--aux)}
+  .flow { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin:12px 0; }
+  .box { border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:var(--bg); }
+  .box b { display:block; margin-bottom:4px; } .box small { color:var(--muted); }
+  .human { border-left:4px solid var(--stop); } .agent { border-left:4px solid var(--go); }
+  ul { padding-left:20px; } li { margin:4px 0; }
+  ul.prompts { list-style:none; padding:0; } ul.prompts li { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--line); }
+  .copy { opacity:.35; border:0; background:none; color:inherit; cursor:pointer; font-size:15px; line-height:1 }
+  .copy:hover, .copy:focus-visible { opacity:1 }
+  .copy::before { content:'⧉' } .copy.copied::before { content:'✓' }
+  table { border-collapse:collapse; width:100%; font-size:.95em; } td,th { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  .muted { color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Spike #4 — the iOS field run, in five minutes</h1>
+  <p class="sub">Plan: <code>.claude/plans/spike-gps-field-test-ios-run.md</code> · issue #4 · gates #14</p>
+
+  <section>
+    <h2>What we're building and why</h2>
+    <p>Nothing ships to users. We put the existing GPS harness on <b>your iPhone</b>, drive around Rīga for 30–45 minutes with the screen locked, and let <code>analyze.mjs</code> turn the recorded fixes into a PASS / FAIL / INCONCLUSIVE verdict. That verdict decides how #14 (the driver app's location slice) is built: background streaming as designed, or the free mounted-phone pattern.</p>
+    <p>The Android run on Atis's phone was the original decisive run; it isn't available. So the plan measures what it can (iOS), says plainly what it didn't (Android), and picks a safe default for the unmeasured half.</p>
+  </section>
+
+  <section>
+    <h2>The concepts this plan rests on</h2>
+
+    <h3>1. How iOS lets an app keep the GPS on in the background</h3>
+    <p>Three things must all be true: the app declares <code>UIBackgroundModes: ["location"]</code> in its Info.plist (a build-time promise), the user grants <b>Always</b> location (not "While Using"), and the app keeps a location session running when it goes to the background. Miss any one and iOS suspends the app the moment the screen locks.</p>
+<pre>Info.plist: UIBackgroundModes = [location]      ← already in app.json
+   + user: "Change to Always Allow"             ← one-shot prompt, Task 1.3
+   + startLocationUpdatesAsync(...) still running
+   = fixes keep arriving with the screen locked
+
+user force-quits (swipe away)  →  updates stop until the app is opened again</pre>
+    <p><b>Analogy:</b> a night-shift pass. The building (iOS) issues the pass at build time, the guard (the user) has to stamp it "Always", and you must actually be at your desk when the lights go out. Where it breaks: if you leave the building (force-quit), the pass doesn't get you back in — someone has to open the door (relaunch). That's why the plan has a separate force-quit check and why #14 carries a "you've gone offline" nudge.</p>
+    <div class="note">The Always prompt appears once. "Keep Only While Using" can't be undone from inside the app — only in Settings → Privacy &amp; Security → Location Services → GPS Spike. Precise Location must also be on, or <code>BestForNavigation</code> isn't even available.</div>
+
+    <h3>2. Free signing: the Personal Team</h3>
+    <p>Apple will let a free Apple ID sign an app for your own phone. Xcode creates a "Personal Team" and a certificate; the CLI (<code>expo run:ios --device</code>) registers the phone and builds a profile. The catch is expiry: the profile lasts <b>7 days</b>, so the build has to happen within a week of the drive. The phone also needs Developer Mode on (iOS 16+) and a one-time "trust this developer".</p>
+<pre>Mac (Xcode 26.3, your Apple ID)  ──cable──▶  iPhone (Developer Mode on)
+  expo run:ios --device --configuration Release
+     prebuild → pod install → xcodebuild → install
+  Release = JS bundle embedded → phone runs with the Mac unplugged</pre>
+    <p><b>Analogy:</b> a visitor badge instead of a staff badge — valid, but only for your building and only for a week. Where it breaks: TestFlight/App Store needs the paid programme; this plan never goes there.</p>
+
+    <h3>3. Source vs prebuilt native modules (why Xcode 26.3 is a question)</h3>
+    <p>Expo SDK 57 ships pre-compiled iOS frameworks built with Xcode 26.4. A Swift framework compiled by a newer compiler can't be read by an older one. This iMac (2019) can't run the macOS that Xcode 26.4 needs. But: the installed tooling only <em>uses</em> those prebuilt frameworks when you opt in (<code>EXPO_USE_PRECOMPILED_MODULES=1</code>); by default it compiles every module from source with your own Xcode. So the build should work — and Phase 0 proves it on the simulator before your phone is involved.</p>
+<pre>default          : compile expo-* from source with Xcode 26.3   ← what we do
+=1 (opt-in)      : link frameworks compiled by Xcode 26.4       ← would break
+fallback (O3)    : SDK 55 copy outside the repo, only if Phase 0 fails</pre>
+
+    <h3>4. Why a stopped car going quiet is fine: <code>distanceInterval</code> and the moving/stationary split</h3>
+    <p>On iOS the harness asks for a fix every <b>10 m</b> (<code>timeInterval</code> is Android-only). At a red light nothing moves, so nothing arrives — a 40-second silence that is <em>correct</em>, not a failure. <code>analyze.mjs</code> tags each gap MOVING or STATIONARY (haversine ≥ 15 m or speed ≥ 1.5 m/s between the bounding fixes) and only gates the moving ones.</p>
+<pre>fix ─1s─ fix ─1s─ fix ────── 40 s at a light ────── fix ─1s─ fix
+                              └─ STATIONARY: reported, not gated
+fix ─1s─ fix ────── 90 s while moving ────── fix
+                    └─ MOVING: gated → INCONCLUSIVE (60–120 s zone)</pre>
+
+    <h3>5. The verdict, scoped honestly</h3>
+    <p>The table has deliberate grey zones. PASS needs moving-gap median ≤ 5 s, p95 ≤ 15 s, p99 ≤ 30 s, none over 60 s, battery ≤ 8 %/hr. FAIL is any moving gap over 120 s, sustained batching, or battery over 12 %/hr. Between those the script prints INCONCLUSIVE and a human decides. This run adds one more scope rule: the verdict line says <b>iOS measured, Android not</b>, and Android defaults to the mounted-phone pattern until an Android drive passes (Q1 in the plan — say if you want #4 kept open instead).</p>
+  </section>
+
+  <section>
+    <h2>How the pieces fit</h2>
+    <div class="flow">
+      <div class="box agent"><b>Phase 0 · copy out + simulator</b><small>rsync the harness to <code>~/gps-harness-ios/</code> (the Android recipe) · Release build from source on Xcode 26.3 · scripted Rīga route · app backgrounded · analyzer runs. No phone. Falls back to SDK 55 in the copy automatically. Proves concepts 3 + 1.</small></div>
+      <div class="box human"><b>Phase 1 · your phone</b><small>Apple ID into Xcode · Developer Mode · identity check · Release build onto the iPhone (non-interactive, by UDID) · Always + Precise + blue pill checked · kill-and-relaunch once · Clear. Concepts 2 + 1.</small></div>
+      <div class="box human"><b>Phase 2 · the drive</b><small>Run 1: 30–45 min, screen locked, unplugged → <code>ios.jsonl</code>, confirmed on the Mac before Clear. Run 2: force-quit mid-route, relaunch → <code>ios-forcequit.jsonl</code>. Run 3 only if battery is the sole failing metric: 15 min plugged in.</small></div>
+      <div class="box agent"><b>Phase 3 · worktree + verdict</b><small>fresh worktree from origin/main · data copied in · analyze.mjs → doc "Field results" → status line becomes a Verdict → #4 closed, #14 linked, PR. Concepts 4 + 5.</small></div>
+    </div>
+    <p class="muted">Green edge = agent; red edge = you. Phase 1 must land within 7 days of Phase 2. The repo's harness folder is never built in place.</p>
+  </section>
+
+  <section>
+    <h2>The plan at a glance</h2>
+    <h3>Dependencies</h3>
+<pre>Phase 0 (copy out + sim)  ──▶  Phase 1 (device, ≤7 days before the drive)  ──▶  Phase 2 (drive)  ──▶  Phase 3 (worktree + verdict)
+   │ fails on Swift-interface errors? ──▶ Task 0.5: downgrade the copy to SDK 55, automatic (R1/R12)
+                                   │ Task 1.1b checks a signing identity exists before the 20-min build (R2)
+                                                          │ blue pill before locking; export before every Clear (R3/R14)
+                                                                                  │ battery the only failure? ──▶ Task 2.4 plugged-in run (R13)</pre>
+    <h3>Risks the plan carries mitigations for</h3>
+    <table>
+      <tr><th>#</th><th>Risk</th><th>Mitigation</th></tr>
+      <tr><td>R1</td><td>Xcode 26.3 vs SDK 57's Xcode-26.4 prebuilt frameworks</td><td>Source build first (Task 0.2); executable SDK 55 fallback in the copy (Task 0.5); fires before your phone is involved.</td></tr>
+      <tr><td>R2</td><td>No Apple ID / no signing identity; 7-day profiles</td><td>Task 1.1 (you) + Task 1.1b (identity check before the long build); build and drive on the same day if possible.</td></tr>
+      <tr><td>R3</td><td>One-shot "Always" prompt</td><td>Scripted taps, Settings check, blue-pill check before locking; recovery = Settings fix, or delete the app and reinstall (Phase 1 only).</td></tr>
+      <tr><td>R4–R8</td><td>iOS 16.4 suspension · Low Power Mode · export path · sim background delivery · fresh-install task bug</td><td>Config already correct · Task 1.3 step 4 · cable fallback · on-device recheck · kill-and-relaunch once.</td></tr>
+      <tr><td>R9</td><td>Expo CLI prompts (device picker) hang an agent-driven shell</td><td><code>CI=1</code> on every Expo command and an explicit <code>--device &lt;udid&gt;</code>; GUI steps are yours, never the agent's.</td></tr>
+      <tr><td>R10</td><td>cwd drift trips the Stop hook; the PreToolUse hook blocks env-file text</td><td>Every directory change is a subshell; env file copied with Read/Write; <code>gh</code> bodies via <code>--body-file</code>.</td></tr>
+      <tr><td>R11</td><td>Metro/pods resolving into the monorepo root when built in place</td><td>Build from <code>~/gps-harness-ios/</code>, an rsync copy outside any repo — the PR #115 recipe. Repo harness untouched.</td></tr>
+      <tr><td>R12</td><td>The SDK 55 fallback is itself untested</td><td>Task 0.5 re-runs <code>expo install --check</code> and <code>tsc</code> in the copy before rebuilding; the doc records which SDK built.</td></tr>
+      <tr><td>R13</td><td>Battery-only FAIL/INCONCLUSIVE on an unplugged BestForNavigation run</td><td>Q6 pre-agrees the reading; conditional 15-min plugged-in run removes the battery variable; you make the call, named as yours.</td></tr>
+      <tr><td>R14</td><td>Delete-to-reset and Clear wipe <code>fixes.jsonl</code></td><td>Export before every Clear, confirmed on the Mac (<code>wc -l</code>); delete-to-reset allowed only in Phase 1.</td></tr>
+    </table>
+    <h3>Files</h3>
+<pre>~/gps-harness-ios/                          # throwaway rsync copy: ios/, .expo/, team id, SDK 55 fallback all live here
+docs/spikes/04-gps-field-test.md            # iOS build recipe, sim pre-flight, iOS protocol, results, Verdict line
+spikes/gps-harness/data/
+├── ios.jsonl                                # decisive run (committed evidence)
+├── ios-forcequit.jsonl                      # resumption check (analyzer FAIL expected, not gated)
+└── ios-plugged.jsonl                        # only if battery was the sole failing metric
+.claude/plans/spike-gps-field-test-close-out.md   # one AMENDMENTS line
+.claude/plans/spike-gps-field-test-ios-run.{md,html}
+spikes/gps-harness/{App.tsx,app.json,package.json}   # untouched — never built in place</pre>
+    <h3>Your steps, in order</h3>
+    <table>
+      <tr><th>When</th><th>Do</th></tr>
+      <tr><td>Before Phase 1</td><td>Xcode → Settings → Accounts → + Apple ID. Phone: plug in, Trust, Settings → Privacy &amp; Security → Developer Mode → on → restart.</td></tr>
+      <tr><td>After the device build</td><td>Open GPS Spike → <span class="btn go">Go online</span> → "Allow While Using App" → "Change to Always Allow". Check Settings: Always + Precise on. Low Power Mode off. Swipe the app away, reopen: button still <span class="btn stop">Go offline</span>. Then <span class="btn aux">Clear</span>.</td></tr>
+      <tr><td>Drive 1</td><td>≥60 % battery, unplugged. App open → one fresh row → Home → blue pill → lock → 30–45 min central Rīga → <span class="btn aux">Export</span> → AirDrop → <code>~/gps-harness-ios/data/ios.jsonl</code> → <b>confirm it's on the Mac</b> → note battery % → only then <span class="btn stop">Go offline</span>, <span class="btn aux">Clear</span>.</td></tr>
+      <tr><td>Drive 2</td><td><span class="btn go">Go online</span> → 5 min → force-quit → 2–3 min → reopen, <span class="btn go">Go online</span> → 5 min → <span class="btn aux">Export</span> → <code>data/ios-forcequit.jsonl</code> → confirm → <span class="btn stop">Go offline</span>, <span class="btn aux">Clear</span>.</td></tr>
+      <tr><td>Drive 3 (only if asked)</td><td>If the analyzer fails Drive 1 on battery alone: 15 min on the car charger, same steps → <code>data/ios-plugged.jsonl</code>. You make the verdict call.</td></tr>
+      <tr><td>After</td><td>Settings → General → About: Model Name + iOS Version → hand to the agent with start/end battery % and the build date.</td></tr>
+    </table>
+    <h3>Acceptance criteria</h3>
+    <ul>
+      <li><b>AC1</b> Simulator: Release build compiles on Xcode 26.3; ≥100 fixes on the scripted route; analyzer runs.</li>
+      <li><b>AC2</b> Device: installs under a free Personal Team; runs unplugged; Always + Precise; survives kill-and-relaunch online.</li>
+      <li><b>AC3</b> <code>ios.jsonl</code> from a ≥30 min locked-screen drive, analyzer block in the doc with date, model, iOS version, battery — every figure observed.</li>
+      <li><b>AC4</b> <code>ios-forcequit.jsonl</code> + the resumption boolean.</li>
+      <li><b>AC5</b> Verdict line scoped to iOS with the Android default; #4 closed; #14 linked with the owed Android leg.</li>
+      <li><b>AC6</b> Diff touches only the doc, the two JSONL files and the plan files.</li>
+      <li><b>AC7</b> Full gate green; PR with <code>Closes #4</code>.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Go deeper</h2>
+    <ul class="prompts">
+      <li data-prompt="/learn iOS background location: UIBackgroundModes, Always vs While Using, and what force-quit does"><span><b>/learn iOS background location</b> — the plist promise, the one-shot Always prompt, why force-quit ends the session.</span><button class="copy" aria-label="Copy prompt"></button></li>
+      <li data-prompt="/learn Xcode free provisioning with a Personal Team: 7-day profiles, Developer Mode, device trust"><span><b>/learn Xcode Personal Team signing</b> — what a free Apple ID can and cannot install.</span><button class="copy" aria-label="Copy prompt"></button></li>
+      <li data-prompt="/learn Expo prebuilt (precompiled) iOS modules vs building from source, and why Swift interface files tie you to an Xcode version"><span><b>/learn Expo prebuilt modules vs source builds</b> — why Xcode 26.3 might or might not matter.</span><button class="copy" aria-label="Copy prompt"></button></li>
+      <li data-prompt="/learn CLLocationManager distanceFilter vs time-based updates, and how to separate stationary gaps from real dropouts in a GPS trace"><span><b>/learn distance-filtered GPS traces</b> — why a stopped car going quiet is not a gap.</span><button class="copy" aria-label="Copy prompt"></button></li>
+      <li data-prompt="/learn designing PASS/FAIL/INCONCLUSIVE decision rules for a spike, and how to scope a verdict when only part of the experiment ran"><span><b>/learn spike decision rules with grey zones</b> — INCONCLUSIVE on purpose, and scoping a partial result.</span><button class="copy" aria-label="Copy prompt"></button></li>
+    </ul>
+  </section>
+</main>
+<script>
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.copy'); if (!btn) return;
+  const li = btn.closest('[data-prompt]'); if (!li) return;
+  navigator.clipboard.writeText(li.dataset.prompt).then(() => { btn.classList.add('copied'); setTimeout(() => btn.classList.remove('copied'), 1200); });
+});
+</script>
+</body>
+</html>
