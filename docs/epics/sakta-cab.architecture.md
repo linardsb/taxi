@@ -128,14 +128,14 @@ What the chosen approach needs that doesn't exist yet:
 
 ## Spikes & experiments
 
-All three mandated (Linards, 2026-08-03), each before its dependent phase:
+All three mandated (Linards, 2026-08-03), each before its dependent phase (spike 2's run deferred 2026-08-26 — see its entry):
 
 1. **RIX/autoosta arrival data** (~½ day, before the radar slice)
    Question: does a free, stable arrivals feed exist for RIX flights and autoosta buses?
    Decision rule: usable feed → automated ingestors; no feed / brittle scraping → ship the manual dispatcher-alert implementation of the seam and revisit post-pilot.
 2. **Expo background GPS** (~1 day field test, before the driver-app phase)
    Question: does `expo-location` + task-manager stream reliably from a phone in a moving car (backgrounded, locked screen, LV networks)?
-   Decision rule: reliable → proceed as designed; lossy → escalate to a foreground-service pattern / bare workflow *before* building the driver app on sand.
+   Decision rule: reliable → proceed as designed; lossy → escalate to a foreground-service pattern / bare workflow *before* building the driver app on sand. *Amended 2026-08-26 (Linards): the run is deferred — no pilot phone to run it on, no paid Apple account before the app exists; #14 ships the superset (harness options + keep-awake while online + server-side gap tolerance) regardless of a later outcome, see `docs/spikes/04-gps-field-test.md`.*
 3. **Driver payout rails** (research, before the payments phase)
    Question: Stripe Connect for LV individual drivers vs SEPA batch — entangled with Atis's unresolved tax status (PRD open question).
    Decision rule: Connect supports the drivers' actual legal form at acceptable cost → Connect; otherwise SEPA batch from the platform account with the ledger as source of truth.

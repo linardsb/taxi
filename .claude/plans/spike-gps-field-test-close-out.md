@@ -273,3 +273,5 @@ Phase 3: eyeball one >15 s gap the script reports against the raw JSONL lines ar
 ## AMENDMENTS
 
 <!-- append-only after first approval; newest at the bottom -->
+- 2026-08-26 — Phases 2–3 not executed as planned: the iOS path (`.claude/plans/spike-gps-field-test-ios-run.md`) reached a working SDK 55 simulator build, then Linards deferred the field test rather than buy the Apple Developer Program before the app exists. #4 stays open; #14 proceeds on the Q1 mounted-phone default for both platforms.
+- 2026-08-31 (PR #138 review, F16) — The 2026-08-26 line gives one reason; there were two: no Apple Developer Program purchase before the app exists (so no link install), and the cable install from the Mac — the iOS plan's free Personal Team path — declined. Both are recorded under "iOS" in the spike doc's Field results and in the iOS run report.
