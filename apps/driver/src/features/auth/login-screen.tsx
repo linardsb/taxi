@@ -76,6 +76,7 @@ export function LoginScreen() {
         textContentType="telephoneNumber"
         autoComplete="tel"
         autoFocus
+        editable={!busy}
         error={error ? t(error) : null}
       />
       <Button
