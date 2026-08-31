@@ -110,3 +110,32 @@ jest.mock('expo-router', () => {
     Link: () => null,
   };
 });
+
+/**
+ * Warm the transform OUTSIDE any test's clock. jest-expo transforms and
+ * evaluates `react-native`'s lazily-required component modules on first
+ * access, which otherwise lands inside the first `render()` of every RNTL
+ * file: ~3.5 s per file on a cold cache on the dev machine (`observed`,
+ * `jest --clearCache` then `--verbose`), and on the 2-vCPU CI runner — cold
+ * every run, api and dispatch suites transforming alongside — past a 5 s and
+ * then a 20 s `testTimeout` (runs 33402386433, 33407278413). A setup file has
+ * no timeout, so touching what the app renders here moves that cost off the
+ * test. The getters are what trigger the requires — hence the reads.
+ */
+const warm = require('react-native') as typeof import('react-native');
+void [
+  warm.AccessibilityInfo,
+  warm.ActivityIndicator,
+  warm.AppState,
+  warm.Linking,
+  warm.Platform,
+  warm.Pressable,
+  warm.ScrollView,
+  warm.StyleSheet,
+  warm.Switch,
+  warm.Text,
+  warm.TextInput,
+  warm.View,
+];
+require('react-native-safe-area-context');
+require('@testing-library/react-native');
