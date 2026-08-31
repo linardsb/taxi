@@ -208,6 +208,83 @@ export const lv = {
     'Šis numurs pieder šoferim vai dispečeram',
   'console.booking_error_too_many_requests':
     'Pārāk daudz pasūtījumu pēc kārtas — mēģiniet pēc {retry} s',
+  // Driver app (#14). `push.*` are the server-sent nudge; everything under
+  // `driver.*` is rendered by apps/driver. Error keys are the api's snake
+  // codes verbatim, so a screen renders `driver.error.<code>` and falls back
+  // to `driver.error.generic` for one it has never met.
+  'push.offline_nudge_title': 'Sakta Cab',
+  'push.offline_nudge_body':
+    'Jūs esat bezsaistē. Atveriet lietotni, lai atkal saņemtu braucienus.',
+  'driver.login.title': 'Šofera pieslēgšanās',
+  'driver.login.phone_label': 'Tālruņa numurs',
+  'driver.login.send_code': 'Sūtīt kodu',
+  'driver.verify.title': 'Apstiprinājuma kods',
+  'driver.verify.hint': 'Kods nosūtīts uz {phone}',
+  'driver.verify.code_label': 'Kods',
+  'driver.verify.resend': 'Sūtīt vēlreiz',
+  'driver.verify.resend_in': 'Sūtīt vēlreiz pēc {seconds} s',
+  'driver.error.invalid_or_expired_code': 'Nepareizs vai novecojis kods',
+  'driver.error.resend_too_soon': 'Kods jau nosūtīts — pagaidiet brīdi',
+  'driver.error.too_many_requests':
+    'Pārāk daudz mēģinājumu — mēģiniet pēc stundas',
+  'driver.error.sms_delivery_failed':
+    'Neizdevās nosūtīt SMS. Mēģiniet vēlreiz.',
+  'driver.error.session_expired':
+    'Sesija ir beigusies. Pieslēdzieties vēlreiz.',
+  'driver.error.vehicle_required': 'Lai ietu tiešsaistē, pievienojiet auto.',
+  'driver.error.driver_on_ride': 'Jūs pašlaik izpildāt braucienu.',
+  'driver.error.plate_taken': 'Šī numura zīme jau ir reģistrēta.',
+  'driver.error.offline': 'Nav savienojuma ar serveri.',
+  'driver.error.generic': 'Kaut kas nogāja greizi. Mēģiniet vēlreiz.',
+  'driver.action.retry': 'Mēģināt vēlreiz',
+  'driver.action.continue': 'Turpināt',
+  'driver.action.save': 'Saglabāt',
+  'driver.action.done': 'Gatavs',
+  'driver.action.open_settings': 'Atvērt iestatījumus',
+  'driver.action.skip': 'Izlaist',
+  'driver.action.sign_out': 'Iziet',
+  'driver.action.add_vehicle': 'Pievienot auto',
+  'driver.profile.title': 'Jūsu profils',
+  'driver.profile.languages': 'Valodas, kurās runājat',
+  'driver.profile.female_driver': 'Esmu šofere (sieviete)',
+  'driver.vehicle.title': 'Jūsu auto',
+  'driver.vehicle.plate': 'Numura zīme',
+  'driver.vehicle.make': 'Marka',
+  'driver.vehicle.model': 'Modelis',
+  'driver.vehicle.year': 'Izlaiduma gads',
+  'driver.vehicle.seats': 'Pasažieru vietas',
+  'driver.vehicle.child_seat': 'Ir bērnu sēdeklītis',
+  'driver.documents.title': 'Dokumenti',
+  'driver.documents.body':
+    'Dokumentus pārbaudīsim klātienē pirms pirmās maiņas. Šobrīd nekas nav jāaugšupielādē.',
+  'driver.home.go_online': 'Iet tiešsaistē',
+  'driver.home.go_offline': 'Iet bezsaistē',
+  'driver.home.status_online': 'Tiešsaistē',
+  'driver.home.status_offline': 'Bezsaistē',
+  // Label form («Braucieni: 7»), not «7 braucieni» — sidesteps LV plural
+  // forms; logged in .claude/references/ui-decisions.md.
+  'driver.home.today': 'Šodien: {amount} · Braucieni: {rides}',
+  'driver.home.last_fix': 'Pēdējā pozīcija pirms {seconds} s',
+  'driver.home.queued': 'Rindā: {count}',
+  'driver.home.pill_live': 'Tiešraide',
+  'driver.home.pill_reconnecting': 'Atjaunojas…',
+  'driver.home.pill_offline': 'Nav savienojuma',
+  'driver.home.marked_offline': 'Serveris jūs atzīmēja kā bezsaistē {time}',
+  'driver.home.vehicle': 'Auto: {plate}',
+  'driver.permission.foreground_denied':
+    'Bez piekļuves atrašanās vietai nevar iet tiešsaistē.',
+  'driver.permission.background_title': 'Atrašanās vieta fonā',
+  'driver.permission.background_body':
+    'Iestatījumos izvēlieties «Atļaut vienmēr», lai pozīcija tiktu sūtīta arī ar bloķētu ekrānu.',
+  'driver.permission.battery_title': 'Akumulatora optimizācija',
+  'driver.permission.battery_body':
+    'Izslēdziet akumulatora optimizāciju šai lietotnei, lai pozīcija tiktu sūtīta arī fonā.',
+  'driver.foreground_service.title': 'Sakta Cab — tiešsaistē',
+  'driver.foreground_service.body': 'Pozīcija tiek sūtīta dispečeram.',
+  // Each language's own name in that language — identical in all catalogs.
+  'driver.lang.lv': 'Latviešu',
+  'driver.lang.ru': 'Русский',
+  'driver.lang.en': 'English',
 } as const;
 
 /**

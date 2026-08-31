@@ -22,8 +22,9 @@
  *   the balance goes negative, blocks at `driver_debt_limit_cents`, and is
  *   cleared by a phone call and a manual row. Honest at ≤10 drivers; it must not
  *   survive to open enrolment.
- * - NO PER-ACCOUNT STATEMENT READ. `findByRide` is per-ride; a driver's earnings
- *   stream is #15's, and `GET /drivers/me` already returns `balanceCents`.
+ * - ONE AGGREGATE READ ONLY (#14): `GET /drivers/me/earnings/today` sums the
+ *   driver's settlement entries since Rīga midnight for the home card. The
+ *   per-ride statement is #15's; `GET /drivers/me` still carries `balanceCents`.
  * - NO DATABASE-LEVEL DOUBLE-ENTRY ENFORCEMENT. `sum(amount_cents) = 0` per
  *   transaction is guaranteed by the pure builder (which throws on an unbalanced
  *   set) and asserted in tests, not by a constraint. A deferred constraint
@@ -36,6 +37,7 @@
  *   platform's cash on hand lives at Stripe and at the bank, not here.
  */
 export { LedgerModule } from './ledger.module';
+export { LEDGER_DAY_TIMEZONE } from './ledger.policy';
 export { LedgerService } from './ledger.service';
 export type {
   PostRideSettlementInput,

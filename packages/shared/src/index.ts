@@ -27,4 +27,5 @@ export * from './seams/dispatch-strategy';
 export * from './seams/pricing-strategy';
 export * from './seams/sms-provider';
 export * from './seams/telephony-provider';
+export * from './seams/push-provider';
 export * from './seams/payments-provider';

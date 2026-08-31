@@ -10,9 +10,13 @@ export interface NearbyDriver {
 }
 
 /**
- * One online driver as the dispatch board sees it (#18). `location` and
- * `lastSeenMs` are null for a driver who is online but has never had a
- * position accepted — still a real person Dina can phone.
+ * One online driver as the dispatch board sees it (#18). `location` is null
+ * for a driver who is online but has never had a position accepted — still a
+ * real person Dina can phone. `lastSeenMs` is their last proof of life: the
+ * last accepted fix or, failing one, the moment they went online (#14 seeds
+ * it in `markOnline`). Null ONLY for a member that predates that seeding — a
+ * Redis set that survived a deploy — treat it as unknown, which the dark
+ * sweep reads as dark.
  */
 export interface OnlineDriver {
   driverId: string;
@@ -34,8 +38,13 @@ export interface OnlineDriver {
  * sleeping (same trick as `InMemoryKeyValueStore.advance()`).
  */
 export interface DriverLocationStore {
-  /** Makes the driver eligible to have a position recorded. Idempotent. */
-  markOnline(cityId: string, driverId: string): Promise<void>;
+  /**
+   * Makes the driver eligible to have a position recorded, and records `atMs`
+   * as their last proof of life, so a driver who goes online and never pings
+   * still has a `seen` score for the dark sweep (#14). Idempotent; a repeat
+   * call refreshes the score and keeps any recorded position.
+   */
+  markOnline(cityId: string, driverId: string, atMs: number): Promise<void>;
 
   /** Drops presence AND any recorded position — this is what "excludes offline drivers" means. */
   markOffline(cityId: string, driverId: string): Promise<void>;

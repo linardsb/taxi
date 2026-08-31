@@ -71,6 +71,13 @@
       "when": 1786999553824,
       "tag": "0009_glossy_fantastic_four",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788182707007,
+      "tag": "0010_smooth_white_queen",
+      "breakpoints": true
     }
   ]
 }

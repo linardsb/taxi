@@ -56,10 +56,11 @@ describe('DriverLocationService', () => {
   });
 
   it('records the position and fans it out to the dispatch room (expected)', async () => {
-    await store.markOnline(CITY, DRIVER_ID);
+    await store.markOnline(CITY, DRIVER_ID, Date.now());
 
-    await service.ingest(DRIVER_ID, ping());
+    const ack = await service.ingest(DRIVER_ID, ping());
 
+    expect(ack).toEqual({ accepted: true });
     expect((await store.positionOf(CITY, DRIVER_ID))?.location).toEqual(
       CONTRACT_CENTRE,
     );
@@ -80,15 +81,20 @@ describe('DriverLocationService', () => {
   it('never touches Postgres on the ping path (expected — AC 2)', async () => {
     // The DRIZZLE provider above throws on ANY property access. This test
     // fails the day someone adds a database read or write to the hot path.
-    await store.markOnline(CITY, DRIVER_ID);
+    await store.markOnline(CITY, DRIVER_ID, Date.now());
 
-    await expect(service.ingest(DRIVER_ID, ping())).resolves.toBeUndefined();
+    await expect(service.ingest(DRIVER_ID, ping())).resolves.toEqual({
+      accepted: true,
+    });
     expect(store.recorded).toHaveLength(1);
   });
 
-  it('ignores a ping from a driver who is not online (edge)', async () => {
-    await service.ingest(DRIVER_ID, ping());
+  it('ignores a ping from a driver who is not online and says so in the ack (edge)', async () => {
+    // `not_online` is the one refusal the app must NOT retry against: it
+    // re-asserts its intent (PUT status online) or flips its toggle instead.
+    const ack = await service.ingest(DRIVER_ID, ping());
 
+    expect(ack).toEqual({ accepted: false, reason: 'not_online' });
     expect(store.recorded).toHaveLength(0);
     expect(emitToDispatch).not.toHaveBeenCalled();
   });
@@ -96,7 +102,7 @@ describe('DriverLocationService', () => {
   it("stamps the server's clock, not the ping's (edge)", async () => {
     // A client clock deciding freshness means a skewed or hostile phone stays
     // dispatchable forever, or evaporates instantly.
-    await store.markOnline(CITY, DRIVER_ID);
+    await store.markOnline(CITY, DRIVER_ID, Date.now());
     const clientAt = '2020-01-01T00:00:00.000Z';
 
     await service.ingest(DRIVER_ID, ping(clientAt));
@@ -117,7 +123,7 @@ describe('DriverLocationService', () => {
       driver: { id: string; location: { lat: number; lng: number } },
       atMs = Date.now(),
     ) => {
-      await store.markOnline(CITY, driver.id);
+      await store.markOnline(CITY, driver.id, Date.now());
       await store.record(CITY, driver.id, driver.location, atMs);
     };
 

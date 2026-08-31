@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  driverEarningsTodaySchema,
   driverMeSchema,
   driverProfileSchema,
   driverProfileUpdateSchema,
   driverStatusUpdateSchema,
+  pushTokenUpdateSchema,
 } from '../src/schemas/driver';
 import {
   vehicleCreateSchema,
@@ -215,5 +217,75 @@ describe('driverMeSchema', () => {
     expect(parsed.profile.status).toBe('offline');
     expect(parsed.vehicles).toHaveLength(2);
     expect(parsed.vehicles[1]!.category).toBe('vip');
+  });
+});
+
+describe('pushTokenUpdateSchema (#14)', () => {
+  it('accepts the classic ExponentPushToken form (expected)', () => {
+    expect(
+      pushTokenUpdateSchema.parse({
+        token: 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]',
+      }).token,
+    ).toBe('ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]');
+  });
+
+  it('accepts the newer ExpoPushToken form (edge)', () => {
+    expect(
+      pushTokenUpdateSchema.safeParse({ token: 'ExpoPushToken[abc-DEF_123]' })
+        .success,
+    ).toBe(true);
+  });
+
+  it('rejects a raw FCM/APNs handle and an empty bracket (failure)', () => {
+    // The seam posts to Expo's push API, which only understands its own
+    // tokens; a raw device token here would be a guaranteed provider error
+    // on every nudge.
+    expect(pushTokenUpdateSchema.safeParse({ token: 'fcm:abc' }).success).toBe(
+      false,
+    );
+    expect(
+      pushTokenUpdateSchema.safeParse({ token: 'ExpoPushToken[]' }).success,
+    ).toBe(false);
+  });
+});
+
+describe('driverEarningsTodaySchema (#14)', () => {
+  it('parses the home-card payload (expected)', () => {
+    const parsed = driverEarningsTodaySchema.parse({
+      day: '2026-08-31',
+      timezone: 'Europe/Riga',
+      earnedCents: 1734,
+      rideCount: 2,
+    });
+    expect(parsed.earnedCents).toBe(1734);
+  });
+
+  it('accepts a zero day (edge)', () => {
+    expect(
+      driverEarningsTodaySchema.safeParse({
+        day: '2026-08-31',
+        timezone: 'Europe/Riga',
+        earnedCents: 0,
+        rideCount: 0,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects float cents, a negative total and a non-ISO day (failure)', () => {
+    const ok = { day: '2026-08-31', timezone: 'Europe/Riga', rideCount: 1 };
+    expect(
+      driverEarningsTodaySchema.safeParse({ ...ok, earnedCents: 17.34 })
+        .success,
+    ).toBe(false);
+    expect(
+      driverEarningsTodaySchema.safeParse({ ...ok, earnedCents: -1 }).success,
+    ).toBe(false);
+    expect(
+      driverEarningsTodaySchema.safeParse({
+        ...ok,
+        earnedCents: 1,
+        day: '31.08.2026',
+      }).success,
+    ).toBe(false);
   });
 });

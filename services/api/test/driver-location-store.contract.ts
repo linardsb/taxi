@@ -90,7 +90,7 @@ export function runDriverLocationStoreContract(
       atMs = NOW,
     ): Promise<void> {
       for (const d of drivers) {
-        await store.markOnline(cityId, d.id);
+        await store.markOnline(cityId, d.id, atMs);
         await store.record(cityId, d.id, d.location, atMs);
       }
     }
@@ -141,8 +141,9 @@ export function runDriverLocationStoreContract(
 
     it('omits a driver marked online who has never pinged (edge)', async () => {
       // Presence is not a position. A candidate with no location is one
-      // dispatch cannot route to.
-      await store.markOnline(cityId, CONTRACT_DRIVERS.east.id);
+      // dispatch cannot route to — the seeded `seen` score (#14) must not
+      // promote them into the GEO answer.
+      await store.markOnline(cityId, CONTRACT_DRIVERS.east.id, NOW);
 
       expect(await query()).toEqual([]);
     });
@@ -208,18 +209,53 @@ export function runDriverLocationStoreContract(
       expect(foundEast?.location?.lng).toBeCloseTo(east.location.lng, 3);
     });
 
-    it('listOnline carries a never-pinged driver as nulls, not an omission (edge)', async () => {
+    it('listOnline carries a never-pinged driver with a null position and the online time as last seen (edge — #14 seeds the score)', async () => {
       // Presence without a position is still a person Dina can phone — the
-      // opposite answer to findNearby's, on purpose.
-      await store.markOnline(cityId, CONTRACT_DRIVERS.east.id);
+      // opposite answer to findNearby's, on purpose. `lastSeenMs` is the
+      // moment they went online: that is what lets the dark sweep age a
+      // driver who never produced a fix at all.
+      await store.markOnline(cityId, CONTRACT_DRIVERS.east.id, NOW);
 
       expect(await store.listOnline(cityId)).toEqual([
         {
           driverId: CONTRACT_DRIVERS.east.id,
           location: null,
-          lastSeenMs: null,
+          lastSeenMs: NOW,
         },
       ]);
+    });
+
+    it('a repeat markOnline refreshes the seen score and keeps the recorded position (edge — the re-assert path)', async () => {
+      // The driver app re-asserts `PUT status online` on every reconnect; the
+      // server calls markOnline again. That must not wipe the last position
+      // (the board would blank the pin) and must move the proof of life.
+      const { east } = CONTRACT_DRIVERS;
+      await seed([east], NOW - 10_000);
+
+      await store.markOnline(cityId, east.id, NOW);
+
+      const [online] = await store.listOnline(cityId);
+      expect(online?.lastSeenMs).toBe(NOW);
+      expect(online?.location?.lat).toBeCloseTo(east.location.lat, 3);
+      // `positionOf` reads the same score: the position is the old one, the
+      // time is the re-assert. The app kicks its uploader on the same
+      // reconnect, so a fresh fix follows within seconds.
+      const pos = await store.positionOf(cityId, east.id);
+      expect(pos?.atMs).toBe(NOW);
+      expect(pos?.location.lat).toBeCloseTo(east.location.lat, 3);
+    });
+
+    it('markOffline leaves nothing behind after a bare markOnline (failure)', async () => {
+      // The seeded score lives in the `seen` key; markOffline must clear it
+      // along with the set membership, or a ghost score outlives the driver.
+      await store.markOnline(cityId, CONTRACT_DRIVERS.east.id, NOW);
+
+      await store.markOffline(cityId, CONTRACT_DRIVERS.east.id);
+
+      expect(await store.listOnline(cityId)).toEqual([]);
+      expect(
+        await store.positionOf(cityId, CONTRACT_DRIVERS.east.id),
+      ).toBeNull();
     });
 
     it('listOnline still lists a driver too stale for findNearby (edge)', async () => {

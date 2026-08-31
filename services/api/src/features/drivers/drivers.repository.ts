@@ -178,7 +178,9 @@ export class DriversRepository {
   ): Promise<DriverProfile | undefined> {
     const [row] = await this.db
       .update(drivers)
-      .set({ status: 'online' })
+      // Going online cancels a pending "you've gone offline" nudge (#14): the
+      // phone is back, so the push would only tell the driver what they know.
+      .set({ status: 'online', offlineNudgeDueAt: null })
       .where(
         and(
           eq(drivers.userId, userId),

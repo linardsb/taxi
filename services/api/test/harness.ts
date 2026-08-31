@@ -13,6 +13,9 @@ import type {
   PaymentChargeResult,
   PaymentFailureReason,
   PaymentsProvider,
+  PushDeliveryResult,
+  PushMessage,
+  PushProvider,
   RouteResult,
   SmsProvider,
   UserRole,
@@ -35,6 +38,7 @@ import {
 } from '../src/features/drivers';
 import { MAPS_PROVIDER_SOURCE } from '../src/features/geo';
 import { PAYMENTS_PROVIDER } from '../src/features/payments';
+import { PUSH_PROVIDER } from '../src/features/push';
 // Deep import on purpose: the geo barrel deliberately does not export the class
 // — production code injects the token, never the implementation.
 import { StubMapsProvider } from '../src/features/geo/stub-maps.provider';
@@ -141,9 +145,14 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
 export class InMemoryDriverLocationStore implements DriverLocationStore {
   /** cityId → driverIds. */
   private readonly online = new Map<string, Set<string>>();
+  /**
+   * `location` is null between `markOnline` and the first accepted fix: the
+   * seeded proof of life (#14) is an entry with a time and no position, the
+   * same shape the real store's `seen` ZSET has without a GEO member.
+   */
   private readonly positions = new Map<
     string,
-    Map<string, { location: LatLng; atMs: number }>
+    Map<string, { location: LatLng | null; atMs: number }>
   >();
 
   /** Test observability: every accepted write, in order. */
@@ -163,13 +172,25 @@ export class InMemoryDriverLocationStore implements DriverLocationStore {
     cityId: string,
     driverId: string,
   ): Promise<{ location: LatLng; atMs: number } | null> {
-    return Promise.resolve(this.positions.get(cityId)?.get(driverId) ?? null);
+    const pos = this.positions.get(cityId)?.get(driverId);
+    return Promise.resolve(
+      pos?.location ? { location: pos.location, atMs: pos.atMs } : null,
+    );
   }
 
-  markOnline(cityId: string, driverId: string): Promise<void> {
+  markOnline(cityId: string, driverId: string, atMs: number): Promise<void> {
     const set = this.online.get(cityId) ?? new Set<string>();
     set.add(driverId);
     this.online.set(cityId, set);
+    // Refresh the proof of life, keep any recorded position — ZADD + GEO.
+    const city =
+      this.positions.get(cityId) ??
+      new Map<string, { location: LatLng | null; atMs: number }>();
+    city.set(driverId, {
+      location: city.get(driverId)?.location ?? null,
+      atMs,
+    });
+    this.positions.set(cityId, city);
     return Promise.resolve();
   }
 
@@ -193,7 +214,7 @@ export class InMemoryDriverLocationStore implements DriverLocationStore {
     if (!this.isOnline(cityId, driverId)) return Promise.resolve(false);
     const city =
       this.positions.get(cityId) ??
-      new Map<string, { location: LatLng; atMs: number }>();
+      new Map<string, { location: LatLng | null; atMs: number }>();
     city.set(driverId, { location, atMs });
     this.positions.set(cityId, city);
     this.recorded.push({ cityId, driverId, location, atMs });
@@ -207,6 +228,7 @@ export class InMemoryDriverLocationStore implements DriverLocationStore {
   ): Promise<NearbyDriver[]> {
     const nearby: NearbyDriver[] = [];
     for (const [driverId, pos] of this.positions.get(cityId) ?? []) {
+      if (!pos.location) continue; // online, never pinged — not routable
       if (pos.atMs < opts.freshSinceMs) continue;
       const distanceMeters = haversineMeters(centre, pos.location);
       if (distanceMeters > opts.radiusMeters) continue;
@@ -396,6 +418,23 @@ export class RecordingPaymentsProvider implements PaymentsProvider {
   }
 }
 
+/**
+ * Captures every push the nudge path sends (#14). `nextResult` answers the
+ * NEXT send only, then resets to ok — like `RecordingPaymentsProvider`'s
+ * one-shot `nextFailure`.
+ */
+export class RecordingPushProvider implements PushProvider {
+  readonly sent: { token: string; message: PushMessage }[] = [];
+  nextResult: PushDeliveryResult = { ok: true };
+
+  send(token: string, message: PushMessage): Promise<PushDeliveryResult> {
+    this.sent.push({ token, message });
+    const result = this.nextResult;
+    this.nextResult = { ok: true };
+    return Promise.resolve(result);
+  }
+}
+
 export interface TestApp {
   app: INestApplication;
   kv: InMemoryKeyValueStore;
@@ -406,14 +445,17 @@ export interface TestApp {
   queue: InMemoryDispatchQueueStore;
   /** The SAME instance the app resolves — verified in `createTestApp`. */
   payments: RecordingPaymentsProvider;
+  /** What the offline nudge (#14) sent; `PushModule` exports the token, so the swap is sanctioned. */
+  push: RecordingPushProvider;
   db: Db;
 }
 
 /**
- * The production module graph with exactly six providers swapped: KV_STORE,
+ * The production module graph with exactly seven providers swapped: KV_STORE,
  * DISPATCH_QUEUE_STORE and DRIVER_LOCATION_STORE (between them, no ioredis
  * client is ever constructed — all are `useFactory` providers that would dial
- * Redis), SMS_PROVIDER, MAPS_PROVIDER_SOURCE and PAYMENTS_PROVIDER. Guards,
+ * Redis), SMS_PROVIDER, MAPS_PROVIDER_SOURCE, PAYMENTS_PROVIDER and
+ * PUSH_PROVIDER. Guards,
  * pipes, JWT, Drizzle and the caching maps decorator are all the real wiring.
  *
  * The maps override targets the SOURCE, deliberately: `CachingMapsProvider`
@@ -446,6 +488,7 @@ export async function createTestApp(options?: {
   const maps = new CountingMapsProvider();
   const queue = new InMemoryDispatchQueueStore();
   const payments = new RecordingPaymentsProvider();
+  const push = new RecordingPushProvider();
 
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
@@ -473,6 +516,10 @@ export async function createTestApp(options?: {
     // sanctioned rather than a reach-through.
     .overrideProvider(PAYMENTS_PROVIDER)
     .useValue(payments)
+    // The stub logs and delivers nothing; the presence suite asserts on what
+    // was sent, to whom, in which language.
+    .overrideProvider(PUSH_PROVIDER)
+    .useValue(push)
     .compile();
 
   const app = moduleRef.createNestApplication();
@@ -510,6 +557,7 @@ export async function createTestApp(options?: {
     maps,
     queue,
     payments,
+    push,
     db: app.get<Db>(DRIZZLE),
   };
 }

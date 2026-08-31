@@ -151,7 +151,7 @@ describe('payments + ledger (integration)', () => {
       .send({ status: 'online' })
       .expect(200);
 
-    await ctx.locations.markOnline(cityId, id);
+    await ctx.locations.markOnline(cityId, id, Date.now());
     await ctx.locations.record(cityId, id, location, Date.now());
     usedDrivers.push(id);
     return { id, auth };

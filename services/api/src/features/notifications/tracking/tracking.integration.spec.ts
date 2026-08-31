@@ -148,7 +148,7 @@ describe('tracking + ride SMS (integration)', () => {
       .set({ photoUrl: PHOTO_URL })
       .where(eq(drivers.userId, id));
 
-    await ctx.locations.markOnline(cityId, id);
+    await ctx.locations.markOnline(cityId, id, Date.now());
     await ctx.locations.record(cityId, id, location, Date.now());
     usedDrivers.push(id);
     return { id, auth, plate };

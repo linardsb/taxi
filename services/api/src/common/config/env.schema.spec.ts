@@ -264,3 +264,34 @@ describe('envSchema MAPS_ETA_FAILURE_TTL_SECONDS', () => {
     expect(envSchema.parse(prod()).MAPS_ETA_FAILURE_TTL_SECONDS).toBe(60);
   });
 });
+
+describe('envSchema PUSH_PROVIDER (#14)', () => {
+  const dev = (over: Record<string, string> = {}) => ({
+    ...base,
+    NODE_ENV: 'development',
+    JWT_SECRET: STRONG_JWT,
+    ...over,
+  });
+
+  it('defaults to the stub with no access token (expected)', () => {
+    const env = envSchema.parse(dev());
+
+    expect(env.PUSH_PROVIDER).toBe('stub');
+    expect(env.EXPO_PUSH_ACCESS_TOKEN).toBeUndefined();
+  });
+
+  it('parses expo and reads the empty access token committed to the env template as undefined (edge)', () => {
+    const env = envSchema.parse(
+      dev({ PUSH_PROVIDER: 'expo', EXPO_PUSH_ACCESS_TOKEN: '' }),
+    );
+
+    expect(env.PUSH_PROVIDER).toBe('expo');
+    expect(env.EXPO_PUSH_ACCESS_TOKEN).toBeUndefined();
+  });
+
+  it('refuses a provider it does not know (failure)', () => {
+    // The factory switches on this value; an unknown one would silently
+    // bind the stub in production and deliver no nudges.
+    expect(() => envSchema.parse(dev({ PUSH_PROVIDER: 'fcm' }))).toThrow();
+  });
+});

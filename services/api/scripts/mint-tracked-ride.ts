@@ -1391,7 +1391,7 @@ async function teardown(
       );
     }
     // Deliberately `offline`, not `online`: an `online` driver with no process
-    // behind them is the ghost presence `clearPresenceOnDisconnect` exists to
+    // behind them is the ghost presence `markOfflineByServer` exists to
     // prevent. This also drops the recorded position, so the next run starts
     // from a clean presence state.
     const off = await api('PUT', '/drivers/me/status', {

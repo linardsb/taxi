@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type ClientToServerEmitEvents,
   type ClientToServerEvents,
   RT,
   RT_EVENT_SCHEMAS,
@@ -8,6 +9,7 @@ import {
   dispatchRoom,
   dispatchSmsFailedEventSchema,
   dispatchUnclaimedEventSchema,
+  driverLocationAckSchema,
   driverLocationEventSchema,
   driverLocationPingSchema,
   driverQueueEventSchema,
@@ -471,6 +473,45 @@ describe('event typing', () => {
       expect(driverLocationPingSchema.parse(payload).location).toEqual(riga);
     };
     handler({ location: riga, at });
+  });
+
+  it('hands the driver app an ack callback on driver:location (type-level, #14)', () => {
+    // The emit map is what the app's `Socket<…, ClientToServerEmitEvents>`
+    // compiles against. If the ack parameter is dropped, `socket.emit(RT.driverLocation,
+    // ping, cb)` stops compiling in apps/driver — that is the alarm.
+    const emit: ClientToServerEmitEvents[typeof RT.driverLocation] = (
+      _payload,
+      ack,
+    ) => ack({ accepted: true });
+    let received: unknown;
+    emit({ location: riga, at }, (response) => {
+      received = response;
+    });
+    expect(received).toEqual({ accepted: true });
+  });
+});
+
+describe('driverLocationAckSchema (#14)', () => {
+  it('accepts a bare acceptance (expected)', () => {
+    expect(driverLocationAckSchema.parse({ accepted: true })).toEqual({
+      accepted: true,
+    });
+  });
+
+  it('accepts a refusal with a catalogued reason (edge)', () => {
+    expect(
+      driverLocationAckSchema.parse({ accepted: false, reason: 'not_online' }),
+    ).toEqual({ accepted: false, reason: 'not_online' });
+  });
+
+  it('rejects an unknown reason and an empty object (failure)', () => {
+    // The app branches on `reason` (drop / retry / re-assert); a free-form
+    // string would reach that switch as "retry forever".
+    expect(
+      driverLocationAckSchema.safeParse({ accepted: false, reason: 'because' })
+        .success,
+    ).toBe(false);
+    expect(driverLocationAckSchema.safeParse({}).success).toBe(false);
   });
 });
 
