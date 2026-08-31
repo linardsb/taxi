@@ -33,7 +33,8 @@
 <body>
 <main>
   <h1>Spike #4 — the iOS field run, in five minutes</h1>
-  <p class="sub">Plan: <code>.claude/plans/spike-gps-field-test-ios-run.md</code> · issue #4 · gates #14</p>
+  <p class="sub">Plan: <code>.claude/plans/spike-gps-field-test-ios-run.md</code> · issue #4 · #14 (no longer gated — see the banner)</p>
+  <div class="note"><b>Superseded 2026-08-26.</b> Only Phase 0 ran. Linards deferred the field test (no paid Apple Developer Program before the app exists; cable install declined); <b>#4 stays open</b> and #14 is unblocked on the mounted-phone superset, not gated. The "source by default" premise in §3 below was wrong: SDK 57's Podfile defaults <code>EXPO_USE_PRECOMPILED_MODULES</code> to <code>'1'</code>, and even from source (<code>=0</code>) SDK 57 does not compile on Xcode 26.3 — the SDK 55 copy did, on the simulator only. Phases 1–3 as drawn, the JSONL files, "Your steps" and AC5/AC7 did not happen. Record: the AMENDMENTS lines in the <code>.md</code> plan and <code>.claude/reports/spike-gps-field-test-ios-run-report.md</code>.</div>
 
   <section>
     <h2>What we're building and why</h2>
