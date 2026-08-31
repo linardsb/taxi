@@ -1,5 +1,9 @@
 import { Logger } from '@nestjs/common';
-import { EXPO_PUSH_ENDPOINT, ExpoPushProvider } from './expo-push.provider';
+import {
+  EXPO_PUSH_ENDPOINT,
+  ExpoPushProvider,
+  PUSH_HTTP_TIMEOUT_MS,
+} from './expo-push.provider';
 
 const TOKEN = 'ExponentPushToken[abcdefghijklmnopqrstuv]';
 const MESSAGE = { title: 'Sakta Cab', body: 'Jūs esat bezsaistē.' };
@@ -109,5 +113,35 @@ describe('ExpoPushProvider (#14)', () => {
       );
       expect(JSON.stringify(warn.mock.calls)).not.toContain('MessageTooBig');
     }
+  });
+
+  it('bounds the request: a hung Expo call is provider_error/timeout inside timeoutMs, never a stalled sweep (failure)', async () => {
+    const inits: RequestInit[] = [];
+    // Honours the signal like undici does: rejects with `signal.reason` on abort, never otherwise.
+    const hung = ((_url: string, init: RequestInit) => {
+      inits.push(init);
+      return new Promise<Response>((_, reject) =>
+        init.signal!.addEventListener('abort', () =>
+          reject(init.signal!.reason as Error),
+        ),
+      );
+    }) as unknown as typeof fetch;
+    const push = new ExpoPushProvider({ fetchImpl: hung, timeoutMs: 20 });
+    const started = Date.now();
+
+    await expect(push.send(TOKEN, MESSAGE)).resolves.toEqual({
+      ok: false,
+      reason: 'provider_error',
+    });
+
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(inits[0]!.signal).toBeInstanceOf(AbortSignal);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'driver.push.request_failed',
+        reason: 'timeout',
+      }),
+    );
+    expect(PUSH_HTTP_TIMEOUT_MS).toBe(5_000);
   });
 });

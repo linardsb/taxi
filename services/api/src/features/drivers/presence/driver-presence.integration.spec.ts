@@ -16,6 +16,7 @@ import {
   OFFLINE_NUDGE_DELAY_SECONDS,
   PRESENCE_DARK_AFTER_SECONDS,
 } from '../location/driver-location.policy';
+import { DriverPresenceRepository } from './driver-presence.repository';
 import { DriverPresenceSweeper } from './driver-presence.sweeper';
 
 /** `+371291` is this spec file's E.164 range — see phoneFor(). */
@@ -239,6 +240,64 @@ describe('driver presence: dark detection + nudge (integration, #14)', () => {
       expect((await d.row()).status).toBe('on_ride');
       expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
     } finally {
+      await ctx.db
+        .update(drivers)
+        .set({ status: 'offline' })
+        .where(eq(drivers.userId, d.id));
+      await ctx.locations.markOffline(cityId, d.id);
+    }
+  });
+
+  it('drops a Redis member whose row is not online instead of revisiting it every tick (edge — the half-written offline)', async () => {
+    const d = await driver(8);
+    const { T } = await onlineAndPinged(d);
+    // A Postgres write that landed while the Redis one did not: the board
+    // shows the driver, dispatch cannot reach them, and nothing revisited it.
+    await ctx.db
+      .update(drivers)
+      .set({ status: 'offline' })
+      .where(eq(drivers.userId, d.id));
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
+
+    await sweeper.tick(T + DARK_MS + 1000);
+
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+    expect((await d.row()).status).toBe('offline');
+  });
+
+  it("a claim to on_ride that lands mid-sweep keeps Redis presence — the ride's position feed is not stranded (edge — the read/UPDATE race)", async () => {
+    const d = await driver(9);
+    const { T } = await onlineAndPinged(d);
+    const presence = ctx.app.get(DriverPresenceRepository);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    // The race, made deterministic: #11's claim lands between the service's
+    // read (`online`) and its conditional UPDATE.
+    const original = presence.markOfflineByServer.bind(presence);
+    jest
+      .spyOn(presence, 'markOfflineByServer')
+      .mockImplementationOnce(async (userId, due) => {
+        await ctx.db
+          .update(drivers)
+          .set({ status: 'on_ride' })
+          .where(eq(drivers.userId, userId));
+        return original(userId, due);
+      });
+
+    try {
+      await sweeper.tick(T + DARK_MS + 1000);
+
+      expect((await d.row()).status).toBe('on_ride');
+      expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'driver.presence.offline_skipped',
+          reason: 'dark',
+          status: 'on_ride',
+          presenceRestored: true,
+        }),
+      );
+    } finally {
+      warn.mockRestore();
       await ctx.db
         .update(drivers)
         .set({ status: 'offline' })

@@ -1,10 +1,9 @@
+import { apiErrorBodySchema, type ApiIssue } from '@taxi/shared';
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-/** One zod issue, as the api's `ZodValidationPipe` reports it. */
-export interface ApiIssue {
-  path: (string | number)[];
-  message: string;
-}
+/** One zod issue, as the api's `ZodValidationPipe` reports it — the shared contract's type. */
+export type { ApiIssue };
 
 /**
  * Every non-2xx (and every network failure) becomes one of these. `code` is
@@ -51,9 +50,12 @@ export interface ApiClientDeps {
 }
 
 /**
- * JSON in, JSON out, bearer on, 8 s to answer. A thrown `ApiError` is the
- * only failure shape screens see; a 401 with a token also signs the driver
- * out (the "expired-token re-auth" path — back to the OTP screen).
+ * JSON in, JSON out, bearer on, 8 s to answer — headers AND body: the timer
+ * runs until the body is read, so a stalled body is `offline`, not a hang.
+ * A thrown `ApiError` is the only failure shape screens see; a 401 with a
+ * token also signs the driver out (the "expired-token re-auth" path — back
+ * to the OTP screen). Error bodies are parsed through the shared envelope
+ * schema; anything else is `generic`.
  */
 export function createApiClient(deps: ApiClientDeps): ApiClient {
   const fetchImpl = deps.fetchImpl ?? fetch;
@@ -81,31 +83,32 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
           signal: controller.signal,
         });
       } catch {
-        throw new ApiError(0, 'offline');
-      } finally {
         clearTimeout(timer);
+        throw new ApiError(0, 'offline');
       }
 
-      if (res.status === 204) return undefined as T;
+      if (res.status === 204) {
+        clearTimeout(timer);
+        return undefined as T;
+      }
       let json: unknown = null;
       try {
         json = await res.json();
       } catch {
         json = null;
+      } finally {
+        clearTimeout(timer);
       }
+      if (controller.signal.aborted) throw new ApiError(0, 'offline');
 
       if (!res.ok) {
-        const body = (json ?? {}) as Record<string, unknown>;
-        const code =
-          typeof body.message === 'string' ? body.message : 'generic';
+        const body = apiErrorBodySchema.safeParse(json);
         if (res.status === 401 && token) deps.onUnauthorized();
         throw new ApiError(
           res.status,
-          code,
-          typeof body.retryAfterSeconds === 'number'
-            ? body.retryAfterSeconds
-            : undefined,
-          Array.isArray(body.issues) ? (body.issues as ApiIssue[]) : undefined,
+          body.success ? body.data.message : 'generic',
+          body.success ? body.data.retryAfterSeconds : undefined,
+          body.success ? body.data.issues : undefined,
         );
       }
       return opts.schema ? opts.schema.parse(json) : (json as T);

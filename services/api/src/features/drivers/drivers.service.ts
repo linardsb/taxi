@@ -145,9 +145,10 @@ export class DriversService {
    * The SERVER taking a driver offline — the two paths that are not a toggle.
    * `socket_disconnected` is the last socket going away (#38): before it, a
    * force-quit left them `online` in Postgres and in all three
-   * `drivers:*:<city>` keys forever. `dark` is #14's: the socket is up but no
-   * fix has been accepted for `PRESENCE_DARK_AFTER_SECONDS` — permission
-   * revoked, location services off, the task crashed.
+   * `drivers:*:<city>` keys forever. `dark` is #14's: the socket is up but
+   * there has been no proof of life — an accepted fix or a `PUT status online`
+   * re-assert — for `PRESENCE_DARK_AFTER_SECONDS`: permission revoked,
+   * location services off, the task crashed.
    *
    * Both stamp `offline_nudge_due_at = now + OFFLINE_NUDGE_DELAY_SECONDS`, and
    * the sweeper sends ONE push when it comes due unless the driver is back
@@ -163,28 +164,48 @@ export class DriversService {
     reason: ServerOfflineReason,
     nowMs = Date.now(),
   ): Promise<boolean> {
+    const cityId = this.env.DEFAULT_CITY_ID;
     const status = (await this.drivers.find(userId))?.status;
 
     // Only `online` is this path's to clear. `on_ride` belongs to #11 — a
     // driver whose app crashes mid-ride must not be dropped off the ride by a
-    // lost socket, and their position still feeds the tracking page — and
-    // `offline`/no row is already where this would land.
+    // lost socket, and their position still feeds the tracking page — so
+    // their presence is left alone. A row that says `offline` is already
+    // where this would land in Postgres, but not necessarily in Redis: such a
+    // member (a Postgres write that failed after the Redis one, a deploy
+    // ghost) is a driver on the board every tick, so it is dropped. No row
+    // at all is left alone — nothing to reconcile against, and no production
+    // path puts a rowless driver in the set (every online path provisions
+    // the row first); the gateway spec's store-only drivers rely on it.
+    if (status === 'offline') {
+      await this.locations.markOffline(cityId, userId);
+      return false;
+    }
     if (status !== 'online') return false;
 
-    await this.locations.markOffline(this.env.DEFAULT_CITY_ID, userId);
+    await this.locations.markOffline(cityId, userId);
     const marked = await this.presence.markOfflineByServer(
       userId,
       new Date(nowMs + OFFLINE_NUDGE_DELAY_SECONDS * 1000),
     );
     if (!marked) {
       // The read said `online`; the conditional UPDATE found otherwise. A
-      // claim (`on_ride`) or a toggle landed between the two. Redis presence
-      // is already dropped — the same race the old unconditional write had,
-      // now logged instead of overwriting #11's status.
+      // claim (`on_ride`) or a toggle landed between the two, and Redis
+      // presence is already dropped. For a toggle that is where it belongs;
+      // for a claim it would strand the ride's position feed — nothing else
+      // re-adds it (`setPresence` is 409 on `on_ride`, `releaseFromRide`
+      // never touches Redis) — so it is put back.
+      const now = (await this.drivers.find(userId))?.status;
+      const presenceRestored = now === 'on_ride';
+      if (presenceRestored) {
+        await this.locations.markOnline(cityId, userId, nowMs);
+      }
       this.logger.warn({
         event: 'driver.presence.offline_skipped',
         driverId: userId,
         reason,
+        status: now ?? 'missing',
+        presenceRestored,
         at: new Date().toISOString(),
       });
       return false;

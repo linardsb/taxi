@@ -10,9 +10,10 @@ import { VehicleScreen } from './vehicle-screen';
 
 const mockCreateVehicle = jest.fn();
 const mockUpdateVehicle = jest.fn();
+let mockVehicles: unknown[] = [];
 jest.mock('./use-me', () => ({
   useMe: () => ({
-    me: { profile: {}, vehicles: [] },
+    me: { profile: {}, vehicles: mockVehicles },
     status: 'ready',
     refetch: jest.fn(),
     patchProfile: jest.fn(),
@@ -65,6 +66,8 @@ async function fill(
 describe('VehicleScreen', () => {
   beforeEach(() => {
     mockCreateVehicle.mockReset();
+    mockUpdateVehicle.mockReset();
+    mockVehicles = [];
     (replace as jest.Mock).mockReset();
     (router.useLocalSearchParams as jest.Mock).mockReturnValue({});
   });
@@ -90,6 +93,42 @@ describe('VehicleScreen', () => {
       hasChildSeat: false,
       category: 'standard',
     });
+  });
+
+  it('editing keeps the stored category and strips plate whitespace — an admin-set tier survives a plate correction (edge)', async () => {
+    mockVehicles = [
+      {
+        id: 'v9',
+        plate: 'AB1234',
+        make: 'Skoda',
+        model: 'Superb',
+        year: 2021,
+        passengerSeats: 4,
+        hasChildSeat: false,
+        category: 'limo',
+      },
+    ];
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue({
+      vehicleId: 'v9',
+    });
+    mockUpdateVehicle.mockResolvedValue({ id: 'v9' });
+    await render(<VehicleScreen />);
+
+    await fireEvent.changeText(
+      screen.getByLabelText(t('driver.vehicle.plate')),
+      'ab 1234',
+    );
+    await fireEvent.press(
+      screen.getByRole('button', { name: t('driver.action.save') }),
+    );
+
+    await waitFor(() =>
+      expect(mockUpdateVehicle).toHaveBeenCalledWith(
+        'v9',
+        expect.objectContaining({ plate: 'AB1234', category: 'limo' }),
+      ),
+    );
+    expect(mockCreateVehicle).not.toHaveBeenCalled();
   });
 
   it('shows plate_taken on the plate field (edge)', async () => {

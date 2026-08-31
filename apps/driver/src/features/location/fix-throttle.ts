@@ -8,6 +8,15 @@ import type { NewFix } from './fix-queue';
  */
 export const MIN_FIX_INTERVAL_MS = 4_000;
 
+/**
+ * A fix this much OLDER than the last kept one is a clock correction, not an
+ * OS replay: the OS re-delivers fixes seconds old, a backwards jump (NTP
+ * after a dead zone, a manual clock change) is minutes. Without this a
+ * corrected clock silenced the throttle until it caught up with the old
+ * `lastTs` — a gap long enough for the dark flip (60 s).
+ */
+export const CLOCK_RESET_WINDOW_MS = 60_000;
+
 /** The slice of `expo-location`'s LocationObject this reads — structural, so tests need no native types. */
 export interface RawFix {
   timestamp: number;
@@ -31,7 +40,8 @@ export function normaliseHeading(
  * Keeps the fixes that are ≥ MIN_FIX_INTERVAL_MS after the last kept one,
  * oldest first, and drops anything unusable. `lastTs` threads across calls
  * (the task is invoked per batch), so a replayed batch older than what was
- * already enqueued yields nothing.
+ * already enqueued yields nothing — unless it is older by more than
+ * `CLOCK_RESET_WINDOW_MS`, which is accepted and rebases `lastTs`.
  */
 export function selectFixes(
   incoming: readonly RawFix[],
@@ -49,7 +59,14 @@ export function selectFixes(
     ) {
       continue;
     }
-    if (last !== null && raw.timestamp - last < MIN_FIX_INTERVAL_MS) continue;
+    const delta = last === null ? null : raw.timestamp - last;
+    if (
+      delta !== null &&
+      delta < MIN_FIX_INTERVAL_MS &&
+      delta > -CLOCK_RESET_WINDOW_MS
+    ) {
+      continue;
+    }
     fixes.push({
       at: new Date(raw.timestamp).toISOString(),
       lat,

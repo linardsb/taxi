@@ -9,6 +9,16 @@ import { z } from 'zod';
 export const EXPO_PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
 
 /**
+ * The request's whole budget, headers and body. The nudge pass awaits sends
+ * one at a time under the sweeper's `running` lock, so an unbounded call
+ * (undici's headers timeout is 300 s) suspended dark detection — the safety
+ * property — for the push, which is best-effort. Worst case per tick with
+ * every send hanging: `NUDGE_BATCH_LIMIT` × 5 s = 50 × 5 = 250 s (`derived`);
+ * at pilot scale (≤ 10 drivers, one nudge each per outage) ≤ 50 s.
+ */
+export const PUSH_HTTP_TIMEOUT_MS = 5_000;
+
+/**
  * One ticket per message in the request array. Parsed, never cast: Expo's
  * response is remote JSON, and a cast over a shape change would read a
  * missing `status` as "not ok" and forget a perfectly good token.
@@ -21,7 +31,21 @@ const responseSchema = z.object({ data: z.array(ticketSchema).min(1) });
 
 /** Closed enum — Expo's free text never reaches a log line (the `geo.maps.route_failed` rule). */
 type ExpoPushFailure =
-  'network' | 'unreadable_response' | 'ticket_error' | `http_${number}`;
+  | 'network'
+  | 'timeout'
+  | 'unreadable_response'
+  | 'ticket_error'
+  | `http_${number}`;
+
+/**
+ * `AbortSignal.timeout` rejects the fetch with a `TimeoutError` DOMException.
+ * By name, not `instanceof Error`: the exception is minted in Node's own
+ * realm, and under jest's vm context that is a different `Error`.
+ */
+const isTimeout = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  (error as { name?: unknown }).name === 'TimeoutError';
 
 /**
  * The real PushProvider (#14): ONE `fetch` to Expo's push API, no
@@ -37,6 +61,7 @@ export class ExpoPushProvider implements PushProvider {
       accessToken?: string;
       fetchImpl?: typeof fetch;
       endpoint?: string;
+      timeoutMs?: number;
     } = {},
   ) {}
 
@@ -66,9 +91,12 @@ export class ExpoPushProvider implements PushProvider {
             sound: 'default',
           },
         ]),
+        signal: AbortSignal.timeout(
+          this.opts.timeoutMs ?? PUSH_HTTP_TIMEOUT_MS,
+        ),
       });
-    } catch {
-      return this.fail('network');
+    } catch (error) {
+      return this.fail(isTimeout(error) ? 'timeout' : 'network');
     }
     if (!response.ok) return this.fail(`http_${response.status}`);
 

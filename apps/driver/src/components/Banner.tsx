@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect } from 'react';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import { colors, fontSize, radius, spacing } from '@taxi/shared';
 import { Button } from './Button';
 
@@ -19,8 +20,15 @@ export interface BannerProps {
   testID?: string;
 }
 
-/** A polite live region — a state change the driver should hear, with at most one thing to do about it. */
+/**
+ * A state change the driver should hear, with at most one thing to do about
+ * it. `accessibilityLiveRegion` is Android-only, so the text is also
+ * announced outright — that is what VoiceOver hears.
+ */
 export function Banner({ tone, text, action, secondary, testID }: BannerProps) {
+  useEffect(() => {
+    AccessibilityInfo.announceForAccessibility(text);
+  }, [text]);
   return (
     <View
       testID={testID}

@@ -106,7 +106,7 @@ export function ProfileScreen() {
   );
 }
 
-/** A ≥44 px checkbox chip with a visible focus ring. */
+/** A ≥44 px checkbox chip with a visible focus ring (the Button's `colors.fg` outline — visible on the checked, accent-filled chip too). */
 function LanguageChip({
   label,
   checked,
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   chipChecked: { backgroundColor: colors.accent, borderColor: colors.accent },
   chipText: { fontSize: fontSize.md, color: colors.fg },
   chipTextChecked: { color: colors.accentFg },
-  focused: { borderWidth: 2, borderColor: colors.accent },
+  focused: { outlineWidth: 2, outlineColor: colors.fg, outlineOffset: 2 },
   row: {
     minHeight: 44,
     flexDirection: 'row',

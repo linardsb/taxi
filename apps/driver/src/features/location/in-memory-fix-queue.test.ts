@@ -40,4 +40,15 @@ describe('InMemoryFixQueue', () => {
     await q.clear();
     expect(await q.count()).toBe(0);
   });
+
+  it('dropOlderThan keeps rows at or after the cutoff and drops the rest (edge — the go-online age purge)', async () => {
+    const q = new InMemoryFixQueue();
+    await q.enqueue([fix(1), fix(2), fix(3), fix(4)]);
+
+    await q.dropOlderThan(fix(3).at);
+
+    expect((await q.peek(10)).map((r) => r.id)).toEqual([3, 4]);
+    await q.dropOlderThan(fix(99).at);
+    expect(await q.count()).toBe(0);
+  });
 });

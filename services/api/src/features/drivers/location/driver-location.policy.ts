@@ -21,7 +21,8 @@ export const NEAREST_DEFAULT_RADIUS_METERS = 5_000;
 export const NEAREST_DEFAULT_LIMIT = 10;
 
 /**
- * No accepted fix for this long while online → offline + nudge (#14). Equal to
+ * No proof of life — an accepted fix or a `markOnline` re-assert — for this
+ * long while online → offline + nudge (#14). Equal to
  * the dispatch freshness window ON PURPOSE: the moment `findNearby` stops
  * seeing a driver is the moment the durable record says offline — one number,
  * no window in which the board says online while dispatch excludes.

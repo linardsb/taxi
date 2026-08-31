@@ -1,4 +1,5 @@
 import {
+  CLOCK_RESET_WINDOW_MS,
   MIN_FIX_INTERVAL_MS,
   normaliseHeading,
   selectFixes,
@@ -37,6 +38,15 @@ describe('selectFixes', () => {
 
     expect(fixes).toEqual([]);
     expect(lastTs).toBe(T0 + 20_000);
+  });
+
+  it('a fix more than a minute OLDER than the last kept one is a clock correction: accepted, lastTs rebased; a replay seconds old is still dropped (edge)', () => {
+    const { fixes, lastTs } = selectFixes([raw(-61_000)], T0);
+
+    expect(fixes).toHaveLength(1);
+    expect(lastTs).toBe(T0 - 61_000);
+    expect(selectFixes([raw(-30_000)], T0)).toEqual({ fixes: [], lastTs: T0 });
+    expect(CLOCK_RESET_WINDOW_MS).toBe(60_000);
   });
 
   it('sorts an out-of-order batch and drops non-finite coordinates (failure)', () => {

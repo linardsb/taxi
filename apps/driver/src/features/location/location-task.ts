@@ -83,7 +83,14 @@ export function getLocationRuntime(): LocationRuntime {
 TaskManager.defineTask<{ locations: LocationObject[] }>(
   LOCATION_TASK,
   async ({ data, error }) => {
-    if (error || !data?.locations?.length) return;
+    if (error) {
+      // TaskManager's error is the one signal that background location died
+      // (permission revoked, provider gone). Presence sees it only through
+      // the dark sweep — at least leave a trace.
+      console.warn('location task error', error.code, error.message);
+      return;
+    }
+    if (!data?.locations?.length) return;
     try {
       await runtime.handleLocations(data.locations);
     } catch (err) {

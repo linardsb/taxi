@@ -2,6 +2,8 @@ import {
   decide,
   initialPresence,
   pillFrom,
+  runEffects,
+  serverStatusEvent,
   type Effect,
   type PresenceState,
 } from './presence-state';
@@ -32,15 +34,17 @@ describe('decide — going online', () => {
       type: 'permission',
       result: 'granted',
     });
+    // The purge comes first: `put_status`'s answer is what kicks the uploader.
     expect(types(second.effects)).toEqual([
+      'purge_stale_fixes',
       'put_status',
       'start_stream',
       'connect_socket',
       'keep_awake',
       'show_battery_prompt',
     ]);
-    expect(second.effects[0]).toEqual({ type: 'put_status', status: 'online' });
-    expect(second.effects[3]).toEqual({ type: 'keep_awake', on: true });
+    expect(second.effects[1]).toEqual({ type: 'put_status', status: 'online' });
+    expect(second.effects[4]).toEqual({ type: 'keep_awake', on: true });
     expect(second.state.streaming).toBe(true);
   });
 
@@ -162,6 +166,7 @@ describe('decide — going offline and cold launch', () => {
     expect(alive.state.intent).toBe('online');
     expect(alive.state.queued).toBe(12);
     expect(types(alive.effects)).toEqual([
+      'purge_stale_fixes',
       'put_status',
       'connect_socket',
       'keep_awake',
@@ -209,5 +214,83 @@ describe('pillFrom', () => {
       'reconnecting',
     );
     expect(pillFrom(online({ lastAckAt: now - 61_000 }), now)).toBe('offline');
+  });
+});
+
+describe('decide — the server holds us', () => {
+  it('on_ride from a refetch or a reconnect reads as online: no re-assert, the stream kept (edge — the force-assigned driver)', () => {
+    expect(serverStatusEvent('on_ride', AT)).toEqual({ type: 'server_online' });
+    expect(serverStatusEvent('online', AT)).toEqual({ type: 'server_online' });
+    expect(serverStatusEvent('offline', AT)).toEqual({
+      type: 'server_offline',
+      at: AT,
+    });
+
+    const d = decide(online(), serverStatusEvent('on_ride', AT));
+    expect(types(d.effects)).not.toContain('put_status');
+    expect(types(d.effects)).not.toContain('stop_stream');
+    expect(d.state.intent).toBe('online');
+    expect(d.state.streaming).toBe(true);
+  });
+
+  it('a foreground denial while the server already holds us online tells it and tears down; otherwise nothing to tell (edge)', () => {
+    const pending = decide(initialPresence, { type: 'toggle_pressed' }).state;
+
+    const held = decide(
+      { ...pending, server: 'online' },
+      { type: 'permission', result: 'foreground_denied' },
+    );
+    expect(held.state.intent).toBe('offline');
+    expect(held.state.busy).toBe(true); // the offline put's answer clears it
+    expect(types(held.effects)).toEqual([
+      'persist_intent',
+      'put_status',
+      'stop_stream',
+      'disconnect_socket',
+      'keep_awake',
+    ]);
+    expect(held.effects[1]).toEqual({ type: 'put_status', status: 'offline' });
+    expect(
+      decide(held.state, { type: 'server_offline', at: AT }).state.busy,
+    ).toBe(false);
+
+    const quiet = decide(pending, {
+      type: 'permission',
+      result: 'foreground_denied',
+    });
+    expect(types(quiet.effects)).toEqual(['persist_intent']);
+    expect(quiet.state.busy).toBe(false);
+  });
+});
+
+describe('runEffects', () => {
+  it('runs effects in order, stops at the first throw and reports it once — and the report clears busy (failure)', async () => {
+    const ran: string[] = [];
+    const onThrow = jest.fn();
+
+    await runEffects(
+      [
+        { type: 'persist_intent', intent: 'online' },
+        { type: 'request_permissions' },
+        { type: 'put_status', status: 'online' },
+      ],
+      (effect) => {
+        ran.push(effect.type);
+        return effect.type === 'request_permissions'
+          ? Promise.reject(new Error('keystore'))
+          : Promise.resolve();
+      },
+      onThrow,
+    );
+
+    expect(ran).toEqual(['persist_intent', 'request_permissions']);
+    expect(onThrow).toHaveBeenCalledTimes(1);
+    expect(onThrow).toHaveBeenCalledWith(new Error('keystore'));
+
+    const stuck = decide(initialPresence, { type: 'toggle_pressed' }).state;
+    expect(stuck.busy).toBe(true);
+    const cleared = decide(stuck, { type: 'error', code: 'generic' });
+    expect(cleared.state.busy).toBe(false);
+    expect(cleared.state.banner?.kind).toBe('generic');
   });
 });

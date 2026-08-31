@@ -27,9 +27,11 @@ export interface ButtonProps {
 
 /**
  * The one pressable. ≥44 px, labelled, its state announced, and a visible
- * focus ring (a 2 px `colors.accent` outline) for keyboard/switch access.
- * Border widths are the only literals here — they are not theme tokens
- * (logged in .claude/references/ui-decisions.md).
+ * focus ring for keyboard/switch/D-pad access: a 2 px `colors.fg` OUTLINE,
+ * offset 2 px, outside the bounds — an accent-coloured border was invisible
+ * on the accent-filled primary, and reflowed the button 4 px on focus.
+ * Border and outline widths are the only literals here — they are not theme
+ * tokens (logged in .claude/references/ui-decisions.md).
  */
 export function Button({
   label,
@@ -109,6 +111,6 @@ const styles = StyleSheet.create({
   lg: { minHeight: 56 },
   label: { fontSize: fontSize.md, fontWeight: '600' },
   pressed: { opacity: 0.85 },
-  focused: { borderWidth: 2, borderColor: colors.accent },
+  focused: { outlineWidth: 2, outlineColor: colors.fg, outlineOffset: 2 },
   disabled: { opacity: 0.5 },
 });

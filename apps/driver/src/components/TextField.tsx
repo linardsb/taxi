@@ -17,8 +17,10 @@ export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
 
 /**
  * Label + input + error, the theme's only text input. The label is also the
- * accessible name; the focus state is a `colors.accent` border (visible
- * focus, every plan's rule).
+ * accessible name and the error its hint — `accessibilityLiveRegion` is
+ * Android-only, and a refocused input reads only its label to VoiceOver;
+ * the focus state is a `colors.accent` border (visible focus, every plan's
+ * rule).
  */
 export function TextField({ label, error, ref, ...rest }: TextFieldProps) {
   const [focused, setFocused] = useState(false);
@@ -30,6 +32,7 @@ export function TextField({ label, error, ref, ...rest }: TextFieldProps) {
         accessibilityLabel={label}
         placeholderTextColor={colors.fgMuted}
         {...rest}
+        accessibilityHint={error ?? rest.accessibilityHint}
         onFocus={(e) => {
           setFocused(true);
           rest.onFocus?.(e);

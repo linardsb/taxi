@@ -1,4 +1,5 @@
 export { DocumentsScreen } from './documents-screen';
+export { GateScreen } from './gate-screen';
 export { nextRoute } from './onboarding-state';
 export type { GateRoute } from './onboarding-state';
 export { ProfileScreen } from './profile-screen';

@@ -18,6 +18,7 @@ export * from './schemas/customer';
 export * from './schemas/dispatch';
 export * from './schemas/tariff';
 export * from './schemas/tracking';
+export * from './schemas/api-error';
 export * from './format-message';
 export * from './i18n';
 export * from './theme';

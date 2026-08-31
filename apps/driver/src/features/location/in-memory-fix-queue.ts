@@ -35,4 +35,9 @@ export class InMemoryFixQueue implements FixQueue {
     }
     return Promise.resolve();
   }
+
+  dropOlderThan(before: string): Promise<void> {
+    this.rows = this.rows.filter((row) => row.at >= before);
+    return Promise.resolve();
+  }
 }

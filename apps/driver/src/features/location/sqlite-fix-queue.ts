@@ -10,24 +10,34 @@ const DB_NAME = 'sakta-driver.db';
 const REMOVE_CHUNK = 100;
 
 /**
- * Opened lazily and once — the headless task and the UI share the same
- * connection. WAL so a read (`peek`) never blocks the task's write.
+ * Opened lazily and once — the headless task and the UI share the ONE
+ * connection, and every write below stays on it: `withExclusiveTransactionAsync`
+ * opens a second connection, which made the task's INSERTs and the uploader's
+ * DELETEs two writers on one WAL file with no busy timeout — a lock collision
+ * mid-drain failed `enqueue` and dropped the fixes silently. WAL so a read
+ * (`peek`) never blocks a write. A failed open is NOT cached: the next call
+ * retries instead of rejecting for the life of the process.
  */
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 function db(): Promise<SQLite.SQLiteDatabase> {
-  dbPromise ??= SQLite.openDatabaseAsync(DB_NAME).then(async (opened) => {
-    await opened.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS fixes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        at TEXT NOT NULL,
-        lat REAL NOT NULL,
-        lng REAL NOT NULL,
-        heading REAL
-      );
-    `);
-    return opened;
-  });
+  dbPromise ??= SQLite.openDatabaseAsync(DB_NAME)
+    .then(async (opened) => {
+      await opened.execAsync(`
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE IF NOT EXISTS fixes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          at TEXT NOT NULL,
+          lat REAL NOT NULL,
+          lng REAL NOT NULL,
+          heading REAL
+        );
+      `);
+      return opened;
+    })
+    .catch((error: unknown) => {
+      dbPromise = null;
+      throw error;
+    });
   return dbPromise;
 }
 
@@ -39,9 +49,9 @@ function db(): Promise<SQLite.SQLiteDatabase> {
 export class SqliteFixQueue implements FixQueue {
   async enqueue(fixes: NewFix[]): Promise<void> {
     const conn = await db();
-    await conn.withExclusiveTransactionAsync(async (tx) => {
+    await conn.withTransactionAsync(async () => {
       for (const fix of fixes) {
-        await tx.runAsync(
+        await conn.runAsync(
           'INSERT INTO fixes (at, lat, lng, heading) VALUES (?, ?, ?, ?)',
           fix.at,
           fix.lat,
@@ -92,5 +102,9 @@ export class SqliteFixQueue implements FixQueue {
       'DELETE FROM fixes WHERE id NOT IN (SELECT id FROM fixes ORDER BY id DESC LIMIT ?)',
       keepNewest,
     );
+  }
+
+  async dropOlderThan(before: string): Promise<void> {
+    await (await db()).runAsync('DELETE FROM fixes WHERE at < ?', before);
   }
 }

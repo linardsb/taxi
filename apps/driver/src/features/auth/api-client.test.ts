@@ -121,4 +121,63 @@ describe('api client', () => {
       noContent.request('DELETE', '/drivers/me/push-token'),
     ).resolves.toBeUndefined();
   });
+
+  it('the timeout covers the body: a stalled body read is offline, not a hang (failure)', async () => {
+    // Headers arrive; the body never does unless the signal aborts it. The
+    // 500 ms fallback is what an UNBOUNDED read would produce — a wrong,
+    // late answer instead of `offline`.
+    const stalled = ((_url: string, init: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise((_, reject) => {
+            init.signal!.addEventListener('abort', () =>
+              reject(new Error('aborted')),
+            );
+            setTimeout(() => reject(new Error('hung past the budget')), 500);
+          }),
+      } as unknown as Response)) as unknown as typeof fetch;
+    const api = createApiClient({
+      baseUrl: 'http://api',
+      getToken: () => null,
+      onUnauthorized: jest.fn(),
+      fetchImpl: stalled,
+      timeoutMs: 20,
+    });
+
+    await expect(api.request('GET', '/drivers/me')).rejects.toMatchObject({
+      status: 0,
+      code: 'offline',
+    });
+  });
+
+  it('reads a body outside the shared error envelope as generic — an HTML 502, a message array (edge)', async () => {
+    const html = createApiClient({
+      baseUrl: 'http://api',
+      getToken: () => null,
+      onUnauthorized: jest.fn(),
+      fetchImpl: (() =>
+        Promise.resolve(
+          new Response('<html>502</html>', { status: 502 }),
+        )) as unknown as typeof fetch,
+    });
+    await expect(html.request('GET', '/x')).rejects.toMatchObject({
+      status: 502,
+      code: 'generic',
+    });
+
+    const arr = createApiClient({
+      baseUrl: 'http://api',
+      getToken: () => null,
+      onUnauthorized: jest.fn(),
+      fetchImpl: fakeFetch(400, { message: ['a', 'b'], issues: 'nope' })
+        .fetchImpl,
+    });
+    await expect(arr.request('GET', '/x')).rejects.toMatchObject({
+      status: 400,
+      code: 'generic',
+      issues: undefined,
+    });
+  });
 });

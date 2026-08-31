@@ -55,4 +55,25 @@ describe('location runtime', () => {
 
     expect(onFix).not.toHaveBeenCalled();
   });
+
+  it("the task's own error leaves a trace instead of vanishing (failure)", async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation();
+    const executor = (TaskManager.defineTask as jest.Mock).mock
+      .calls[0]![1] as (body: {
+      data: unknown;
+      error: { code: string; message: string } | null;
+    }) => Promise<void>;
+
+    await executor({
+      data: null,
+      error: { code: 'E_LOCATION_UNAVAILABLE', message: 'provider gone' },
+    });
+
+    expect(warn).toHaveBeenCalledWith(
+      'location task error',
+      'E_LOCATION_UNAVAILABLE',
+      'provider gone',
+    );
+    warn.mockRestore();
+  });
 });

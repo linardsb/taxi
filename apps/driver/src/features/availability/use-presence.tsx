@@ -19,6 +19,7 @@ import {
   ensureLocationPermissions,
   getLocationRuntime,
   isStreaming,
+  MAX_REPLAY_AGE_MS,
   markBatteryPromptShown,
   openBatteryOptimisationSettings,
   startStreaming,
@@ -35,6 +36,8 @@ import {
 import {
   decide,
   initialPresence,
+  runEffects,
+  serverStatusEvent,
   type Effect,
   type PresenceEvent,
   type PresenceState,
@@ -79,14 +82,18 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     Promise.resolve(),
   );
 
-  const dispatch = useCallback((event: PresenceEvent) => {
+  // A named function expression so the throw handler can re-enter it
+  // without a self-reference the hooks rule would want in the deps.
+  const dispatch = useCallback(function dispatch(event: PresenceEvent) {
     const { state: next, effects } = decide(stateRef.current, event);
     stateRef.current = next;
     setState(next);
     if (effects.length === 0) return;
-    void (async () => {
-      for (const effect of effects) await runRef.current(effect);
-    })();
+    void runEffects(
+      effects,
+      (effect) => runRef.current(effect),
+      () => dispatch({ type: 'error', code: 'generic' }),
+    );
   }, []);
 
   const teardownSocket = useCallback(() => {
@@ -118,11 +125,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
             body: { status: effect.status },
             schema: driverProfileSchema,
           });
-          dispatch(
-            profile.status === 'online'
-              ? { type: 'server_online' }
-              : { type: 'server_offline', at: new Date().toISOString() },
-          );
+          dispatch(serverStatusEvent(profile.status, new Date().toISOString()));
         } catch (e) {
           dispatch({
             type: 'error',
@@ -166,6 +169,17 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         return;
       case 'kick_uploader':
         runtime.uploader.kick();
+        return;
+      case 'purge_stale_fixes':
+        // Best effort: a queue that cannot be purged is not a reason to
+        // refuse going online — the ceiling still bounds it.
+        await runtime.queue
+          .dropOlderThan(new Date(Date.now() - MAX_REPLAY_AGE_MS).toISOString())
+          .catch(() => undefined);
+        dispatch({
+          type: 'queued',
+          count: await runtime.queue.count().catch(() => 0),
+        });
         return;
       case 'show_battery_prompt':
         if (await batteryPromptDue()) dispatch({ type: 'battery_prompt_due' });
@@ -231,6 +245,10 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [session.status, runtime, dispatch]);
 
   // Foreground: the server's fact wins a disagreement (through the reducer).
+  // Not while a transition is in flight: the permission dialog itself
+  // backgrounds the app, and a refetch then re-asserted `online` for a
+  // driver about to deny — server online, no stream, and the one re-assert
+  // spent.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next !== 'active') return;
@@ -238,26 +256,28 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         .count()
         .then((count) => dispatch({ type: 'queued', count }))
         .catch(() => undefined);
-      if (stateRef.current.intent !== 'online') return;
+      if (stateRef.current.intent !== 'online' || stateRef.current.busy) return;
       void refetch().then((me) => {
         if (!me) return;
         dispatch(
-          me.profile.status === 'online'
-            ? { type: 'server_online' }
-            : { type: 'server_offline', at: new Date().toISOString() },
+          serverStatusEvent(me.profile.status, new Date().toISOString()),
         );
       });
     });
     return () => sub.remove();
   }, [runtime, refetch, dispatch]);
 
-  // Sign-out: go quiet while the token is still valid, then forget everything.
+  // Sign-out: go quiet while the token is still valid, then forget everything
+  // — the queue included, unconditionally: it carries no owner, and the next
+  // driver on this phone must not replay this one's track under their token.
   useEffect(
     () =>
       onBeforeSignOut(async () => {
         const wasOnline = stateRef.current.intent === 'online';
         await stopStreaming().catch(() => undefined);
         teardownSocket();
+        runtime.uploader.stop();
+        await runtime.queue.clear().catch(() => undefined);
         await deactivateKeepAwake(KEEP_AWAKE_TAG);
         await writeIntent('offline');
         if (wasOnline) {
@@ -270,7 +290,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         stateRef.current = initialPresence;
         setState(initialPresence);
       }),
-    [onBeforeSignOut, api, teardownSocket],
+    [onBeforeSignOut, api, teardownSocket, runtime],
   );
 
   // The 1 s clock the pill reads, while online only.

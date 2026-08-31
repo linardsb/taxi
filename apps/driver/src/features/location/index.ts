@@ -1,5 +1,5 @@
 export { nextBackoffMs } from './backoff';
-export { MAX_QUEUED_FIXES, toPing } from './fix-queue';
+export { MAX_QUEUED_FIXES, MAX_REPLAY_AGE_MS, toPing } from './fix-queue';
 export type { FixQueue, NewFix, QueuedFix } from './fix-queue';
 export { MIN_FIX_INTERVAL_MS, selectFixes } from './fix-throttle';
 export type { RawFix } from './fix-throttle';

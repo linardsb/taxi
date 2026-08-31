@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
+import type { ApiErrorBody } from '@taxi/shared';
 import type { ZodType } from 'zod';
 
 /**
@@ -13,13 +14,14 @@ export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
   transform(value: unknown): T {
     const result = this.schema.safeParse(value);
     if (!result.success) {
-      throw new BadRequestException({
+      const body: ApiErrorBody = {
         message: 'validation_failed',
         issues: result.error.issues.map((i) => ({
           path: i.path,
           message: i.message,
         })),
-      });
+      };
+      throw new BadRequestException(body);
     }
     return result.data;
   }

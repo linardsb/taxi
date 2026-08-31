@@ -82,6 +82,7 @@ export type Effect =
   | { type: 'disconnect_socket' }
   | { type: 'keep_awake'; on: boolean }
   | { type: 'kick_uploader' }
+  | { type: 'purge_stale_fixes' }
   | { type: 'show_battery_prompt' }
   | { type: 'drain_then_clear' }
   | { type: 'announce'; status: DriverStatus };
@@ -91,7 +92,9 @@ export interface Decision {
   effects: Effect[];
 }
 
+/** The purge goes FIRST: `put_status`'s answer is what kicks the uploader. */
 const GO_ONLINE: Effect[] = [
+  { type: 'purge_stale_fixes' },
   { type: 'put_status', status: 'online' },
   { type: 'start_stream' },
   { type: 'connect_socket' },
@@ -147,6 +150,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
         return {
           state: { ...base, intent: 'online', streaming: true, busy: true },
           effects: [
+            { type: 'purge_stale_fixes' },
             { type: 'put_status', status: 'online' },
             { type: 'connect_socket' },
             { type: 'keep_awake', on: true },
@@ -199,14 +203,27 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
     case 'permission': {
       if (state.intent !== 'online') return noop(state);
       if (event.result === 'foreground_denied') {
+        // The server may already hold us `online` (a foreground refetch that
+        // re-asserted while the dialog was up — the hook skips it while busy,
+        // this is the second guard): tell it, or the board shows a driver with
+        // no stream until the dark sweep flips them and buzzes their phone.
+        const serverOnline = state.server === 'online';
         return {
           state: {
             ...state,
             intent: 'offline',
-            busy: false,
+            busy: serverOnline, // the offline put's answer clears it
             banner: { kind: 'foreground_denied' },
           },
-          effects: [{ type: 'persist_intent', intent: 'offline' }],
+          effects: [
+            { type: 'persist_intent', intent: 'offline' },
+            ...(serverOnline
+              ? [
+                  { type: 'put_status', status: 'offline' } as const,
+                  ...TEAR_DOWN,
+                ]
+              : []),
+          ],
         };
       }
       // `background_denied` still goes online — a mounted phone with the
@@ -225,6 +242,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
     }
 
     case 'server_online': {
+      // `online` or `on_ride` (see `serverStatusEvent`): the server holds us.
       const effects: Effect[] =
         state.intent === 'online' ? [{ type: 'kick_uploader' }] : [];
       if (state.server !== 'online')
@@ -328,6 +346,43 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
 
     case 'banner_dismissed':
       return noop({ ...state, banner: null });
+  }
+}
+
+/**
+ * The server's stated status as a reducer event. `on_ride` is the server
+ * HOLDING us — the stream feeds the tracking page and the board — so it reads
+ * as online. Reading it as `server_offline` made the app re-assert on every
+ * foreground refetch and socket reconnect, take the 409 `driver_on_ride`, and
+ * tear the stream down mid-ride.
+ */
+export function serverStatusEvent(
+  status: DriverStatus,
+  at: string,
+): PresenceEvent {
+  return status === 'offline'
+    ? { type: 'server_offline', at }
+    : { type: 'server_online' };
+}
+
+/**
+ * Runs a decision's effects in order, one at a time. A throw ends the chain
+ * and is reported ONCE through `onThrow` — uncaught, a SecureStore or
+ * permission failure left `busy` set with nothing to clear it and every
+ * toggle press ignored.
+ */
+export async function runEffects(
+  effects: Effect[],
+  run: (effect: Effect) => Promise<void>,
+  onThrow: (error: unknown) => void,
+): Promise<void> {
+  for (const effect of effects) {
+    try {
+      await run(effect);
+    } catch (error) {
+      onThrow(error);
+      return;
+    }
   }
 }
 

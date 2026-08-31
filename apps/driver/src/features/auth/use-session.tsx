@@ -43,6 +43,12 @@ const live = {
   session: null as AuthSession | null,
   hooks: new Set<() => Promise<void>>(),
   signOut: (): Promise<void> => Promise.resolve(),
+  /**
+   * The sign-out in flight. The hooks call the api with the token that just
+   * failed on the 401 path, so each 401 re-enters `signOut` — it must join
+   * the run in progress, not start another hook pass.
+   */
+  inFlight: null as Promise<void> | null,
 };
 
 export function SessionProvider({
@@ -90,15 +96,20 @@ export function SessionProvider({
     setState({ status: 'signedIn', session });
   }, []);
 
-  const signOut = useCallback(async () => {
-    if (live.session === null) return;
+  const signOut = useCallback((): Promise<void> => {
+    if (live.session === null) return Promise.resolve();
     // Teardown first, token still valid: the presence layer goes offline
     // and the push token is forgotten server-side. Best effort — a dead
-    // network must not keep a driver signed in.
-    await Promise.allSettled([...live.hooks].map((fn) => fn()));
-    await clearSession();
-    live.session = null;
-    setState({ status: 'signedOut', session: null });
+    // network must not keep a driver signed in. Single-flight: see `live`.
+    live.inFlight ??= (async () => {
+      await Promise.allSettled([...live.hooks].map((fn) => fn()));
+      await clearSession();
+      live.session = null;
+      setState({ status: 'signedOut', session: null });
+    })().finally(() => {
+      live.inFlight = null;
+    });
+    return live.inFlight;
   }, []);
 
   useEffect(() => {

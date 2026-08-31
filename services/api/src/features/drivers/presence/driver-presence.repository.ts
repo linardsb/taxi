@@ -16,7 +16,7 @@ export interface DueNudge {
 const languageSchema = z.enum(LANGUAGES).catch('lv');
 
 /**
- * The presence writes the SERVER makes (#14) — kept out of the 396-line
+ * The presence writes the SERVER makes (#14) — kept out of
  * `drivers.repository.ts`. Every write is a conditional UPDATE whose
  * RETURNING row is the answer, never a read-then-write (the L8 idiom): the
  * WHERE clause is what makes "was online" and "not yet claimed" race-free.
