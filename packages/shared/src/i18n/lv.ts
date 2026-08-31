@@ -236,6 +236,7 @@ export const lv = {
   'driver.error.plate_taken': 'Šī numura zīme jau ir reģistrēta.',
   'driver.error.offline': 'Nav savienojuma ar serveri.',
   'driver.error.generic': 'Kaut kas nogāja greizi. Mēģiniet vēlreiz.',
+  'driver.error.invalid_field': 'Pārbaudiet šo lauku',
   'driver.action.retry': 'Mēģināt vēlreiz',
   'driver.action.continue': 'Turpināt',
   'driver.action.save': 'Saglabāt',

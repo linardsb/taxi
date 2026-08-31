@@ -1,0 +1,4 @@
+{
+  "NSLocationWhenInUseUsageDescription": "Sakta Cab отправляет вашу геопозицию диспетчеру, пока вы онлайн.",
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "Sakta Cab продолжает отправлять вашу геопозицию диспетчеру, пока вы онлайн — даже при заблокированном экране."
+}

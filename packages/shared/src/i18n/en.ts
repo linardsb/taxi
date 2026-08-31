@@ -195,6 +195,7 @@ export const en = {
   'driver.error.plate_taken': 'This plate is already registered.',
   'driver.error.offline': 'No connection to the server.',
   'driver.error.generic': 'Something went wrong. Try again.',
+  'driver.error.invalid_field': 'Check this field',
   'driver.action.retry': 'Try again',
   'driver.action.continue': 'Continue',
   'driver.action.save': 'Save',

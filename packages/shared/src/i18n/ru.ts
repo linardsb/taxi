@@ -199,6 +199,7 @@ export const ru = {
   'driver.error.plate_taken': 'Этот номер уже зарегистрирован.',
   'driver.error.offline': 'Нет связи с сервером.',
   'driver.error.generic': 'Что-то пошло не так. Попробуйте ещё раз.',
+  'driver.error.invalid_field': 'Проверьте это поле',
   'driver.action.retry': 'Попробовать ещё раз',
   'driver.action.continue': 'Продолжить',
   'driver.action.save': 'Сохранить',
