@@ -95,12 +95,19 @@ export class DriversService {
     // A driver may toggle before ever GETting /me.
     const profile = await this.drivers.findOrCreate(userId);
 
-    // #11 owns entering and leaving `on_ride`; a driver must not step out of it
-    // by hand and take a second offer. Cheap first gate only: chain A's driver
-    // (#61) is `offline` with a live ride, which is what the rides-table check
-    // inside `setOnlineIfEligible` catches below.
-    if (profile.status === 'on_ride')
-      throw new ConflictException('driver_on_ride');
+    // #11 owns entering and leaving `on_ride`; a driver must not step out of
+    // it by hand and take a second offer — so `offline` is refused. An
+    // `online` re-assert while held (a socket reconnect or foreground refetch
+    // mid-ride) is the app repeating what the server already holds: answer
+    // with the profile and touch nothing — a 409 here made the app flip its
+    // toggle and tear the stream down mid-ride, losing the tracking page's
+    // feed (review F3). Cheap first gate only: chain A's driver (#61) is
+    // `offline` with a live ride, which is what the rides-table check inside
+    // `setOnlineIfEligible` catches below.
+    if (profile.status === 'on_ride') {
+      if (status === 'offline') throw new ConflictException('driver_on_ride');
+      return profile;
+    }
 
     const cityId = this.env.DEFAULT_CITY_ID;
     let updated: DriverProfile;

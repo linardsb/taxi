@@ -26,7 +26,7 @@ Commits on the branch: `908526c` (plan), `43391c9` (shared + db + api), `3d2e874
 - `handleLocation` returns the ack (`malformed` / `store_unavailable` / the service's); disconnect calls `markOfflineByServer` → `location/driver-location.gateway.ts` (UPDATE); 3 socket ack cases + unit updates → spec (UPDATE)
 - `setOnlineIfEligible` nulls the nudge → `drivers.repository.ts` (UPDATE)
 - `DriverPresenceRepository` (conditional UPDATEs, due-nudge read) → `presence/driver-presence.repository.ts` (CREATE)
-- `markOfflineByServer(userId, reason, nowMs)`, `markDarkDrivers`, `sendDueNudges`, `setPushToken`/`clearPushToken`; `PUSH_PROVIDER` injected → `drivers.service.ts` (UPDATE, 218 → 361 lines)
+- `markOfflineByServer(userId, reason, nowMs)`, `markDarkDrivers`, `sendDueNudges`, `setPushToken`/`clearPushToken`; `PUSH_PROVIDER` injected → `drivers.service.ts` (UPDATE, 218 → 389 lines at the round-2 fix head)
 - `DriverPresenceSweeper` + unit spec (4 cases) → `presence/driver-presence.sweeper.ts`, `.spec.ts` (CREATE)
 - `features/push/` slice: tokens, `StubPushProvider`, `ExpoPushProvider` (one `fetch`, closed-enum failure log), module + factory, barrel; 2 specs (4 + 4 cases) (CREATE)
 - `PUSH_PROVIDER`, `EXPO_PUSH_ACCESS_TOKEN` → `common/config/env.schema.ts` (UPDATE) + 3 spec cases; the env template gains both plus `EXPO_PUBLIC_API_URL` (UPDATE)
@@ -87,7 +87,7 @@ Commits on the branch: `908526c` (plan), `43391c9` (shared + db + api), `3d2e874
 - Phase 2: `pnpm turbo run typecheck lint --filter @taxi/api` — green (observed; the 11 `no-unsafe-argument` warnings are the pre-existing supertest ones).
 - Phases 3–5: `pnpm turbo run typecheck lint test --filter @taxi/driver` — green, `65 passed` (observed); `npx expo install --check` — "Dependencies are up to date" was observed BEFORE the deviation-19 TypeScript pin and inherited past it: at `2b6d19e`..`3d32d51` it exits 1 (`typescript@5.9.3 - expected version: ~6.0.3`, review F2); exit 0 again after `expo.install.exclude: ["typescript"]` (`observed`, review fix pass); `npx expo export --platform android` — one 3.3 MB Hermes bundle, exit 0 (observed: Metro resolves `@taxi/shared` and the routes).
 - AC greps (observed, both empty): `grep -rn "'[A-ZĀČ…][a-zāč… ]\{3,\}'" apps/driver/src --include='*.tsx' | grep -v test`; `grep -rn "exp.host" services/api/src | grep -v features/push`.
-- Largest shipped files (observed `wc -l`): `drivers.repository.ts` 398, `realtime-events.ts` 366, `drivers.service.ts` 361, `presence-state.ts` 354, `use-presence.tsx` 317, `lv.ts` 296 — all under the 500 cap, which `max-lines` enforces in every linted package including the driver.
+- Largest shipped files (`observed` `wc -l` at the round-2 fix head): `presence-state.ts` 459, `drivers.repository.ts` 398, `drivers.service.ts` 389, `realtime-events.ts` 366, `use-presence.tsx` 344, `lv.ts` 296 — all under the 500 cap, which `max-lines` enforces in every linted package including the driver.
 - **Full gate** (`observed`, second run, after the TypeScript pin): `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force` from cleared `dist` — `Tasks: 20 successful, 20 total`, exit 0. Per package: api `Test Suites: 72 passed, Tests: 655 passed` (0 skipped — the Redis-gated suites ran), dispatch 222, shared 208, driver 65, db 17; `@taxi/driver:lint` and `@taxi/driver:test` lines present in the output. The first run failed on `@taxi/shared#lint` (deviation 19), everything else was already green.
 - Not run: Level 4 §C/§D (see Issues).
 

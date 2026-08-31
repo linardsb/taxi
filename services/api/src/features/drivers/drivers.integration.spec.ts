@@ -401,6 +401,29 @@ describe('drivers (integration)', () => {
     expect((await d.row())!.status).toBe('on_ride');
   });
 
+  it('acks an online re-assert while on_ride with the profile — no 409, nothing touched (edge — review F3: the mid-ride reconnect)', async () => {
+    const d = await driver(35);
+    await addCar(d.auth);
+    await ctx.db
+      .update(drivers)
+      .set({ status: 'on_ride' })
+      .where(eq(drivers.userId, d.id));
+
+    // The app re-asserts `online` on every socket reconnect; while the server
+    // holds the driver `on_ride` that must be a no-op ack — a 409 flipped the
+    // toggle and tore the stream down on a Wi-Fi handover mid-ride.
+    const res = await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(200);
+
+    expect(driverProfileSchema.parse(res.body).status).toBe('on_ride');
+    expect((await d.row())!.status).toBe('on_ride');
+    // Nothing touched: the ack wrote neither store.
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+  });
+
   it('refuses to go online for an offline driver with a live accepted ride (#61 chain A — failure)', async () => {
     const d = await driver(31);
     await addCar(d.auth);

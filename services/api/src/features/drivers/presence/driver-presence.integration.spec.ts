@@ -248,7 +248,7 @@ describe('driver presence: dark detection + nudge (integration, #14)', () => {
     }
   });
 
-  it('drops a Redis member whose row is not online instead of revisiting it every tick (edge — the half-written offline)', async () => {
+  it('drops a Redis member whose row says offline instead of revisiting it every tick (edge — the half-written offline)', async () => {
     const d = await driver(8);
     const { T } = await onlineAndPinged(d);
     // A Postgres write that landed while the Redis one did not: the board

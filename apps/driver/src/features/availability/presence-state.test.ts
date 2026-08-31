@@ -92,6 +92,8 @@ describe('decide — the server disagrees', () => {
   it('ack_not_online re-asserts exactly once; a second one flips with the marked_offline banner (edge)', () => {
     const first = decide(online(), { type: 'ack_not_online', at: AT });
     expect(first.state.reasserted).toBe(true);
+    // `busy` gates the foreground refetch for the put's RTT (review F35).
+    expect(first.state.busy).toBe(true);
     expect(first.effects).toEqual([{ type: 'put_status', status: 'online' }]);
 
     // The server accepts; the uploader drains; the accepted fix clears the flag.
@@ -233,6 +235,19 @@ describe('decide — the server holds us', () => {
     expect(d.state.streaming).toBe(true);
   });
 
+  it('a reconnect mid-ride re-asserts, and the on_ride ack keeps the stream — no teardown (edge — review F3: the Wi-Fi handover on a force-assigned ride)', () => {
+    const connect = decide(online(), { type: 'socket_connect' });
+    expect(connect.effects).toEqual([{ type: 'put_status', status: 'online' }]);
+
+    // The api answers an online re-assert while held with the on_ride
+    // profile (no 409 — `setPresence` refuses only `offline` while held).
+    const answered = decide(connect.state, serverStatusEvent('on_ride', AT));
+    expect(types(answered.effects)).not.toContain('stop_stream');
+    expect(answered.state.intent).toBe('online');
+    expect(answered.state.streaming).toBe(true);
+    expect(answered.state.server).toBe('online');
+  });
+
   it('a foreground denial while the server already holds us online tells it and tears down; otherwise nothing to tell (edge)', () => {
     const pending = decide(initialPresence, { type: 'toggle_pressed' }).state;
 
@@ -263,6 +278,60 @@ describe('decide — the server holds us', () => {
   });
 });
 
+describe('decide — effect failures', () => {
+  it('a throw in the go-online chain folds to offline and tears down — no ghost toggle (failure — review F31)', () => {
+    const stuck = decide(initialPresence, { type: 'toggle_pressed' }).state;
+
+    const folded = decide(stuck, { type: 'error', code: 'effect_failed' });
+    expect(folded.state.intent).toBe('offline');
+    expect(folded.state.busy).toBe(false);
+    expect(folded.state.banner?.kind).toBe('generic');
+    // The server was never told anything, so there is nothing to un-tell.
+    expect(types(folded.effects)).toEqual([
+      'stop_stream',
+      'disconnect_socket',
+      'keep_awake',
+    ]);
+
+    // …with the server already holding us online, it is told first.
+    const held = decide(
+      { ...stuck, server: 'online' },
+      { type: 'error', code: 'effect_failed' },
+    );
+    expect(types(held.effects)).toEqual([
+      'put_status',
+      'stop_stream',
+      'disconnect_socket',
+      'keep_awake',
+    ]);
+    expect(held.effects[0]).toEqual({ type: 'put_status', status: 'offline' });
+
+    // …and a second throw with everything already down is a no-op — a
+    // throwing teardown cannot loop.
+    const again = decide(folded.state, {
+      type: 'error',
+      code: 'effect_failed',
+    });
+    expect(again.effects).toEqual([]);
+  });
+
+  it('a failed offline put keeps the «grant location» banner — generic never overwrites guidance (edge — review F34)', () => {
+    const pending = decide(initialPresence, { type: 'toggle_pressed' }).state;
+    const denied = decide(
+      { ...pending, server: 'online' },
+      { type: 'permission', result: 'foreground_denied' },
+    );
+    expect(denied.state.banner?.kind).toBe('foreground_denied');
+
+    const failed = decide(denied.state, {
+      type: 'error',
+      code: 'validation_failed',
+    });
+    expect(failed.state.banner?.kind).toBe('foreground_denied');
+    expect(failed.state.busy).toBe(false);
+  });
+});
+
 describe('runEffects', () => {
   it('runs effects in order, stops at the first throw and reports it once — and the report clears busy (failure)', async () => {
     const ran: string[] = [];
@@ -289,8 +358,34 @@ describe('runEffects', () => {
 
     const stuck = decide(initialPresence, { type: 'toggle_pressed' }).state;
     expect(stuck.busy).toBe(true);
-    const cleared = decide(stuck, { type: 'error', code: 'generic' });
+    const cleared = decide(stuck, { type: 'error', code: 'effect_failed' });
     expect(cleared.state.busy).toBe(false);
+    expect(cleared.state.intent).toBe('offline');
     expect(cleared.state.banner?.kind).toBe('generic');
+  });
+
+  it("stops when `run` answers 'stop' — a refused put must not rebuild what flipOffline tore down (failure — review F32)", async () => {
+    const ran: string[] = [];
+    const onThrow = jest.fn();
+
+    await runEffects(
+      [
+        { type: 'purge_stale_fixes' },
+        { type: 'put_status', status: 'online' },
+        { type: 'start_stream' },
+        { type: 'connect_socket' },
+        { type: 'keep_awake', on: true },
+      ],
+      (effect) => {
+        ran.push(effect.type);
+        return Promise.resolve(
+          effect.type === 'put_status' ? ('stop' as const) : undefined,
+        );
+      },
+      onThrow,
+    );
+
+    expect(ran).toEqual(['purge_stale_fixes', 'put_status']);
+    expect(onThrow).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@
 import {
   addressPointSchema,
   addressSuggestionsSchema,
+  apiErrorBodySchema,
   callerLookupSchema,
   venueEntrySchema,
   type AddressPoint,
@@ -51,14 +52,12 @@ export class ApiError extends Error {
   }
 }
 
-const errorBodySchema = z.object({
-  message: z.string().optional(),
-  retryAfterSeconds: z.number().optional(),
-});
-
 async function apiErrorOf(res: Response): Promise<ApiError> {
   try {
-    const parsed = errorBodySchema.safeParse(await res.json());
+    // The shared envelope — the same schema the api types its producers
+    // with. A looser hand-rolled twin here kept parsing a shape the api
+    // could stop sending (review F26).
+    const parsed = apiErrorBodySchema.safeParse(await res.json());
     if (parsed.success) {
       return new ApiError(
         parsed.data.message,

@@ -41,14 +41,16 @@ const fix = (n: number) => ({
 describe('SqliteFixQueue (connection contract)', () => {
   beforeEach(() => open.mockReset());
 
-  it('enqueue writes every INSERT on the opened connection, inside its own transaction — no second connection (expected)', async () => {
+  it('enqueue writes every INSERT on the opened connection, with no transaction to cross-talk with an overlapping call (expected — review F33)', async () => {
     const db = fakeDb();
     open.mockResolvedValueOnce(db);
     const { SqliteFixQueue } = load();
 
     await new SqliteFixQueue().enqueue([fix(1), fix(2)]);
 
-    expect(db.withTransactionAsync).toHaveBeenCalledTimes(1);
+    // No BEGIN/COMMIT: an overlapping enqueue's failed BEGIN rolled back the
+    // first call's INSERTs — both batches lost (review F33).
+    expect(db.withTransactionAsync).not.toHaveBeenCalled();
     const inserts = db.runAsync.mock.calls.filter(([sql]) =>
       String(sql).startsWith('INSERT INTO fixes'),
     );

@@ -135,6 +135,14 @@ function flipOffline(
   };
 }
 
+/** A `generic` banner never overwrites `foreground_denied` — that one carries instructions («grant location», review F34). */
+function keepGuidance(
+  state: PresenceState,
+  fallback: NonNullable<PresenceState['banner']>,
+): PresenceState['banner'] {
+  return state.banner?.kind === 'foreground_denied' ? state.banner : fallback;
+}
+
 /**
  * The whole online/offline policy as a pure reducer — D14 (recovery after a
  * kill), the one-re-assert rule, the drain-before-offline order and the
@@ -280,8 +288,11 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
     case 'ack_not_online': {
       if (state.intent !== 'online') return noop(state);
       if (!state.reasserted) {
+        // `busy` for the put's RTT: a foreground refetch inside that window
+        // read `offline`, saw `reasserted: true` and flipped while the
+        // re-assert was about to succeed (review F35).
         return {
-          state: { ...state, server: 'offline', reasserted: true },
+          state: { ...state, server: 'offline', reasserted: true, busy: true },
           effects: [{ type: 'put_status', status: 'online' }],
         };
       }
@@ -307,8 +318,43 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
         // No answer: the pill tells the story, and the reconnect re-asserts.
         return { state: { ...state, busy: false }, effects: [] };
       }
+      if (event.code === 'effect_failed') {
+        // A native call in a chain threw (SecureStore, permissions,
+        // keep-awake): the chain is half-done, so fold to offline — the one
+        // state that is safe to be wrong in. Leaving `intent: 'online'` was a
+        // ghost toggle: ON with no permissions and no stream, then a spurious
+        // offline nudge (review F31). No `persist_intent` here: a throwing
+        // store would re-enter this branch. With everything already down this
+        // is a no-op, so a throw inside the teardown below cannot loop.
+        const anythingUp =
+          state.intent === 'online' ||
+          state.streaming ||
+          state.server === 'online';
+        return {
+          state: {
+            ...state,
+            intent: 'offline',
+            streaming: false,
+            busy: false,
+            reasserted: false,
+            banner: keepGuidance(state, { kind: 'generic' }),
+          },
+          effects: anythingUp
+            ? [
+                ...(state.server === 'online'
+                  ? [{ type: 'put_status', status: 'offline' } as const]
+                  : []),
+                ...TEAR_DOWN,
+              ]
+            : [],
+        };
+      }
       return {
-        state: { ...state, busy: false, banner: { kind: 'generic' } },
+        state: {
+          ...state,
+          busy: false,
+          banner: keepGuidance(state, { kind: 'generic' }),
+        },
         effects: [],
       };
     }
@@ -352,9 +398,10 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
 /**
  * The server's stated status as a reducer event. `on_ride` is the server
  * HOLDING us — the stream feeds the tracking page and the board — so it reads
- * as online. Reading it as `server_offline` made the app re-assert on every
- * foreground refetch and socket reconnect, take the 409 `driver_on_ride`, and
- * tear the stream down mid-ride.
+ * as online. The api answers a mid-ride `PUT online` re-assert with the
+ * `on_ride` profile (only `offline` 409s while held — `setPresence`, review
+ * F3), so a foreground refetch or a socket reconnect during a force-assigned
+ * ride keeps the stream up instead of flipping the toggle.
  */
 export function serverStatusEvent(
   status: DriverStatus,
@@ -369,16 +416,19 @@ export function serverStatusEvent(
  * Runs a decision's effects in order, one at a time. A throw ends the chain
  * and is reported ONCE through `onThrow` — uncaught, a SecureStore or
  * permission failure left `busy` set with nothing to clear it and every
- * toggle press ignored.
+ * toggle press ignored. `run` may answer `'stop'`: the effect's own answer
+ * already decided against the rest of the chain (a refused `put_status`,
+ * whose `flipOffline` tore down inside the dispatch), and carrying on would
+ * rebuild what was just torn down (review F32).
  */
 export async function runEffects(
   effects: Effect[],
-  run: (effect: Effect) => Promise<void>,
+  run: (effect: Effect) => Promise<void | 'stop'>,
   onThrow: (error: unknown) => void,
 ): Promise<void> {
   for (const effect of effects) {
     try {
-      await run(effect);
+      if ((await run(effect)) === 'stop') return;
     } catch (error) {
       onThrow(error);
       return;

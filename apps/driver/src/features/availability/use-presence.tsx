@@ -78,7 +78,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   const socketRef = useRef<DriverSocket | null>(null);
   const runtime = getLocationRuntime();
-  const runRef = useRef<(effect: Effect) => Promise<void>>(() =>
+  const runRef = useRef<(effect: Effect) => Promise<void | 'stop'>>(() =>
     Promise.resolve(),
   );
 
@@ -92,7 +92,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     void runEffects(
       effects,
       (effect) => runRef.current(effect),
-      () => dispatch({ type: 'error', code: 'generic' }),
+      () => dispatch({ type: 'error', code: 'effect_failed' }),
     );
   }, []);
 
@@ -105,7 +105,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
 
   // Only ever invoked from `dispatch`, never in render; re-bound below,
   // after every render, so it sees the current session, api and callbacks.
-  const run = async (effect: Effect): Promise<void> => {
+  const run = async (effect: Effect): Promise<void | 'stop'> => {
     switch (effect.type) {
       case 'persist_intent':
         await writeIntent(effect.intent);
@@ -132,7 +132,14 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
             code: e instanceof ApiError ? e.code : 'generic',
           });
         }
-        return;
+        // A refused online put flipped the toggle (`flipOffline` tore down
+        // inside the dispatch above): stop the chain, or its
+        // `start_stream`/`connect_socket` rebuild what was just torn down in
+        // a race the last native call wins (review F32).
+        return effect.status === 'online' &&
+          stateRef.current.intent !== 'online'
+          ? 'stop'
+          : undefined;
       case 'start_stream':
         try {
           await startStreaming(tRef.current);

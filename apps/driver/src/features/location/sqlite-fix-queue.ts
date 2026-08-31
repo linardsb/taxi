@@ -49,17 +49,21 @@ function db(): Promise<SQLite.SQLiteDatabase> {
 export class SqliteFixQueue implements FixQueue {
   async enqueue(fixes: NewFix[]): Promise<void> {
     const conn = await db();
-    await conn.withTransactionAsync(async () => {
-      for (const fix of fixes) {
-        await conn.runAsync(
-          'INSERT INTO fixes (at, lat, lng, heading) VALUES (?, ?, ?, ?)',
-          fix.at,
-          fix.lat,
-          fix.lng,
-          fix.heading,
-        );
-      }
-    });
+    // A plain loop, no BEGIN/COMMIT: `enqueue` was the only transaction
+    // opener on the shared connection, and two overlapping calls (TaskManager
+    // re-invoking during a stalled batch) failed the second BEGIN, whose
+    // ROLLBACK discarded the FIRST call's INSERTs (review F33). Batches are
+    // 1–2 rows and every INSERT stands alone — nothing here needs
+    // cross-statement atomicity.
+    for (const fix of fixes) {
+      await conn.runAsync(
+        'INSERT INTO fixes (at, lat, lng, heading) VALUES (?, ?, ?, ?)',
+        fix.at,
+        fix.lat,
+        fix.lng,
+        fix.heading,
+      );
+    }
     if ((await this.count()) > MAX_QUEUED_FIXES)
       await this.prune(MAX_QUEUED_FIXES);
   }

@@ -1,5 +1,11 @@
 import { useEffect } from 'react';
-import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { colors, fontSize, radius, spacing } from '@taxi/shared';
 import { Button } from './Button';
 
@@ -22,12 +28,16 @@ export interface BannerProps {
 
 /**
  * A state change the driver should hear, with at most one thing to do about
- * it. `accessibilityLiveRegion` is Android-only, so the text is also
- * announced outright — that is what VoiceOver hears.
+ * it. `accessibilityLiveRegion` is Android-only, so on iOS the text is
+ * announced outright — that is what VoiceOver hears. The announce is
+ * iOS-only in turn: on Android both firing read every fresh banner twice
+ * under TalkBack (review F28).
  */
 export function Banner({ tone, text, action, secondary, testID }: BannerProps) {
   useEffect(() => {
-    AccessibilityInfo.announceForAccessibility(text);
+    if (Platform.OS === 'ios') {
+      AccessibilityInfo.announceForAccessibility(text);
+    }
   }, [text]);
   return (
     <View
