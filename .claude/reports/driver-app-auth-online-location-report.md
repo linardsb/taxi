@@ -55,7 +55,7 @@ Commits on the branch: `908526c` (plan), `43391c9` (shared + db + api), `3d2e874
 
 **Phase 6 — docs**
 - `.claude/references/realtime-events.md` (the `driver:location` row: time throttle, the ack, dark detection; the `driver:queue` row → #15; the "one acknowledgement" sentence) (UPDATE)
-- `docs/epics/mvp-traceability.md` #14 row → built, PR pending, field drives owed (UPDATE)
+- `docs/epics/mvp-traceability.md` #14 row → built (PR #139), field drives owed (UPDATE)
 - `.claude/references/ui-decisions.md` — four `2026-08-31 · driver` lines (UPDATE)
 - `docs/runbooks/hetzner-deploy.md` — **not edited** (Q6: the file is #13's uncommitted work and does not exist on `main`); the two rows are in "Handoff to #13" below
 
