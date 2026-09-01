@@ -91,6 +91,10 @@ jest.mock('./intent-store', () => ({
 
 const keepAwake =
   jest.requireMock<typeof import('expo-keep-awake')>('expo-keep-awake');
+const writeIntent = jest.mocked(
+  jest.requireMock<typeof import('./intent-store')>('./intent-store')
+    .writeIntent,
+);
 
 let ctx: PresenceContextValue | null = null;
 /** Hands the context out through an effect — never a render-time write. */
@@ -183,6 +187,43 @@ describe('PresenceProvider — the effect runner', () => {
         ),
       SETTLE,
     );
+  });
+
+  it('a throwing socket teardown still persists the offline intent — the fold ends with it (failure — review F37/F44)', async () => {
+    mockRequest.mockResolvedValue({ status: 'online' });
+    await mount();
+    await act(async () => {
+      ctx!.toggle();
+    });
+    await waitFor(
+      () => expect(keepAwake.activateKeepAwakeAsync).toHaveBeenCalledTimes(1),
+      SETTLE,
+    );
+
+    // Online, socket up, server holding us. Now the drain throws — and so
+    // does the socket teardown the fold reaches afterwards.
+    const socket = mockCreateDriverSocket.mock.results[0].value;
+    socket.removeAllListeners.mockImplementation(() => {
+      throw new Error('socket already gone');
+    });
+    mockRuntime.uploader.whenIdle.mockRejectedValueOnce(
+      new Error('uploader died'),
+    );
+    mockRequest.mockResolvedValue({ status: 'offline' });
+    // One write so far, the toggle's `persist_intent online`.
+    expect(writeIntent.mock.calls).toEqual([['online']]);
+
+    await act(async () => {
+      ctx!.toggle();
+    });
+
+    // `persist_intent offline` is LAST in the fold, so an unwrapped throw in
+    // `disconnect_socket` skipped it — leaving the store on the toggle's own
+    // write only. Three = online, the toggle's offline, then the FOLD's,
+    // which is the one the wrap buys.
+    await waitFor(() => expect(writeIntent).toHaveBeenCalledTimes(3), SETTLE);
+    expect(writeIntent).toHaveBeenLastCalledWith('offline');
+    expect(ctx!.state.intent).toBe('offline');
   });
 
   it('a refused online put stops the chain before it rebuilds what the flip tore down (failure — review F32)', async () => {
