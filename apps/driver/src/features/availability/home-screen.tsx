@@ -7,7 +7,7 @@ import { useT, type T } from '@/features/i18n';
 import { useMe } from '@/features/onboarding';
 import { EarningsCard } from './earnings-card';
 import { pillFrom, type Connection } from './presence-pill';
-import { type PresenceState } from './presence-state';
+import type { PresenceState } from './presence-state';
 import { usePresence } from './use-presence';
 
 const PILL_KEY: Record<Connection, MessageKey> = {

@@ -147,6 +147,7 @@ describe('decide — going offline and cold launch', () => {
     const drained = decide(d.state, { type: 'drained' });
     expect(types(drained.effects)).toEqual([
       'put_status',
+      'stop_uploader',
       'stop_stream',
       'disconnect_socket',
       'keep_awake',
@@ -263,6 +264,84 @@ describe('decide — the server holds us', () => {
     });
     expect(types(quiet.effects)).toEqual(['persist_intent']);
     expect(quiet.state.busy).toBe(false);
+  });
+
+  it('a refused offline put while streaming holds us online: no teardown, no lie about the server (failure — #141/F38)', () => {
+    const pressed = decide(online(), { type: 'toggle_pressed' });
+    const drained = decide(pressed.state, { type: 'drained' });
+    // The stop and the teardown both queue BEHIND the put. That ordering is
+    // the fix: the chain skips everything after an answer that disagrees.
+    expect(types(drained.effects)).toEqual([
+      'put_status',
+      'stop_uploader',
+      'stop_stream',
+      'disconnect_socket',
+      'keep_awake',
+    ]);
+
+    const held = decide(drained.state, {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    expect(held.state.intent).toBe('online');
+    expect(held.state.server).toBe('online');
+    expect(held.state.streaming).toBe(true);
+    expect(held.state.busy).toBe(false);
+    expect(held.state.banner?.kind).toBe('driver_on_ride');
+    // `toEqual` on the whole list, not `not.toContain('stop_stream')`: only
+    // the whole list proves nothing at all was torn down.
+    expect(types(held.effects)).toEqual(['persist_intent', 'kick_uploader']);
+    expect(held.effects[0]).toEqual({
+      type: 'persist_intent',
+      intent: 'online',
+    });
+  });
+
+  it('the same refusal with no stream still flips offline: we cannot prove life (edge)', () => {
+    const d = decide(online({ streaming: false, busy: true }), {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    expect(d.state.intent).toBe('offline');
+    expect(types(d.effects)).toContain('stop_stream');
+  });
+
+  it('a network failure on the offline put leaves intent offline and emits nothing — the chain, not the reducer, does the teardown (edge)', () => {
+    const pressed = decide(online(), { type: 'toggle_pressed' });
+    const drained = decide(pressed.state, { type: 'drained' });
+
+    const failed = decide(drained.state, {
+      type: 'error',
+      code: 'offline',
+      status: 'offline',
+    });
+    expect(failed.state.busy).toBe(false);
+    expect(failed.state.intent).toBe('offline');
+    // This does NOT prove the teardown runs — the reducer emits nothing here.
+    // The teardown is the outer chain carrying on past the `'stop'`
+    // predicate, which `use-presence.test.tsx` owns. All this pins is the
+    // value that predicate reads.
+    expect(failed.effects).toEqual([]);
+  });
+
+  it('a half-torn-down app is NOT restored: the effect_failed fold has no stream to offer (failure — the F31 guard)', () => {
+    const fold = decide(online(), { type: 'error', code: 'effect_failed' });
+    // The fold emits the offline put off the PRE-fold `server: 'online'`…
+    expect(fold.effects[0]).toEqual({ type: 'put_status', status: 'offline' });
+    // …while folding `streaming` false, so the 409 answering that put lands
+    // on a state with nothing streaming.
+    expect(fold.state.streaming).toBe(false);
+
+    const refused = decide(fold.state, {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    // The fallback, not the held branch: restoring `intent: 'online'` over a
+    // half-torn-down app is review F31's ghost toggle.
+    expect(refused.state.intent).toBe('offline');
   });
 });
 

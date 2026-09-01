@@ -95,6 +95,23 @@ const writeIntent = jest.mocked(
   jest.requireMock<typeof import('./intent-store')>('./intent-store')
     .writeIntent,
 );
+const stopStreaming = jest.mocked(
+  jest.requireMock<typeof import('@/features/location')>('@/features/location')
+    .stopStreaming,
+);
+
+/**
+ * The go-online half must SUCCEED before the offline put is refused —
+ * `streaming: true` is the held branch's whole guard — so the api mock
+ * branches on the body. A blanket rejection fails the ONLINE put and neither
+ * case below reaches the state it is testing.
+ */
+const refuseOfflinePutWith =
+  (error: ApiError) =>
+  (_method: string, _path: string, opts: { body: { status: string } }) =>
+    opts.body.status === 'online'
+      ? Promise.resolve({ status: 'online' })
+      : Promise.reject(error);
 
 let ctx: PresenceContextValue | null = null;
 /** Hands the context out through an effect — never a render-time write. */
@@ -243,6 +260,57 @@ describe('PresenceProvider — the effect runner', () => {
     // last native call would win the race.
     expect(mockStartStreaming).not.toHaveBeenCalled();
     expect(mockCreateDriverSocket).not.toHaveBeenCalled();
+    expect(ctx!.state.intent).toBe('offline');
+  });
+
+  it('a refused offline put mid-ride stops the chain: the location task is never stopped (failure — #141/F38)', async () => {
+    mockRequest.mockImplementation(
+      refuseOfflinePutWith(new ApiError(409, 'driver_on_ride')),
+    );
+    await mount();
+
+    await act(async () => {
+      ctx!.toggle();
+    });
+    await waitFor(() => expect(ctx!.state.intent).toBe('online'), SETTLE);
+
+    await act(async () => {
+      ctx!.toggle();
+    });
+
+    await waitFor(
+      () => expect(ctx!.state.banner?.kind).toBe('driver_on_ride'),
+      SETTLE,
+    );
+    // The server is holding us, so the tap did nothing except say why.
+    expect(ctx!.state.intent).toBe('online');
+    expect(ctx!.state.streaming).toBe(true);
+    // …and the chain stopped at the refusal: the stream the passenger's
+    // tracking page and Dina's board read is still up, still uploading.
+    expect(stopStreaming).not.toHaveBeenCalled();
+    expect(mockRuntime.uploader.stop).not.toHaveBeenCalled();
+  });
+
+  it('an offline put that fails on the network still tears down (edge — the ordinary go-offline path)', async () => {
+    mockRequest.mockImplementation(
+      refuseOfflinePutWith(new ApiError(0, 'offline')),
+    );
+    await mount();
+
+    await act(async () => {
+      ctx!.toggle();
+    });
+    await waitFor(() => expect(ctx!.state.intent).toBe('online'), SETTLE);
+
+    await act(async () => {
+      ctx!.toggle();
+    });
+
+    // Intent stayed `offline`, so the chain carries on past the put and the
+    // teardown it now queues behind runs. Only the chain can show this: the
+    // reducer's `error/offline` branch emits no effects at all.
+    await waitFor(() => expect(stopStreaming).toHaveBeenCalledTimes(1), SETTLE);
+    expect(mockRuntime.uploader.stop).toHaveBeenCalledTimes(1);
     expect(ctx!.state.intent).toBe('offline');
   });
 });

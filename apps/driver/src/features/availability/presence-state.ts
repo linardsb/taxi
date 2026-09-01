@@ -58,7 +58,10 @@ export type PresenceEvent =
   | { type: 'permission'; result: PermissionResult }
   | { type: 'server_online' }
   | { type: 'server_offline'; at: string }
-  | { type: 'error'; code: string }
+  // `status` is the `put_status` this refusal answers, when it was one.
+  // The reducer must not infer it from state: `driver_on_ride` is thrown
+  // by `vehicles.service.ts:90` too, on a path no put started.
+  | { type: 'error'; code: string; status?: Intent }
   | { type: 'drained' }
   | { type: 'ack_not_online'; at: string }
   | { type: 'socket_connect' }
@@ -80,6 +83,7 @@ export type Effect =
   | { type: 'disconnect_socket' }
   | { type: 'keep_awake'; on: boolean }
   | { type: 'kick_uploader' }
+  | { type: 'stop_uploader' }
   | { type: 'purge_stale_fixes' }
   | { type: 'show_battery_prompt' }
   | { type: 'drain_then_clear' }
@@ -205,7 +209,8 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
         };
       }
       // Drain first (≤5 s, best effort), THEN tell the server — or every
-      // queued fix comes back `not_online`.
+      // queued fix comes back `not_online`. Nothing after that put is
+      // committed before its answer: see `drained` (#141).
       return {
         state: { ...state, intent: 'offline', busy: true },
         effects: [
@@ -308,13 +313,61 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
 
     case 'drained': {
       if (state.intent !== 'offline') return noop(state);
+      // Everything after the put is conditional on its ANSWER — the
+      // uploader stop and the teardown both queue behind it, so a refusal
+      // that holds us online skips both and the stream survives. The
+      // chain's `'stop'` predicate in `use-presence` is what skips them
+      // (#141/F38).
       return {
         state,
-        effects: [{ type: 'put_status', status: 'offline' }, ...TEAR_DOWN],
+        effects: [
+          { type: 'put_status', status: 'offline' },
+          { type: 'stop_uploader' },
+          ...TEAR_DOWN,
+        ],
       };
     }
 
     case 'error': {
+      if (
+        event.code === 'driver_on_ride' &&
+        event.status === 'offline' &&
+        state.streaming
+      ) {
+        // The server refused the OFFLINE put because it holds us on a ride,
+        // and we can still prove life — so the tap did nothing except say why
+        // (#141/F38). No teardown: the tracking page and the board keep the
+        // feed, and `releaseFromRide` does not hand a silent driver back to
+        // the swept population with a push nudge. `server: 'online'` is
+        // honest — `serverStatusEvent` already maps `on_ride` to online.
+        // `persist_intent online` undoes `toggle_pressed`'s write, or a cold
+        // launch reads a false «marked offline». `kick_uploader` closes the
+        // ≤4 s gap when the pre-put drain ended early (empty queue,
+        // `!socket`, `not_online`): a restart of an un-stopped uploader,
+        // never a kick over a `stop()` — the stop sits behind the put.
+        //
+        // `state.streaming` is the whole guard, not padding. Two routes reach
+        // here with no stream: the `effect_failed` fold below (it emits the
+        // offline put off the PRE-fold `server`, then sets `streaming:
+        // false`) and `permission/foreground_denied` with the server already
+        // online. Restoring `intent: 'online'` on either rebuilds review
+        // F31's ghost toggle. Falling through writes `server: 'offline'`
+        // while the server holds `on_ride` — deliberate: with no stream we
+        // cannot prove life, and offline is the safe wrong.
+        return {
+          state: {
+            ...state,
+            intent: 'online',
+            server: 'online',
+            busy: false,
+            banner: { kind: 'driver_on_ride' },
+          },
+          effects: [
+            { type: 'persist_intent', intent: 'online' },
+            { type: 'kick_uploader' },
+          ],
+        };
+      }
       if (
         event.code === 'vehicle_required' ||
         event.code === 'driver_on_ride'
