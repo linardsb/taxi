@@ -401,13 +401,25 @@ describe('drivers (integration)', () => {
     expect((await d.row())!.status).toBe('on_ride');
   });
 
-  it('acks an online re-assert while on_ride with the profile — no 409, nothing touched (edge — review F3: the mid-ride reconnect)', async () => {
+  it('acks an online re-assert while on_ride with the profile — no 409, the row and the presence member both survive (edge — review F3: the mid-ride reconnect)', async () => {
     const d = await driver(35);
     await addCar(d.auth);
+    // Presence built through the real route, not a fixture: an `on_ride`
+    // driver in steady state IS a member of the online set (`claimForRide`
+    // leaves them there), and that is the state the re-assert must not
+    // disturb. Asserting on a driver who was never online restates a
+    // pre-existing `false` and passes for an implementation that clears
+    // presence, or never runs (review F39).
+    await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(200);
     await ctx.db
       .update(drivers)
       .set({ status: 'on_ride' })
       .where(eq(drivers.userId, d.id));
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
 
     // The app re-asserts `online` on every socket reconnect; while the server
     // holds the driver `on_ride` that must be a no-op ack — a 409 flipped the
@@ -419,9 +431,41 @@ describe('drivers (integration)', () => {
       .expect(200);
 
     expect(driverProfileSchema.parse(res.body).status).toBe('on_ride');
+    // The row is #11's; the ack must not write it.
     expect((await d.row())!.status).toBe('on_ride');
-    // Nothing touched: the ack wrote neither store.
+    // …and ingest gates on this member, so losing it here would refuse every
+    // fix for the rest of the ride.
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
+  });
+
+  it('re-seeds a presence member that went missing mid-ride instead of acking a 200 it cannot honour (failure — review F43)', async () => {
+    const d = await driver(36);
+    await addCar(d.auth);
+    await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(200);
+    await ctx.db
+      .update(drivers)
+      .set({ status: 'on_ride' })
+      .where(eq(drivers.userId, d.id));
+    // Redis restarted, or the go-online `markOnline` failed before a
+    // force-assign: the row holds the driver, the set does not.
+    await ctx.locations.markOffline(cityId, d.id);
     expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+
+    await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(200);
+
+    // Without this the app's one re-assert is spent on a 200 that changes
+    // nothing, the next fix is refused `not_online` again, and the app takes
+    // itself offline while the server still holds it `on_ride`.
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
+    expect((await d.row())!.status).toBe('on_ride');
   });
 
   it('refuses to go online for an offline driver with a live accepted ride (#61 chain A — failure)', async () => {

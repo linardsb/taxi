@@ -96,6 +96,39 @@ describe('booking-api transport', () => {
     await expect(resolvePlace('gone', 'session-1')).resolves.toBeNull();
   });
 
+  it("carries a 429's retryAfterSeconds off the wire rather than assuming a window (edge — review F26/F48d)", async () => {
+    // `RIDE_REQUEST_WINDOW_SECONDS` is 600: a hardcoded 60 would tell a
+    // throttled dispatcher to retry ten times too early.
+    vi.stubGlobal(
+      'fetch',
+      respond(
+        JSON.stringify({ message: 'too_many_requests', retryAfterSeconds: 600 }),
+        { status: 429 },
+      ),
+    );
+
+    await expect(resolvePlace('p1', 'session-1')).rejects.toMatchObject({
+      code: 'too_many_requests',
+      retryAfterSeconds: 600,
+    });
+  });
+
+  it('falls back to a code-less ApiError when the envelope does not parse (failure — review F26/F48d)', async () => {
+    // The shared schema requires `message: string`; anything else is a
+    // contract the api is not sending, and guessing at it is how the looser
+    // hand-rolled twin kept working against a shape that had moved.
+    vi.stubGlobal(
+      'fetch',
+      respond(JSON.stringify({ message: ['a', 'b'] }), { status: 500 }),
+    );
+
+    await expect(resolvePlace('p1', 'session-1')).rejects.toMatchObject({
+      name: 'ApiError',
+      code: undefined,
+      retryAfterSeconds: null,
+    });
+  });
+
   it('rejects a resolve whose address is empty (failure — H3)', async () => {
     // The shared `addressPointSchema` carries `address: z.string().min(1)` and
     // lat/lng bounds; the hand-written console twin it replaced had neither, so

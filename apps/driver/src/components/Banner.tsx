@@ -30,8 +30,14 @@ export interface BannerProps {
  * A state change the driver should hear, with at most one thing to do about
  * it. `accessibilityLiveRegion` is Android-only, so on iOS the text is
  * announced outright — that is what VoiceOver hears. The announce is
- * iOS-only in turn: on Android both firing read every fresh banner twice
- * under TalkBack (review F28).
+ * iOS-only in turn: on Android both firing should read every fresh banner
+ * twice under TalkBack (review F28).
+ *
+ * `expected`, NOT observed: no Android device has run this, and the test
+ * below only pins that the announce is absent, not that TalkBack speaks. It
+ * rests on the live region firing for a freshly MOUNTED view rather than
+ * only for a content change — if that is wrong, Android has no announcement
+ * at all. Plan §C.12 owes the TalkBack pass (review F47).
  */
 export function Banner({ tone, text, action, secondary, testID }: BannerProps) {
   useEffect(() => {

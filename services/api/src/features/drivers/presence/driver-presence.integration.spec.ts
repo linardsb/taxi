@@ -305,6 +305,40 @@ describe('driver presence: dark detection + nudge (integration, #14)', () => {
       await ctx.locations.markOffline(cityId, d.id);
     }
   });
+
+  it('a mid-ride online re-assert keeps fixes flowing — the reason F3 answers 200 (expected — review F39)', async () => {
+    const d = await driver(10);
+    const { socket } = await onlineAndPinged(d);
+    await ctx.db
+      .update(drivers)
+      .set({ status: 'on_ride' })
+      .where(eq(drivers.userId, d.id));
+
+    try {
+      // The Wi-Fi handover: on reconnect the app re-asserts `online`. F3 made
+      // this a 200 instead of a 409 so the toggle would not flip.
+      await d.setStatus('online');
+
+      // …but the 200 only earns its keep if fixes still land. Ingest gates on
+      // Redis set membership, so this ack is the property — nothing else in
+      // the suite pins it, and the 200 alone would pass while the stream was
+      // dead.
+      const ack: unknown = await socket
+        .timeout(1000)
+        .emitWithAck(RT.driverLocation, {
+          location: RIGA,
+          at: new Date().toISOString(),
+        });
+      expect(ack).toEqual({ accepted: true });
+      expect((await d.row()).status).toBe('on_ride');
+    } finally {
+      await ctx.db
+        .update(drivers)
+        .set({ status: 'offline' })
+        .where(eq(drivers.userId, d.id));
+      await ctx.locations.markOffline(cityId, d.id);
+    }
+  });
 });
 
 /** Polls `check` up to `timeoutMs`; the disconnect handler is async relative to close. */

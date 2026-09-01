@@ -52,9 +52,10 @@ export class SqliteFixQueue implements FixQueue {
     // A plain loop, no BEGIN/COMMIT: `enqueue` was the only transaction
     // opener on the shared connection, and two overlapping calls (TaskManager
     // re-invoking during a stalled batch) failed the second BEGIN, whose
-    // ROLLBACK discarded the FIRST call's INSERTs (review F33). Batches are
-    // 1–2 rows and every INSERT stands alone — nothing here needs
-    // cross-statement atomicity.
+    // ROLLBACK discarded the FIRST call's INSERTs (review F33). Whatever the
+    // OS delivers in one callback, every INSERT stands alone — nothing here
+    // needs cross-statement atomicity, so a throw loses only the un-inserted
+    // tail (review F46).
     for (const fix of fixes) {
       await conn.runAsync(
         'INSERT INTO fixes (at, lat, lng, heading) VALUES (?, ?, ?, ?)',

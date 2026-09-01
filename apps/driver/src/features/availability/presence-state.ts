@@ -135,12 +135,21 @@ function flipOffline(
   };
 }
 
-/** A `generic` banner never overwrites `foreground_denied` — that one carries instructions («grant location», review F34). */
+/**
+ * A `generic` banner never overwrites a permission banner — those carry
+ * instructions («grant location», review F34). `background_denied` is on the
+ * list too: it is the banner that is up while the driver is *online*, i.e.
+ * during the window when generic errors actually arrive (review F42).
+ */
+const GUIDANCE_KINDS: BannerKind[] = ['foreground_denied', 'background_denied'];
+
 function keepGuidance(
   state: PresenceState,
   fallback: NonNullable<PresenceState['banner']>,
 ): PresenceState['banner'] {
-  return state.banner?.kind === 'foreground_denied' ? state.banner : fallback;
+  return state.banner && GUIDANCE_KINDS.includes(state.banner.kind)
+    ? state.banner
+    : fallback;
 }
 
 /**
@@ -323,9 +332,19 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
         // keep-awake): the chain is half-done, so fold to offline — the one
         // state that is safe to be wrong in. Leaving `intent: 'online'` was a
         // ghost toggle: ON with no permissions and no stream, then a spurious
-        // offline nudge (review F31). No `persist_intent` here: a throwing
-        // store would re-enter this branch. With everything already down this
-        // is a no-op, so a throw inside the teardown below cannot loop.
+        // offline nudge (review F31).
+        //
+        // The fold clears `server` as well as `intent`/`streaming`, so a
+        // throw inside the teardown below re-enters here with
+        // `anythingUp === false` and emits nothing. That is what closes the
+        // loop — the state does, not the network recovering. Without it the
+        // `server === 'online'` case re-emitted an identical list on every
+        // pass for as long as the offline PUT could not land (review F37).
+        // `persist_intent` goes LAST for the same reason: a throwing store
+        // cannot block the teardown, and its throw lands on that empty second
+        // pass. Omitting it left SecureStore saying `'online'`, which a later
+        // cold launch reads as «marked offline» stamped with the launch time
+        // (review F44).
         const anythingUp =
           state.intent === 'online' ||
           state.streaming ||
@@ -335,6 +354,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
             ...state,
             intent: 'offline',
             streaming: false,
+            server: null,
             busy: false,
             reasserted: false,
             banner: keepGuidance(state, { kind: 'generic' }),
@@ -345,6 +365,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
                   ? [{ type: 'put_status', status: 'offline' } as const]
                   : []),
                 ...TEAR_DOWN,
+                { type: 'persist_intent', intent: 'offline' },
               ]
             : [],
         };

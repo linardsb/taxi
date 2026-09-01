@@ -94,22 +94,36 @@ export class DriversService {
   ): Promise<DriverProfile> {
     // A driver may toggle before ever GETting /me.
     const profile = await this.drivers.findOrCreate(userId);
+    const cityId = this.env.DEFAULT_CITY_ID;
 
     // #11 owns entering and leaving `on_ride`; a driver must not step out of
     // it by hand and take a second offer — so `offline` is refused. An
     // `online` re-assert while held (a socket reconnect or foreground refetch
     // mid-ride) is the app repeating what the server already holds: answer
-    // with the profile and touch nothing — a 409 here made the app flip its
-    // toggle and tear the stream down mid-ride, losing the tracking page's
-    // feed (review F3). Cheap first gate only: chain A's driver (#61) is
-    // `offline` with a live ride, which is what the rides-table check inside
-    // `setOnlineIfEligible` catches below.
+    // with the profile and leave the ROW alone — a 409 here made the app flip
+    // its toggle and tear the stream down mid-ride, losing the tracking
+    // page's feed (review F3). Cheap first gate only: chain A's driver (#61)
+    // is `offline` with a live ride, which is what the rides-table check
+    // inside `setOnlineIfEligible` catches below.
     if (profile.status === 'on_ride') {
+      // Still live on the OFFLINE path, in the present tense: the app commits
+      // its teardown before this answer arrives, so a driver who taps the
+      // toggle off mid-ride stops streaming and then reads the refusal. Issue
+      // #141 (review F38) — a reducer change, not this one's.
       if (status === 'offline') throw new ConflictException('driver_on_ride');
+      // Re-seed the Redis member the 200 implies, so "proof of life is an
+      // accepted fix OR a `PUT status online` re-assert" holds with no case
+      // split. Ingest gates on set membership (the `RECORD` script's
+      // `SISMEMBER`), so a driver whose member went missing — Redis
+      // restarted, or the go-online `markOnline` failed before a force-assign
+      // — was acked 200 and then had every fix refused `not_online`, spent
+      // its one re-assert and took itself offline while the server held it.
+      // Idempotent, and it cannot make them dispatchable: `candidate-filter`
+      // gates on the Postgres status, which stays `on_ride` (review F43).
+      await this.locations.markOnline(cityId, userId, Date.now());
       return profile;
     }
 
-    const cityId = this.env.DEFAULT_CITY_ID;
     let updated: DriverProfile;
 
     if (status === 'online') {
@@ -199,9 +213,10 @@ export class DriversService {
       // The read said `online`; the conditional UPDATE found otherwise. A
       // claim (`on_ride`) or a toggle landed between the two, and Redis
       // presence is already dropped. For a toggle that is where it belongs;
-      // for a claim it would strand the ride's position feed — nothing else
-      // re-adds it (`setPresence` is 409 on `on_ride`, `releaseFromRide`
-      // never touches Redis) — so it is put back.
+      // for a claim it would strand the ride's position feed. The only other
+      // writer is the app's own `online` re-assert (`setPresence`'s `on_ride`
+      // branch, review F43), which rides on a reconnect and may never come —
+      // `releaseFromRide` never touches Redis — so it is put back here.
       const now = (await this.drivers.find(userId))?.status;
       const presenceRestored = now === 'on_ride';
       if (presenceRestored) {

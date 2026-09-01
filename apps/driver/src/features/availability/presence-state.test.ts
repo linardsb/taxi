@@ -99,12 +99,15 @@ describe('decide — the server disagrees', () => {
     // The server accepts; the uploader drains; the accepted fix clears the flag.
     const back = decide(first.state, { type: 'server_online' });
     expect(types(back.effects)).toEqual(['kick_uploader', 'announce']);
+    // …and the gate comes back down, or the toggle stays stuck spinning.
+    expect(back.state.busy).toBe(false);
     const acked = decide(back.state, { type: 'ack', at: 1, queued: 0 });
     expect(acked.state.reasserted).toBe(false);
 
     // …but with no fix in between, the second refusal wins.
     const second = decide(first.state, { type: 'ack_not_online', at: AT });
     expect(second.state.intent).toBe('offline');
+    expect(second.state.busy).toBe(false);
     expect(second.state.banner).toEqual({ kind: 'marked_offline', at: AT });
     expect(types(second.effects)).toContain('persist_marked_offline');
     expect(types(second.effects)).toContain('stop_stream');
@@ -287,11 +290,18 @@ describe('decide — effect failures', () => {
     expect(folded.state.busy).toBe(false);
     expect(folded.state.banner?.kind).toBe('generic');
     // The server was never told anything, so there is nothing to un-tell.
+    // `persist_intent` comes LAST, so a throwing store cannot block the
+    // teardown, and SecureStore does not keep saying «online» (review F44).
     expect(types(folded.effects)).toEqual([
       'stop_stream',
       'disconnect_socket',
       'keep_awake',
+      'persist_intent',
     ]);
+    expect(folded.effects.at(-1)).toEqual({
+      type: 'persist_intent',
+      intent: 'offline',
+    });
 
     // …with the server already holding us online, it is told first.
     const held = decide(
@@ -303,16 +313,21 @@ describe('decide — effect failures', () => {
       'stop_stream',
       'disconnect_socket',
       'keep_awake',
+      'persist_intent',
     ]);
     expect(held.effects[0]).toEqual({ type: 'put_status', status: 'offline' });
 
-    // …and a second throw with everything already down is a no-op — a
-    // throwing teardown cannot loop.
-    const again = decide(folded.state, {
-      type: 'error',
-      code: 'effect_failed',
-    });
-    expect(again.effects).toEqual([]);
+    // …and a second throw is a no-op from EITHER fold — including the one
+    // that emitted a put, whose `server` the fold must clear. Without that,
+    // an unwrapped teardown throw (`disconnect_socket`, `keep_awake off`)
+    // re-emitted this identical list for as long as the offline put could
+    // not land: a retry loop on the driver's battery (review F37).
+    for (const first of [folded.state, held.state]) {
+      expect(first.server).toBeNull();
+      expect(
+        decide(first, { type: 'error', code: 'effect_failed' }).effects,
+      ).toEqual([]);
+    }
   });
 
   it('a failed offline put keeps the «grant location» banner — generic never overwrites guidance (edge — review F34)', () => {
@@ -329,6 +344,27 @@ describe('decide — effect failures', () => {
     });
     expect(failed.state.banner?.kind).toBe('foreground_denied');
     expect(failed.state.busy).toBe(false);
+  });
+
+  it('background_denied guidance survives the fold — it is the banner up while online (edge — review F42)', () => {
+    const pending = decide(initialPresence, { type: 'toggle_pressed' }).state;
+    const denied = decide(pending, {
+      type: 'permission',
+      result: 'background_denied',
+    });
+    // A mounted phone streams anyway, so this banner is up during the window
+    // when generic errors actually arrive.
+    expect(denied.state.banner?.kind).toBe('background_denied');
+    expect(denied.state.streaming).toBe(true);
+
+    // F36's exact trace: the online put lands, `start_stream` then throws.
+    const failed = decide(
+      { ...denied.state, server: 'online' },
+      { type: 'error', code: 'effect_failed' },
+    );
+    expect(failed.state.intent).toBe('offline');
+    // «grant background location», not «something went wrong».
+    expect(failed.state.banner?.kind).toBe('background_denied');
   });
 });
 

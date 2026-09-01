@@ -141,11 +141,12 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
           ? 'stop'
           : undefined;
       case 'start_stream':
-        try {
-          await startStreaming(tRef.current);
-        } catch {
-          dispatch({ type: 'error', code: 'generic' });
-        }
+        // No catch, deliberately: a rejection must reach `runEffects`, which
+        // both folds (`effect_failed`) and ends the chain. Catching it here
+        // left `intent: 'online'` with no location task while
+        // `connect_socket` and `keep_awake` ran on — the ghost toggle F31 was
+        // opened to kill (review F36).
+        await startStreaming(tRef.current);
         return;
       case 'stop_stream':
         await stopStreaming().catch(() => undefined);
@@ -168,11 +169,28 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         return;
       }
       case 'disconnect_socket':
-        teardownSocket();
+        // Best effort, like `stop_stream`. Both are teardown, and the
+        // `effect_failed` fold now ends with `persist_intent offline` — a
+        // throw here would skip it and leave the store saying «online», which
+        // a later cold launch reads as a false «marked offline» (review
+        // F37/F44).
+        try {
+          teardownSocket();
+        } catch {
+          /* nothing downstream depends on a clean socket teardown */
+        }
         return;
       case 'keep_awake':
-        if (effect.on) await activateKeepAwakeAsync(KEEP_AWAKE_TAG);
-        else await deactivateKeepAwake(KEEP_AWAKE_TAG);
+        if (effect.on) {
+          await activateKeepAwakeAsync(KEEP_AWAKE_TAG);
+          return;
+        }
+        try {
+          // Android throws when the Activity that took the lock is gone.
+          await deactivateKeepAwake(KEEP_AWAKE_TAG);
+        } catch {
+          /* the lock dies with the Activity anyway */
+        }
         return;
       case 'kick_uploader':
         runtime.uploader.kick();

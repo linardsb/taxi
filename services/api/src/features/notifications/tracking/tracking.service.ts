@@ -11,6 +11,7 @@ import {
   ACTIVE_DRIVER_RIDE_STATUSES,
   trackingTokenSchema,
   trackingViewSchema,
+  type ApiErrorBody,
   type LatLng,
   type MapsProvider,
   type RideStatus,
@@ -232,7 +233,10 @@ export class TrackingService {
       at: new Date().toISOString(),
     });
     throw new HttpException(
-      { message: 'too_many_requests', retryAfterSeconds },
+      {
+        message: 'too_many_requests',
+        retryAfterSeconds,
+      } satisfies ApiErrorBody,
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }

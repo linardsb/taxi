@@ -9,7 +9,13 @@ import * as SQLite from 'expo-sqlite';
  */
 const open = SQLite.openDatabaseAsync as jest.Mock;
 
-/** The one connection, exactly as `openDatabaseAsync` hands it back. No `withExclusiveTransactionAsync` — that is the point. */
+/**
+ * The one connection, exactly as `openDatabaseAsync` hands it back.
+ * `withExclusiveTransactionAsync` is present but must never be called: it
+ * opens a SECOND connection, which is the thing round 1's F4 banned. Leaving
+ * it off the fake made a regression throw with no test naming it (review
+ * F48c).
+ */
 function fakeDb() {
   return {
     execAsync: jest.fn(() => Promise.resolve()),
@@ -19,6 +25,7 @@ function fakeDb() {
     getAllAsync: jest.fn(() => Promise.resolve([])),
     getFirstAsync: jest.fn(() => Promise.resolve({ n: 0 })),
     withTransactionAsync: jest.fn((task: () => Promise<void>) => task()),
+    withExclusiveTransactionAsync: jest.fn(),
   };
 }
 
@@ -75,6 +82,24 @@ describe('SqliteFixQueue (connection contract)', () => {
       'DELETE FROM fixes WHERE at < ?',
       fix(3).at,
     );
+  });
+
+  it('every method rides the ONE connection and none opens an exclusive transaction (edge — review F4/F48c)', async () => {
+    const db = fakeDb();
+    open.mockResolvedValue(db);
+    const { SqliteFixQueue } = load();
+    const queue = new SqliteFixQueue();
+
+    // The task's INSERTs and the uploader's DELETEs, interleaved the way they
+    // run: a second connection made them two writers on one WAL file.
+    await queue.enqueue([fix(1)]);
+    await queue.remove([1]);
+    await queue.prune(10);
+    await queue.dropOlderThan(fix(3).at);
+    await queue.count();
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(db.withExclusiveTransactionAsync).not.toHaveBeenCalled();
   });
 
   it('a failed open is retried on the next call, not cached for the life of the process (failure)', async () => {
