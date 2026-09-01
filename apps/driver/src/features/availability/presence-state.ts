@@ -2,8 +2,6 @@ import type { DriverStatus } from '@taxi/shared';
 import type { PermissionResult } from '@/features/location';
 import type { Intent } from './intent-store';
 
-export type Connection = 'live' | 'reconnecting' | 'offline';
-
 export type BannerKind =
   | 'marked_offline'
   | 'foreground_denied'
@@ -431,50 +429,4 @@ export function serverStatusEvent(
   return status === 'offline'
     ? { type: 'server_offline', at }
     : { type: 'server_online' };
-}
-
-/**
- * Runs a decision's effects in order, one at a time. A throw ends the chain
- * and is reported ONCE through `onThrow` — uncaught, a SecureStore or
- * permission failure left `busy` set with nothing to clear it and every
- * toggle press ignored. `run` may answer `'stop'`: the effect's own answer
- * already decided against the rest of the chain (a refused `put_status`,
- * whose `flipOffline` tore down inside the dispatch), and carrying on would
- * rebuild what was just torn down (review F32).
- */
-export async function runEffects(
-  effects: Effect[],
-  run: (effect: Effect) => Promise<void | 'stop'>,
-  onThrow: (error: unknown) => void,
-): Promise<void> {
-  for (const effect of effects) {
-    try {
-      if ((await run(effect)) === 'stop') return;
-    } catch (error) {
-      onThrow(error);
-      return;
-    }
-  }
-}
-
-/** An ack younger than this reads «Tiešraide». */
-export const LIVE_WINDOW_MS = 10_000;
-/** …older than this reads «Nav savienojuma» — the dispatch freshness window. */
-export const RECONNECTING_WINDOW_MS = 60_000;
-
-/**
- * The connection pill, from RECEIPT (the last ack) — never socket flags
- * (the board's rule). `null` while offline: there is nothing to be
- * truthful about. No ack yet reads as reconnecting: we are waiting.
- */
-export function pillFrom(
-  state: PresenceState,
-  nowMs: number,
-): Connection | null {
-  if (state.intent !== 'online') return null;
-  if (state.lastAckAt === null) return 'reconnecting';
-  const age = nowMs - state.lastAckAt;
-  if (age <= LIVE_WINDOW_MS) return 'live';
-  if (age <= RECONNECTING_WINDOW_MS) return 'reconnecting';
-  return 'offline';
 }

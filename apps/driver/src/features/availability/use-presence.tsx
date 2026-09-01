@@ -36,12 +36,12 @@ import {
 import {
   decide,
   initialPresence,
-  runEffects,
   serverStatusEvent,
   type Effect,
   type PresenceEvent,
   type PresenceState,
 } from './presence-state';
+import { runEffects } from './run-effects';
 
 const KEEP_AWAKE_TAG = 'sakta-driver-online';
 /** The go-offline grace: how long the drain may take before the server is told. */
