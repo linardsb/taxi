@@ -168,7 +168,10 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
         // go-offline window — #141 routes a normal tap through it. Dropping
         // it leaves a live stream with no control that stops it (review F3).
         return event.streaming
-          ? { state: base, effects: [{ type: 'stop_stream' }] }
+          ? {
+              state: { ...base, streaming: false },
+              effects: [{ type: 'stop_stream' }],
+            }
           : noop(base);
       }
       if (event.streaming) {
@@ -239,7 +242,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
           state: {
             ...state,
             intent: 'offline',
-            streaming: false, // the teardown below really stops it (review F2)
+            streaming: false, // both branches below really stop it (review R2)
             busy: serverOnline, // the offline put's answer clears it
             banner: { kind: 'foreground_denied' },
           },
@@ -250,7 +253,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
                   { type: 'put_status', status: 'offline' } as const,
                   ...TEAR_DOWN,
                 ]
-              : []),
+              : [{ type: 'stop_stream' } as const]),
           ],
         };
       }
@@ -359,11 +362,11 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
         // never a kick over a `stop()` — the stop sits behind the put.
         //
         // `state.streaming` is the whole guard, not padding — an intention,
-        // not an observation, so it holds only because every route emitting
-        // `put_status offline` with no stream clears the flag first, and any
-        // new emitter inherits that (review F2). Falling through writes
-        // `server: 'offline'` under an `on_ride` hold — with no stream we
-        // cannot prove life, and offline is the safe wrong.
+        // not an observation. All three routes emitting `put_status offline`
+        // with no stream clear the flag first; nothing enforces that, so a new
+        // emitter MUST clear it or prove a live stream (review R3). Falling
+        // through writes `server: 'offline'` under an `on_ride` hold — with no
+        // stream we cannot prove life, and offline is the safe wrong.
         return {
           state: {
             ...state,

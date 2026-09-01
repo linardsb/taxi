@@ -86,22 +86,25 @@ All `observed` in the worktree, `COMPOSE_PROJECT_NAME=taxi`, `@taxi/shared` buil
 | Phase 1 gate: `pnpm turbo run typecheck lint test build --force` | **exit 0**, 20/20 tasks, 1m21.857s |
 | Gate at `b843671` (before the review) | **exit 0**, 20/20 tasks, 58.395s |
 | Final gate: same command, after the review fixes | **exit 0**, 20/20 tasks, 1m5.096s |
+| Round-2 gate: same command, after the round-2 fixes | **exit 0**, 20/20 tasks, 54.975s |
+| — driver suite inside the round-2 gate | **109 passed**, 27 suites — unchanged; round 2 added assertions to existing cases, no new `it(` |
 | `@taxi/api` inside the final gate | 626 passed, 35 skipped, 70 of 72 suites (Redis-gated, no `REDIS_TEST_URL`) |
 | `git diff --stat services/api` | 1 file, 6 insertions / 4 deletions — comment lines only (re-checked after F5) |
 
 ### Line counts (`observed`, `wc -l` at HEAD — not inherited from the plan)
 
-| File | Before | After split | At `b843671` | Final (after review fixes) |
-|---|---|---|---|---|
-| `presence-state.ts` | 480 | 432 | 485 | **496** |
-| `use-presence.tsx` | 362 | — | 371 | 371 |
-| `presence-pill.ts` | — | 26 | 26 | 26 |
-| `run-effects.ts` | — | 26 | 26 | 26 |
+| File | Before | After split | At `b843671` | Round 1 (`3fe9075`) | Final (round 2) |
+|---|---|---|---|---|---|
+| `presence-state.ts` | 480 | 432 | 485 | 496 | **499** |
+| `use-presence.tsx` | 362 | — | 371 | 371 | 371 |
+| `presence-pill.ts` | — | 26 | 26 | 26 | 26 |
+| `run-effects.ts` | — | 26 | 26 | 26 | 26 |
 
-`presence-state.ts` has **4 lines of headroom** under the 500 cap (`derived`: 500 − 496). The five
-review fixes cost 11 lines; fitting them meant tightening the held branch's comment to the claim it
-actually has to carry now that F2's hole is closed. **The next change to this file needs a split
-first** — that consequence, flagged as a deviation below, is now four lines from being forced.
+`presence-state.ts` has **1 line of headroom** under the 500 cap (`derived`: 500 − 499). Round 1's
+five fixes cost 11 lines (485 → 496); round 2's cost 3 more (496 → 499), all of them R4's widened
+`cold_launch` return — R2 was line-neutral by design, and R1/R3 were comment rewrites at equal
+length. **The next change to this file needs a split first** — that consequence, flagged as a
+deviation below, is now one line from being forced.
 `use-presence.tsx` was not measured between the two phases: the split was net zero lines on it (one
 name out of the `./presence-state` import list, one `./run-effects` import in), so its post-split
 count is `derived`, not observed.
@@ -131,9 +134,10 @@ non-online intent now clears it, so it lives exactly as long as the hold does.
 
 ## Deviations from the plan
 
-1. **`presence-state.ts` is 496 lines, not the plan's `derived` ~461 — 4 lines of headroom, not
-   ~39.** The plan budgeted ~28 lines in; the implementation landed 53 (485), and the review round-1
-   fixes added another 11. The difference against the plan is comment length: the plan itself
+1. **`presence-state.ts` is 499 lines, not the plan's `derived` ~461 — 1 line of headroom, not
+   ~39.** The plan budgeted ~28 lines in; the implementation landed 53 (485), the review round-1
+   fixes added another 11, and round 2 another 3. The difference against the plan is comment
+   length: the plan itself
    required GOTCHA 1 (the no-stream routes and the F31 ghost toggle) and GOTCHA 2 (why the
    fallback's `server: 'offline'` is deliberate) on the page. The held branch's comment was trimmed
    twice (488 → 485, then again for the review fixes) and stopped rather than cut required
@@ -227,10 +231,10 @@ issue opened, because it would duplicate one.
 
 **F2's claim was corrected on all three surfaces it was stated on**, not just at the fix: the branch
 comment, the plan's blast-radius row (the `permission/foreground_denied` row now reads *enforced*,
-not assumed), and the PR body. The true statement is narrower than the old one — every route emitting
-`put_status offline` with no stream clears the flag first, so the guard cannot read a stale `true`.
-The flag is still an intention rather than an observation on the two `drained` paths; that is
-unreachable, not fixed, and the comment says so.
+not assumed), and the PR body. **The narrower replacement claim did not survive round 2.** R2
+reproduced a nine-step route to `intent: 'offline'` whose teardown never ran, and the claim turned
+out to sit on a fifth surface the round-1 sweep missed — `presence-state.test.ts:425-426`. Round 2
+stops re-narrowing the argument and replaces it with a construction; see below.
 
 ### The fixes were watched to fail (`observed`)
 
@@ -248,6 +252,64 @@ collateral, so each test pins its own fix:
 The sixth new case — `home-screen.test.tsx`'s ride-scoped banner — is a **premise** test, not a
 regression test: it pins that `driver_on_ride` renders with no dismiss button, which is *why* F1's
 reducer fix is required. It does not go red under any of the four mutations, and is not claimed to.
+
+## Review round 2 — findings fixed
+
+`.claude/code-reviews/pr-142-review-round2.md`: no Critical, no High, one Medium (R7), six Lows.
+All actioned; R6 was informational and needed none.
+
+| # | Sev | Fix |
+|---|---|---|
+| **R7** | Med | The PR body's diff decomposition was stale — sampled before the report finished being edited, then printed under a "re-derived at this HEAD" claim. Re-derived at the round-2 head instead of pasting round 2's own figures, which would have reproduced the defect: the body is the last surface edited, after every tree change is committed |
+| **R2** | Low | `permission/foreground_denied` + `!serverOnline` now emits `stop_stream` instead of `[]`. The cleared `streaming` flag is **true by construction**, not by an argument about what ran before it. Line-neutral, as the review predicted |
+| **R1** | Low | The `streaming: false` comment said "the teardown below" — true on one of the two branches it annotated. R2 makes both stop the stream; the comment now says so |
+| **R3** | Low | "any new emitter inherits that" was a guarantee enforced by nothing. Now an instruction: a new emitter **MUST** clear the flag or prove a live stream |
+| **R4** | Low | `cold_launch`'s stop branch returns `{ ...base, streaming: false }` — **plus a new assertion, because the review's stated payoff did not hold** (see below) |
+| **R5** | Low | The F4 case drives `decide` through `server_online` instead of hand-building `{ ...armed.state, busy: false }`, and pins that the arm survives it. The home-screen case asserts `within(banner).queryAllByRole('button')` → `0`, which no longer depends on the label an `action` would render under |
+
+**Copies of the claim the review did not list.** The round-2 sweep grepped the *subject* rather than
+the sentence — `every route`, `inherits that`, `no teardown` — and found the claim stated on three
+surfaces beyond the two code comments R1 and R3 name: `presence-state.test.ts:425-426`, this report,
+and the PR body twice (in "What changed" and in "Review round 1"). All corrected. This is the failure
+mode `CLAUDE.md` names: the review enumerated the copies it saw, and enumeration is not a sweep. The
+PR-body copies are the ones no working-tree grep reaches — the same blind spot that produced R7.
+
+### R4's stated payoff was false, and was caught by re-deriving it (`observed`)
+
+The review wrote that after the one-token fix, "the assertion pins the branch" — meaning
+`presence-state.test.ts:215`'s `expect(live.state.streaming).toBe(false)`. **It does not.** That case
+calls `decide(initialPresence, …)`, and `initialPresence.streaming` is already `false`
+(`presence-state.ts:38`), so `base.streaming` is false with or without the fix. Reverting the token and
+re-running gives **`Tests: 23 passed, 23 total`** — green, `observed`. R4 made the code correct by
+construction; it changed nothing about what that assertion can distinguish.
+
+An earlier draft of this report and of the PR body repeated the review's sentence verbatim. That is
+exactly the defect R7 was scored Medium for — a figure inherited rather than re-derived — and it was
+about to ship inside the commit fixing R7. One command settled it.
+
+The fix carries a new assertion instead, hand-built on purpose: `cold_launch` only ever runs from
+`initialPresence` (`use-presence.tsx:257-279`, reset at `:324`), so **no event sequence reaches
+`streaming: true` at cold launch**. R5's rule is "real sequences *wherever a sequence exists*", and
+here none does; the comment says so. With it, reverting the token gives `Tests: 1 failed, 22 passed,
+23 total` — `Expected: false / Received: true`. Now it pins the branch.
+
+### Round 1's mutation row 2, re-observed against the branch R2 changed
+
+Row 2 mutates `permission/foreground_denied` — the one branch round 2 touched, so its round-1 tally
+could have moved. Re-run at this head: **`Tests: 1 failed, 22 passed, 23 total`**, still F2's case only.
+Unchanged, `observed`, not assumed.
+
+### R2 was watched to go red (`observed`)
+
+The fix was applied before the assertions were updated, so the three existing assertions the review
+predicted would break are the evidence it is wired — not a decoration written after the fact:
+
+```
+Tests: 3 failed, 20 passed, 23 total
+```
+
+Red at `presence-state.test.ts:58`, `:293` and `:431`, each `Received +1` → `"stop_stream"` — exactly
+the three sites the review named, and no others. Green after updating them.
 
 ### Ready for the next step
 

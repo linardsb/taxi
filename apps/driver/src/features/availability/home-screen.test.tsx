@@ -1,4 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react-native';
 import { formatMessage } from '@taxi/shared';
 import { HomeScreen } from './home-screen';
 import { initialPresence, type PresenceState } from './presence-state';
@@ -109,10 +114,12 @@ describe('HomeScreen', () => {
       t('driver.error.driver_on_ride'),
     );
     // No action and no secondary: `banner_dismissed` has no UI route from
-    // this kind, so `server_offline` clearing it is the only way out.
+    // this kind, so `server_offline` clearing it is the only way out. Scoped
+    // to the banner and label-agnostic — an `action` renders a button under a
+    // different label, which a name-matched query misses (review R5).
     expect(
-      screen.queryByRole('button', { name: t('driver.action.skip') }),
-    ).toBeNull();
+      within(screen.getByTestId('banner')).queryAllByRole('button'),
+    ).toHaveLength(0);
     // The toggle stays ON — the tap cost a banner and nothing else.
     expect(
       screen.getByRole('switch', { name: t('driver.home.go_offline') }),

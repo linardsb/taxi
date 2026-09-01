@@ -55,7 +55,7 @@ describe('decide — going online', () => {
     });
     expect(fg.state.intent).toBe('offline');
     expect(fg.state.banner?.kind).toBe('foreground_denied');
-    expect(types(fg.effects)).toEqual(['persist_intent']);
+    expect(types(fg.effects)).toEqual(['persist_intent', 'stop_stream']);
 
     const bg = decide(pending, {
       type: 'permission',
@@ -215,6 +215,25 @@ describe('decide — going offline and cold launch', () => {
     expect(live.state.streaming).toBe(false);
     expect(live.state.queued).toBe(4);
 
+    // Hand-built on purpose — the exception R5's rule allows, since NO event
+    // sequence reaches it: `cold_launch` only ever runs from `initialPresence`
+    // (`use-presence.tsx:257-279`, reset at `:324`), where `streaming` is
+    // already false. Without it the assertion above pins the propagation of
+    // `initialPresence.streaming`, not the branch — it stays green if the
+    // branch stops clearing the flag. This is the one that goes red (R4).
+    const stale = decide(
+      { ...initialPresence, streaming: true },
+      {
+        type: 'cold_launch',
+        intent: 'offline',
+        streaming: true,
+        markedOfflineAt: null,
+        queued: 0,
+        now: AT,
+      },
+    );
+    expect(stale.state.streaming).toBe(false);
+
     // The ordinary dead-task launch still emits nothing.
     const dead = decide(initialPresence, {
       type: 'cold_launch',
@@ -290,7 +309,7 @@ describe('decide — the server holds us', () => {
       type: 'permission',
       result: 'foreground_denied',
     });
-    expect(types(quiet.effects)).toEqual(['persist_intent']);
+    expect(types(quiet.effects)).toEqual(['persist_intent', 'stop_stream']);
     expect(quiet.state.busy).toBe(false);
   });
 
@@ -368,10 +387,13 @@ describe('decide — the server holds us', () => {
     const armed = decide(online(), { type: 'ack_not_online', at: AT });
     expect(armed.state.reasserted).toBe(true);
 
-    const pressed = decide(
-      { ...armed.state, busy: false },
-      { type: 'toggle_pressed' },
-    );
+    // A real route to the same state rather than a hand-built one (plan
+    // §style): the re-assert lands, `busy` drops, the arm survives it.
+    const settled = decide(armed.state, { type: 'server_online' }).state;
+    expect(settled.busy).toBe(false);
+    expect(settled.reasserted).toBe(true);
+
+    const pressed = decide(settled, { type: 'toggle_pressed' });
     const held = decide(decide(pressed.state, { type: 'drained' }).state, {
       type: 'error',
       code: 'driver_on_ride',
@@ -422,13 +444,14 @@ describe('decide — the server holds us', () => {
     expect(refused.state.intent).toBe('offline');
     expect(refused.state.banner).toEqual({ kind: 'driver_on_ride' });
 
-    // The `!serverOnline` path emits no teardown and clears the flag anyway:
-    // every route to `intent: 'offline'` with `streaming` set has run one.
+    // The `!serverOnline` path has nothing to tell the server, but it still
+    // stops the stream: the cleared flag is true by construction, not by an
+    // argument about what ran before it (review R2).
     const quiet = decide(
       decide(initialPresence, { type: 'toggle_pressed' }).state,
       { type: 'permission', result: 'foreground_denied' },
     );
-    expect(types(quiet.effects)).toEqual(['persist_intent']);
+    expect(types(quiet.effects)).toEqual(['persist_intent', 'stop_stream']);
     expect(quiet.state.streaming).toBe(false);
   });
 
