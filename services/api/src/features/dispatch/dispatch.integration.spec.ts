@@ -159,7 +159,7 @@ describe('dispatch (integration)', () => {
 
   /** Positions go straight into the store: the ping path is a socket concern. */
   async function place(driverId: string, location: LatLng): Promise<void> {
-    await ctx.locations.markOnline(cityId, driverId);
+    await ctx.locations.markOnline(cityId, driverId, Date.now());
     await ctx.locations.record(cityId, driverId, location, Date.now());
     if (!usedDrivers.includes(driverId)) usedDrivers.push(driverId);
   }
@@ -1031,7 +1031,9 @@ describe('dispatch (integration)', () => {
     expect(live?.driverId).toBe(d.id);
 
     // What the location gateway's handleDisconnect calls: status → `offline`.
-    await ctx.app.get(DriversService).clearPresenceOnDisconnect(d.id);
+    await ctx.app
+      .get(DriversService)
+      .markOfflineByServer(d.id, 'socket_disconnected');
 
     // The accept SUCCEEDS — nothing on this path checks presence, and the
     // `online`-only claim inside it matches nothing. That is the hole.

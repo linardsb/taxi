@@ -244,6 +244,19 @@ export const envSchema = z
         },
       ),
     /**
+     * Which `PushProvider` binds (#14). A switch rather than credential-driven
+     * like Twilio, because Expo's push API needs no credential — the intent
+     * has to be stated. `stub` logs the nudge and delivers nothing; the
+     * factory (`features/push/push.module.ts`) refuses it in production, like
+     * `SMS_PROVIDER`.
+     */
+    PUSH_PROVIDER: z.enum(['stub', 'expo']).default('stub'),
+    /** Optional: Expo "enhanced push security" — sent as a Bearer on every push. */
+    EXPO_PUSH_ACCESS_TOKEN: z
+      .string()
+      .optional()
+      .transform((v) => (v === undefined || v === '' ? undefined : v)),
+    /**
      * Where the SMS tracking links point (#63) — the dispatch web app's
      * public origin, which serves `/t/:token`. The default is its dev origin
      * (first in the seeded `CORS_ORIGINS`); a deploy sets the real domain.

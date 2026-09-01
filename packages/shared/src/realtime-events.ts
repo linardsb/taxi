@@ -19,7 +19,11 @@ import { rideOfferSchema } from './schemas/ride';
  * domain schemas in ./schemas use `z.coerce.date()` and re-hydrate them on
  * receipt; do not unify the two worlds. This holds for all 9 events with no
  * exception: `ride:offer` is derived from a domain schema, so it overrides its
- * two date fields to obey the rule (see `rideOfferEventSchema`).
+ * two date fields to obey the rule (see `rideOfferEventSchema`). The catalog
+ * also carries exactly ONE acknowledgement — the api's reply to a
+ * `driver:location` ping (`driverLocationAckSchema`, #14). It is a callback
+ * parameter on the two client→server maps, not an event: no `RT` entry, no
+ * timestamp, no room.
  *
  * `RT` must stay the first `as const` block in this file — the doc-sync check
  * that keeps .claude/references/realtime-events.md honest slices the catalog
@@ -56,6 +60,21 @@ export const driverLocationEventSchema = driverLocationPingSchema.extend({
   driverId: z.string().uuid(),
 });
 export type DriverLocationEvent = z.infer<typeof driverLocationEventSchema>;
+
+/**
+ * The server's answer to one `driver:location` ping (#14). The driver app
+ * keeps every fix in a local queue and deletes it ONLY on `accepted: true`,
+ * so a fix the server never acknowledged is retried, never lost.
+ * `not_online` means the server no longer holds this driver in the online
+ * set — the app re-asserts its intent or flips its toggle; it must not keep
+ * retrying that fix. `malformed` is dropped client-side (a retry cannot fix
+ * it). `store_unavailable` is kept and retried.
+ */
+export const driverLocationAckSchema = z.object({
+  accepted: z.boolean(),
+  reason: z.enum(['not_online', 'malformed', 'store_unavailable']).optional(),
+});
+export type DriverLocationAck = z.infer<typeof driverLocationAckSchema>;
 
 /** The driver's live place in a geozone queue (S7-2). `position` is 1-based. */
 export const driverQueueEventSchema = z.object({
@@ -294,7 +313,10 @@ export const userRoom = (userId: string) => `user:${userId}` as const;
  * strips a spoofed `driverId` (see the schema comment above).
  */
 export interface ClientToServerEvents {
-  [RT.driverLocation]: (payload: unknown) => void;
+  [RT.driverLocation]: (
+    payload: unknown,
+    ack?: (response: DriverLocationAck) => void,
+  ) => void;
 }
 
 /**
@@ -304,7 +326,10 @@ export interface ClientToServerEvents {
  * per direction, mirroring the ping/event schema split above.
  */
 export interface ClientToServerEmitEvents {
-  [RT.driverLocation]: (payload: DriverLocationPing) => void;
+  [RT.driverLocation]: (
+    payload: DriverLocationPing,
+    ack: (response: DriverLocationAck) => void,
+  ) => void;
 }
 
 export interface ServerToClientEvents {

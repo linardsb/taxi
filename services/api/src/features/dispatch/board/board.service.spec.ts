@@ -160,7 +160,7 @@ describe('BoardService.buildBoardState', () => {
       contacts: [contact()],
       zoneName: 'Centrs',
     });
-    await locations.markOnline(CITY, DRIVER_A);
+    await locations.markOnline(CITY, DRIVER_A, Date.now());
     await locations.record(
       CITY,
       DRIVER_A,
@@ -204,11 +204,14 @@ describe('BoardService.buildBoardState', () => {
     expect(frame.rides[1]!.driverName).toBe('Jānis Ozols');
   });
 
-  it('carries a never-pinged online driver with nulls and falls back name→phone (edge)', async () => {
+  it('carries a never-pinged online driver with a null position, their online time as last seen, and falls back name→phone (edge)', async () => {
+    // `lastSeenAt` is the moment they went online, not null: #14 seeds the
+    // `seen` score in `markOnline` so the dark sweep can age a driver who
+    // never produced a fix. The board renders it as "seen N s ago".
     const { service, locations } = build({
       contacts: [contact({ name: null })],
     });
-    await locations.markOnline(CITY, DRIVER_A);
+    await locations.markOnline(CITY, DRIVER_A, NOW.getTime());
 
     const frame = dispatchBoardEventSchema.parse(
       await service.buildBoardState(CITY),
@@ -219,7 +222,7 @@ describe('BoardService.buildBoardState', () => {
         name: '+37129999001', // schema promises non-null; the phone always exists
         phone: '+37129999001',
         location: null,
-        lastSeenAt: null,
+        lastSeenAt: NOW.toISOString(),
         zoneName: null,
         status: 'online',
       },
@@ -250,9 +253,9 @@ describe('BoardService.buildBoardState', () => {
         [`${B_POINT.lat},${B_POINT.lng}`]: 'Lidosta',
       },
     });
-    await locations.markOnline(CITY, DRIVER_A);
+    await locations.markOnline(CITY, DRIVER_A, Date.now());
     await locations.record(CITY, DRIVER_A, A_POINT, NOW.getTime() - 5_000);
-    await locations.markOnline(CITY, DRIVER_B);
+    await locations.markOnline(CITY, DRIVER_B, Date.now());
     await locations.record(CITY, DRIVER_B, B_POINT, NOW.getTime() - 5_000);
 
     const frame = await service.buildBoardState(CITY);
@@ -284,10 +287,10 @@ describe('BoardService.buildBoardState', () => {
         [`${C_POINT.lat},${C_POINT.lng}`]: 'Lidosta',
       },
     });
-    await locations.markOnline(CITY, DRIVER_A);
+    await locations.markOnline(CITY, DRIVER_A, Date.now());
     await locations.record(CITY, DRIVER_A, A_POINT, NOW.getTime() - 5_000);
-    await locations.markOnline(CITY, DRIVER_B); // online, never pinged
-    await locations.markOnline(CITY, C);
+    await locations.markOnline(CITY, DRIVER_B, Date.now()); // online, never pinged
+    await locations.markOnline(CITY, C, Date.now());
     await locations.record(CITY, C, C_POINT, NOW.getTime() - 5_000);
 
     const frame = await service.buildBoardState(CITY);
@@ -300,8 +303,8 @@ describe('BoardService.buildBoardState', () => {
 
   it('drops an online-set member with no drivers/users row instead of rendering a ghost (edge)', async () => {
     const { service, locations } = build({ contacts: [contact()] });
-    await locations.markOnline(CITY, DRIVER_A);
-    await locations.markOnline(CITY, DRIVER_B); // no contact row
+    await locations.markOnline(CITY, DRIVER_A, Date.now());
+    await locations.markOnline(CITY, DRIVER_B, Date.now()); // no contact row
 
     const frame = await service.buildBoardState(CITY);
     expect(frame.drivers.map((d) => d.driverId)).toEqual([DRIVER_A]);

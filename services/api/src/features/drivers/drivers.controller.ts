@@ -1,12 +1,22 @@
-import { Body, Controller, Get, Patch, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Patch,
+  Put,
+} from '@nestjs/common';
 import {
   driverProfileUpdateSchema,
   driverStatusUpdateSchema,
+  pushTokenUpdateSchema,
   type DriverMe,
   type DriverProfile,
   type DriverProfileUpdate,
   type DriverStatusUpdate,
   type JwtClaims,
+  type PushTokenUpdate,
 } from '@taxi/shared';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
@@ -47,5 +57,21 @@ export class DriversController {
     body: DriverStatusUpdate,
   ): Promise<DriverProfile> {
     return this.drivers.setPresence(user.sub, body.status);
+  }
+
+  /** Registered on every signed-in app start (#14); the token never appears in any response body. */
+  @Put('me/push-token')
+  @HttpCode(204)
+  setPushToken(
+    @CurrentUser() user: JwtClaims,
+    @Body(new ZodValidationPipe(pushTokenUpdateSchema)) body: PushTokenUpdate,
+  ): Promise<void> {
+    return this.drivers.setPushToken(user.sub, body.token);
+  }
+
+  @Delete('me/push-token')
+  @HttpCode(204)
+  clearPushToken(@CurrentUser() user: JwtClaims): Promise<void> {
+    return this.drivers.clearPushToken(user.sub);
   }
 }

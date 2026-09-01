@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  driverEarningsTodaySchema,
+  type DriverEarningsToday,
+} from '@taxi/shared';
 import { randomUUID } from 'node:crypto';
 import type { DbTx } from '../../common/db/db.module';
+import { LEDGER_DAY_TIMEZONE } from './ledger.policy';
 import { LedgerRepository, type EntryInsert } from './ledger.repository';
 import {
   buildSettlementEntries,
@@ -104,5 +109,22 @@ export class LedgerService {
     });
 
     return { transactionId, balanceDeltaCents };
+  }
+
+  /**
+   * The one aggregate READ this slice offers (#14): today's net for the
+   * driver's home card. Parsed through the wire schema on the way out, so a
+   * negative sum — impossible while `commission ≤ ride_fare` — is a loud 500
+   * rather than a card reading "-€1.86".
+   */
+  async todayForDriver(driverId: string): Promise<DriverEarningsToday> {
+    const row = await this.ledger.driverEarningsToday(
+      driverId,
+      LEDGER_DAY_TIMEZONE,
+    );
+    return driverEarningsTodaySchema.parse({
+      ...row,
+      timezone: LEDGER_DAY_TIMEZONE,
+    });
   }
 }

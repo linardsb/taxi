@@ -7,7 +7,12 @@ import {
   WebSocketServer,
   type OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { driverLocationPingSchema, driverRoom, RT } from '@taxi/shared';
+import {
+  driverLocationPingSchema,
+  driverRoom,
+  RT,
+  type DriverLocationAck,
+} from '@taxi/shared';
 import type { AuthedSocket, RealtimeServer } from '../../realtime';
 import { DriversService } from '../drivers.service';
 import { DriverLocationService } from './driver-location.service';
@@ -68,7 +73,7 @@ export class DriverLocationGateway implements OnGatewayDisconnect {
       const others = await this.server.in(driverRoom(user.sub)).fetchSockets();
       if (others.length > 0) return;
 
-      await this.drivers.clearPresenceOnDisconnect(user.sub);
+      await this.drivers.markOfflineByServer(user.sub, 'socket_disconnected');
     } catch (err) {
       this.logger.error({
         event: 'driver.presence.disconnect_cleanup_failed',
@@ -84,6 +89,13 @@ export class DriverLocationGateway implements OnGatewayDisconnect {
    * error is worse — a driver mid-shift must not be disturbed by one bad frame.
    * Log and return.
    *
+   * Returns the ack (#14): Nest hands a non-nil return value to the client's
+   * callback when the emit supplied one (`@nestjs/platform-socket.io`
+   * io-adapter), and drops it when the emit was fire-and-forget — so the
+   * scripted driver in `scripts/mint-tracked-ride.ts` keeps working unchanged.
+   * A non-driver is answered `malformed`, not `not_online`: a rider emitting
+   * here is a broken client, and the answer must not read as a presence fact.
+   *
    * The global `JwtAuthGuard` cannot help here: it refuses non-HTTP contexts by
    * design, so `client.data.user` (set by the handshake) is the only identity
    * source. It was verified AT CONNECT, and `RealtimeGateway`'s expiry sweep
@@ -94,7 +106,7 @@ export class DriverLocationGateway implements OnGatewayDisconnect {
   async handleLocation(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() payload: unknown,
-  ): Promise<void> {
+  ): Promise<DriverLocationAck> {
     const user = client.data.user;
     if (user?.role !== 'driver') {
       this.logger.warn({
@@ -103,7 +115,7 @@ export class DriverLocationGateway implements OnGatewayDisconnect {
         reason: 'not_a_driver',
         at: new Date().toISOString(),
       });
-      return;
+      return { accepted: false, reason: 'malformed' };
     }
 
     const parsed = driverLocationPingSchema.safeParse(payload);
@@ -114,7 +126,7 @@ export class DriverLocationGateway implements OnGatewayDisconnect {
         reason: 'malformed_payload',
         at: new Date().toISOString(),
       });
-      return;
+      return { accepted: false, reason: 'malformed' };
     }
 
     // The third path that must not throw, and the only one that can: `ingest`
@@ -127,7 +139,7 @@ export class DriverLocationGateway implements OnGatewayDisconnect {
     // Rīga". Swallowing is right here (one driver's position, self-healing on
     // the next ping) and wrong there. Do not unify them.
     try {
-      await this.locations.ingest(user.sub, parsed.data);
+      return await this.locations.ingest(user.sub, parsed.data);
     } catch (err) {
       this.logger.error({
         event: 'driver.location.ingest_failed',
@@ -135,6 +147,8 @@ export class DriverLocationGateway implements OnGatewayDisconnect {
         reason: err instanceof Error ? err.message : 'unknown',
         at: new Date().toISOString(),
       });
+      // Kept and retried on the phone — the outage is ours, not the fix's.
+      return { accepted: false, reason: 'store_unavailable' };
     }
   }
 }

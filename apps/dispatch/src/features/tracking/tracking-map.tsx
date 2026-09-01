@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  apiErrorBodySchema,
   formatMessage,
   trackingViewSchema,
   type Language,
@@ -33,26 +34,25 @@ const TERMINAL = new Set<TrackingPageState>([
 const THROTTLE_WINDOW_SECONDS = 60;
 
 /**
- * `{ message, retryAfterSeconds }` is the API's 429 shape
- * (`tracking.service.ts`), but this is a network boundary like any other, so
- * the number is checked rather than trusted. Two ways it can go wrong, and
+ * `{ message, retryAfterSeconds }` is the API's 429 shape, parsed with the
+ * shared `apiErrorBodySchema` — the same schema the api types its producers
+ * with, not a hand-rolled twin (review F26). It is still a network boundary,
+ * so the number is checked rather than trusted. Two ways it can go wrong, and
  * they fail in opposite directions:
  *
- * - **Too low or absent** — a non-finite, negative or missing value computes a
- *   retry instant in the past and polls straight through the back-off. Falls
- *   back to the full window: the throttle exists to stop spend, so guessing
- *   LOW would defeat it.
+ * - **Too low, absent or malformed** — a body the schema refuses, or a
+ *   missing/zero value, computes a retry instant in the past and polls
+ *   straight through the back-off. Falls back to the full window: the
+ *   throttle exists to stop spend, so guessing LOW would defeat it.
  * - **Too high** — an unbounded value freezes a LIVE tracking page for as long
  *   as it says. `86400` would leave a rider watching a "wait a moment" banner
  *   over a day-old position while the ride happens without them. Clamped, so
  *   the worst case is one stale window and then a retry.
  */
 function retryAfterSecondsFrom(body: unknown): number {
-  const raw =
-    typeof body === 'object' && body !== null && 'retryAfterSeconds' in body
-      ? (body as { retryAfterSeconds: unknown }).retryAfterSeconds
-      : undefined;
-  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+  const parsed = apiErrorBodySchema.safeParse(body);
+  const raw = parsed.success ? parsed.data.retryAfterSeconds : undefined;
+  return raw !== undefined && raw > 0
     ? Math.min(raw, THROTTLE_WINDOW_SECONDS)
     : THROTTLE_WINDOW_SECONDS;
 }

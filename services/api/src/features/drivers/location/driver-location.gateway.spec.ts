@@ -1,7 +1,9 @@
 import { drivers } from '@taxi/db';
 import {
+  driverLocationAckSchema,
   driverRoom,
   RT,
+  type DriverLocationAck,
   type DriverLocationEvent,
   type DriverLocationPing,
   type JwtClaims,
@@ -67,7 +69,7 @@ describe('driver location gateway (integration)', () => {
    * PUT /drivers/me/status would drag Postgres and a vehicle into a socket test.
    */
   const onlineDriver = async (id = DRIVER_ID): Promise<Socket> => {
-    await ctx.locations.markOnline(cityId, id);
+    await ctx.locations.markOnline(cityId, id, Date.now());
     return connectClient(port, await tokenFor(id, 'driver'));
   };
 
@@ -147,7 +149,7 @@ describe('driver location gateway (integration)', () => {
       .insert(drivers)
       .values({ userId: user.id, status: 'online' })
       .onConflictDoNothing();
-    await ctx.locations.markOnline(cityId, user.id);
+    await ctx.locations.markOnline(cityId, user.id, Date.now());
     return {
       id: user.id,
       connect: async () =>
@@ -209,6 +211,60 @@ describe('driver location gateway (integration)', () => {
     expect(await d.status()).toBe('on_ride');
   });
 
+  /**
+   * The ack (#14) is what the driver app's durable queue deletes against, so
+   * the three answers below are the contract, asserted at the socket.
+   */
+  it("acks {accepted: true} to an online driver's ping (expected)", async () => {
+    const driver = await onlineDriver();
+
+    const ack: unknown = await driver
+      .timeout(1000)
+      .emitWithAck(RT.driverLocation, validPing());
+
+    expect(driverLocationAckSchema.parse(ack)).toEqual({ accepted: true });
+    expect(ctx.locations.recorded).toHaveLength(1);
+  });
+
+  it('acks not_online after the driver went offline, and records nothing (edge)', async () => {
+    const driver = await onlineDriver();
+    await ctx.locations.markOffline(cityId, DRIVER_ID);
+
+    const ack: unknown = await driver
+      .timeout(1000)
+      .emitWithAck(RT.driverLocation, validPing());
+
+    expect(driverLocationAckSchema.parse(ack)).toEqual({
+      accepted: false,
+      reason: 'not_online',
+    });
+    expect(ctx.locations.recorded).toHaveLength(0);
+  });
+
+  it('acks store_unavailable with no exception frame when the store throws (failure)', async () => {
+    const driver = await onlineDriver();
+    const frames: unknown[] = [];
+    driver.on('exception', (frame: unknown) => frames.push(frame));
+    const spy = jest
+      .spyOn(ctx.locations, 'record')
+      .mockRejectedValueOnce(new Error('redis down'));
+    try {
+      const ack: unknown = await driver
+        .timeout(1000)
+        .emitWithAck(RT.driverLocation, validPing());
+
+      // The phone keeps the fix and retries — the outage is ours.
+      expect(driverLocationAckSchema.parse(ack)).toEqual({
+        accepted: false,
+        reason: 'store_unavailable',
+      });
+      expect(frames).toEqual([]);
+      expect(driver.connected).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('ignores a malformed ping and keeps the socket up (failure)', async () => {
     const driver = await onlineDriver();
 
@@ -245,23 +301,28 @@ describe('driver location gateway (unit)', () => {
     ({ data: { user } }) as AuthedSocket;
 
   const build = () => {
-    const ingest = jest.fn<Promise<void>, [string, DriverLocationPing]>();
-    ingest.mockResolvedValue(undefined);
-    const clearPresence = jest.fn<Promise<void>, [string]>();
-    clearPresence.mockResolvedValue(undefined);
+    const ingest = jest.fn<
+      Promise<DriverLocationAck>,
+      [string, DriverLocationPing]
+    >();
+    ingest.mockResolvedValue({ accepted: true });
+    const markOffline = jest.fn<Promise<boolean>, [string, string]>();
+    markOffline.mockResolvedValue(true);
     const gateway = new DriverLocationGateway(
       { ingest } as unknown as DriverLocationService,
-      {
-        clearPresenceOnDisconnect: clearPresence,
-      } as unknown as DriversService,
+      { markOfflineByServer: markOffline } as unknown as DriversService,
     );
-    return { gateway, ingest, clearPresence };
+    return { gateway, ingest, markOffline };
   };
 
-  it('never reaches the store from a rider-role socket (edge)', async () => {
+  it('never reaches the store from a rider-role socket, and answers malformed rather than not_online (edge)', async () => {
     const { gateway, ingest } = build();
 
-    await gateway.handleLocation(socketWith(claims('rider')), validPing());
+    // `malformed`, deliberately: a rider emitting here is a broken client,
+    // and `not_online` would read as a presence fact about a driver.
+    await expect(
+      gateway.handleLocation(socketWith(claims('rider')), validPing()),
+    ).resolves.toEqual({ accepted: false, reason: 'malformed' });
 
     expect(ingest).not.toHaveBeenCalled();
   });
@@ -275,7 +336,7 @@ describe('driver location gateway (unit)', () => {
   });
 
   it('never clears presence for a non-driver disconnect (edge)', async () => {
-    const { gateway, clearPresence } = build();
+    const { gateway, markOffline } = build();
 
     // A rider or dispatcher hanging up must not touch driver presence — and
     // the role check has to come FIRST, before the room lookup, or this would
@@ -283,17 +344,18 @@ describe('driver location gateway (unit)', () => {
     await gateway.handleDisconnect(socketWith(claims('rider')));
     await gateway.handleDisconnect(socketWith(undefined));
 
-    expect(clearPresence).not.toHaveBeenCalled();
+    expect(markOffline).not.toHaveBeenCalled();
   });
 
   it('resolves rather than rejecting when ingest fails (failure — the NEVER throws contract)', async () => {
     const { gateway, ingest } = build();
     ingest.mockRejectedValue(new Error('redis down'));
 
-    // `rejects` here is what Nest turns into an `exception` frame.
+    // `rejects` here is what Nest turns into an `exception` frame; the
+    // resolved ack is what the phone's queue keeps the fix on.
     await expect(
       gateway.handleLocation(socketWith(claims('driver')), validPing()),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ accepted: false, reason: 'store_unavailable' });
     expect(ingest).toHaveBeenCalledTimes(1);
   });
 });

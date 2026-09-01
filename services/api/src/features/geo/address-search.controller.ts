@@ -14,6 +14,7 @@ import {
   addressSearchQuerySchema,
   resolvePlaceBodySchema,
   type AddressPoint,
+  type ApiErrorBody,
   type AddressSearchQuery,
   type AddressSuggestion,
   type JwtClaims,
@@ -152,7 +153,10 @@ export class AddressSearchController {
       at: new Date().toISOString(),
     });
     throw new HttpException(
-      { message: 'too_many_requests', retryAfterSeconds },
+      {
+        message: 'too_many_requests',
+        retryAfterSeconds,
+      } satisfies ApiErrorBody,
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }

@@ -1,12 +1,15 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
-import type {
-  DriverMe,
-  DriverPresenceStatus,
-  DriverProfile,
-  DriverProfileUpdate,
+import {
+  formatMessage,
+  type DriverMe,
+  type DriverPresenceStatus,
+  type DriverProfile,
+  type DriverProfileUpdate,
+  type PushProvider,
 } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import type { DbTx } from '../../common/db/db.module';
+import { PUSH_PROVIDER } from '../push';
 import {
   DriversRepository,
   type DriverBoardContact,
@@ -14,10 +17,19 @@ import {
   type DriverMatchAttributes,
 } from './drivers.repository';
 import {
+  NUDGE_BATCH_LIMIT,
+  OFFLINE_NUDGE_DELAY_SECONDS,
+  PRESENCE_DARK_AFTER_SECONDS,
+} from './location/driver-location.policy';
+import {
   DRIVER_LOCATION_STORE,
   type DriverLocationStore,
 } from './location/driver-location.store';
+import { DriverPresenceRepository } from './presence/driver-presence.repository';
 import { VehiclesRepository } from './vehicles.repository';
+
+/** Why the SERVER took a driver offline — never the driver's own toggle. */
+export type ServerOfflineReason = 'socket_disconnected' | 'dark';
 
 @Injectable()
 export class DriversService {
@@ -26,8 +38,10 @@ export class DriversService {
   constructor(
     private readonly drivers: DriversRepository,
     private readonly vehicles: VehiclesRepository,
+    private readonly presence: DriverPresenceRepository,
     @Inject(DRIVER_LOCATION_STORE)
     private readonly locations: DriverLocationStore,
+    @Inject(PUSH_PROVIDER) private readonly push: PushProvider,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
@@ -80,15 +94,36 @@ export class DriversService {
   ): Promise<DriverProfile> {
     // A driver may toggle before ever GETting /me.
     const profile = await this.drivers.findOrCreate(userId);
-
-    // #11 owns entering and leaving `on_ride`; a driver must not step out of it
-    // by hand and take a second offer. Cheap first gate only: chain A's driver
-    // (#61) is `offline` with a live ride, which is what the rides-table check
-    // inside `setOnlineIfEligible` catches below.
-    if (profile.status === 'on_ride')
-      throw new ConflictException('driver_on_ride');
-
     const cityId = this.env.DEFAULT_CITY_ID;
+
+    // #11 owns entering and leaving `on_ride`; a driver must not step out of
+    // it by hand and take a second offer — so `offline` is refused. An
+    // `online` re-assert while held (a socket reconnect or foreground refetch
+    // mid-ride) is the app repeating what the server already holds: answer
+    // with the profile and leave the ROW alone — a 409 here made the app flip
+    // its toggle and tear the stream down mid-ride, losing the tracking
+    // page's feed (review F3). Cheap first gate only: chain A's driver (#61)
+    // is `offline` with a live ride, which is what the rides-table check
+    // inside `setOnlineIfEligible` catches below.
+    if (profile.status === 'on_ride') {
+      // Still live on the OFFLINE path, in the present tense: the app commits
+      // its teardown before this answer arrives, so a driver who taps the
+      // toggle off mid-ride stops streaming and then reads the refusal. Issue
+      // #141 (review F38) — a reducer change, not this one's.
+      if (status === 'offline') throw new ConflictException('driver_on_ride');
+      // Re-seed the Redis member the 200 implies, so "proof of life is an
+      // accepted fix OR a `PUT status online` re-assert" holds with no case
+      // split. Ingest gates on set membership (the `RECORD` script's
+      // `SISMEMBER`), so a driver whose member went missing — Redis
+      // restarted, or the go-online `markOnline` failed before a force-assign
+      // — was acked 200 and then had every fix refused `not_online`, spent
+      // its one re-assert and took itself offline while the server held it.
+      // Idempotent, and it cannot make them dispatchable: `candidate-filter`
+      // gates on the Postgres status, which stays `on_ride` (review F43).
+      await this.locations.markOnline(cityId, userId, Date.now());
+      return profile;
+    }
+
     let updated: DriverProfile;
 
     if (status === 'online') {
@@ -111,7 +146,7 @@ export class DriversService {
         );
       }
       updated = online;
-      await this.locations.markOnline(cityId, userId);
+      await this.locations.markOnline(cityId, userId, Date.now());
     } else {
       await this.locations.markOffline(cityId, userId);
       updated = await this.drivers.setStatus(userId, 'offline');
@@ -128,33 +163,184 @@ export class DriversService {
   }
 
   /**
-   * Clears presence when a driver's LAST socket goes away (#38). Before this,
-   * a force-quit left them `online` in Postgres and in all three
-   * `drivers:*:<city>` keys forever: dispatch was safe, because the freshness
-   * filter drops a stale position from `findNearest`, but #18's board and #20's
-   * stats would both have read a ghost as available.
+   * The SERVER taking a driver offline — the two paths that are not a toggle.
+   * `socket_disconnected` is the last socket going away (#38): before it, a
+   * force-quit left them `online` in Postgres and in all three
+   * `drivers:*:<city>` keys forever. `dark` is #14's: the socket is up but
+   * there has been no proof of life — an accepted fix or a `PUT status online`
+   * re-assert — for `PRESENCE_DARK_AFTER_SECONDS`: permission revoked,
+   * location services off, the task crashed.
+   *
+   * Both stamp `offline_nudge_due_at = now + OFFLINE_NUDGE_DELAY_SECONDS`, and
+   * the sweeper sends ONE push when it comes due unless the driver is back
+   * online by then (`setOnlineIfEligible` nulls the column). State is a row,
+   * never a timer. A voluntary offline stamps nothing.
    *
    * Same Redis-then-Postgres order as `setPresence`'s offline branch, and for
    * the same reason — a failure between the two must leave the driver
-   * undispatchable, never the reverse.
+   * undispatchable, never the reverse. Returns false when nothing happened.
    */
-  async clearPresenceOnDisconnect(userId: string): Promise<void> {
+  async markOfflineByServer(
+    userId: string,
+    reason: ServerOfflineReason,
+    nowMs = Date.now(),
+  ): Promise<boolean> {
+    const cityId = this.env.DEFAULT_CITY_ID;
     const status = (await this.drivers.find(userId))?.status;
 
     // Only `online` is this path's to clear. `on_ride` belongs to #11 — a
     // driver whose app crashes mid-ride must not be dropped off the ride by a
-    // lost socket — and `offline`/no row is already where this would land.
-    if (status !== 'online') return;
+    // lost socket, and their position still feeds the tracking page — so
+    // their presence is left alone. A row that says `offline` is already
+    // where this would land in Postgres, but not necessarily in Redis: such a
+    // member (a Postgres write that failed after the Redis one, a deploy
+    // ghost) is a driver on the board every tick, so it is dropped. No row
+    // at all is left alone — nothing to reconcile against, and no production
+    // path puts a rowless driver in the set (every online path provisions
+    // the row first); the gateway spec's store-only drivers rely on it.
+    if (status === 'offline') {
+      await this.locations.markOffline(cityId, userId);
+      return false;
+    }
+    if (status !== 'online') return false;
 
-    await this.locations.markOffline(this.env.DEFAULT_CITY_ID, userId);
-    await this.drivers.setStatus(userId, 'offline');
+    await this.locations.markOffline(cityId, userId);
+    const marked = await this.presence.markOfflineByServer(
+      userId,
+      new Date(nowMs + OFFLINE_NUDGE_DELAY_SECONDS * 1000),
+    );
+    if (!marked) {
+      // The read said `online`; the conditional UPDATE found otherwise. A
+      // claim (`on_ride`) or a toggle landed between the two, and Redis
+      // presence is already dropped. For a toggle that is where it belongs;
+      // for a claim it would strand the ride's position feed. The only other
+      // writer is the app's own `online` re-assert (`setPresence`'s `on_ride`
+      // branch, review F43), which rides on a reconnect and may never come —
+      // `releaseFromRide` never touches Redis — so it is put back here.
+      const now = (await this.drivers.find(userId))?.status;
+      const presenceRestored = now === 'on_ride';
+      if (presenceRestored) {
+        await this.locations.markOnline(cityId, userId, nowMs);
+      }
+      this.logger.warn({
+        event: 'driver.presence.offline_skipped',
+        driverId: userId,
+        reason,
+        status: now ?? 'missing',
+        presenceRestored,
+        at: new Date().toISOString(),
+      });
+      return false;
+    }
 
     this.logger.log({
       event: 'driver.presence.status_changed',
       driverId: userId,
       from: 'online',
       to: 'offline',
-      reason: 'socket_disconnected',
+      reason,
+      at: new Date().toISOString(),
+    });
+    return true;
+  }
+
+  /**
+   * The dark sweep (#14): every member of the online set whose last proof of
+   * life is older than the freshness window goes offline. A null `lastSeenMs`
+   * — a member that predates the seeded score — is unknown, and unknown is
+   * dark. `on_ride` members fall out inside `markOfflineByServer`.
+   */
+  async markDarkDrivers(nowMs: number): Promise<number> {
+    const online = await this.locations.listOnline(this.env.DEFAULT_CITY_ID);
+    const cutoffMs = nowMs - PRESENCE_DARK_AFTER_SECONDS * 1000;
+    let marked = 0;
+    for (const driver of online) {
+      if (driver.lastSeenMs !== null && driver.lastSeenMs >= cutoffMs) continue;
+      if (await this.markOfflineByServer(driver.driverId, 'dark', nowMs)) {
+        marked += 1;
+      }
+    }
+    return marked;
+  }
+
+  /**
+   * The nudge pass (#14). `claimNudge` — a conditional UPDATE nulling the
+   * column — is the send lock, so two nodes cannot both push. Best-effort by
+   * design: a provider error is logged and the row stays claimed; the driver
+   * is offline and Dina's board says so.
+   */
+  async sendDueNudges(now: Date): Promise<void> {
+    const due = await this.presence.findDueNudges(now, NUDGE_BATCH_LIMIT);
+    for (const row of due) {
+      const at = new Date().toISOString();
+      if (!(await this.presence.claimNudge(row.userId))) {
+        // The column was nulled between the read and the claim: the driver
+        // came back online (or, on a second node, someone else sent it).
+        this.logger.log({
+          event: 'driver.push.nudge_skipped',
+          driverId: row.userId,
+          reason: 'back_online',
+          at,
+        });
+        continue;
+      }
+      if (!row.pushToken) {
+        this.logger.log({
+          event: 'driver.push.nudge_skipped',
+          driverId: row.userId,
+          reason: 'no_token',
+          at,
+        });
+        continue;
+      }
+      const result = await this.push.send(row.pushToken, {
+        title: formatMessage(row.language, 'push.offline_nudge_title'),
+        body: formatMessage(row.language, 'push.offline_nudge_body'),
+        data: { kind: 'offline_nudge' },
+      });
+      if (result.ok) {
+        this.logger.log({
+          event: 'driver.push.nudge_sent',
+          driverId: row.userId,
+          language: row.language,
+          at,
+        });
+        continue;
+      }
+      if (result.reason === 'device_not_registered') {
+        await this.presence.setPushToken(row.userId, null);
+      }
+      this.logger.warn({
+        event: 'driver.push.nudge_failed',
+        driverId: row.userId,
+        reason: result.reason,
+        at,
+      });
+    }
+  }
+
+  /**
+   * The phone's Expo push token (#14) — `findOrCreate` first, like every other
+   * write path here: registering the token may be a driver's very first call.
+   * The token itself is never logged; it is a device handle.
+   */
+  async setPushToken(userId: string, token: string): Promise<void> {
+    await this.drivers.findOrCreate(userId);
+    await this.presence.setPushToken(userId, token);
+    this.logger.log({
+      event: 'driver.push.token_registered',
+      driverId: userId,
+      at: new Date().toISOString(),
+    });
+  }
+
+  /** On sign-out — a phone handed to another driver must not carry the old driver's nudges. */
+  async clearPushToken(userId: string): Promise<void> {
+    await this.drivers.findOrCreate(userId);
+    await this.presence.setPushToken(userId, null);
+    this.logger.log({
+      event: 'driver.push.token_cleared',
+      driverId: userId,
       at: new Date().toISOString(),
     });
   }

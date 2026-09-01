@@ -34,8 +34,8 @@
  *   cancellation audit is its own ticket.
  * - A DRIVER STRANDED ON `in_progress` HAS NO SELF-SERVICE EXIT.
  *   `ALLOWED_TRANSITIONS.in_progress` is `['completed', 'cancelled_by_dispatcher']`,
- *   so they cannot cancel; and `setPresence` refuses BOTH `online` and
- *   `offline` while `on_ride`, so they cannot end their shift either. Their
+ *   so they cannot cancel; and `setPresence` refuses `offline` while
+ *   `on_ride`, so they cannot end their shift either. Their
  *   only exits are tapping Complete — settling a fare for a ride that may not
  *   have happened — or phoning a dispatcher. Deliberate: at
  *   `accepted`/`arriving`/`arrived` the driver CAN self-cancel and be released,

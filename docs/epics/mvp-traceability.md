@@ -36,7 +36,7 @@
 | SMS statuses + live-tracking web page (phone bookings, share-trip, blind-rider assistants) | NEW ticket (2026-08-07) | open | new capability — replaces what a rider PWA would have offered, serves PRD phone-segment JTBD |
 | Deploy (Hetzner VPS) | #13 | open, replanned | **host changed Railway → Hetzner CX22** (2026-08-16, architecture amendment). Capability unchanged; ops responsibilities Railway used to own (backups, TLS, deploys) move to us — see the amendment's mitigation table. Pulls in a new dependency: `OsrmMapsProvider` must exist for the API to boot in production at all |
 | Demo checkpoint to Atis & Dina | #24 | open, untouched | none (stays a checkpoint, not a scope gate) |
-| Driver app foundation | #14 | open (spike #4 deferred 2026-08-26 → mounted-phone superset; Android/iOS field legs owed as early #14 tasks) | none |
+| Driver app foundation | #14 | built (PR #139, 2026-08-31 — emulator/field legs owed); Android/iOS field drives owed (#4 open; spike deferred 2026-08-26 → the app ships the mounted-phone superset design) | none |
 
 ## Deferral register (needs explicit acceptance)
 

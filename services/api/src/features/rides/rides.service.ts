@@ -9,6 +9,7 @@ import {
 import {
   rideRequestSchema,
   RT,
+  type ApiErrorBody,
   type BookingChannel,
   type Ride,
   type RideCreated,
@@ -345,7 +346,10 @@ export class RidesService {
       at: new Date().toISOString(),
     });
     throw new HttpException(
-      { message: 'too_many_requests', retryAfterSeconds },
+      {
+        message: 'too_many_requests',
+        retryAfterSeconds,
+      } satisfies ApiErrorBody,
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }

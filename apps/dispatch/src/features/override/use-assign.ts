@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  apiErrorBodySchema,
   dispatchRosterSchema,
   type DispatchDriver,
   type MessageKey,
@@ -21,14 +22,17 @@ import { assignErrorKey } from './assign-state';
 
 type Outcome = { ok: true } | { ok: false; key: MessageKey };
 
-/** The api answers errors as `{ message: 'ride_not_assignable', ... }`. */
+/**
+ * The api answers errors as `{ message: 'ride_not_assignable', ... }` — read
+ * with the shared envelope, the same schema the api types its producers with.
+ * A hand-rolled twin here degraded Dina's override errors to the generic key
+ * mid-shift if the envelope ever moved, instead of failing loudly (review
+ * F26/F45).
+ */
 async function errorCodeOf(res: Response): Promise<string | undefined> {
   try {
-    const body: unknown = await res.json();
-    if (typeof body === 'object' && body !== null && 'message' in body) {
-      const { message } = body as { message: unknown };
-      return typeof message === 'string' ? message : undefined;
-    }
+    const parsed = apiErrorBodySchema.safeParse(await res.json());
+    if (parsed.success) return parsed.data.message;
   } catch {
     /* a body-less error is ordinary; the generic key covers it */
   }

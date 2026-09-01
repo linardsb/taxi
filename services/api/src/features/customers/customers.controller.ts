@@ -12,6 +12,7 @@ import {
 import {
   customerUpsertBodySchema,
   phoneSchema,
+  type ApiErrorBody,
   type CallerLookup,
   type Customer,
   type CustomerUpsertBody,
@@ -112,7 +113,10 @@ export class CustomersController {
       at: new Date().toISOString(),
     });
     throw new HttpException(
-      { message: 'too_many_requests', retryAfterSeconds },
+      {
+        message: 'too_many_requests',
+        retryAfterSeconds,
+      } satisfies ApiErrorBody,
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }

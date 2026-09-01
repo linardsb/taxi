@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { DRIVER_PRESENCE_STATUSES, DRIVER_STATUSES, LANGUAGES } from '../enums';
-import { centsSchema, commissionPctSchema } from '../money';
+import {
+  centsSchema,
+  commissionPctSchema,
+  nonNegativeCentsSchema,
+} from '../money';
 import { vehicleSchema } from './vehicle';
 
 export const driverProfileSchema = z.object({
@@ -56,3 +60,28 @@ export const driverMeSchema = z.object({
   vehicles: z.array(vehicleSchema),
 });
 export type DriverMe = z.infer<typeof driverMeSchema>;
+
+/**
+ * `ExponentPushToken[...]` (classic) or `ExpoPushToken[...]` — both are minted
+ * by `getExpoPushTokenAsync` (#14). Deliberately NOT on `driverProfileSchema`:
+ * a provider handle on the wire profile is how it ends up in a log (the
+ * `users.payment_customer_ref` precedent in db/src/schema/users.ts).
+ */
+export const expoPushTokenSchema = z
+  .string()
+  .regex(/^Expo(nent)?PushToken\[[A-Za-z0-9_-]{1,64}\]$/);
+export const pushTokenUpdateSchema = z.object({ token: expoPushTokenSchema });
+export type PushTokenUpdate = z.infer<typeof pushTokenUpdateSchema>;
+
+/**
+ * GET /drivers/me/earnings/today — the home card (#14). `day` is in the city's
+ * timezone (Europe/Riga for the pilot); the api never computes a midnight —
+ * Postgres does, so `day` is whatever the query said it was.
+ */
+export const driverEarningsTodaySchema = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  timezone: z.string().min(1),
+  earnedCents: nonNegativeCentsSchema,
+  rideCount: z.number().int().nonnegative(),
+});
+export type DriverEarningsToday = z.infer<typeof driverEarningsTodaySchema>;

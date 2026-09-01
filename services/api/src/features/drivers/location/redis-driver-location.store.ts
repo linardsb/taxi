@@ -63,8 +63,20 @@ export class RedisDriverLocationStore
     });
   }
 
-  async markOnline(cityId: string, driverId: string): Promise<void> {
-    await this.redis.sadd(onlineKey(cityId), driverId);
+  /**
+   * SADD + the seeded `seen` score in one round trip (#14). `zadd(key, score,
+   * member)` — score BEFORE member in ioredis.
+   */
+  async markOnline(
+    cityId: string,
+    driverId: string,
+    atMs: number,
+  ): Promise<void> {
+    await this.redis
+      .multi()
+      .sadd(onlineKey(cityId), driverId)
+      .zadd(seenKey(cityId), String(atMs), driverId)
+      .exec();
   }
 
   /**

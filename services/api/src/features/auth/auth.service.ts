@@ -9,6 +9,7 @@ import {
 import {
   authSessionSchema,
   SIGNUP_ROLES,
+  type ApiErrorBody,
   type AuthSession,
   type OtpRequest,
   type OtpRequestResponse,
@@ -142,7 +143,10 @@ export class AuthService {
         await this.kv.ttl(cooldownKey(phone)),
       );
       throw new HttpException(
-        { message: 'resend_too_soon', retryAfterSeconds },
+        {
+          message: 'resend_too_soon',
+          retryAfterSeconds,
+        } satisfies ApiErrorBody,
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
