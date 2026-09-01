@@ -106,10 +106,12 @@ export class DriversService {
     // is `offline` with a live ride, which is what the rides-table check
     // inside `setOnlineIfEligible` catches below.
     if (profile.status === 'on_ride') {
-      // The app now reads this refusal as "the server is holding you" and
-      // keeps the stream up: nothing after its offline put is committed
-      // before the answer, so the tap costs the driver a banner and nothing
-      // else (#141, review F38 — a reducer change, landed app-side).
+      // The app now reads this refusal as "the server is holding you" and,
+      // WHEN IT CAN STILL PROVE LIFE, keeps the stream up: nothing after its
+      // offline put is committed before the answer, so the tap costs the
+      // driver a banner and nothing else. With no stream it folds offline
+      // instead, deliberately — offline is the safe wrong there (#141,
+      // review F38 — a reducer change, landed app-side).
       if (status === 'offline') throw new ConflictException('driver_on_ride');
       // Re-seed the Redis member the 200 implies, so "proof of life is an
       // accepted fix OR a `PUT status online` re-assert" holds with no case

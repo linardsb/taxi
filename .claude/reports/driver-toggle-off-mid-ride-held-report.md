@@ -81,22 +81,27 @@ All `observed` in the worktree, `COMPOSE_PROJECT_NAME=taxi`, `@taxi/shared` buil
 | `pnpm --filter @taxi/driver lint` | pass (`max-lines` 500 is an **error** here) |
 | `pnpm --filter @taxi/driver test` — baseline at `660b833` | 98 passed, 25 suites |
 | — after the split (Phase 1) | **98 passed**, 27 suites — count unchanged, AC6 |
-| — final | **104 passed**, 27 suites (98 + 6 new) |
+| — at the implementation head `b843671` | **104 passed**, 27 suites (98 + 6 new) |
+| — final, after the review round-1 fixes | **109 passed**, 27 suites (104 + 5 new) |
 | Phase 1 gate: `pnpm turbo run typecheck lint test build --force` | **exit 0**, 20/20 tasks, 1m21.857s |
-| Final gate: same command, on the final source tree | **exit 0**, 20/20 tasks, 58.395s |
+| Gate at `b843671` (before the review) | **exit 0**, 20/20 tasks, 58.395s |
+| Final gate: same command, after the review fixes | **exit 0**, 20/20 tasks, 1m5.096s |
 | `@taxi/api` inside the final gate | 626 passed, 35 skipped, 70 of 72 suites (Redis-gated, no `REDIS_TEST_URL`) |
-| `git diff --stat services/api` | 1 file, 4 insertions / 4 deletions — comment lines only |
+| `git diff --stat services/api` | 1 file, 6 insertions / 4 deletions — comment lines only (re-checked after F5) |
 
 ### Line counts (`observed`, `wc -l` at HEAD — not inherited from the plan)
 
-| File | Before | After split | Final |
-|---|---|---|---|
-| `presence-state.ts` | 480 | 432 | **485** |
-| `use-presence.tsx` | 362 | — | 371 |
-| `presence-pill.ts` | — | 26 | 26 |
-| `run-effects.ts` | — | 26 | 26 |
+| File | Before | After split | At `b843671` | Final (after review fixes) |
+|---|---|---|---|---|
+| `presence-state.ts` | 480 | 432 | 485 | **496** |
+| `use-presence.tsx` | 362 | — | 371 | 371 |
+| `presence-pill.ts` | — | 26 | 26 | 26 |
+| `run-effects.ts` | — | 26 | 26 | 26 |
 
-`presence-state.ts` has **15 lines of headroom** under the 500 cap (`derived`: 500 − 485).
+`presence-state.ts` has **4 lines of headroom** under the 500 cap (`derived`: 500 − 496). The five
+review fixes cost 11 lines; fitting them meant tightening the held branch's comment to the claim it
+actually has to carry now that F2's hole is closed. **The next change to this file needs a split
+first** — that consequence, flagged as a deviation below, is now four lines from being forced.
 `use-presence.tsx` was not measured between the two phases: the split was net zero lines on it (one
 name out of the `./presence-state` import list, one `./run-effects` import in), so its post-split
 count is `derived`, not observed.
@@ -119,14 +124,21 @@ showing the same banner. Loading (`busy` spinner), error (generic banner) and of
 states are unchanged and were not re-implemented. **No declared UX state was skipped** — this ticket
 declared none.
 
+The banner's **exit** was missing and the review caught it (F1): `driver_on_ride` maps to
+`{ tone: 'info', text }` with no `action` and no `secondary`, so `banner_dismissed` has no UI route
+from it — `Banner.tsx:42-70` renders a button only when one is supplied. `server_offline` on a
+non-online intent now clears it, so it lives exactly as long as the hold does.
+
 ## Deviations from the plan
 
-1. **`presence-state.ts` is 485 lines, not the plan's `derived` ~461 — 15 lines of headroom, not
-   ~39.** The plan budgeted ~28 lines in; the actual is 53. The difference is comment length: the
-   plan itself required GOTCHA 1 (the two no-stream routes and the F31 ghost toggle) and GOTCHA 2
-   (why the fallback's `server: 'offline'` is deliberate) on the page. I trimmed the held branch's
-   comment once already (488 → 485) and stopped rather than cut required reasoning.
-   **Consequence to flag: the next change that touches this file will need another split.**
+1. **`presence-state.ts` is 496 lines, not the plan's `derived` ~461 — 4 lines of headroom, not
+   ~39.** The plan budgeted ~28 lines in; the implementation landed 53 (485), and the review round-1
+   fixes added another 11. The difference against the plan is comment length: the plan itself
+   required GOTCHA 1 (the no-stream routes and the F31 ghost toggle) and GOTCHA 2 (why the
+   fallback's `server: 'offline'` is deliberate) on the page. The held branch's comment was trimmed
+   twice (488 → 485, then again for the review fixes) and stopped rather than cut required
+   reasoning; a third module split was weighed for the review pass and rejected as scope creep on a
+   fix round. **Consequence to flag: the next change that touches this file will need a split.**
 2. **Phase 1 was committed with `git add -A`, not the plan's `git commit -am`.** `-a` stages tracked
    modifications only; the four new files are untracked, so the plan's command would have landed
    `presence-state.ts`'s deletions without the modules replacing them — a split commit that does not
@@ -194,7 +206,50 @@ are green and unmodified inside the full gate. The api's control flow was not to
   ~23 modified and ~14 untracked files (#13). All work was done in the `../taxi-141` worktree, as
   Phase 0 required; the main checkout was not touched.
 
+## Review round 1 — findings fixed
+
+`.claude/code-reviews/pr-142-review.md` (in the main checkout, not this branch). No Critical, no
+High; three Mediums and four Lows. Six fixed here, one deferred.
+
+| # | Fix | Where |
+|---|---|---|
+| F1 | `server_offline` on a non-online intent clears a `driver_on_ride` banner — it has no dismiss affordance, so nothing else ever could. Plan §Level 4 step 8 would have read ❌ against correct behaviour | `presence-state.ts` `server_offline` |
+| F2 | `permission/foreground_denied` sets `streaming: false` — the branch already tore the stream down, and the held branch's guard reads that flag on the put's answer. Unfixed, a four-step trace rebuilt F31's ghost toggle *through the guard written to prevent it* | `presence-state.ts` `permission` |
+| F3 | `cold_launch` with intent `offline` and a live OS task emits `stop_stream` instead of discarding it. Pre-existing; this PR made a normal tap a routine way into the window (≤13 s — `derived`: `DRAIN_GRACE_MS` 5 000 + `api-client.ts:62` `timeoutMs` 8 000) | `presence-state.ts` `cold_launch` |
+| F4 | The held branch clears `reasserted`, for symmetry with `flipOffline`. Left armed, a single later `ack_not_online` went straight to `flipOffline` and tore the stream down mid-ride — this PR's harm through another door | `presence-state.ts` `error` |
+| F5 | The api comment now names its condition: the app keeps the stream up *when it can still prove life*; with no stream it folds offline deliberately. Comment-only, re-verified | `drivers.service.ts` |
+| F6 | #14's §C.14 heading now leads with **SUPERSEDED** instead of «expected to FAIL», with the historical text kept below. This was AC7's unmet half | `driver-app-auth-online-location.md` |
+
+**F7 (Low) — deferred, not dropped.** The springs-back toggle has no reliable TalkBack announcement:
+`accessibilityState.checked` goes `true → false → true` and `Banner.tsx`'s explicit announce is
+iOS-only. Already owed at plan §C.12 / #14 review F47, which exists to decide exactly this — no new
+issue opened, because it would duplicate one.
+
+**F2's claim was corrected on all three surfaces it was stated on**, not just at the fix: the branch
+comment, the plan's blast-radius row (the `permission/foreground_denied` row now reads *enforced*,
+not assumed), and the PR body. The true statement is narrower than the old one — every route emitting
+`put_status offline` with no stream clears the flag first, so the guard cannot read a stale `true`.
+The flag is still an intention rather than an observation on the two `drained` paths; that is
+unreachable, not fixed, and the comment says so.
+
+### The fixes were watched to fail (`observed`)
+
+Each fix reverted in turn, `pnpm --filter @taxi/driver test -- presence-state` re-run, file restored
+(`git status` clean after; the runner asserts it). Each mutation kills **exactly one** case — no
+collateral, so each test pins its own fix:
+
+| Mutation | Observed |
+|---|---|
+| Drop the `driver_on_ride` banner clear from `server_offline` | **red** — F1's case only; `Tests: 1 failed, 22 passed, 23 total` |
+| Drop `streaming: false` from `permission/foreground_denied` | **red** — F2's case only; same tally |
+| Restore `cold_launch`'s bare `return noop(base)` | **red** — F3's case only; same tally |
+| Drop `reasserted: false` from the held branch | **red** — F4's case only; same tally |
+
+The sixth new case — `home-screen.test.tsx`'s ride-scoped banner — is a **premise** test, not a
+regression test: it pins that `driver_on_ride` renders with no dismiss button, which is *why* F1's
+reducer fix is required. It does not go red under any of the four mutations, and is not claimed to.
+
 ### Ready for the next step
 
-Next: `piv-commit` the Phase 2-4 work, then `piv-create-pr` (this report fills the PR body — re-derive
-every figure quoted there at HEAD), then `piv-review-pr`.
+Next: re-run `piv-review-pr` on the updated PR. The device proof stays **owed** — steps 4, 5, 7 and
+now 8 of the run sheet (step 8 is what F1 makes passable).

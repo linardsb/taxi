@@ -95,6 +95,30 @@ describe('HomeScreen', () => {
     expect(mockToggle).toHaveBeenCalledTimes(1);
   });
 
+  it('renders the ride-scoped banner with no way to dismiss it — the reducer is its only exit (edge — review F1)', async () => {
+    mockPresence = {
+      ...initialPresence,
+      intent: 'online',
+      server: 'online',
+      streaming: true,
+      banner: { kind: 'driver_on_ride' },
+    };
+    await render(<HomeScreen />);
+
+    expect(screen.getByTestId('banner')).toHaveTextContent(
+      t('driver.error.driver_on_ride'),
+    );
+    // No action and no secondary: `banner_dismissed` has no UI route from
+    // this kind, so `server_offline` clearing it is the only way out.
+    expect(
+      screen.queryByRole('button', { name: t('driver.action.skip') }),
+    ).toBeNull();
+    // The toggle stays ON — the tap cost a banner and nothing else.
+    expect(
+      screen.getByRole('switch', { name: t('driver.home.go_offline') }),
+    ).toBeChecked();
+  });
+
   it('renders a dash when earnings fail, with the toggle unaffected, and the pill while online (failure)', async () => {
     mockEarningsStatus = 'error';
     mockPresence = {

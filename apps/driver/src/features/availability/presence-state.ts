@@ -163,7 +163,14 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
   switch (event.type) {
     case 'cold_launch': {
       const base = { ...state, queued: event.queued };
-      if (event.intent !== 'online') return noop(base);
+      if (event.intent !== 'online') {
+        // The OS task outlives the intent when the kill lands inside the
+        // go-offline window — #141 routes a normal tap through it. Dropping
+        // it leaves a live stream with no control that stops it (review F3).
+        return event.streaming
+          ? { state: base, effects: [{ type: 'stop_stream' }] }
+          : noop(base);
+      }
       if (event.streaming) {
         // Android kept the service alive across the kill: re-assert, no tap.
         return {
@@ -232,6 +239,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
           state: {
             ...state,
             intent: 'offline',
+            streaming: false, // the teardown below really stops it (review F2)
             busy: serverOnline, // the offline put's answer clears it
             banner: { kind: 'foreground_denied' },
           },
@@ -280,8 +288,12 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
 
     case 'server_offline': {
       if (state.intent !== 'online') {
+        // The hold was ride-scoped, and `driver_on_ride` carries no dismiss
+        // affordance — nothing else would ever clear it (review F1).
+        const banner =
+          state.banner?.kind === 'driver_on_ride' ? null : state.banner;
         return {
-          state: { ...state, server: 'offline', busy: false },
+          state: { ...state, server: 'offline', busy: false, banner },
           effects:
             state.server === 'offline'
               ? []
@@ -346,13 +358,11 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
         // `!socket`, `not_online`): a restart of an un-stopped uploader,
         // never a kick over a `stop()` — the stop sits behind the put.
         //
-        // `state.streaming` is the whole guard, not padding. Two routes reach
-        // here with no stream: the `effect_failed` fold below (it emits the
-        // offline put off the PRE-fold `server`, then sets `streaming:
-        // false`) and `permission/foreground_denied` with the server already
-        // online. Restoring `intent: 'online'` on either rebuilds review
-        // F31's ghost toggle. Falling through writes `server: 'offline'`
-        // while the server holds `on_ride` — deliberate: with no stream we
+        // `state.streaming` is the whole guard, not padding — an intention,
+        // not an observation, so it holds only because every route emitting
+        // `put_status offline` with no stream clears the flag first, and any
+        // new emitter inherits that (review F2). Falling through writes
+        // `server: 'offline'` under an `on_ride` hold — with no stream we
         // cannot prove life, and offline is the safe wrong.
         return {
           state: {
@@ -360,6 +370,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
             intent: 'online',
             server: 'online',
             busy: false,
+            reasserted: false, // symmetry with `flipOffline` (review F4)
             banner: { kind: 'driver_on_ride' },
           },
           effects: [

@@ -934,7 +934,7 @@ Walked by hand against every `put_status` emission at `660b833`:
 |---|---|---|---|---|
 | `GO_ONLINE` (96-102) | online | online (ok) / offline (409 → flipOffline) | continue / stop | same |
 | `cold_launch` alive (168-175) | online | same | continue / stop | same |
-| `permission/foreground_denied` + serverOnline (237-242) | offline | offline | continue | same |
+| `permission/foreground_denied` + serverOnline (237-242) | offline | offline — **enforced**, not assumed: the branch clears `streaming` before the put, so the held branch's guard cannot fire on this route (review F2; before the fix it could, and the new predicate then stopped the chain) | continue | same |
 | `drained` (311-317) | offline | offline (ok/network) / **online (held)** | continue | continue / **stop** |
 | `error/effect_failed` (362-369) | offline | offline (`streaming` already false) | continue | same |
 | `server_offline` re-assert (291) | online | — single-effect list | moot | moot |
