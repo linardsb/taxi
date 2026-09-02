@@ -1,8 +1,6 @@
 import {
   decide,
   initialPresence,
-  pillFrom,
-  runEffects,
   serverStatusEvent,
   type Effect,
   type PresenceState,
@@ -57,7 +55,7 @@ describe('decide — going online', () => {
     });
     expect(fg.state.intent).toBe('offline');
     expect(fg.state.banner?.kind).toBe('foreground_denied');
-    expect(types(fg.effects)).toEqual(['persist_intent']);
+    expect(types(fg.effects)).toEqual(['persist_intent', 'stop_stream']);
 
     const bg = decide(pending, {
       type: 'permission',
@@ -149,6 +147,7 @@ describe('decide — going offline and cold launch', () => {
     const drained = decide(d.state, { type: 'drained' });
     expect(types(drained.effects)).toEqual([
       'put_status',
+      'stop_uploader',
       'stop_stream',
       'disconnect_socket',
       'keep_awake',
@@ -200,25 +199,59 @@ describe('decide — going offline and cold launch', () => {
     expect(wasOffline.effects).toEqual([]);
   });
 
+  it('cold launch offline with the OS task still alive stops it — never a stream the app offers no control over (failure — review F3)', () => {
+    // A kill inside the go-offline window (#141 routes a normal tap through
+    // it) leaves the store saying `offline` with the task still uploading.
+    const live = decide(initialPresence, {
+      type: 'cold_launch',
+      intent: 'offline',
+      streaming: true,
+      markedOfflineAt: null,
+      queued: 4,
+      now: AT,
+    });
+    expect(types(live.effects)).toEqual(['stop_stream']);
+    expect(live.state.intent).toBe('offline');
+    expect(live.state.streaming).toBe(false);
+    expect(live.state.queued).toBe(4);
+
+    // Hand-built on purpose — the exception R5's rule allows, since NO event
+    // sequence reaches it: `cold_launch` only ever runs from `initialPresence`
+    // (`use-presence.tsx:257-279`, reset at `:324`), where `streaming` is
+    // already false. Without it the assertion above pins the propagation of
+    // `initialPresence.streaming`, not the branch — it stays green if the
+    // branch stops clearing the flag. This is the one that goes red (R4).
+    const stale = decide(
+      { ...initialPresence, streaming: true },
+      {
+        type: 'cold_launch',
+        intent: 'offline',
+        streaming: true,
+        markedOfflineAt: null,
+        queued: 0,
+        now: AT,
+      },
+    );
+    expect(stale.state.streaming).toBe(false);
+
+    // The ordinary dead-task launch still emits nothing.
+    const dead = decide(initialPresence, {
+      type: 'cold_launch',
+      intent: 'offline',
+      streaming: false,
+      markedOfflineAt: null,
+      queued: 0,
+      now: AT,
+    });
+    expect(dead.effects).toEqual([]);
+  });
+
   it('ignores a toggle while a transition is in flight (failure)', () => {
     const busy = decide(initialPresence, { type: 'toggle_pressed' }).state;
     expect(decide(busy, { type: 'toggle_pressed' })).toEqual({
       state: busy,
       effects: [],
     });
-  });
-});
-
-describe('pillFrom', () => {
-  it('derives live / reconnecting / offline from the last ack, and nothing while offline', () => {
-    const now = 1_800_000_000_000;
-    expect(pillFrom(initialPresence, now)).toBeNull();
-    expect(pillFrom(online({ lastAckAt: null }), now)).toBe('reconnecting');
-    expect(pillFrom(online({ lastAckAt: now - 5_000 }), now)).toBe('live');
-    expect(pillFrom(online({ lastAckAt: now - 30_000 }), now)).toBe(
-      'reconnecting',
-    );
-    expect(pillFrom(online({ lastAckAt: now - 61_000 }), now)).toBe('offline');
   });
 });
 
@@ -276,8 +309,186 @@ describe('decide — the server holds us', () => {
       type: 'permission',
       result: 'foreground_denied',
     });
-    expect(types(quiet.effects)).toEqual(['persist_intent']);
+    expect(types(quiet.effects)).toEqual(['persist_intent', 'stop_stream']);
     expect(quiet.state.busy).toBe(false);
+  });
+
+  it('a refused offline put while streaming holds us online: no teardown, no lie about the server (failure — #141/F38)', () => {
+    const pressed = decide(online(), { type: 'toggle_pressed' });
+    const drained = decide(pressed.state, { type: 'drained' });
+    // The stop and the teardown both queue BEHIND the put. That ordering is
+    // the fix: the chain skips everything after an answer that disagrees.
+    expect(types(drained.effects)).toEqual([
+      'put_status',
+      'stop_uploader',
+      'stop_stream',
+      'disconnect_socket',
+      'keep_awake',
+    ]);
+
+    const held = decide(drained.state, {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    expect(held.state.intent).toBe('online');
+    expect(held.state.server).toBe('online');
+    expect(held.state.streaming).toBe(true);
+    expect(held.state.busy).toBe(false);
+    expect(held.state.banner?.kind).toBe('driver_on_ride');
+    // `toEqual` on the whole list, not `not.toContain('stop_stream')`: only
+    // the whole list proves nothing at all was torn down.
+    expect(types(held.effects)).toEqual(['persist_intent', 'kick_uploader']);
+    expect(held.effects[0]).toEqual({
+      type: 'persist_intent',
+      intent: 'online',
+    });
+  });
+
+  it('the same refusal with no stream still flips offline: we cannot prove life (edge)', () => {
+    const d = decide(online({ streaming: false, busy: true }), {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    expect(d.state.intent).toBe('offline');
+    expect(types(d.effects)).toContain('stop_stream');
+  });
+
+  it('the ride-scoped banner clears when the server states offline — nothing else can, it carries no dismiss affordance (failure — review F1)', () => {
+    const pressed = decide(online(), { type: 'toggle_pressed' });
+    const refused = decide(decide(pressed.state, { type: 'drained' }).state, {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    expect(refused.state.banner).toEqual({ kind: 'driver_on_ride' });
+
+    // Mid-ride, a foreground refetch reads `on_ride` → the banner stays up.
+    const refetched = decide(refused.state, { type: 'server_online' });
+    expect(refetched.state.banner).toEqual({ kind: 'driver_on_ride' });
+
+    // The ride ends and the driver taps OFF again; this put lands 200. Plan
+    // §Level 4 step 8 reads «no banner» — the hold was ride-scoped.
+    const off = decide(refetched.state, { type: 'toggle_pressed' });
+    const done = decide(off.state, { type: 'server_offline', at: AT });
+    expect(done.state.banner).toBeNull();
+    expect(done.state.server).toBe('offline');
+
+    // Guidance in the same slot is not collateral.
+    const guided = decide(
+      { ...off.state, banner: { kind: 'foreground_denied' } },
+      { type: 'server_offline', at: AT },
+    );
+    expect(guided.state.banner).toEqual({ kind: 'foreground_denied' });
+  });
+
+  it('the held branch disarms the re-assert — armed, the next not_online tears the stream down mid-ride (failure — review F4)', () => {
+    const armed = decide(online(), { type: 'ack_not_online', at: AT });
+    expect(armed.state.reasserted).toBe(true);
+
+    // A real route to the same state rather than a hand-built one (plan
+    // §style): the re-assert lands, `busy` drops, the arm survives it.
+    const settled = decide(armed.state, { type: 'server_online' }).state;
+    expect(settled.busy).toBe(false);
+    expect(settled.reasserted).toBe(true);
+
+    const pressed = decide(settled, { type: 'toggle_pressed' });
+    const held = decide(decide(pressed.state, { type: 'drained' }).state, {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    expect(held.state.intent).toBe('online');
+    expect(held.state.reasserted).toBe(false);
+
+    // Left armed this would be `flipOffline`, emitting the teardown #141
+    // exists to prevent. Disarmed, it is an ordinary single re-assert.
+    const nudge = decide(held.state, { type: 'ack_not_online', at: AT });
+    expect(types(nudge.effects)).toEqual(['put_status']);
+    expect(nudge.state.reasserted).toBe(true);
+  });
+
+  it('a foreground denial with the server online clears `streaming` before the put — the guard cannot read a flag that lies (failure — review F2)', () => {
+    // The route in: an offline put that failed on the network leaves `server`
+    // and `streaming` saying online while the chain really tore the stream
+    // down, and the driver then taps back ON.
+    const drained = decide(decide(online(), { type: 'toggle_pressed' }).state, {
+      type: 'drained',
+    });
+    const netFail = decide(drained.state, { type: 'error', code: 'offline' });
+    expect(netFail.state.server).toBe('online');
+    expect(netFail.state.intent).toBe('offline');
+
+    const back = decide(netFail.state, { type: 'toggle_pressed' });
+    const denied = decide(back.state, {
+      type: 'permission',
+      result: 'foreground_denied',
+    });
+    expect(denied.state.streaming).toBe(false);
+    expect(types(denied.effects)).toEqual([
+      'persist_intent',
+      'put_status',
+      'stop_stream',
+      'disconnect_socket',
+      'keep_awake',
+    ]);
+
+    // With the flag honest a 409 on that put folds offline, instead of
+    // restoring `intent: 'online'` with no stream — F31's ghost toggle.
+    const refused = decide(denied.state, {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    expect(refused.state.intent).toBe('offline');
+    expect(refused.state.banner).toEqual({ kind: 'driver_on_ride' });
+
+    // The `!serverOnline` path has nothing to tell the server, but it still
+    // stops the stream: the cleared flag is true by construction, not by an
+    // argument about what ran before it (review R2).
+    const quiet = decide(
+      decide(initialPresence, { type: 'toggle_pressed' }).state,
+      { type: 'permission', result: 'foreground_denied' },
+    );
+    expect(types(quiet.effects)).toEqual(['persist_intent', 'stop_stream']);
+    expect(quiet.state.streaming).toBe(false);
+  });
+
+  it('a network failure on the offline put leaves intent offline and emits nothing — the chain, not the reducer, does the teardown (edge)', () => {
+    const pressed = decide(online(), { type: 'toggle_pressed' });
+    const drained = decide(pressed.state, { type: 'drained' });
+
+    const failed = decide(drained.state, {
+      type: 'error',
+      code: 'offline',
+      status: 'offline',
+    });
+    expect(failed.state.busy).toBe(false);
+    expect(failed.state.intent).toBe('offline');
+    // This does NOT prove the teardown runs — the reducer emits nothing here.
+    // The teardown is the outer chain carrying on past the `'stop'`
+    // predicate, which `use-presence.test.tsx` owns. All this pins is the
+    // value that predicate reads.
+    expect(failed.effects).toEqual([]);
+  });
+
+  it('a half-torn-down app is NOT restored: the effect_failed fold has no stream to offer (failure — the F31 guard)', () => {
+    const fold = decide(online(), { type: 'error', code: 'effect_failed' });
+    // The fold emits the offline put off the PRE-fold `server: 'online'`…
+    expect(fold.effects[0]).toEqual({ type: 'put_status', status: 'offline' });
+    // …while folding `streaming` false, so the 409 answering that put lands
+    // on a state with nothing streaming.
+    expect(fold.state.streaming).toBe(false);
+
+    const refused = decide(fold.state, {
+      type: 'error',
+      code: 'driver_on_ride',
+      status: 'offline',
+    });
+    // The fallback, not the held branch: restoring `intent: 'online'` over a
+    // half-torn-down app is review F31's ghost toggle.
+    expect(refused.state.intent).toBe('offline');
   });
 });
 
@@ -365,63 +576,5 @@ describe('decide — effect failures', () => {
     expect(failed.state.intent).toBe('offline');
     // «grant background location», not «something went wrong».
     expect(failed.state.banner?.kind).toBe('background_denied');
-  });
-});
-
-describe('runEffects', () => {
-  it('runs effects in order, stops at the first throw and reports it once — and the report clears busy (failure)', async () => {
-    const ran: string[] = [];
-    const onThrow = jest.fn();
-
-    await runEffects(
-      [
-        { type: 'persist_intent', intent: 'online' },
-        { type: 'request_permissions' },
-        { type: 'put_status', status: 'online' },
-      ],
-      (effect) => {
-        ran.push(effect.type);
-        return effect.type === 'request_permissions'
-          ? Promise.reject(new Error('keystore'))
-          : Promise.resolve();
-      },
-      onThrow,
-    );
-
-    expect(ran).toEqual(['persist_intent', 'request_permissions']);
-    expect(onThrow).toHaveBeenCalledTimes(1);
-    expect(onThrow).toHaveBeenCalledWith(new Error('keystore'));
-
-    const stuck = decide(initialPresence, { type: 'toggle_pressed' }).state;
-    expect(stuck.busy).toBe(true);
-    const cleared = decide(stuck, { type: 'error', code: 'effect_failed' });
-    expect(cleared.state.busy).toBe(false);
-    expect(cleared.state.intent).toBe('offline');
-    expect(cleared.state.banner?.kind).toBe('generic');
-  });
-
-  it("stops when `run` answers 'stop' — a refused put must not rebuild what flipOffline tore down (failure — review F32)", async () => {
-    const ran: string[] = [];
-    const onThrow = jest.fn();
-
-    await runEffects(
-      [
-        { type: 'purge_stale_fixes' },
-        { type: 'put_status', status: 'online' },
-        { type: 'start_stream' },
-        { type: 'connect_socket' },
-        { type: 'keep_awake', on: true },
-      ],
-      (effect) => {
-        ran.push(effect.type);
-        return Promise.resolve(
-          effect.type === 'put_status' ? ('stop' as const) : undefined,
-        );
-      },
-      onThrow,
-    );
-
-    expect(ran).toEqual(['purge_stale_fixes', 'put_status']);
-    expect(onThrow).not.toHaveBeenCalled();
   });
 });

@@ -2,8 +2,6 @@ import type { DriverStatus } from '@taxi/shared';
 import type { PermissionResult } from '@/features/location';
 import type { Intent } from './intent-store';
 
-export type Connection = 'live' | 'reconnecting' | 'offline';
-
 export type BannerKind =
   | 'marked_offline'
   | 'foreground_denied'
@@ -60,7 +58,10 @@ export type PresenceEvent =
   | { type: 'permission'; result: PermissionResult }
   | { type: 'server_online' }
   | { type: 'server_offline'; at: string }
-  | { type: 'error'; code: string }
+  // `status` is the `put_status` this refusal answers, when it was one.
+  // The reducer must not infer it from state: `driver_on_ride` is thrown
+  // by `vehicles.service.ts:90` too, on a path no put started.
+  | { type: 'error'; code: string; status?: Intent }
   | { type: 'drained' }
   | { type: 'ack_not_online'; at: string }
   | { type: 'socket_connect' }
@@ -82,6 +83,7 @@ export type Effect =
   | { type: 'disconnect_socket' }
   | { type: 'keep_awake'; on: boolean }
   | { type: 'kick_uploader' }
+  | { type: 'stop_uploader' }
   | { type: 'purge_stale_fixes' }
   | { type: 'show_battery_prompt' }
   | { type: 'drain_then_clear' }
@@ -161,7 +163,17 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
   switch (event.type) {
     case 'cold_launch': {
       const base = { ...state, queued: event.queued };
-      if (event.intent !== 'online') return noop(base);
+      if (event.intent !== 'online') {
+        // The OS task outlives the intent when the kill lands inside the
+        // go-offline window — #141 routes a normal tap through it. Dropping
+        // it leaves a live stream with no control that stops it (review F3).
+        return event.streaming
+          ? {
+              state: { ...base, streaming: false },
+              effects: [{ type: 'stop_stream' }],
+            }
+          : noop(base);
+      }
       if (event.streaming) {
         // Android kept the service alive across the kill: re-assert, no tap.
         return {
@@ -207,7 +219,8 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
         };
       }
       // Drain first (≤5 s, best effort), THEN tell the server — or every
-      // queued fix comes back `not_online`.
+      // queued fix comes back `not_online`. Nothing after that put is
+      // committed before its answer: see `drained` (#141).
       return {
         state: { ...state, intent: 'offline', busy: true },
         effects: [
@@ -229,6 +242,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
           state: {
             ...state,
             intent: 'offline',
+            streaming: false, // both branches below really stop it (review R2)
             busy: serverOnline, // the offline put's answer clears it
             banner: { kind: 'foreground_denied' },
           },
@@ -239,7 +253,7 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
                   { type: 'put_status', status: 'offline' } as const,
                   ...TEAR_DOWN,
                 ]
-              : []),
+              : [{ type: 'stop_stream' } as const]),
           ],
         };
       }
@@ -277,8 +291,12 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
 
     case 'server_offline': {
       if (state.intent !== 'online') {
+        // The hold was ride-scoped, and `driver_on_ride` carries no dismiss
+        // affordance — nothing else would ever clear it (review F1).
+        const banner =
+          state.banner?.kind === 'driver_on_ride' ? null : state.banner;
         return {
-          state: { ...state, server: 'offline', busy: false },
+          state: { ...state, server: 'offline', busy: false, banner },
           effects:
             state.server === 'offline'
               ? []
@@ -310,13 +328,60 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
 
     case 'drained': {
       if (state.intent !== 'offline') return noop(state);
+      // Everything after the put is conditional on its ANSWER — the
+      // uploader stop and the teardown both queue behind it, so a refusal
+      // that holds us online skips both and the stream survives. The
+      // chain's `'stop'` predicate in `use-presence` is what skips them
+      // (#141/F38).
       return {
         state,
-        effects: [{ type: 'put_status', status: 'offline' }, ...TEAR_DOWN],
+        effects: [
+          { type: 'put_status', status: 'offline' },
+          { type: 'stop_uploader' },
+          ...TEAR_DOWN,
+        ],
       };
     }
 
     case 'error': {
+      if (
+        event.code === 'driver_on_ride' &&
+        event.status === 'offline' &&
+        state.streaming
+      ) {
+        // The server refused the OFFLINE put because it holds us on a ride,
+        // and we can still prove life — so the tap did nothing except say why
+        // (#141/F38). No teardown: the tracking page and the board keep the
+        // feed, and `releaseFromRide` does not hand a silent driver back to
+        // the swept population with a push nudge. `server: 'online'` is
+        // honest — `serverStatusEvent` already maps `on_ride` to online.
+        // `persist_intent online` undoes `toggle_pressed`'s write, or a cold
+        // launch reads a false «marked offline». `kick_uploader` closes the
+        // ≤4 s gap when the pre-put drain ended early (empty queue,
+        // `!socket`, `not_online`): a restart of an un-stopped uploader,
+        // never a kick over a `stop()` — the stop sits behind the put.
+        //
+        // `state.streaming` is the whole guard, not padding — an intention,
+        // not an observation. All three routes emitting `put_status offline`
+        // with no stream clear the flag first; nothing enforces that, so a new
+        // emitter MUST clear it or prove a live stream (review R3). Falling
+        // through writes `server: 'offline'` under an `on_ride` hold — with no
+        // stream we cannot prove life, and offline is the safe wrong.
+        return {
+          state: {
+            ...state,
+            intent: 'online',
+            server: 'online',
+            busy: false,
+            reasserted: false, // symmetry with `flipOffline` (review F4)
+            banner: { kind: 'driver_on_ride' },
+          },
+          effects: [
+            { type: 'persist_intent', intent: 'online' },
+            { type: 'kick_uploader' },
+          ],
+        };
+      }
       if (
         event.code === 'vehicle_required' ||
         event.code === 'driver_on_ride'
@@ -431,50 +496,4 @@ export function serverStatusEvent(
   return status === 'offline'
     ? { type: 'server_offline', at }
     : { type: 'server_online' };
-}
-
-/**
- * Runs a decision's effects in order, one at a time. A throw ends the chain
- * and is reported ONCE through `onThrow` — uncaught, a SecureStore or
- * permission failure left `busy` set with nothing to clear it and every
- * toggle press ignored. `run` may answer `'stop'`: the effect's own answer
- * already decided against the rest of the chain (a refused `put_status`,
- * whose `flipOffline` tore down inside the dispatch), and carrying on would
- * rebuild what was just torn down (review F32).
- */
-export async function runEffects(
-  effects: Effect[],
-  run: (effect: Effect) => Promise<void | 'stop'>,
-  onThrow: (error: unknown) => void,
-): Promise<void> {
-  for (const effect of effects) {
-    try {
-      if ((await run(effect)) === 'stop') return;
-    } catch (error) {
-      onThrow(error);
-      return;
-    }
-  }
-}
-
-/** An ack younger than this reads «Tiešraide». */
-export const LIVE_WINDOW_MS = 10_000;
-/** …older than this reads «Nav savienojuma» — the dispatch freshness window. */
-export const RECONNECTING_WINDOW_MS = 60_000;
-
-/**
- * The connection pill, from RECEIPT (the last ack) — never socket flags
- * (the board's rule). `null` while offline: there is nothing to be
- * truthful about. No ack yet reads as reconnecting: we are waiting.
- */
-export function pillFrom(
-  state: PresenceState,
-  nowMs: number,
-): Connection | null {
-  if (state.intent !== 'online') return null;
-  if (state.lastAckAt === null) return 'reconnecting';
-  const age = nowMs - state.lastAckAt;
-  if (age <= LIVE_WINDOW_MS) return 'live';
-  if (age <= RECONNECTING_WINDOW_MS) return 'reconnecting';
-  return 'offline';
 }

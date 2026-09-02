@@ -4,15 +4,14 @@ export { HomeScreen } from './home-screen';
 export { readIntent, writeIntent } from './intent-store';
 export type { Intent } from './intent-store';
 export {
-  decide,
-  initialPresence,
   LIVE_WINDOW_MS,
   pillFrom,
   RECONNECTING_WINDOW_MS,
-} from './presence-state';
+} from './presence-pill';
+export type { Connection } from './presence-pill';
+export { decide, initialPresence } from './presence-state';
 export type {
   BannerKind,
-  Connection,
   Decision,
   Effect,
   PresenceEvent,

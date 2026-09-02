@@ -36,12 +36,12 @@ import {
 import {
   decide,
   initialPresence,
-  runEffects,
   serverStatusEvent,
   type Effect,
   type PresenceEvent,
   type PresenceState,
 } from './presence-state';
+import { runEffects } from './run-effects';
 
 const KEEP_AWAKE_TAG = 'sakta-driver-online';
 /** The go-offline grace: how long the drain may take before the server is told. */
@@ -130,16 +130,18 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
           dispatch({
             type: 'error',
             code: e instanceof ApiError ? e.code : 'generic',
+            status: effect.status,
           });
         }
-        // A refused online put flipped the toggle (`flipOffline` tore down
-        // inside the dispatch above): stop the chain, or its
-        // `start_stream`/`connect_socket` rebuild what was just torn down in
-        // a race the last native call wins (review F32).
-        return effect.status === 'online' &&
-          stateRef.current.intent !== 'online'
-          ? 'stop'
-          : undefined;
+        // The answer left intent disagreeing with what we asked for, so the
+        // rest of this chain is about a world that no longer exists: a
+        // refused ONLINE put whose `flipOffline` already tore down, whose
+        // `start_stream`/`connect_socket` would rebuild it in a race the
+        // last native call wins (review F32) — or a refused OFFLINE put the
+        // server held us through, where carrying on would stop the uploader
+        // and tear down the very stream the refusal exists to protect
+        // (#141/F38). One rule, stated once.
+        return stateRef.current.intent !== effect.status ? 'stop' : undefined;
       case 'start_stream':
         // No catch, deliberately: a rejection must reach `runEffects`, which
         // both folds (`effect_failed`) and ends the chain. Catching it here
@@ -195,6 +197,9 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       case 'kick_uploader':
         runtime.uploader.kick();
         return;
+      case 'stop_uploader':
+        runtime.uploader.stop();
+        return;
       case 'purge_stale_fixes':
         // Best effort: a queue that cannot be purged is not a reason to
         // refuse going online — the ceiling still bounds it.
@@ -210,9 +215,13 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         if (await batteryPromptDue()) dispatch({ type: 'battery_prompt_due' });
         return;
       case 'drain_then_clear':
+        // The stop is NOT here: it is a `stop_uploader` effect behind the
+        // offline put, so a refusal that holds us online never reaches it.
+        // Stopping here and kicking back would hit `kick()`'s early return
+        // on `running` BEFORE it clears `stopped` (`uploader.ts:49-50`) and
+        // the drain would exit for good (#141).
         runtime.uploader.kick();
         await runtime.uploader.whenIdle(DRAIN_GRACE_MS);
-        runtime.uploader.stop();
         dispatch({ type: 'drained' });
         return;
       case 'announce':

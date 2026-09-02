@@ -1,4 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react-native';
 import { formatMessage } from '@taxi/shared';
 import { HomeScreen } from './home-screen';
 import { initialPresence, type PresenceState } from './presence-state';
@@ -93,6 +98,32 @@ describe('HomeScreen', () => {
       screen.getByRole('button', { name: t('driver.home.go_online') }),
     );
     expect(mockToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the ride-scoped banner with no way to dismiss it — the reducer is its only exit (edge — review F1)', async () => {
+    mockPresence = {
+      ...initialPresence,
+      intent: 'online',
+      server: 'online',
+      streaming: true,
+      banner: { kind: 'driver_on_ride' },
+    };
+    await render(<HomeScreen />);
+
+    expect(screen.getByTestId('banner')).toHaveTextContent(
+      t('driver.error.driver_on_ride'),
+    );
+    // No action and no secondary: `banner_dismissed` has no UI route from
+    // this kind, so `server_offline` clearing it is the only way out. Scoped
+    // to the banner and label-agnostic — an `action` renders a button under a
+    // different label, which a name-matched query misses (review R5).
+    expect(
+      within(screen.getByTestId('banner')).queryAllByRole('button'),
+    ).toHaveLength(0);
+    // The toggle stays ON — the tap cost a banner and nothing else.
+    expect(
+      screen.getByRole('switch', { name: t('driver.home.go_offline') }),
+    ).toBeChecked();
   });
 
   it('renders a dash when earnings fail, with the toggle unaffected, and the pill while online (failure)', async () => {
