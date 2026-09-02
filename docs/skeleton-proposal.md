@@ -28,7 +28,7 @@
 | Area | Decision |
 |---|---|
 | Name | **Sakta Cab** (from anketa session); repo stays `taxi` for now |
-| Hosting | **Railway or Fly.io** (managed Postgres/Redis, WebSockets, git deploy) |
+| Hosting | ~~**Railway or Fly.io** (managed Postgres/Redis, WebSockets, git deploy)~~ — **superseded 2026-08-16: Hetzner CX22**, see `docs/epics/sakta-cab.architecture.md` → *Hosting decision revised* |
 | Store accounts | Personal Apple/Google accounts exist — fine for TestFlight; company accounts after SIA |
 | Timeline | **No hard deadline — quality first**, PIV-gated phases |
 | Commission | **% per ride** (exact rate: anketa output; Bolt's ~30% is the wedge) |

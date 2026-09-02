@@ -87,8 +87,8 @@ it for an oversight. What we now own that Railway owned before:
 | Responsibility | Mitigation |
 |---|---|
 | Backups | `pg_dump` cron → Cloudflare R2 / Backblaze B2 free tier. **The one item that must not be skipped outright** — pilot data is real rides and a money ledger. Hetzner's own +20% add-on snapshots whole disks; a dump is what we would actually restore from. |
-| TLS / DDoS | Cloudflare free proxy; Caddy serves plain HTTP internally |
-| Deploys | No git-push. Needs a documented deploy path — part of #13 |
+| TLS / DDoS | Cloudflare free proxy in Full (strict) mode; Caddy terminates with a Cloudflare Origin CA certificate (#13 — plain HTTP to the origin was rejected because OTP codes and JWTs would cross Cloudflare → Hetzner in the clear; `Caddyfile` header) |
+| Deploys | No git-push. `workflow_dispatch` GitHub Action: build → ghcr.io → SSH pull + migrate + `up` — `docs/runbooks/hetzner-deploy.md` (#13). Auto-deploy on merge deferred until the first manual run succeeds |
 | OS patching, uptime | Uptime Kuma / GlitchTip, both self-hosted, €0 |
 
 ### Carried forward unchanged
@@ -98,22 +98,38 @@ it for an oversight. What we now own that Railway owned before:
 and still live on Hetzner** — migrations-in-image, seeding policy, `PORT`, and
 `PUBLIC_TRACKING_BASE_URL` in particular. Kept rather than deleted so a reversal costs nothing.
 
-### Open decisions this leaves
+### Open decisions this leaves — and how #13 closed them (2026-08-25)
 
-1. **Routing packaging — blocks writing the #13 plan.** Does `OsrmMapsProvider` + the OSRM container
-   ship *inside* #13, or as its own ticket beside it? If #13 lands first it needs a documented
-   single-purpose config switch for the `geo.module.ts:22` gate (the #103 precedent: code-level kill
-   switch → config-level) until the OSRM ticket deletes it.
-2. **ARM vs x86** — OSRM publishes amd64-only container tags (arm64 is a long-standing open issue), so
-   the ARM CAX21 would force Valhalla or a self-built image. CX22 is x86 and removes the question.
-   **Verify at build time; do not take it on trust.**
-3. **Payments posture** — a cash-only pilot needs a provider that *refuses* card rides, replacing the
-   stub that silently reports success (`payments.module.ts:41` throws in production). Small; could
-   ride in #13.
-4. **SMS provider and the two volume levers** — Twilio trial through testing, then a delivery bake-off
-   (BulkGate / BudgetSMS, both EU processors) before pilot volume. The levers are their own tickets;
-   lever 2 spans `@taxi/shared` (`trackingTokenSchema`), the api, the catalogs and a domain purchase.
-   **Transliteration is rejected** (Linards, 2026-08-14) — Latvian lettering and Russian both stay.
+Decided by Linards in the #13 planning session (2026-08-14) and shipped by #13; recorded here so the
+epic carries the posture, not just the ticket.
+
+1. **Routing packaging — DECIDED: its own ticket, #134.** `OsrmMapsProvider` + the OSRM container
+   ship beside #13, not inside it (#13's AC says nothing about maps, and its own comment concedes the
+   stub replacement is a prerequisite of a *later* step). In the interim #13 ships
+   **`ALLOW_STUB_MAPS_PROVIDER`** — a documented, single-purpose config switch on the routes clause of
+   `mapsProviderSourceFactory` (the #103 precedent: code-level kill switch → config-level). Default
+   `false`; production still refuses to boot on the stub unless the switch says otherwise, and the
+   switch does **not** cover a missing `GOOGLE_MAPS_API_KEY`. **This is debt with a due date**: it is
+   defensible only while no money moves off a quote (no Stripe key) and the pilot is closed, and
+   #134 deletes it. Quotes are straight-line × 1.35 with no polyline until then.
+2. **ARM vs x86 — DECIDED: x86.** CX22 is x86; the OSRM amd64-only verification moves to #134, and the
+   box must not move to the ARM CAX line before that ticket resolves it.
+3. **Payments posture — DECIDED: refuse, never pretend.** Production with no `STRIPE_SECRET_KEY` binds
+   `CardPaymentsDisabledProvider`, which answers every card charge `ok: false` (`provider_error`,
+   `card_payments_disabled`) and moves nothing — a card settlement is a 502, never a silent 201. The
+   stub (which reports success) still never binds in production; what changed is that "no card rail"
+   is a legitimate production posture for a cash-only pilot where "pretend to charge" is not. The SIA
+   plus a test-mode key restores `StripePaymentsProvider` with no code change. Corollary the pilot
+   must honour at booking: **do not offer card while cash-only** — a card ride cannot settle and the
+   method locks at acceptance.
+4. **SMS provider and the two volume levers — filed as #137 (bake-off), #135 (skip SMS for
+   app-booked rides), #136 (1-segment templates + short domain + shorter token).** Twilio trial through
+   testing. **Transliteration is rejected** (Linards, 2026-08-14) — Latvian lettering and Russian
+   both stay. #13 buys the short domain #136 needs, because `PUBLIC_TRACKING_BASE_URL` is set there.
+
+Also taken in #13 (runbook §1.1): **IPv4 for the first deploy** (+~€0.60/mo `observed` 2026-08-14),
+so the €5.49 above becomes ≈ €6.09 `derived` — a lockout on day one costs more than a year of the
+saving. Revisit once the box is boring.
 
 ## Missing pieces
 
@@ -122,8 +138,8 @@ What the chosen approach needs that doesn't exist yet:
 - `db/` migrations + Rīga geozone seed (scaffold has none).
 - The entire API feature layer (scaffold is a hello-world NestJS app).
 - The three new-subsystem contracts in `@taxi/shared`: `DemandSignalProvider` seam, commission resolver, return-window types.
-- Hetzner environment (when first needed) — see [Hosting decision revised](#hosting-decision-revised-2026-08-16). Its plan is **not yet writable**: open decision 2 below (routing) blocks it.
-- `OsrmMapsProvider` — the only `MapsProvider` implementation that would satisfy the production boot gate at `services/api/src/features/geo/geo.module.ts:22`. Nothing in the tree implements it today, so the API cannot boot under `NODE_ENV=production` at all.
+- Hetzner environment — **built by #13** (`services/api/Dockerfile`, `compose.prod.yml`, `Caddyfile`, `.github/workflows/deploy.yml`, `scripts/backup-db.sh`, `docs/runbooks/hetzner-deploy.md`). What remains is the box itself: provisioning, domain, Cloudflare and the first manual deploy are runbook steps, not code.
+- `OsrmMapsProvider` — #134. Until it lands, production boots the stub for routes behind `ALLOW_STUB_MAPS_PROVIDER=true` (see the decisions above); #134 deletes the switch and makes the `geo.module.ts` gate unconditional again.
 - Telephony seam interface (click-to-dial/caller-ID stub for Dina's console).
 
 ## Spikes & experiments

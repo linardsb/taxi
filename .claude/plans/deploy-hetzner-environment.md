@@ -71,9 +71,12 @@ The three boot gates are resolved *without weakening any of them*:
 - `.claude/plans/real-sms-provider-twilio.md` (#85) — Why: `TwilioSmsProvider` and the all-or-nothing trio validation this plan configures
 - `.claude/plans/api-payments-ledger.md` (#12) — Why: the payments seam and why the stub is dangerous in production
 
-**Forward-references**:
+**Forward-references** (filed 2026-08-25 during implementation):
 
-- (none yet — the OSRM ticket and the two SMS-volume tickets should be linked here once created)
+- [#134](https://github.com/linardsb/taxi/issues/134) — `OsrmMapsProvider` + OSRM container; **deletes `ALLOW_STUB_MAPS_PROVIDER`**
+- [#135](https://github.com/linardsb/taxi/issues/135) — skip rider SMS for app-booked rides (lever 1)
+- [#136](https://github.com/linardsb/taxi/issues/136) — 1-segment LV/RU templates, short domain, shorter token (lever 2)
+- [#137](https://github.com/linardsb/taxi/issues/137) — SMS provider bake-off before pilot volume
 
 ---
 
@@ -492,3 +495,5 @@ From the issue, plus what this plan adds:
 ## AMENDMENTS
 
 <!-- newest at the bottom -->
+
+- **2026-08-25 (implementation)** — The maps switch covers the ROUTES clause only; production with `ALLOW_STUB_MAPS_PROVIDER=true` and no `GOOGLE_MAPS_API_KEY` still refuses to boot (the Places refusal #19/#125 added is an independent gate, and accepting straight-line quotes is not accepting a dead typeahead). Consequence: the host `.env` needs a Maps Platform key. The refusing payments provider answers `provider_error` (502), not `declined` (402): the seam pins exactly two reasons, and a 402 would blame a card nobody saw. The image needs the per-package `node_modules` (workspace symlinks) copied, not just the root — found by booting it. Deploy secrets are four, not three: `SSH_KNOWN_HOSTS` pins the host key. Provisioning, domain, Cloudflare, Twilio and the first deploy are external steps left to the runbook; the backup restore was rehearsed locally, not on the box.

@@ -1,4 +1,5 @@
 import type { Env } from '../../common/config/env.schema';
+import { CardPaymentsDisabledProvider } from './card-payments-disabled.provider';
 import { paymentsProviderFactory } from './payments.module';
 import { StripePaymentsProvider } from './stripe-payments.provider';
 import type { StripeClient } from './stripe-payments.provider';
@@ -27,12 +28,21 @@ describe('paymentsProviderFactory', () => {
     );
   });
 
-  it('refuses to boot in production with no provider bound (failure)', () => {
-    // Structural, not conventional: the stub reports SUCCESS, so a production
-    // deploy that reached it would mark rides settled and credit drivers for
-    // money no rider was ever charged.
-    expect(() => paymentsProviderFactory(env('production'), null)).toThrow(
-      /No production PaymentsProvider is bound/,
+  it('binds the refusing provider in production with no key, and does not throw (expected — #13)', () => {
+    // The cash-only pilot: no SIA, no Stripe key, and cash never reaches the
+    // seam. Refusing card charges is the correct production posture; throwing
+    // at boot blocked every deploy for a rail the pilot does not use.
+    const provider = paymentsProviderFactory(env('production'), null);
+
+    expect(provider).toBeInstanceOf(CardPaymentsDisabledProvider);
+  });
+
+  it('never binds the stub in production (failure)', () => {
+    // The property the old throw protected, kept: the stub reports SUCCESS, so
+    // a production deploy that reached it would mark rides settled and credit
+    // drivers for money no rider was ever charged.
+    expect(paymentsProviderFactory(env('production'), null)).not.toBeInstanceOf(
+      StubPaymentsProvider,
     );
   });
 });

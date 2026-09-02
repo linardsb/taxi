@@ -16,31 +16,44 @@ import {
 import { StubMapsProvider } from './stub-maps.provider';
 
 /**
- * Refuses to boot in production while the stub is the only bound provider.
+ * Refuses to boot in production while the stub is the only bound ROUTES
+ * provider — unless `ALLOW_STUB_MAPS_PROVIDER=true` accepts that explicitly.
  * `StubMapsProvider` prices rides off straight-line distance and returns no
  * polyline, so an internet-facing deploy that reached it would quote real money
  * off geometry. Structural rather than conventional, exactly like
- * `smsProviderFactory`: #13/#16 replace this factory with the Google Routes
- * provider, and until they do, `NODE_ENV=production` cannot start at all.
+ * `smsProviderFactory` — with one documented, single-purpose exception (#13):
+ * the switch exists so the first deploy can boot before a real routes provider
+ * does, and it is defensible only while no money moves off a quote and the
+ * pilot is closed (`env.schema.ts` says why). #134 binds `OsrmMapsProvider`
+ * here and deletes the switch, at which point the routes clause below is
+ * unconditional again.
  */
 export function mapsProviderSourceFactory(env: Env): MapsProvider {
   if (env.NODE_ENV === 'production') {
-    // TWO independent production gaps, reported in ONE throw. The routes gap is
-    // unconditional today; the address-search gap is conditional on the key and
-    // becomes the whole message when #13/#16 binds a real routes provider and
-    // deletes the first clause. Naming both means the deploy that fixes routes
-    // does not then discover address search from Dina's first keystroke.
+    // TWO independent production gaps, reported in ONE throw. The routes gap
+    // is conditional on the #13 switch; the address-search gap is conditional
+    // on the key, and the switch does NOT cover it — accepting straight-line
+    // quotes is not accepting a typeahead that throws on Dina's first
+    // keystroke. #134 deletes the first clause. Naming both means the deploy
+    // that fixes routes does not then discover address search from a support
+    // call.
     const gaps = [
-      'StubMapsProvider prices rides off straight-line distance and returns no polyline',
+      ...(env.ALLOW_STUB_MAPS_PROVIDER
+        ? []
+        : [
+            'StubMapsProvider prices rides off straight-line distance and returns no polyline (set ALLOW_STUB_MAPS_PROVIDER=true to accept that until #134 binds OsrmMapsProvider)',
+          ]),
       ...(env.GOOGLE_MAPS_API_KEY === undefined
         ? [
             'no GOOGLE_MAPS_API_KEY is set, so the address typeahead would throw on every keystroke (#19)',
           ]
         : []),
     ];
-    throw new Error(
-      `No production MapsProvider is bound: ${gaps.join('; ')}. Bind the Google Routes provider before running with NODE_ENV=production.`,
-    );
+    if (gaps.length > 0) {
+      throw new Error(
+        `No production MapsProvider is bound: ${gaps.join('; ')}. Fix every gap named before running with NODE_ENV=production.`,
+      );
+    }
   }
 
   const routes = new StubMapsProvider();

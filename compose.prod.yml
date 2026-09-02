@@ -1,0 +1,85 @@
+# Production overlay for the Hetzner box (#13). ALWAYS layered over the base
+# file — it adds the api and caddy services and takes the two databases off the
+# host's network; on its own it is not a valid stack:
+#
+#   docker compose -f docker-compose.yml -f compose.prod.yml <cmd>
+#
+# Lives at /opt/taxi on the box next to docker-compose.yml, Caddyfile, certs/
+# and the host .env (never committed — runbook docs/runbooks/hetzner-deploy.md
+# lists every key). Compose reads that .env for the ${…} substitutions below
+# AND hands the whole file to the api via env_file.
+#
+# The healthchecks come from the base file untouched — they were hard-won (the
+# TCP-not-socket pg_isready comment there says why).
+
+services:
+  db:
+    # Compose-network only. The base file publishes 5432 for local tooling; on
+    # an internet-facing box that is Postgres on the public IP, behind the
+    # `taxi:taxi` password. `!reset` clears the inherited list (compose ≥ 2.24).
+    ports: !reset []
+    environment:
+      # Read by initdb on FIRST start only — a fresh volume. Changing it later
+      # does not change the role's password; ALTER ROLE does (runbook §3).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the host .env}
+    restart: unless-stopped
+
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/linardsb/taxi-api:${API_IMAGE_TAG:-latest}
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      # Composed here rather than written twice: the password lives in ONE
+      # place (POSTGRES_PASSWORD), and the hostnames are compose's own.
+      DATABASE_URL: postgres://taxi:${POSTGRES_PASSWORD}@db:5432/taxi
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # `node -e` because the runtime image has no curl. `fetch` is global in
+      # node 20; a non-2xx or a refused connection both exit 1.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # The one placeholder the Caddyfile reads.
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in the host .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Cloudflare Origin CA cert + key (runbook §2). Read-only; Caddy never
+      # writes them because it is not doing ACME for this site.
+      - ./certs:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    # No `condition: service_healthy`: Caddy should be up and answering 502
+    # while the api restarts, not waiting for it — a 502 is a diagnosis, a
+    # connection refused is not.
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:

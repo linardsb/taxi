@@ -16,8 +16,9 @@
  *
  * - No real maps provider is bound. Every quote in dev and test is
  *   straight-line distance × 1.35 at a flat 40 km/h, so the numbers are
- *   plausible and deterministic but not real. Production cannot boot until
- *   #13/#16 bind the Google Routes provider — the factory throws.
+ *   plausible and deterministic but not real. Production refuses to boot on
+ *   it — the factory throws — unless `ALLOW_STUB_MAPS_PROVIDER=true`, #13's
+ *   documented switch; #134 binds `OsrmMapsProvider` and deletes the switch.
  * - `geocode`/`reverseGeocode` throw. A `RideRequest` already carries resolved
  *   `AddressPoint`s, so nothing needs them yet. Address SEARCH no longer waits
  *   on them: #19 binds `GooglePlacesProvider` (Places API New) for
@@ -29,7 +30,7 @@
  *   #94 gave the seam a timeout, a negative cache (`eta` only) and a miss-path
  *   counter, but requests arriving before the first `setWithTtl` lands still
  *   all miss and all reach the source. The tracking page's throttle BOUNDS
- *   that path; nothing here closes it. Deferred to #13/#16, alongside the first
+ *   that path; nothing here closes it. Deferred to #134, alongside the first
  *   real bill — against `StubMapsProvider` the true concurrency shape is
  *   unmeasurable.
  */

@@ -178,8 +178,8 @@ function classify(
 
 /**
  * Memoizes `route()` in Redis. Implements the same seam it wraps, so the cache
- * is invisible to every consumer and the real Google provider drops into
- * `MAPS_PROVIDER_SOURCE` (#13/#16) with the caching untouched.
+ * is invisible to every consumer and the real routing provider drops into
+ * `MAPS_PROVIDER_SOURCE` (#134) with the caching untouched.
  *
  * The seam's docblock says implementations MUST cache aggressively; this is
  * where that happens, and it is the <€100/mo guardrail in code — an uncached
@@ -190,7 +190,7 @@ function classify(
  * caller, TTL and whether they negative-cache. What is still ABSENT is
  * in-flight coalescing: requests arriving before the first `setWithTtl` lands
  * all miss and all reach the source. The tracking page's throttle BOUNDS that
- * path; nothing here closes it. Deferred to #13/#16, where the real
+ * path; nothing here closes it. Deferred to #134, where the real
  * concurrency shape is measurable.
  */
 export class CachingMapsProvider implements MapsProvider {
@@ -342,8 +342,8 @@ export class CachingMapsProvider implements MapsProvider {
   /**
    * `reason` is a closed enum and `errorName` goes through `safeErrorName`, so
    * neither CAN contain a coordinate — enforced, not asserted. The provider's
-   * own message is deliberately absent: that detail belongs to the Google
-   * adapter (#13/#16), the only code that knows its own error shapes well
+   * own message is deliberately absent: that detail belongs to the routing
+   * adapter (#134), the only code that knows its own error shapes well
    * enough to sanitize them knowingly.
    */
   private logFailure(
