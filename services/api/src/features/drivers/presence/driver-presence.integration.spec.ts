@@ -12,6 +12,7 @@ import {
   type TestApp,
 } from '../../../../test/harness';
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
+import { DriversService } from '../drivers.service';
 import {
   OFFLINE_NUDGE_DELAY_SECONDS,
   PRESENCE_DARK_AFTER_SECONDS,
@@ -337,6 +338,112 @@ describe('driver presence: dark detection + nudge (integration, #14)', () => {
         .set({ status: 'offline' })
         .where(eq(drivers.userId, d.id));
       await ctx.locations.markOffline(cityId, d.id);
+    }
+  });
+
+  it('a driver held online mid-ride is not nudged once the ride ends — the stream they kept IS the proof of life (failure — #141)', async () => {
+    // #141's harm, api half. Pre-fix the app tore its stream down on the
+    // refused offline put, so when `releaseFromRide` put the row back to
+    // `online` the driver re-entered the swept population with a stale `seen`
+    // score: flipped offline and buzzed for a ride they had just finished.
+    // The fix keeps the stream up, so the score stays fresh and the dark pass
+    // skips them.
+    //
+    // The PAIR is the point. `held` alone would pass vacuously — a driver who
+    // never enters the swept population is trivially never stamped. `stopped`
+    // runs the identical sequence with the pre-fix outcome (nothing lands
+    // after the refusal) and MUST be stamped on the same tick, or these
+    // assertions discriminate nothing.
+    const held = await driver(11, { pushToken: true });
+    const stopped = await driver(12, { pushToken: true });
+    const { socket: heldSocket } = await onlineAndPinged(held);
+    await onlineAndPinged(stopped);
+
+    // Both get claimed for a ride. No route writes `on_ride` — that is #11's.
+    for (const d of [held, stopped]) {
+      await ctx.db
+        .update(drivers)
+        .set({ status: 'on_ride' })
+        .where(eq(drivers.userId, d.id));
+    }
+
+    try {
+      // The #141 trigger on both: tapping OFF mid-ride is refused.
+      for (const d of [held, stopped]) {
+        const res = await http
+          .put('/drivers/me/status')
+          .set('authorization', d.auth)
+          .send({ status: 'offline' })
+          .expect(409);
+        expect((res.body as { message: string }).message).toBe(
+          'driver_on_ride',
+        );
+      }
+
+      // What the fix buys: `held` never stopped, so a real fix still lands
+      // through the socket and refreshes the score on the SERVER clock —
+      // `driver-location.service.ts:54` ignores the ping's own `at`, so this
+      // has to be a real accepted fix and cannot be faked with a timestamp.
+      const ack: unknown = await heldSocket
+        .timeout(1000)
+        .emitWithAck(RT.driverLocation, {
+          location: RIGA,
+          at: new Date().toISOString(),
+        });
+      expect(ack).toEqual({ accepted: true });
+
+      // `stopped` is the pre-fix app: nothing lands after the refusal, so the
+      // score ages. Aged rather than slept — a torn-down stream leaves exactly
+      // this behind, an online member whose last proof of life is old.
+      await ctx.locations.markOnline(
+        cityId,
+        stopped.id,
+        Date.now() - DARK_MS - 5000,
+      );
+
+      // The ride ends for both, through the real service. `releaseFromRide` is
+      // `on_ride → online` and never touches Redis (`drivers.service.ts:221`),
+      // so from here the `seen` score alone decides who gets swept.
+      const driversService = ctx.app.get(DriversService);
+      for (const d of [held, stopped]) {
+        expect(await driversService.releaseFromRide(d.id)).toBe(true);
+      }
+
+      const now = Date.now();
+      await sweeper.tick(now + 1000);
+
+      // Fresh score → the dark pass skips them, so nothing is ever stamped.
+      // This is the api half of run-sheet step 7.
+      const heldRow = await held.row();
+      expect(heldRow.status).toBe('online');
+      expect(heldRow.offlineNudgeDueAt).toBeNull();
+      expect(ctx.locations.isOnline(cityId, held.id)).toBe(true);
+
+      // Same tick, same sequence, opposite outcome — the contrast that makes
+      // the three assertions above mean something.
+      const stoppedRow = await stopped.row();
+      expect(stoppedRow.status).toBe('offline');
+      expect(stoppedRow.offlineNudgeDueAt).not.toBeNull();
+
+      // …and it really would have buzzed. `held` survives this second tick on
+      // its own merits: DARK (60 s) outlasts NUDGE (30 s), so its score is
+      // still inside the window rather than being spared by luck.
+      await sweeper.tick(now + 1000 + NUDGE_MS + 1000);
+
+      expect(stopped.sentTo()).toHaveLength(1);
+      expect(stopped.sentTo()[0]!.message.data).toEqual({
+        kind: 'offline_nudge',
+      });
+      expect(held.sentTo()).toHaveLength(0);
+      expect((await held.row()).status).toBe('online');
+    } finally {
+      for (const d of [held, stopped]) {
+        await ctx.db
+          .update(drivers)
+          .set({ status: 'offline', offlineNudgeDueAt: null })
+          .where(eq(drivers.userId, d.id));
+        await ctx.locations.markOffline(cityId, d.id);
+      }
     }
   });
 });
