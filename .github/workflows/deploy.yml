@@ -111,9 +111,16 @@ jobs:
           # below would be swallowed and the step would exit 0 on the
           # migration's status. pull/up/prune/ps do not touch stdin.
           \$compose run --rm api node node_modules/@taxi/db/dist/migrate-run.js </dev/null
-          # 120 s: the api healthcheck's worst legitimate case is start_period
-          # 20 s + 5 retries x 10 s interval = 70 s (compose.prod.yml), after db
-          # and redis report healthy. Without the flag \`--wait\` waits forever.
+          # 120 s is a BACKSTOP, not the api's budget. The api healthcheck
+          # resolves itself first: a container goes healthy on its FIRST
+          # successful probe (start_period included) and unhealthy at
+          # start_period 20 s + 5 retries x 10 s = 70 s (compose.prod.yml), at
+          # which point \`up --wait\` fails on its own. Reasoning about the api
+          # alone is valid — the flag is project-scoped — because the \`run\`
+          # above already resolved api's depends_on service_healthy on db and
+          # redis, so both are healthy before this line. If the api ever
+          # legitimately needs longer, raise start_period/retries, not this
+          # flag. Without the flag \`--wait\` waits forever.
           \$compose up -d --wait --wait-timeout 120
           # Caddy reads its config at start only, and \`up\` does not recreate a
           # service when a bind-mounted file's CONTENT changes (not part of the
@@ -138,9 +145,25 @@ jobs:
           EOF
       - name: Health from the outside
         env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
           API_DOMAIN: ${{ vars.API_DOMAIN }}
         # A repo VARIABLE, not a secret — it is a public hostname. Skipped
         # until it is set, so the first run can finish before DNS exists.
         run: |
           if [ -z "$API_DOMAIN" ]; then echo "API_DOMAIN not set; skipping"; exit 0; fi
+          # The hostname has two sources of truth: this variable and the box's
+          # .env, which is the one Caddy is actually serving (compose.prod.yml
+          # passes it through). Edit one and not the other and this probe
+          # measures a different origin from the one just deployed: green
+          # against a stale name that still answers, or red while the stack is
+          # fine. -n so ssh cannot eat this script's stdin.
+          box="$(ssh -n -i ~/.ssh/deploy "deploy@$SSH_HOST" \
+            "grep -m1 '^API_DOMAIN=' /opt/taxi/.env | cut -d= -f2-")"
+          box="${box%$'\r'}"                 # a host .env edited on Windows
+          box="${box%\"}"; box="${box#\"}"   # compose accepts a quoted value
+          box="${box%\'}"; box="${box#\'}"
+          if [ "$box" != "$API_DOMAIN" ]; then
+            echo "API_DOMAIN mismatch: repo variable is '$API_DOMAIN', the box serves '$box'" >&2
+            exit 1
+          fi
           curl -fsS --max-time 15 "https://$API_DOMAIN/health"

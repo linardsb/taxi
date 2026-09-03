@@ -36,9 +36,14 @@ services:
       # Composed here rather than written twice: the password lives in ONE
       # place (POSTGRES_PASSWORD), and the hostnames are compose's own.
       # POSTGRES_PASSWORD is interpolated UNESCAPED, so it must be URL-safe —
-      # hex only, as runbook §3 prescribes (`openssl rand -hex 16`). An `@`,
-      # `/`, `:`, `#` or `%` in it breaks `pg`'s URL parser, and the `:?` guard
-      # below checks presence, not shape.
+      # hex only, as runbook §3 prescribes (`openssl rand -hex 16`), and the
+      # `:?` guard below checks presence, not shape. Observed against this
+      # tree's pg-connection-string 2.14.0, the parser `new Pool` uses:
+      # `/`, `#` or `?` fail the parse at boot with `Invalid URL`. A `%`
+      # followed by two hex digits is silently DECODED (`%41` becomes `A`),
+      # so pg authenticates with a password nobody set and the boot fails on
+      # auth with nothing naming the password's shape — the one to fear.
+      # `@` and `:` happen to survive the parse; do not rely on it.
       DATABASE_URL: postgres://taxi:${POSTGRES_PASSWORD}@db:5432/taxi
       REDIS_URL: redis://redis:6379
     depends_on:

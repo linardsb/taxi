@@ -115,6 +115,7 @@ docker run --rm hello-world
 docker compose version          # needs ≥ 2.24 for the `!reset` tag in compose.prod.yml
 sudo mkdir -p /opt/taxi/scripts /opt/taxi/certs /var/backups/taxi /var/log/taxi
 sudo chown -R deploy:deploy /opt/taxi /var/backups/taxi /var/log/taxi
+sudo chmod 700 /var/backups/taxi   # dumps are the whole database; `mkdir` alone leaves 0755
 ```
 
 ### 1.4 The deploy key (for GitHub Actions)
@@ -134,7 +135,7 @@ Then in GitHub → repo → Settings → Secrets and variables → Actions:
 | `SSH_HOST` | the box's public IPv4 |
 | `SSH_KEY` | the contents of `~/.ssh/taxi-deploy` (the private key) |
 | `SSH_KNOWN_HOSTS` | the `ssh-keyscan -H` output — pinned so a changed host key fails the run |
-| `GHCR_TOKEN` | a classic PAT with `read:packages` — the box uses it to pull the private image. **It stays on the box**: `docker login --password-stdin` writes it to `deploy`'s `~/.docker/config.json` and the deploy does not log out, because §5.2's rollback `pull` needs that login and an incident is the wrong time to go hunting for a PAT. Accepted (§9): the box holds a read-only packages token at rest. Rotate it here and re-run the deploy to replace the copy on the box. |
+| `GHCR_TOKEN` | a classic PAT with `read:packages` — the box uses it to pull the private image. **It stays on the box**: `docker login --password-stdin` writes it to `deploy`'s `~/.docker/config.json` and the deploy does not log out, because §5.2's rollback `pull` needs that login and an incident is the wrong time to go hunting for a PAT. Accepted (§9): the box holds a read-only but **account-wide** packages token at rest — a classic PAT's `read:packages` covers every package the account can see, not just this repo's. Rotate it here and re-run the deploy to replace the copy on the box. |
 
 And one **variable** (not a secret): `API_DOMAIN` = `api.<your domain>`, used
 by the workflow's final health check. Leave it unset until §2 is done; the
@@ -201,7 +202,7 @@ compose hostnames, so the database password lives in one place.
 
 | Variable | Value | Why |
 |---|---|---|
-| `POSTGRES_PASSWORD` | `openssl rand -hex 16` | **Hex only** — the overlay interpolates it into `DATABASE_URL` unescaped, so an `@`, `/`, `:`, `#` or `%` breaks `pg`'s URL parser and the `:?` guard will not catch it. Read by `initdb` on the volume's **first** start only. To change it later: `ALTER ROLE taxi PASSWORD '…'` in psql, then edit here, then `up -d`. |
+| `POSTGRES_PASSWORD` | `openssl rand -hex 16` | **Hex only** — the overlay interpolates it into `DATABASE_URL` unescaped and the `:?` guard checks presence, not shape. `observed` against this tree's `pg-connection-string` 2.14.0, the parser `new Pool` uses: `/`, `#` or `?` fail the parse at boot with `Invalid URL`; a `%` followed by two hex digits is silently **decoded** (`%41` → `A`), so `pg` authenticates with a password nobody set and the boot fails on auth with nothing naming the password's shape — that is the one to fear; `@` and `:` happen to survive the parse, but do not rely on it. Read by `initdb` on the volume's **first** start only. To change it later: `ALTER ROLE taxi PASSWORD '…'` in psql, then edit here, then `up -d`. |
 | `API_DOMAIN` | `api.<domain>` | The one placeholder the `Caddyfile` reads. |
 | `API_IMAGE_TAG` | written by the workflow | Which image `up` starts. Rollback = edit this, `up -d api` (§5.2). |
 | `API_PORT` | `3001` | Must match the healthcheck in `compose.prod.yml` and `reverse_proxy api:3001` in the `Caddyfile`. |
@@ -368,7 +369,7 @@ money — and it is backed up nightly, off the box.
 On the box, as `deploy`:
 
 ```bash
-sudo apt-get install -y rclone postgresql-client     # pg_restore for the script's sanity check
+sudo apt-get install -y rclone                       # no postgresql-client: the sanity check runs pg_restore in the db container, like §6.2's restore
 rclone config                                        # new remote → s3 → provider Cloudflare (R2) → your R2 API token; name it r2
 rclone mkdir r2:sakta-backups
 crontab -e
@@ -540,7 +541,7 @@ never 201 — see §9.
 | SMS reaches verified numbers only | Twilio trial | #137 |
 | Direct-to-IP requests bypass Cloudflare | §2.3 | before the pilot opens |
 | No uptime monitoring, no alerting | Uptime Kuma / GlitchTip are the intended €0 answers (architecture amendment) and are not installed here | when someone other than Linards needs to know it is down |
-| A `read:packages` PAT sits at rest on the box | `docker login` persists `GHCR_TOKEN` to `deploy`'s `~/.docker/config.json`; the deploy does not log out because §5.2's rollback pull depends on it. Read-only, one repo's packages, on a key-only box behind a 22/80/443 firewall | a registry the box can read with its own identity |
+| A `read:packages` PAT sits at rest on the box | `docker login` persists `GHCR_TOKEN` to `deploy`'s `~/.docker/config.json`; the deploy does not log out because §5.2's rollback pull depends on it. Read-only, but **account-wide** — a classic PAT's `read:packages` covers every package the account can see, not just this repo's; one private package exists today. On a key-only box behind a 22/80/443 firewall. A repo-scoped fine-grained token, or `docker logout` plus a documented rollback login, are the two ways out if that reads worse written down | a registry the box can read with its own identity |
 
 ## 10 · Resize, snapshot, destroy
 
