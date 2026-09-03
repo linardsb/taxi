@@ -24,6 +24,18 @@ stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 file="$LOCAL_DIR/taxi-$stamp.dump"
 mkdir -p "$LOCAL_DIR"
 
+# A run that fails part-way must not leave a truncated dump under the real
+# name: `set -e` alone would exit with the partial file in place, and the
+# `ls -t | head -1` restore idiom (runbook §6.2) would pick it as the newest.
+cleanup() {
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    rm -f -- "$file"
+    echo "$(date -u +%FT%TZ) backup FAILED (exit $status): removed $file" >&2
+  fi
+}
+trap cleanup EXIT
+
 cd "$COMPOSE_DIR"
 # -Fc: pg_dump's custom format — already compressed, and the only format
 # pg_restore can restore selectively. -T: stdin is not a tty under cron.
@@ -31,8 +43,11 @@ docker compose -f docker-compose.yml -f compose.prod.yml exec -T db \
   pg_dump -U taxi -d taxi -Fc > "$file"
 
 # Structural sanity check before anything is uploaded: a dump of the wrong
-# database, or an empty one, has no geozones table.
-if ! pg_restore --list "$file" | grep -q 'TABLE public geozones'; then
+# database, or an empty one, has no geozones table. grep reads the WHOLE
+# listing, so no `-q`: `grep -q` exits at its first match, pg_restore then
+# takes SIGPIPE on its next write, `pipefail` reports 141, and a valid dump
+# reads as "no geozones table".
+if ! pg_restore --list "$file" | grep 'TABLE public geozones' >/dev/null; then
   echo "$(date -u +%FT%TZ) backup FAILED: $file has no geozones table" >&2
   exit 1
 fi

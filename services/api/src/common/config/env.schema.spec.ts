@@ -262,6 +262,26 @@ describe('envSchema ALLOW_STUB_MAPS_PROVIDER', () => {
     ).toBe(true);
   });
 
+  it('reads an empty value as unset, like every optional sibling (edge — review F7)', () => {
+    // A blanked line in a hand-written env file delivers '', and `.default()`
+    // substitutes `undefined` only. Production must still refuse to boot — but
+    // through the maps gate's own message, not a generic enum error — and dev
+    // and test must not refuse at all. Same shape as GOOGLE_MAPS_API_KEY and
+    // the Twilio trio: '' is unset.
+    expect(
+      envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: '' }))
+        .ALLOW_STUB_MAPS_PROVIDER,
+    ).toBe(false);
+    expect(
+      envSchema.parse({
+        ...base,
+        NODE_ENV: 'development',
+        JWT_SECRET: STRONG_JWT,
+        ALLOW_STUB_MAPS_PROVIDER: '',
+      }).ALLOW_STUB_MAPS_PROVIDER,
+    ).toBe(false);
+  });
+
   it.each(['1', 'yes', 'TRUE', 'on'])(
     'refuses %s rather than guessing (failure)',
     (value) => {

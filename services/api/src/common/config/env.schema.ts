@@ -207,11 +207,17 @@ export const envSchema = z
      *
      * #134 DELETES THIS VARIABLE together with the branch that reads it. Debt
      * with a due date, not a feature. `z.enum`, not `z.coerce.boolean()`, which
-     * reads the string "false" as `true`.
+     * reads the string "false" as `true`. The preprocess maps '' to unset, as
+     * every optional sibling here does: `.default()` substitutes `undefined`
+     * only, and a blanked line in a hand-written env file delivers '', which
+     * would otherwise refuse to boot in EVERY environment with a generic enum
+     * message instead of the maps gate's own.
      */
     ALLOW_STUB_MAPS_PROVIDER: z
-      .enum(['true', 'false'])
-      .default('false')
+      .preprocess(
+        (v) => (v === '' ? undefined : v),
+        z.enum(['true', 'false']).default('false'),
+      )
       .transform((v) => v === 'true'),
     /**
      * TEST MODE ONLY, structurally. `sk_live_…` is refused at boot: the repo

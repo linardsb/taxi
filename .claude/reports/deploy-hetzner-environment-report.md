@@ -64,3 +64,27 @@ Results (`observed`, `pnpm --filter @taxi/api test -- card-payments-disabled pay
 - **A card ride booked in the cash-only pilot cannot settle and cannot be re-settled as cash** (method locks at acceptance). Not fixed here — out of scope (no feature-slice changes); recorded in the payments barrel's KNOWN GAPS and runbook §9 as a booking-time rule for #16/#17 and the console.
 - Repo hooks: `rm -rf`/`rm -r` and any Bash command text containing `.env` (including `process.env`) are blocked; `dist` was cleared with `find -delete` and the probes ran from scratchpad scripts.
 - The `docs/research/hosting-sms-cost-research.md` status line says it is not edited further, so its Railway sections stay as the 2026-08-14 snapshot.
+
+## Review round 1 — fixes (2026-09-03)
+
+Review: PR #147, round-1 comment. Fixed F1–F9 and F11–F13 on the PR; F10 (dumps unencrypted at rest on R2) deferred to #149, which waits on a passphrase-custody decision. The figures above from 2026-08-25 are left as the dated history they are; the ones below supersede them.
+
+- **F1** — `main` gained a fourth production boot gate with #14 (`PUSH_PROVIDER`, `43391c9`, 2026-08-31) between the 2026-08-25 boot and the 2026-09-02 rebase; the runbook did not set it and the PR body said the boot's inputs were unchanged. Runbook §3 and §8.3 carry it now; the boot was re-observed at the fix commit (below). The Summary's "three provider gates" was true on 2026-08-25 and is four at head.
+- **F2** — the runtime tree is `pnpm --filter @taxi/api deploy --prod --legacy` output; in-image paths are `dist/main.js` and `node_modules/@taxi/db/dist/…` (Dockerfile, workflow, runbook).
+- **F3 / F9** — `scripts/backup-db.sh`: grep reads the whole listing (no `-q` under `pipefail`); an EXIT trap removes a partial dump.
+- **F4 / F5 / F6 / F12** — workflow: `caddy reload` after `up`, `prune -af`, a trailing-newline guard before the `API_IMAGE_TAG` append, `permissions: contents: read` on the deploy job.
+- **F7** — `ALLOW_STUB_MAPS_PROVIDER=''` reads as unset (spec added; it failed on the unfixed schema with `Invalid enum value … received ''`).
+- **F8** — the factory's failure case now asserts that the production provider's `charge()` resolves `ok: false`.
+- **F11** — sshd hardening as an `sshd_config.d/00-hardening.conf` drop-in, verified with `sshd -T`.
+- **F13** — the refusing provider logs nothing; `payment.settlement.charge_failed` is the one line.
+
+`observed` 2026-09-03, image built from the fix commit (`docker build -f services/api/Dockerfile -t taxi-api:pr147-fix .`, exit 0), all from the `taxi-141` worktree:
+
+- `docker image ls` 388 MB (2.38 GB at `dff4c4f`); `du -sm node_modules` inside 81 MB (1,547 MB); `/app` 86 MB; `docker save | gzip -1` 79,824,202 bytes (535,327,427). None of `@expo`, `next`, `react-native`, `jest`, `typescript`, `ts-node`, `drizzle-kit`, `@nestjs/cli` present. User `node`, `NODE_ENV=production`, 11 `.sql` + `meta/_journal.json` at `node_modules/@taxi/db/migrations`.
+- `node node_modules/@taxi/db/dist/migrate-run.js` twice against a scratch database on the local compose Postgres: exit 0 both, `drizzle.__drizzle_migrations` 11 rows.
+- Boot with the runbook §3 variables, `PUSH_PROVIDER=expo` included: `/health` → `{"status":"ok","service":"api"}` 1 s after start.
+- Seven gates broken one at a time (`JWT_SECRET` published value; switch unset; localhost tracking URL; two of three `TWILIO_*`; no `TWILIO_*`; no `GOOGLE_MAPS_API_KEY`; `PUSH_PROVIDER` unset): each exits 1 with the message in §8.3's table.
+- Backup script under shims for `docker`, `pg_restore` (300,000-line listing, match on line 42), `rclone`, `stat`: at `dff4c4f`, the valid dump → exit 1 "no geozones table", and a failed `pg_dump` left the partial file; fixed → exit 0 and one upload, and the failed run removes the file and exits 1. Mechanism alone: `seq 1 300000 | grep -q 1` → 141 under `pipefail`, `grep … >/dev/null` → 0.
+- Caddy (`caddy:2-alpine`, bind-mounted Caddyfile rewritten in place): the old response is served until `caddy reload --config /etc/caddy/Caddyfile`, which exits 0 and serves the new one; exit 0 again on an unchanged file and with stdin not a TTY.
+- Mutations: the factory's production branch returning the stub fails the F8 case (and the expected case); the provider reporting `ok: true` fails the F8 case alone, which is the independence the review asked for.
+- Gate: see the PR body's Validation section for the run at the fix commit.

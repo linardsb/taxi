@@ -1,3 +1,4 @@
+import type { PaymentChargeRequest } from '@taxi/shared';
 import type { Env } from '../../common/config/env.schema';
 import { CardPaymentsDisabledProvider } from './card-payments-disabled.provider';
 import { paymentsProviderFactory } from './payments.module';
@@ -9,6 +10,15 @@ const env = (NODE_ENV: Env['NODE_ENV']): Env => ({ NODE_ENV }) as Env;
 
 /** Only its identity matters here — the factory never calls it. */
 const FAKE_STRIPE = { paymentIntents: {} } as unknown as StripeClient;
+
+const CARD_CHARGE: PaymentChargeRequest = {
+  idempotencyKey: 'settle:r0000000-0000-4000-8000-000000000001',
+  amountCents: 1_000,
+  currency: 'EUR',
+  customerRef: 'cus_test_123',
+  instrumentRef: 'pm_test_456',
+  rideId: 'r0000000-0000-4000-8000-000000000001',
+};
 
 describe('paymentsProviderFactory', () => {
   it('binds the Stripe provider whenever a client was constructed (expected)', () => {
@@ -37,12 +47,16 @@ describe('paymentsProviderFactory', () => {
     expect(provider).toBeInstanceOf(CardPaymentsDisabledProvider);
   });
 
-  it('never binds the stub in production (failure)', () => {
+  it('production with no key refuses a card charge rather than settling it (failure)', async () => {
     // The property the old throw protected, kept: the stub reports SUCCESS, so
     // a production deploy that reached it would mark rides settled and credit
-    // drivers for money no rider was ever charged.
-    expect(paymentsProviderFactory(env('production'), null)).not.toBeInstanceOf(
-      StubPaymentsProvider,
-    );
+    // drivers for money no rider was ever charged. Asserted on the behaviour,
+    // not the class — `not.toBeInstanceOf(StubPaymentsProvider)` is implied by
+    // the case above and could never fail on its own.
+    const provider = paymentsProviderFactory(env('production'), null);
+
+    const result = await provider.charge(CARD_CHARGE);
+
+    expect(result.ok).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type { PaymentChargeRequest } from '@taxi/shared';
+import type { PaymentChargeRequest, PaymentsProvider } from '@taxi/shared';
 import { CardPaymentsDisabledProvider } from './card-payments-disabled.provider';
 
 const RIDE_ID = 'r0000000-0000-4000-8000-000000000001';
@@ -20,7 +20,7 @@ describe('CardPaymentsDisabledProvider.charge', () => {
     // `provider_error`, not `declined`: the rider's card was never seen, so a
     // 402 blaming it would be a lie to the driver. `message` is what the
     // settlement log carries, and what the runbook tells an operator to read.
-    const provider = new CardPaymentsDisabledProvider();
+    const provider: PaymentsProvider = new CardPaymentsDisabledProvider();
 
     await expect(provider.charge(request())).resolves.toEqual({
       ok: false,
@@ -34,7 +34,7 @@ describe('CardPaymentsDisabledProvider.charge', () => {
     // A retry inside the seam's replay window must reach the same answer as
     // the first attempt. Here that is trivially true — nothing is remembered
     // and nothing moves — but the property is what a caller leans on.
-    const provider = new CardPaymentsDisabledProvider();
+    const provider: PaymentsProvider = new CardPaymentsDisabledProvider();
 
     const first = await provider.charge(request());
     const second = await provider.charge(request());
@@ -56,7 +56,7 @@ describe('CardPaymentsDisabledProvider.charge', () => {
       // THE PROPERTY THIS CLASS EXISTS FOR. `StubPaymentsProvider` answers
       // `ok: true` to all of these; a production deploy that reached it would
       // settle rides for money nobody collected.
-      const provider = new CardPaymentsDisabledProvider();
+      const provider: PaymentsProvider = new CardPaymentsDisabledProvider();
 
       const result = await provider.charge(request(over));
 

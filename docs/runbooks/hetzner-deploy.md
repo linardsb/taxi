@@ -84,9 +84,13 @@ mkdir -p /home/deploy/.ssh && cp ~/.ssh/authorized_keys /home/deploy/.ssh/
 chown -R deploy:deploy /home/deploy/.ssh && chmod 700 /home/deploy/.ssh && chmod 600 /home/deploy/.ssh/authorized_keys
 echo 'deploy ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/deploy
 
-# SSH: key-only, no root
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/; s/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+# SSH: key-only, no root. A drop-in, not a sed on sshd_config: Ubuntu 24.04's
+# file opens with `Include /etc/ssh/sshd_config.d/*.conf` and sshd keeps the
+# FIRST value it reads, so an edit lower down loses to whatever cloud-init
+# dropped in there; `00-` sorts ahead of all of them.
+printf 'PasswordAuthentication no\nPermitRootLogin no\n' > /etc/ssh/sshd_config.d/00-hardening.conf
 systemctl restart ssh
+sshd -T | grep -Ei '^(passwordauthentication|permitrootlogin) '   # both must read `no` before you close this shell
 
 # Firewall: 22, 80, 443 and nothing else
 apt-get update && apt-get install -y ufw unattended-upgrades
@@ -207,6 +211,8 @@ compose hostnames, so the database password lives in one place.
 | `DEFAULT_CITY_ID` | `00000000-0000-4000-8000-000000000001` | Rīga, as seeded. Dispatchers join `dispatch:<this>`. |
 | `CORS_ORIGINS` | `https://<dispatch app origin>` | Single source of truth for REST **and** the Socket.IO handshake. A missing origin fails the handshake in a way that looks like an auth error. Native apps do not send an Origin; the dispatch app's browser does. |
 | `PUBLIC_TRACKING_BASE_URL` | `https://<tracking host>` | Where SMS tracking links point. **Production refuses localhost.** 404s until #18/#19. |
+| `PUSH_PROVIDER` | `expo` | **Required in production** (#14): the push factory refuses to boot on the stub, which delivers nothing — a driver whose app was force-quit would never get the "you've gone offline" nudge. Expo's push API needs no credential, so this value is the whole switch. |
+| `EXPO_PUSH_ACCESS_TOKEN` | empty | Optional: Expo's "enhanced push security" token, sent as a Bearer on every push. Empty reads as unset. |
 | `ALLOW_STUB_MAPS_PROVIDER` | `true` | **The one documented relaxation** (#13). Quotes are straight-line × 1.35 and there is no polyline until #134 binds OSRM and deletes this variable. Safe only while no Stripe key is set and the pilot is closed — if either changes before #134, unset it and let the deploy fail. Literal `true`/`false` only. |
 | `GOOGLE_MAPS_API_KEY` | a Maps Platform key with *Places API (New)* enabled | **Required in production** even with the switch on: the switch accepts straight-line quotes, not a dead address typeahead (#19). Google's free monthly credit covers pilot volume; re-check before opening the pilot. |
 | `MAPS_ROUTE_CACHE_TTL_SECONDS` … `MAPS_PLACE_CACHE_TTL_SECONDS`, `PLACES_*` | omit → schema defaults | The spend knobs. Defaults are the pilot's; `env.schema.ts` explains each. |
@@ -228,6 +234,8 @@ JWT_EXPIRES_IN=30d
 DEFAULT_CITY_ID=00000000-0000-4000-8000-000000000001
 CORS_ORIGINS=https://dispatch.example.lv
 PUBLIC_TRACKING_BASE_URL=https://dispatch.example.lv
+PUSH_PROVIDER=expo
+EXPO_PUSH_ACCESS_TOKEN=
 ALLOW_STUB_MAPS_PROVIDER=true
 GOOGLE_MAPS_API_KEY=
 TWILIO_ACCOUNT_SID=
@@ -255,15 +263,16 @@ a message naming the variable, and `up -d --wait` fails the deploy.
    It builds the image for `linux/amd64`, pushes `ghcr.io/linardsb/taxi-api`
    tagged `sha-<12 chars>` and `latest`, copies the four compose files to
    `/opt/taxi`, then on the box: `docker login ghcr.io`, `pull`, **migrate
-   with the new image**, `up -d --wait`, records `API_IMAGE_TAG` in `.env`,
-   prunes old images. The first run also creates the `db-data` volume and
-   runs `initdb` with `POSTGRES_PASSWORD`.
+   with the new image**, `up -d --wait`, reloads Caddy, records
+   `API_IMAGE_TAG` in `.env`, prunes every image no container uses. The first
+   run also creates the `db-data` volume and runs `initdb` with
+   `POSTGRES_PASSWORD`.
 3. **Seed once, by hand:**
 
    ```bash
    ssh deploy@<ip>
    cd /opt/taxi
-   docker compose -f docker-compose.yml -f compose.prod.yml run --rm api node db/dist/seed/run.js
+   docker compose -f docker-compose.yml -f compose.prod.yml run --rm api node node_modules/@taxi/db/dist/seed/run.js
    ```
 
    Why once and never on deploy: `seedRiga()` is idempotent, but its
@@ -290,10 +299,18 @@ Migrations are **forward-only**: the runner applies what `db/migrations` holds
 and nothing undoes one. A migration that fails leaves the previous API running
 (the `up` never happens) — fix forward.
 
+The `Caddyfile` is bind-mounted and Caddy reads it at start only; `up` does
+not recreate a service because a mounted file's *content* changed. The
+workflow therefore runs `caddy reload` after `up` — zero-downtime, a no-op
+when the file is unchanged. A Caddyfile edited by hand on the box needs the
+same command (§5.3).
+
 ### 5.2 Rollback
 
-Every deployed image stays on ghcr.io under its `sha-…` tag, and the box keeps
-the previous image until `prune`. To go back one deploy:
+Every deployed image stays on ghcr.io under its `sha-…` tag. The box does
+**not** keep the previous one: each deploy ends with `docker image prune -af`,
+which removes every image no container is using, so a rollback is a re-pull
+(the `pull` below), not a local switch. To go back one deploy:
 
 ```bash
 cd /opt/taxi
@@ -317,7 +334,8 @@ dc ps                              # what is running, and health
 dc logs -f --tail 200 api          # structured JSON events (see .claude/references/logging-standard.md)
 dc restart api
 dc exec db psql -U taxi -d taxi    # the database
-dc run --rm api node db/dist/migrate-run.js   # migrate without a deploy (no-op when current)
+dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js   # migrate without a deploy (no-op when current)
+dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile        # after a by-hand Caddyfile edit; the deploy does this itself
 ```
 
 ## 6 · Backups and restore
@@ -385,7 +403,7 @@ alias dc='docker compose -f docker-compose.yml -f compose.prod.yml'
 dc stop api caddy
 dc exec -T db psql -U taxi -d postgres -c 'DROP DATABASE taxi' -c 'CREATE DATABASE taxi'
 dc exec -T db pg_restore -U taxi -d taxi --no-owner < /tmp/taxi-<stamp>.dump
-dc run --rm api node db/dist/migrate-run.js          # no-op if the dump is current; applies anything newer
+dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js   # no-op if the dump is current; applies anything newer
 dc up -d --wait
 ```
 
@@ -467,12 +485,17 @@ cd /opt/taxi && alias dc='docker compose -f docker-compose.yml -f compose.prod.y
 dc exec db psql -U taxi -d taxi -c 'SELECT PostGIS_Full_Version();'
 dc exec db psql -U taxi -d taxi -c 'SELECT count(*) FROM geozones;'              # → 4
 dc exec db psql -U taxi -d taxi -c 'SELECT commission_pct FROM platform_config;'  # → 15
-dc run --rm api node db/dist/migrate-run.js                                       # → "Migrations up to date", exit 0
+dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js                    # → "Migrations up to date", exit 0
 ```
 
 Gates — each of these must **fail the container at boot** (`up -d --wait`
-exits non-zero, `dc logs api` names the variable). All six were `observed`
-against the built image on 2026-08-25, before any server existed:
+exits non-zero, `dc logs api` names the variable). All seven were `observed`
+on 2026-09-03 against the image built from PR #147's round-1 fix commit,
+before any server existed. The first six were also observed on 2026-08-25; the
+seventh, `PUSH_PROVIDER`, reached `main` with #14 on 2026-08-31 and the rebase
+inherited the 2026-08-25 boot without re-running it — the review caught it
+(round 1, F1). **After any base move, boot the image again; the gate never
+runs under `NODE_ENV=production` and cannot see a new one of these.**
 
 | Break | Expected refusal |
 |---|---|
@@ -482,6 +505,7 @@ against the built image on 2026-08-25, before any server existed:
 | two of three `TWILIO_*` | `TWILIO_FROM_NUMBER is missing: TWILIO_* must be set all together or not at all` |
 | no `TWILIO_*` at all | `No production SmsProvider is bound` |
 | `GOOGLE_MAPS_API_KEY` unset (switch on) | `No production MapsProvider is bound: no GOOGLE_MAPS_API_KEY is set` |
+| `PUSH_PROVIDER` unset | `No production PushProvider is bound: StubPushProvider delivers nothing. Set PUSH_PROVIDER=expo (#14) …` |
 
 And one that must **not** be a boot failure: with `STRIPE_SECRET_KEY` empty,
 the API boots and a card settlement answers **502 `payment_provider_error`**,

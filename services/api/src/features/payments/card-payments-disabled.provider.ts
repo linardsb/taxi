@@ -1,9 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type {
-  PaymentChargeRequest,
-  PaymentChargeResult,
-  PaymentsProvider,
-} from '@taxi/shared';
+import { Injectable } from '@nestjs/common';
+import type { PaymentChargeResult, PaymentsProvider } from '@taxi/shared';
 
 /**
  * The cash-only pilot's card provider (#13): refuses every charge, moves no
@@ -31,22 +27,17 @@ import type {
  * and it is the retry-SAFE bucket, which is also true: a retry costs no network
  * call and refuses identically, and nothing can be stranded because nothing
  * ever moved. `message` names the real cause for the
- * `payment.settlement.charge_failed` line the runbook reads.
+ * `payment.settlement.charge_failed` line the runbook reads — the ONLY line a
+ * refused charge produces. This class logs nothing itself: the settlement
+ * service already emits that event with the ride, driver and rider ids this
+ * provider never sees, and a second line per refusal would say less, twice.
  *
  * A future SIA + `STRIPE_SECRET_KEY` binds `StripePaymentsProvider` instead with
  * no code change — the factory checks the client first.
  */
 @Injectable()
 export class CardPaymentsDisabledProvider implements PaymentsProvider {
-  private readonly logger = new Logger(CardPaymentsDisabledProvider.name);
-
-  charge(request: PaymentChargeRequest): Promise<PaymentChargeResult> {
-    this.logger.warn({
-      event: 'payment.card_disabled.charge_refused',
-      rideId: request.rideId,
-      amountCents: request.amountCents,
-      at: new Date().toISOString(),
-    });
+  charge(): Promise<PaymentChargeResult> {
     return Promise.resolve({
       ok: false,
       reason: 'provider_error',
