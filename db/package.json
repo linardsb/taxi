@@ -19,6 +19,7 @@
     "test": "vitest run",
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
+    "migrate:run": "tsx src/migrate-run.ts",
     "seed": "tsx src/seed/run.ts"
   },
   "dependencies": {

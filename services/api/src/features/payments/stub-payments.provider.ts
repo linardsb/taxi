@@ -7,8 +7,9 @@ import type {
 
 /**
  * Dev/test implementation of the PaymentsProvider seam (@taxi/shared). Moves no
- * money and always succeeds. `paymentsProviderFactory` refuses to bind it under
- * `NODE_ENV=production`, exactly like `StubSmsProvider` and `StubMapsProvider`.
+ * money and always succeeds. `paymentsProviderFactory` never binds it under
+ * `NODE_ENV=production` — it binds `CardPaymentsDisabledProvider` there, which
+ * moves no money and always REFUSES (#13).
  *
  * NO MAGIC-AMOUNT FAILURE TRIGGERS. The integration suite overrides
  * `PAYMENTS_PROVIDER` with a controllable recording fake, which is clearer than

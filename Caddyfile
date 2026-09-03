@@ -1,0 +1,23 @@
+# Reverse proxy in front of the API on the Hetzner box (#13). Mounted read-only
+# by the `caddy` service in compose.prod.yml; API_DOMAIN comes from the host
+# .env through that service's environment.
+#
+# TLS: a Cloudflare ORIGIN CA certificate, with the zone's SSL mode set to
+# "Full (strict)". Two alternatives were rejected:
+#   - plain HTTP on 80 + Cloudflare "Flexible": OTP codes and JWTs would cross
+#     the public internet Cloudflare → Hetzner in the clear on every request;
+#   - Let's Encrypt via ACME: the HTTP-01 challenge has to pass through the
+#     proxy's own redirect rules ("Always Use HTTPS"), which is fragile, and
+#     buys nothing here — the only client that ever reaches this port is
+#     Cloudflare, and the origin cert (free, 15-year) is trusted by exactly it.
+# Files: ./certs/origin.pem and ./certs/origin.key on the box (runbook §2.3).
+# Port 80 stays open: with a `tls` block Caddy still redirects http → https.
+#
+# No `header_up Upgrade` / `Connection`: Caddy v2 proxies WebSockets
+# (Socket.IO's transport) automatically. Hand-written upgrade headers break it.
+
+{$API_DOMAIN} {
+	tls /certs/origin.pem /certs/origin.key
+	encode zstd gzip
+	reverse_proxy api:3001
+}

@@ -35,10 +35,11 @@ const NO_PLACES =
 
 /**
  * Dev/pilot implementation of the MapsProvider seam (@taxi/shared). Computes a
- * route from geometry instead of spending money at Google; the real Routes
- * implementation lands with #13/#16.
+ * route from geometry instead of spending money at Google; the real routing
+ * implementation is `OsrmMapsProvider` (#134).
  *
- * `GeoModule` refuses to boot this under `NODE_ENV=production` — a silent stub
+ * `GeoModule` refuses to boot this under `NODE_ENV=production` (unless
+ * `ALLOW_STUB_MAPS_PROVIDER=true`, #13's documented switch that #134 deletes) — a silent stub
  * that prices real rides off straight-line distance is worse than no boot.
  */
 @Injectable()

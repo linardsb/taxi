@@ -68,28 +68,69 @@ describe('mapsProviderSourceFactory', () => {
     );
   });
 
-  it('refuses to boot in production (failure)', () => {
+  it('refuses to boot in production with the switch off (failure)', () => {
     // The stub prices rides off straight-line distance and returns no polyline,
-    // so an internet-facing deploy before #13/#16 quotes real money off
-    // geometry. Failing at boot is the point: a silent stub is worse than no
-    // boot.
-    expect(() => mapsProviderSourceFactory(env('production'))).toThrow(
-      /No production MapsProvider is bound/,
-    );
+    // so an internet-facing deploy before #134 quotes real money off geometry.
+    // Failing at boot is the point: a silent stub is worse than no boot. The
+    // refusal names the switch, so the operator learns the escape hatch AND
+    // what it costs from the same line.
+    expect(() =>
+      mapsProviderSourceFactory({
+        NODE_ENV: 'production',
+        ALLOW_STUB_MAPS_PROVIDER: false,
+        GOOGLE_MAPS_API_KEY: 'k',
+      } as Env),
+    ).toThrow(/No production MapsProvider is bound.*ALLOW_STUB_MAPS_PROVIDER/);
   });
 
-  it('names the missing Places key in the production refusal (failure)', () => {
+  it('binds the stub for routes in production when the switch is on (edge — #13)', async () => {
+    // The one sanctioned relaxation, and only of the ROUTES clause: the
+    // composed source routes through `StubMapsProvider` (a geometry quote, no
+    // polyline) while address search still reaches Google.
+    const source = mapsProviderSourceFactory({
+      NODE_ENV: 'production',
+      ALLOW_STUB_MAPS_PROVIDER: true,
+      GOOGLE_MAPS_API_KEY: 'k',
+      MAPS_ROUTE_TIMEOUT_MS: 3_000,
+    } as Env);
+
+    const route = await source.route(CENTRE, RIX);
+    expect(route.distanceMeters).toBeGreaterThan(0);
+    expect(route.polyline).toBe('');
+  });
+
+  it('the switch does not cover the missing Places key (failure)', () => {
+    // Accepting straight-line quotes is not accepting a typeahead that throws
+    // on Dina's first keystroke. With the switch on and no key, the refusal
+    // is the Places gap ALONE — the routes clause is gone from the message.
+    const noKey = {
+      NODE_ENV: 'production',
+      ALLOW_STUB_MAPS_PROVIDER: true,
+    } as Env;
+    expect(() => mapsProviderSourceFactory(noKey)).toThrow(
+      /GOOGLE_MAPS_API_KEY/,
+    );
+    expect(() => mapsProviderSourceFactory(noKey)).not.toThrow(/straight-line/);
+  });
+
+  it('names both gaps in one refusal when both are open (failure)', () => {
     // The address-search gap is reported alongside the routes gap rather than
     // after it: a deploy that fixes routes must not then discover the typeahead
     // 500s from Dina's first keystroke.
     expect(() => mapsProviderSourceFactory(env('production'))).toThrow(
-      /GOOGLE_MAPS_API_KEY/,
+      /straight-line[\s\S]*GOOGLE_MAPS_API_KEY/,
     );
+  });
 
-    const withKey = { NODE_ENV: 'production', GOOGLE_MAPS_API_KEY: 'k' } as Env;
-    expect(() => mapsProviderSourceFactory(withKey)).not.toThrow(
-      /GOOGLE_MAPS_API_KEY/,
-    );
+  it('the switch changes nothing outside production (edge)', () => {
+    for (const NODE_ENV of ['development', 'test'] as const) {
+      expect(
+        mapsProviderSourceFactory({
+          NODE_ENV,
+          ALLOW_STUB_MAPS_PROVIDER: true,
+        } as Env),
+      ).toBeInstanceOf(StubMapsProvider);
+    }
   });
 
   it('binds the Places provider when a key is present (edge)', () => {

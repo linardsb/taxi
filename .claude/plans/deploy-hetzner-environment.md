@@ -71,9 +71,12 @@ The three boot gates are resolved *without weakening any of them*:
 - `.claude/plans/real-sms-provider-twilio.md` (#85) — Why: `TwilioSmsProvider` and the all-or-nothing trio validation this plan configures
 - `.claude/plans/api-payments-ledger.md` (#12) — Why: the payments seam and why the stub is dangerous in production
 
-**Forward-references**:
+**Forward-references** (filed 2026-08-25 during implementation):
 
-- (none yet — the OSRM ticket and the two SMS-volume tickets should be linked here once created)
+- [#134](https://github.com/linardsb/taxi/issues/134) — `OsrmMapsProvider` + OSRM container; **deletes `ALLOW_STUB_MAPS_PROVIDER`**
+- [#135](https://github.com/linardsb/taxi/issues/135) — skip rider SMS for app-booked rides (lever 1)
+- [#136](https://github.com/linardsb/taxi/issues/136) — 1-segment LV/RU templates, short domain, shorter token (lever 2)
+- [#137](https://github.com/linardsb/taxi/issues/137) — SMS provider bake-off before pilot volume
 
 ---
 
@@ -221,7 +224,7 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
 
 ### UPDATE `services/api/src/common/config/env.schema.ts` — add `ALLOW_STUB_MAPS_PROVIDER`
 
-- **IMPLEMENT**: An explicitly-false-by-default boolean coerced from the string env (`z.enum(['true','false']).default('false').transform(v => v === 'true')` or equivalent — match how the file handles other coercions). The doc comment must state: what it disables, why it exists (no `MapsProvider` implementation exists yet), what it costs (quotes priced off straight-line distance, no polyline), that it is safe only because Stripe is absent so no real money moves, and **that the OSRM ticket deletes it**.
+- **IMPLEMENT**: An explicitly-false-by-default boolean coerced from the string env (`z.enum(['true','false']).default('false').transform(v => v === 'true')` or equivalent — match how the file handles other coercions). The doc comment must state: what it disables, why it exists (no `MapsProvider` implementation exists yet), what it costs (quotes priced off straight-line distance, no polyline), that it is safe only because Stripe is absent so no real money moves, and **that the OSRM ticket deletes it**. <!-- Corrected in review (PR #147, round 2 N4): "Stripe is absent so no real money moves" is false as an acceptance criterion and the shipped docblock no longer says it. The absent key closes the CARD rail only; a cash ride quoted at haversine × 1.35 is real money at the kerb. The condition to state is the CLOSED PILOT, and its due date is the pilot opening, not #134. See the NOTES correction. -->
 - **PATTERN**: `MAPS_ETA_FAILURE_TTL_SECONDS`'s kill-switch comment (#103) — the same "config-level switch so it isn't a deploy" reasoning.
 - **GOTCHA**: Do **not** put this in the `.superRefine` production block as a relaxation of secret rules. It gates one provider factory and nothing else.
 - **GOTCHA**: Add it to `.env.example` with the same explanation, defaulted off.
@@ -483,6 +486,8 @@ From the issue, plus what this plan adds:
 
 **The maps switch is the weakest part of this plan** and should be treated as debt with a due date, not a feature. It is defensible only because: (a) Stripe is absent, so no real money moves off a bad quote; (b) the pilot is not open, so no rider is quoted a straight-line price; (c) the OSRM ticket that deletes it is small and next. If any of those three stop being true before OSRM lands, the switch should be removed and the deploy blocked instead.
 
+> **Corrected in review (PR #147, round 2 N4).** (a) does not hold as written. The absent Stripe key closes the **card rail only** — `CardPaymentsDisabledProvider` refuses card charges — and a **cash** ride quoted at haversine × 1.35 is real money at the kerb. (b) is the load-bearing condition and carries the due date on its own: unset the switch before the first real rider, whether or not #134 has landed. The shipped texts (`env.schema.ts`, `.env.example`, runbook §3, `geo.module.ts`, the architecture doc) now say this; the paragraph above is left as written so the record shows what was corrected.
+
 **Sequencing thought.** Phase 1 is worth doing even if the deploy slips: it is the difference between "production is unbootable" and "production boots." It's also entirely local — no account, no card, no server. Consider shipping Phase 1 as its own PR if the host provisioning stalls on anything.
 
 **Rejected: running the seed on every deploy.** Idempotent, and its own comment sanctions re-seeding ("a re-seed corrects a hand-edited row") — but that sanction predates #20's config editor. Automating it now builds in a footgun that fires the day an admin edits the commission. Manual, documented, once.
@@ -492,3 +497,5 @@ From the issue, plus what this plan adds:
 ## AMENDMENTS
 
 <!-- newest at the bottom -->
+
+- **2026-08-25 (implementation)** — The maps switch covers the ROUTES clause only; production with `ALLOW_STUB_MAPS_PROVIDER=true` and no `GOOGLE_MAPS_API_KEY` still refuses to boot (the Places refusal #19/#125 added is an independent gate, and accepting straight-line quotes is not accepting a dead typeahead). Consequence: the host `.env` needs a Maps Platform key. The refusing payments provider answers `provider_error` (502), not `declined` (402): the seam pins exactly two reasons, and a 402 would blame a card nobody saw. The image needs the per-package `node_modules` (workspace symlinks) copied, not just the root — found by booting it. Deploy secrets are four, not three: `SSH_KNOWN_HOSTS` pins the host key. Provisioning, domain, Cloudflare, Twilio and the first deploy are external steps left to the runbook; the backup restore was rehearsed locally, not on the box.

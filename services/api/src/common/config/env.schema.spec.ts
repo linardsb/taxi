@@ -244,6 +244,57 @@ describe('envSchema TWILIO_*', () => {
   });
 });
 
+describe('envSchema ALLOW_STUB_MAPS_PROVIDER', () => {
+  it('defaults to false, so the production maps gate is untouched unless asked (expected)', () => {
+    // The forgot-to-set-it deploy must land on the OLD behaviour — refuse to
+    // boot on the stub — not silently on the relaxed one.
+    expect(envSchema.parse(prod()).ALLOW_STUB_MAPS_PROVIDER).toBe(false);
+    expect(
+      envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: 'false' }))
+        .ALLOW_STUB_MAPS_PROVIDER,
+    ).toBe(false);
+  });
+
+  it('reads the literal string "true" as true (edge)', () => {
+    expect(
+      envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: 'true' }))
+        .ALLOW_STUB_MAPS_PROVIDER,
+    ).toBe(true);
+  });
+
+  it('reads an empty value as unset, like every optional sibling (edge — review F7)', () => {
+    // A blanked line in a hand-written env file delivers '', and `.default()`
+    // substitutes `undefined` only. Production must still refuse to boot — but
+    // through the maps gate's own message, not a generic enum error — and dev
+    // and test must not refuse at all. Same shape as GOOGLE_MAPS_API_KEY and
+    // the Twilio trio: '' is unset.
+    expect(
+      envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: '' }))
+        .ALLOW_STUB_MAPS_PROVIDER,
+    ).toBe(false);
+    expect(
+      envSchema.parse({
+        ...base,
+        NODE_ENV: 'development',
+        JWT_SECRET: STRONG_JWT,
+        ALLOW_STUB_MAPS_PROVIDER: '',
+      }).ALLOW_STUB_MAPS_PROVIDER,
+    ).toBe(false);
+  });
+
+  it.each(['1', 'yes', 'TRUE', 'on'])(
+    'refuses %s rather than guessing (failure)',
+    (value) => {
+      // `z.coerce.boolean()` would take every one of these as true — and the
+      // string "false" too. An operator who typed one gets a boot error naming
+      // the variable, not a stub bound by accident.
+      expect(() =>
+        envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: value })),
+      ).toThrow();
+    },
+  );
+});
+
 describe('envSchema MAPS_ETA_FAILURE_TTL_SECONDS', () => {
   it('accepts 0 as the negative cache kill switch (edge — review L4)', () => {
     // `CachingMapsProvider` reads `failureTtlSeconds > 0` as the switch, and

@@ -1,0 +1,169 @@
+name: Deploy
+
+# MANUAL ONLY, on purpose. Auto-deploy on merge to main is a decision for after
+# the first successful manual run — an image auto-shipping to the box Atis is
+# testing from, on the strength of a green CI that does not exercise a
+# production boot, is worse than one click. Revisit once /health has answered
+# a hand-triggered deploy at least once (#13).
+#
+# What one run does: build the api image for linux/amd64 (CX22 is x86), push it
+# to ghcr.io tagged with the commit, then over SSH: pull, run the migrations
+# with the NEW image, `up -d --wait`, reload Caddy, prune. Migrations run
+# BEFORE the new API starts, so code that needs a column never runs against a
+# table without it.
+#
+# Secrets (repo → Settings → Secrets and variables → Actions):
+#   SSH_HOST         the box's public IPv4
+#   SSH_KEY          private key for the `deploy` user (runbook §1.4)
+#   SSH_KNOWN_HOSTS  output of `ssh-keyscan -H <SSH_HOST>` — pinned, so a
+#                    changed host key fails the run instead of being trusted
+#   GHCR_TOKEN       a classic PAT with read:packages, used ON THE BOX to pull
+#                    the private image (the runner pushes with GITHUB_TOKEN)
+on:
+  workflow_dispatch:
+
+# One deploy at a time; a second trigger queues rather than racing the first.
+concurrency: deploy-hetzner
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}-api
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tag
+        run: echo "tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # A bounded failure instead of GitHub's 6 h default: the whole step list is
+    # a pull, a migration and a restart. `up --wait-timeout` (below) already
+    # fails a crash loop fast; this catches the shapes that hang instead —
+    # ssh with no server-side timeout, a stalled pull.
+    timeout-minutes: 20
+    # Only checks the repo out; the image is pulled on the box with GHCR_TOKEN.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the deploy key and the pinned host key
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Sync the compose files to the box
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        # The box's copies track the repo, so a change to the overlay or the
+        # Caddyfile ships with the next deploy instead of drifting. The host
+        # .env and certs/ are NOT in the repo and are never touched here.
+        run: |
+          scp -i ~/.ssh/deploy docker-compose.yml compose.prod.yml Caddyfile "deploy@$SSH_HOST:/opt/taxi/"
+          scp -i ~/.ssh/deploy scripts/backup-db.sh "deploy@$SSH_HOST:/opt/taxi/scripts/"
+      - name: Pull, migrate, restart
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
+          TAG: ${{ needs.build.outputs.tag }}
+        # The script travels over stdin (`bash -s`), with the values expanded
+        # on the runner: nothing secret lands in the box's process list.
+        run: |
+          ssh -i ~/.ssh/deploy "deploy@$SSH_HOST" 'bash -s' <<EOF
+          set -euo pipefail
+          cd /opt/taxi
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          export API_IMAGE_TAG="$TAG"
+          compose="docker compose -f docker-compose.yml -f compose.prod.yml"
+          \$compose pull api
+          # \`</dev/null\` on run and exec, and ONLY on those two: this script IS
+          # bash's stdin, bash reads a pipe one line at a time, and compose's
+          # run/exec default to --interactive, so the docker CLI would read the
+          # REST OF THIS SCRIPT and forward it into the container. Everything
+          # below would be swallowed and the step would exit 0 on the
+          # migration's status. pull/up/prune/ps do not touch stdin.
+          \$compose run --rm api node node_modules/@taxi/db/dist/migrate-run.js </dev/null
+          # 120 s is a BACKSTOP, not the api's budget. The api healthcheck
+          # resolves itself first: a container goes healthy on its FIRST
+          # successful probe (start_period included) and unhealthy at
+          # start_period 20 s + 5 retries x 10 s = 70 s (compose.prod.yml), at
+          # which point \`up --wait\` fails on its own. Reasoning about the api
+          # alone is valid — the flag is project-scoped — because the \`run\`
+          # above already resolved api's depends_on service_healthy on db and
+          # redis, so both are healthy before this line. If the api ever
+          # legitimately needs longer, raise start_period/retries, not this
+          # flag. Without the flag \`--wait\` waits forever.
+          \$compose up -d --wait --wait-timeout 120
+          # Caddy reads its config at start only, and \`up\` does not recreate a
+          # service when a bind-mounted file's CONTENT changes (not part of the
+          # config hash), so the Caddyfile scp'd above is served only after
+          # this. A no-op when unchanged, zero-downtime when not. -T: no tty.
+          \$compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile </dev/null
+          # Record what is running, so a by-hand \`up\` on the box later starts
+          # the same image and a rollback is one edit of this line. The newline
+          # guard: a hand-written file with no trailing newline would otherwise
+          # get the tag glued onto its last line, where nothing reads it.
+          if grep -q '^API_IMAGE_TAG=' .env; then
+            sed -i "s/^API_IMAGE_TAG=.*/API_IMAGE_TAG=$TAG/" .env
+          else
+            [ -z "\$(tail -c1 .env)" ] || echo >> .env
+            echo "API_IMAGE_TAG=$TAG" >> .env
+          fi
+          # -a: every image no container uses, tagged or not. Without it prune
+          # drops dangling layers only and each pulled \`sha-*\` tag stays on
+          # the 40 GB disk for good. A rollback re-pulls (runbook §5.2).
+          docker image prune -af >/dev/null
+          \$compose ps
+          EOF
+      - name: Health from the outside
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          API_DOMAIN: ${{ vars.API_DOMAIN }}
+        # A repo VARIABLE, not a secret — it is a public hostname. Skipped
+        # until it is set, so the first run can finish before DNS exists.
+        run: |
+          if [ -z "$API_DOMAIN" ]; then echo "API_DOMAIN not set; skipping"; exit 0; fi
+          # The hostname has two sources of truth: this variable and the box's
+          # .env, which is the one Caddy is actually serving (compose.prod.yml
+          # passes it through). Edit one and not the other and this probe
+          # measures a different origin from the one just deployed: green
+          # against a stale name that still answers, or red while the stack is
+          # fine. -n so ssh cannot eat this script's stdin.
+          box="$(ssh -n -i ~/.ssh/deploy "deploy@$SSH_HOST" \
+            "grep -m1 '^API_DOMAIN=' /opt/taxi/.env | cut -d= -f2-")"
+          box="${box%$'\r'}"                 # a host .env edited on Windows
+          box="${box%\"}"; box="${box#\"}"   # compose accepts a quoted value
+          box="${box%\'}"; box="${box#\'}"
+          if [ "$box" != "$API_DOMAIN" ]; then
+            echo "API_DOMAIN mismatch: repo variable is '$API_DOMAIN', the box serves '$box'" >&2
+            exit 1
+          fi
+          curl -fsS --max-time 15 "https://$API_DOMAIN/health"

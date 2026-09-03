@@ -1,0 +1,28 @@
+# Build context for services/api/Dockerfile (built from the REPO ROOT). What is
+# NOT here gets shipped to the daemon on every build, and a stale local `dist`
+# would shadow the in-image build — so every build output is excluded too.
+node_modules
+**/node_modules
+**/dist
+**/build
+**/.next
+**/.expo
+**/.turbo
+**/*.tsbuildinfo
+**/coverage
+.git
+.env
+.env.*
+!.env.example
+.claude
+docs
+# Sources the image never compiles. Manifests stay: --frozen-lockfile checks
+# the lockfile against every workspace importer, apps included.
+apps/**
+!apps/*/package.json
+app
+backend
+ios
+android
+*.log
+.DS_Store

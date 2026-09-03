@@ -11,6 +11,13 @@
  *
  * KNOWN GAPS — seen and accepted for the pilot, not overlooked:
  *
+ * - NO CARD RAIL IN PRODUCTION until the SIA exists (#13). With no
+ *   `STRIPE_SECRET_KEY`, production binds `CardPaymentsDisabledProvider`: every
+ *   card charge answers `provider_error` / `card_payments_disabled`, so `settle`
+ *   on a card ride is a 502 and the ride stays `completed` — and because the
+ *   method locks at acceptance, it cannot be re-settled as cash. The lever is at
+ *   BOOKING (do not offer card while the pilot is cash-only), which is the rider
+ *   app's (#16/#17) and the console's to enforce, not this slice's.
  * - NO RIDER CARD ENROLLMENT. `users.payment_customer_ref` /
  *   `payment_instrument_ref` are filled by #17; a card ride for a rider missing
  *   either answers 409 `payment_instrument_missing` rather than inventing a

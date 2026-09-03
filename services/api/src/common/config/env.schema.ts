@@ -182,12 +182,53 @@ export const envSchema = z
       .positive()
       .default(2_592_000),
     /**
+     * `true` lets `mapsProviderSourceFactory` bind `StubMapsProvider` for
+     * ROUTES under `NODE_ENV=production`. Default `false`: the gate stays
+     * exactly as it was — production refuses to boot on the stub.
+     *
+     * WHY IT EXISTS (#13). No real routing `MapsProvider` exists in the tree,
+     * and the one that will — `OsrmMapsProvider`, #134 — is its own ticket, so
+     * without this the first deploy cannot boot at all. It is the #103 move (a
+     * code-level gate becomes a config-level switch) applied to ONE clause of
+     * ONE factory and nothing else: it does not touch the secret rules below,
+     * the `PUBLIC_TRACKING_BASE_URL` rule, the SMS or payments gates, or the
+     * same factory's `GOOGLE_MAPS_API_KEY` refusal — a switch that accepts
+     * straight-line quotes has not accepted a dead address typeahead.
+     *
+     * WHAT IT COSTS. Every quote is priced off haversine distance × 1.35 at
+     * 40 km/h (`stub-maps.provider.ts`), and `route()` returns no polyline, so
+     * the tracking page's ETA and any route line are geometry, not roads.
+     *
+     * WHY IT IS SAFE TODAY, and only today: the pilot is not open, so no rider
+     * is quoted a straight-line price at all. That is the whole of it, and the
+     * due date is the pilot OPENING, not #134. The empty `STRIPE_SECRET_KEY`
+     * buys less than it looks: `CardPaymentsDisabledProvider` refuses the CARD
+     * rail only, and a cash ride quoted at haversine x 1.35 is real money at
+     * the kerb. So: unset this before the first real rider, whether or not OSRM
+     * has landed, and let the deploy fail instead.
+     *
+     * #134 DELETES THIS VARIABLE together with the branch that reads it. Debt
+     * with a due date, not a feature. `z.enum`, not `z.coerce.boolean()`, which
+     * reads the string "false" as `true`. The preprocess maps '' to unset, as
+     * every optional sibling here does: `.default()` substitutes `undefined`
+     * only, and a blanked line in a hand-written env file delivers '', which
+     * would otherwise refuse to boot in EVERY environment with a generic enum
+     * message instead of the maps gate's own.
+     */
+    ALLOW_STUB_MAPS_PROVIDER: z
+      .preprocess(
+        (v) => (v === '' ? undefined : v),
+        z.enum(['true', 'false']).default('false'),
+      )
+      .transform((v) => v === 'true'),
+    /**
      * TEST MODE ONLY, structurally. `sk_live_…` is refused at boot: the repo
      * rule is "Stripe stays in test mode until the SIA exists", and spike #5
      * confirms a live platform account needs a legal entity we do not have.
-     * Absent (or empty, as in `.env.example`) binds `StubPaymentsProvider`
-     * instead, which refuses to boot in production — the same arrangement as
-     * SMS and maps.
+     * Absent (or empty, as in `.env.example`) binds `StubPaymentsProvider` in
+     * dev and test, and `CardPaymentsDisabledProvider` in production (#13):
+     * the cash-only pilot has no card rail, and a provider that REFUSES is the
+     * honest shape of that, where the stub's silent success is not.
      *
      * `.optional().transform().refine()` IN THAT ORDER: the refine runs on the
      * transformed value, so the empty string is already `undefined` by the time

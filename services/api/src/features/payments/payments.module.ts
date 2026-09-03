@@ -4,6 +4,7 @@ import Stripe from 'stripe';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { LedgerModule } from '../ledger';
 import { RidesModule } from '../rides';
+import { CardPaymentsDisabledProvider } from './card-payments-disabled.provider';
 import { PAYMENTS_PROVIDER, STRIPE_CLIENT } from './payments.tokens';
 import { SettlementController } from './settlement.controller';
 import { SettlementRepository } from './settlement.repository';
@@ -24,25 +25,31 @@ export function stripeClientFactory(env: Env): StripeClient | null {
 }
 
 /**
- * Refuses to boot in production while the stub is the only bound provider —
- * structurally, exactly like `smsProviderFactory` and `mapsProviderSourceFactory`.
+ * In order: Stripe when a client exists; the REFUSING provider in production;
+ * the stub everywhere else.
  *
- * The stub is worse here than either of those: it reports SUCCESS. A ride would
- * be marked `settled`, its ledger entries written and a driver credited, while
- * the rider was never charged a cent — money the platform would then owe out of
- * its own pocket, discovered at reconciliation rather than at the failure.
+ * Production without Stripe used to throw here, like `smsProviderFactory`. The
+ * danger that throw guarded against was never the absence of Stripe — it was
+ * the STUB, which reports SUCCESS: a ride marked `settled`, its ledger entries
+ * written and a driver credited, while the rider was never charged a cent —
+ * money the platform would then owe out of its own pocket, discovered at
+ * reconciliation rather than at the failure. That stays true, and the stub
+ * still never binds in production.
+ *
+ * What changed (#13): the pilot is cash-only — no SIA, so no Stripe key can
+ * exist — and cash rides never reach this seam, so "no card rail" is a
+ * legitimate production posture where "pretend to charge" is not.
+ * `CardPaymentsDisabledProvider` answers `ok: false` to every card charge and
+ * moves nothing, so a card settlement fails closed instead of the deploy
+ * failing at boot. When the SIA exists, setting `STRIPE_SECRET_KEY` binds
+ * `StripePaymentsProvider` with no code change — the client check comes first.
  */
 export function paymentsProviderFactory(
   env: Env,
   stripe: StripeClient | null,
 ): PaymentsProvider {
   if (stripe) return new StripePaymentsProvider(stripe);
-
-  if (env.NODE_ENV === 'production') {
-    throw new Error(
-      'No production PaymentsProvider is bound: StubPaymentsProvider settles card rides without moving any money, so a ride would be marked settled and paid while the rider was never charged. Set STRIPE_SECRET_KEY (test mode until the SIA exists) before running with NODE_ENV=production.',
-    );
-  }
+  if (env.NODE_ENV === 'production') return new CardPaymentsDisabledProvider();
   return new StubPaymentsProvider();
 }
 
