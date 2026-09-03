@@ -11,8 +11,10 @@ single booking screen with **no map** — pickup defaulted from coarse GPS, drop
 into an address search, an upfront price shown before anything is booked, and a status
 screen that speaks. Three api additions make that expressible: `POST /rides/quote`
 (a quote with no ride), rider access to the geo typeahead (own caps, own key
-namespaces), and `GET /rides/:rideId` (rider-owner-scoped) so a reconnecting socket can
-recover its ride. Accessibility is implemented as assertions rather than as a review
+namespaces), and `GET /rides/:rideId` (rider-owner-scoped), which both recovers the ride
+and **joins the caller's sockets to its room** — the app calls it on every socket
+`connect`, so the room membership `notifyRider` cannot give a socket that does not yet
+exist is granted on the read instead (corrected at review round 1 — C1). Accessibility is implemented as assertions rather than as a review
 note: focus is moved explicitly on every screen, async changes are announced, and each
 of those is pinned by an RNTL test.
 
@@ -21,9 +23,12 @@ of those is pinned by an RNTL test.
 **Phase 1 — contracts (`packages/shared`)**
 
 - `rideQuoteBodySchema` + `rideQuotePreviewSchema` → `src/schemas/ride.ts` (UPDATE)
-- rider `rider.*` catalog block, 54 keys × 3 languages → `src/i18n/{lv,ru,en}.ts` (UPDATE)
+- rider `rider.*` catalog block, **59** keys × 3 languages → `src/i18n/{lv,ru,en}.ts` (UPDATE)
+  — 54 at first submission; review round 1 added `rider.book.{pickup_empty,retry,location_unavailable}`,
+  `rider.address.results_count` and `rider.status.{completed,book_again}`, and removed
+  `rider.a11y.status_changed` (M9). `observed`: `grep -c "^  'rider\." packages/shared/src/i18n/<lang>.ts` → 59 in each.
 - quote-body / preview cases → `tests/schemas-ride-request.test.ts` (UPDATE)
-- **D5 measured, not triggered**: `lv.ts` is **368 lines** (`observed`, re-measured after the dead keys came out), under the 460 split threshold. No catalog split.
+- **D5 measured, not triggered**: `lv.ts` is **386 lines** (`observed` — `wc -l packages/shared/src/i18n/lv.ts` at the review-round-1 head; 368 at first submission, +18 for the six new keys and their comments), under the 460 split threshold. No catalog split.
 
 **Phase 2 — api (`services/api`)**
 
@@ -84,7 +89,7 @@ Edge cases from the plan's table, and where each is verified:
 | E4 | `search-sheet.test.tsx`, `use-quote.test.tsx`, `address-search.controller.spec.ts` | ✅ |
 | E5 | `use-book-ride.test.tsx` — 409 retried with the SAME key | ✅ |
 | E6 | `use-book-ride.test.tsx` — offline, key preserved | ✅ |
-| E7 | `use-ride-status.test.tsx` — refetch on reconnect, not on first connect | ✅ |
+| E7 | `use-ride-status.test.tsx` — refetch on EVERY connect, first included (the read is the join); `ride-lifecycle.integration.spec.ts` proves delivery to a socket opened after the booking | ✅ |
 | E8 | `use-ride-status.test.tsx` — `accepted → requested` followed | ✅ |
 | E9 | `search-sheet.test.tsx` — row removed on 404 | ✅ |
 | E10 | `use-session.test.tsx` | ✅ |
@@ -127,13 +132,20 @@ Additional checks:
 
 - `pnpm --filter @taxi/rider exec tsc --version` → **5.9.3** (R1).
 - `npx expo config --type public` in `apps/rider` resolves
-  `android.permissions` to exactly `ACCESS_COARSE_LOCATION` and
-  `ACCESS_FINE_LOCATION` (plus their fully-qualified twins from the
-  `expo-location` plugin). No `ACCESS_BACKGROUND_LOCATION`, no
+  `android.permissions` to exactly `ACCESS_COARSE_LOCATION` (plus its
+  fully-qualified twin from the `expo-location` plugin). `ACCESS_FINE_LOCATION`
+  was declared too at first submission and was **removed at review round 1 (L5)**
+  as a wider ask than the design states — pickup defaults from coarse GPS and the
+  code asks for `Accuracy.Balanced` (~100 m), which coarse satisfies. That figure
+  is `expected` for the current tree: the `expo config` run above was made against
+  the pre-review manifest and has not been repeated.
+  No `ACCESS_BACKGROUND_LOCATION`, no
   `FOREGROUND_SERVICE*`, no `RECEIVE_BOOT_COMPLETED` — **AC #9 `observed`**, not
   argued from the manifest source.
 - Largest shipped source file touched: `services/api/src/features/rides/rides.service.ts`
-  at **418** lines; `packages/shared/src/schemas/ride.ts` at **372**. Cap is 500.
+  at **451** lines (`observed`, `wc -l`, at the review-round-1 head; 418 at first
+  submission, +33 for C1's join and its docblock); `packages/shared/src/schemas/ride.ts`
+  at **372**, unchanged. Cap is 500 — 49 lines of headroom on the largest.
 
 ## Risk register — every risk closed by its own command
 
@@ -169,7 +181,8 @@ declares that nothing in the diff shows missing.
   `rider.action.save`, `rider.action.cancel`. Each was written for an affordance
   this app does not have (the pickup row is tappable in place rather than carrying
   a `[Change]` button; the gate's banner takes no action). Verified by grep: no
-  call site in `apps/rider/src`. The rider block is **54 keys × 3 languages**.
+  call site in `apps/rider/src`. A fifth, `rider.a11y.status_changed`, came out at
+  review round 1 (M9). The rider block is **59 keys × 3 languages**.
 
 ## Deviations from the plan
 

@@ -420,7 +420,9 @@ describe('rides (integration)', () => {
 
   /**
    * The two routes #16 added: the price a rider sees BEFORE committing, and the
-   * read that lets a reconnecting app recover its ride.
+   * read that recovers a rider's ride AND joins their sockets to its room —
+   * `ride-lifecycle.integration.spec.ts` covers the join half, which needs a
+   * live socket.
    */
   describe('quote preview and rider ride read (#16)', () => {
     async function ridesOf(riderId: string) {
@@ -430,11 +432,14 @@ describe('rides (integration)', () => {
     it('prices a corridor and creates NO ride (expected)', async () => {
       const r = await rider(40);
 
+      // 200, not Nest's default 201: this route's defining property is that it
+      // creates nothing, and 201 Created says the opposite in the one place a
+      // client reads before the body.
       const res = await http
         .post('/rides/quote')
         .set('authorization', r.auth)
         .send({ pickup: CENTRE, destination: RIX })
-        .expect(201);
+        .expect(200);
 
       const preview = rideQuotePreviewSchema.parse(res.body);
       expect(preview.quote.totalCents).toBeGreaterThan(0);
@@ -465,7 +470,7 @@ describe('rides (integration)', () => {
         .post('/rides/quote')
         .set('authorization', r.auth)
         .send({ pickup: IMANTA, destination: MEZAPARKS })
-        .expect(201);
+        .expect(200);
 
       expect(ctx.maps.routeCalls - before).toBe(1);
 
@@ -494,7 +499,7 @@ describe('rides (integration)', () => {
           .post('/rides/quote')
           .set('authorization', r.auth)
           .send({ pickup: CENTRE, destination: RIX })
-          .expect(201);
+          .expect(200);
       }
 
       await http

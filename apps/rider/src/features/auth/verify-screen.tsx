@@ -8,7 +8,13 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput } from 'react-native';
-import { Button, Screen, TextField, useScreenFocus } from '@/components';
+import {
+  Banner,
+  Button,
+  Screen,
+  TextField,
+  useScreenFocus,
+} from '@/components';
 import { errorMessageKey, useT } from '@/features/i18n';
 import { ApiError } from './api-client';
 import { useSession } from './use-session';
@@ -20,6 +26,14 @@ const DEFAULT_RESEND_SECONDS = 60;
  * Step 2 of sign-in: the code. Auto-submits on the sixth digit (zero taps);
  * a 401 clears the field, says so, and hands focus back. The OTP is never
  * rendered anywhere but the field the rider is typing into.
+ *
+ * `phone` IS OPTIONAL AT RUNTIME, whatever the route intends. `app.json` sets
+ * `"scheme": "saktacabrider"`, so `saktacabrider://verify` opens this screen
+ * with no params at all — and `formatMessage` treats a present-but-undefined
+ * key as present (`'phone' in { phone: undefined }` is `true`), so typing it as
+ * required rendered «Kods nosūtīts uz undefined» and posted
+ * `{ phone: undefined }` to a 400 on every attempt. `status-screen.tsx` gets
+ * this shape right; this matches it.
  */
 export function VerifyScreen() {
   const t = useT();
@@ -28,10 +42,10 @@ export function VerifyScreen() {
   const heading = useRef<Text>(null);
   useScreenFocus(heading);
   const params = useLocalSearchParams<{
-    phone: string;
+    phone?: string;
     resendAfterSeconds?: string;
   }>();
-  const phone = params.phone;
+  const phone = params.phone ?? null;
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
@@ -52,6 +66,7 @@ export function VerifyScreen() {
 
   const submit = useCallback(
     async (value: string) => {
+      if (phone === null) return;
       setBusy(true);
       setError(null);
       try {
@@ -80,6 +95,7 @@ export function VerifyScreen() {
   }
 
   async function resend() {
+    if (phone === null) return;
     setError(null);
     try {
       const res = await api.request('POST', '/auth/otp/request', {
@@ -99,7 +115,13 @@ export function VerifyScreen() {
       <Text ref={heading} style={styles.title} accessibilityRole="header">
         {t('rider.verify.title')}
       </Text>
-      <Text style={styles.hint}>{t('rider.verify.hint', { phone })}</Text>
+      {phone === null ? (
+        // Nothing to verify against, so nothing is claimed. The alternative was
+        // a hint reading «Kods nosūtīts uz undefined».
+        <Banner tone="danger" text={t('rider.error.generic')} />
+      ) : (
+        <Text style={styles.hint}>{t('rider.verify.hint', { phone })}</Text>
+      )}
       <TextField
         ref={input}
         label={t('rider.verify.code_label')}
@@ -110,7 +132,7 @@ export function VerifyScreen() {
         autoComplete="sms-otp"
         maxLength={CODE_LENGTH}
         autoFocus
-        editable={!busy}
+        editable={!busy && phone !== null}
         error={error ? t(error) : null}
       />
       <Button
@@ -120,7 +142,7 @@ export function VerifyScreen() {
             : t('rider.verify.resend')
         }
         onPress={() => void resend()}
-        disabled={resendIn > 0 || busy}
+        disabled={resendIn > 0 || busy || phone === null}
         variant="secondary"
       />
     </Screen>

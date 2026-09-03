@@ -184,4 +184,81 @@ describe('bookingDraftReducer', () => {
     ]);
     expect(isBookable(draft)).toBe(false);
   });
+
+  it('lets a failed quote be retried on the SAME key (failure — H1)', () => {
+    const newKey = keys();
+    const failed = run(
+      [
+        { type: 'setPickup', point: point('Brīvības 1') },
+        { type: 'setDropoff', point: point('Lidosta RIX'), placeId: null },
+        { type: 'quoteRequested' },
+        { type: 'quoteFailed', code: 'offline', requestId: 1 },
+      ],
+      newKey,
+    );
+
+    const retried = bookingDraftReducer(failed, { type: 'quoteRetry' }, newKey);
+
+    // `idle` is the only state `useQuote` fires out of — without this the
+    // failure is terminal and the rider's only escape is a DIFFERENT
+    // destination or killing the app.
+    expect(retried.quoteState).toBe('idle');
+    expect(retried.quoteErrorCode).toBeNull();
+    // The corridor did not change, so rule 1 does not apply: a fresh key here
+    // would turn one attempt's retry into a second car.
+    expect(retried.idempotencyKey).toBe(failed.idempotencyKey);
+  });
+
+  it('ignores a retry that is not out of a failure (edge — H1)', () => {
+    const newKey = keys();
+    const loading = run(
+      [
+        { type: 'setPickup', point: point('Brīvības 1') },
+        { type: 'setDropoff', point: point('Lidosta RIX'), placeId: null },
+        { type: 'quoteRequested' },
+      ],
+      newKey,
+    );
+
+    expect(bookingDraftReducer(loading, { type: 'quoteRetry' }, newKey)).toBe(
+      loading,
+    );
+  });
+
+  it('never lets a late GPS fix overwrite a pickup the rider chose (failure — H2)', () => {
+    const newKey = keys();
+    const chosen = run(
+      [
+        { type: 'setPickup', point: point('Stacijas laukums 1') },
+        { type: 'setDropoff', point: point('Lidosta RIX'), placeId: null },
+        { type: 'quoteRequested' },
+        { type: 'quoteArrived', quote: QUOTE, requestId: 1 },
+      ],
+      newKey,
+    );
+
+    // The device's fix, landing minutes later: `/book` is pushed over rather
+    // than unmounted while the rider picks an address, so the mount effect's
+    // `cancelled` flag never fires.
+    const after = bookingDraftReducer(
+      chosen,
+      { type: 'setPickupIfEmpty', point: point('Brīvības iela 45') },
+      newKey,
+    );
+
+    expect(after.pickup?.address).toBe('Stacijas laukums 1');
+    // And none of `setPickup`'s side effects: the quote the rider is looking at
+    // survives, and the key is not rotated under a body nobody edited.
+    expect(after.quote).toEqual(QUOTE);
+    expect(after.quoteState).toBe('ready');
+    expect(after.idempotencyKey).toBe(chosen.idempotencyKey);
+  });
+
+  it('still fills an EMPTY pickup from the device (expected — H2)', () => {
+    const draft = run([
+      { type: 'setPickupIfEmpty', point: point('Brīvības iela 45') },
+    ]);
+
+    expect(draft.pickup?.address).toBe('Brīvības iela 45');
+  });
 });

@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -43,10 +44,23 @@ export function SavedPlacesProvider({ children }: { children: ReactNode }) {
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * SERIALISED through one promise chain rather than closing over `places`.
+   *
+   * Two saves dispatched before the first `setPlaces` commits both read the
+   * same array, and the second overwrites the first in AsyncStorage — reachable
+   * by double-tapping «Saglabāt». Chaining makes each write see the previous
+   * one's result; the ref holds the list the STORE has, which is what the next
+   * write must be built on, not what React has rendered.
+   */
+  const pending = useRef<Promise<SavedPlace[]>>(Promise.resolve([]));
+  const latest = useRef<SavedPlace[]>([]);
+
   useEffect(() => {
     let cancelled = false;
     void readSavedPlaces().then((found) => {
       if (cancelled) return;
+      latest.current = found;
       setPlaces(found);
       setLoading(false);
     });
@@ -55,20 +69,31 @@ export function SavedPlacesProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const save = useCallback(
-    async (label: string, point: AddressPoint, placeId: string | null) => {
-      const next = await saveSavedPlace(
-        toSavedPlace(newUuid(), label, point, placeId),
-        places,
-      );
-      setPlaces(next);
+  const enqueue = useCallback(
+    (work: (current: SavedPlace[]) => Promise<SavedPlace[]>) => {
+      pending.current = pending.current
+        .then(() => work(latest.current))
+        .then((next) => {
+          latest.current = next;
+          setPlaces(next);
+          return next;
+        });
+      return pending.current.then(() => undefined);
     },
-    [places],
+    [],
+  );
+
+  const save = useCallback(
+    (label: string, point: AddressPoint, placeId: string | null) =>
+      enqueue((current) =>
+        saveSavedPlace(toSavedPlace(newUuid(), label, point, placeId), current),
+      ),
+    [enqueue],
   );
 
   const remove = useCallback(
-    async (id: string) => setPlaces(await removeSavedPlace(id, places)),
-    [places],
+    (id: string) => enqueue((current) => removeSavedPlace(id, current)),
+    [enqueue],
   );
 
   const value = useMemo<SavedPlacesValue>(

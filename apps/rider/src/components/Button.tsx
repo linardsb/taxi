@@ -17,10 +17,14 @@ export interface ButtonProps {
   disabled?: boolean;
   /** Renders a spinner and disables — the button IS the loading state. */
   loading?: boolean;
-  /** The home toggle is a `switch` with `checked`; everything else a button. */
+  /**
+   * Everything in this app is a `button`. `switch` is carried for parity with
+   * the driver app's shared shape and has no caller here — the rider app has no
+   * toggle.
+   */
   accessibilityRole?: 'button' | 'switch';
   accessibilityState?: AccessibilityState;
-  /** `lg` is the 56 px toggle; `md` is the 44 px minimum everywhere else. */
+  /** `lg` is the 56 px Book button; `md` is the 44 px minimum everywhere else. */
   size?: 'md' | 'lg';
   testID?: string;
 }

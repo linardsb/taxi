@@ -35,14 +35,28 @@ export interface RideStatusState {
 }
 
 /**
- * The live ride, over the socket, with the reconnect hole patched (D4).
+ * The live ride, over the socket, with the room hole patched (D4).
  *
- * ON EVERY `connect` AFTER THE FIRST, the ride is refetched over REST.
- * `roomsOnConnect()` returns no ride room and `joinRideRoom()` only moved the
- * sockets that existed when it ran, so a socket that just reconnected is NOT in
- * the ride room — without the refetch the rider is deaf from the first blip
- * onward, and the "you have been matched" criterion would be true only for
- * someone whose network never drops.
+ * ON EVERY `connect`, INCLUDING THE FIRST, the ride is refetched over REST —
+ * and that read is what puts THIS socket in the ride room, server-side, in
+ * `RidesService.findForRider`. `roomsOnConnect()` returns no ride room and
+ * `joinRideRoom()` only moves the sockets that exist at the instant it runs, so
+ * a socket the server has not been asked about is in no ride room and hears
+ * nothing.
+ *
+ * THE FIRST CONNECT IS THE ONE THAT NEEDS IT MOST, which an earlier
+ * `if (seenConnect)` guard here got backwards. `notifyRider`'s `joinRideRoom`
+ * runs inside `POST /rides` — strictly BEFORE `booking-screen.tsx` replaces the
+ * route and this hook mounts and creates a socket — so the socket that renders
+ * the ride was never in its room, and the screen sat on its first frame
+ * reporting itself connected. Every later connect needs it for the original
+ * reason: a three-second tunnel or a backgrounded app replaces the socket, and
+ * the old membership does not follow it.
+ *
+ * TWO READS ON A COLD START, deliberately. The mount read is the first frame
+ * and it still runs when the socket never connects at all; the connect read is
+ * the join. They are different jobs, and collapsing them would trade a round
+ * trip for a race between the response and the socket's handshake.
  *
  * STATUS CAN MOVE BACKWARD (E8). #19's dispatcher release emits
  * `accepted → requested`. Nothing here ratchets: the newest event wins, whatever
@@ -67,12 +81,26 @@ export function useRideStatus(rideId: string | null): RideStatusState {
     const apply = (status: RideStatus, previousStatus: RideStatus | null) =>
       setState((s) => ({ ...s, status, previousStatus }));
 
+    /**
+     * How many `ride:status` events this socket has applied. A read that
+     * resolves AFTER one of them is stale and is dropped: the snapshot was
+     * taken before the event, and status can move BACKWARD (E8), so which of
+     * the two is newer cannot be decided from the statuses themselves. The
+     * `quoteRequestId` guard in `booking-draft.ts` is the same rule.
+     */
+    let applied = 0;
+
     // The cold start: the REST read is also the FIRST frame, so the screen has
-    // a status before any event arrives rather than an empty line.
+    // a status before any event arrives rather than an empty line — and it is
+    // the only frame a rider whose socket never connects will ever get.
     const refetch = () => {
+      const at = applied;
       void api
         .request('GET', `/rides/${rideId}`, { schema: rideSchema })
-        .then((ride) => apply(ride.status, null))
+        .then((ride) => {
+          if (applied !== at) return;
+          apply(ride.status, null);
+        })
         .catch(() => undefined);
     };
     refetch();
@@ -80,14 +108,13 @@ export function useRideStatus(rideId: string | null): RideStatusState {
     const socket = createRiderSocket(session.accessToken, {
       onUnauthorized: () => void signOut(),
     });
-    let seenConnect = false;
 
     socket.on('connect', () => {
       setState((s) => ({ ...s, connected: true }));
-      // Not on the first: `refetch()` above already ran, and a second read on
-      // the opening connect would spend a round trip to learn what it knows.
-      if (seenConnect) refetch();
-      seenConnect = true;
+      // ON EVERY connect, the first included: this read is what joins this
+      // socket to the ride room server-side, so skipping it leaves the socket
+      // deaf rather than merely un-refreshed. See the docblock above.
+      refetch();
     });
     socket.on('disconnect', () =>
       setState((s) => ({ ...s, connected: false })),
@@ -95,6 +122,7 @@ export function useRideStatus(rideId: string | null): RideStatusState {
     socket.on(RT.rideStatus, (payload) => {
       const parsed = rideStatusEventSchema.safeParse(payload);
       if (!parsed.success || parsed.data.rideId !== rideId) return;
+      applied += 1;
       apply(parsed.data.status, parsed.data.previousStatus);
     });
     socket.connect();

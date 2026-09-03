@@ -10,11 +10,16 @@
  *   no balance movement, and must NOT import payments: the dependency runs
  *   `PaymentsModule → RidesModule` only, which is why the transition writer and
  *   the repository are exported below.
- * - `GET /rides/:rideId` EXISTS NOW, and is RIDER-ONLY (#16). It ships because
- *   a reconnecting rider socket is never re-joined to its ride room, so without
- *   a REST read the rider is deaf to every later `ride:status` — see
+ * - `GET /rides/:rideId` EXISTS NOW, is RIDER-ONLY (#16), AND IT JOINS. A rider
+ *   socket is never auto-joined to its ride room — not on a reconnect, and not
+ *   on its first connect either, since `notifyRider`'s join runs inside
+ *   `POST /rides` and reaches only the sockets alive at that instant. So this
+ *   route joins the caller's sockets as it reads, and the app calls it on every
+ *   socket `connect`; without it the rider is deaf to every `ride:status` — see
  *   `RidesService.findForRider`. It returns the ride and nothing else: no
- *   driver, no position, no ETA, no plate. A DRIVER still has no ride read;
+ *   driver, no position, no ETA, no plate, and no `split` — that field is
+ *   stripped rather than merely absent, because `toRide` populates it once a
+ *   ride settles. A DRIVER still has no ride read;
  *   `POST /rides/:rideId/complete` returns the settled ride, which is what they
  *   need at the moment they need it. #17 extends the rider read, and a
  *   driver/dispatcher one would move the route to `RideLifecycleController` and

@@ -61,13 +61,20 @@ export function BookingScreen() {
     placeId?: string;
   }>();
 
-  // Pickup defaults to the device's position and is NEVER required to come from
+  // Pickup DEFAULTS to the device's position and is NEVER required to come from
   // it (D7): permission refused, a timeout and an indoor fix all leave the row
   // empty and tappable rather than showing an error.
+  //
+  // `setPickupIfEmpty`, not `setPickup`. The `cancelled` flag below guards
+  // UNMOUNT only, and `/book` is pushed over rather than unmounted when the
+  // search sheet opens — so a fix that arrives while the rider is typing an
+  // address would otherwise land on top of the one they chose.
   useEffect(() => {
     let cancelled = false;
     void currentPositionPoint().then((point) => {
-      if (!cancelled && point !== null) dispatch({ type: 'setPickup', point });
+      if (!cancelled && point !== null) {
+        dispatch({ type: 'setPickupIfEmpty', point });
+      }
     });
     return () => {
       cancelled = true;
@@ -107,6 +114,11 @@ export function BookingScreen() {
     }
   }
 
+  // Narrowed once, so the save block reads the same value its guard tested. The
+  // `draft.dropoff!` it replaces was safe only for as long as the guard stayed
+  // directly above it.
+  const dropoff = draft.dropoff;
+
   return (
     <Screen scroll={false}>
       <Text ref={heading} style={styles.title} accessibilityRole="header">
@@ -118,7 +130,7 @@ export function BookingScreen() {
       >
         <AddressRow
           testID="pickup-row"
-          primaryText={draft.pickup?.address ?? t('rider.book.where_to')}
+          primaryText={draft.pickup?.address ?? t('rider.book.pickup_empty')}
           secondaryText={t('rider.book.pickup_label')}
           onPress={() => open('pickup')}
         />
@@ -148,7 +160,7 @@ export function BookingScreen() {
         {/* Saving lives HERE, not in the search sheet: the sheet navigates away
             the instant a resolve lands, so an affordance there would cost the
             tap the friction budget spends on Book. */}
-        {draft.dropoff !== null ? (
+        {dropoff !== null ? (
           <View style={styles.section}>
             <TextField
               label={t('rider.book.save_prompt')}
@@ -160,7 +172,7 @@ export function BookingScreen() {
               variant="secondary"
               disabled={label.trim() === ''}
               onPress={() => {
-                void save(label.trim(), draft.dropoff!, draft.dropoffPlaceId);
+                void save(label.trim(), dropoff, draft.dropoffPlaceId);
                 setLabel('');
               }}
             />
@@ -172,9 +184,19 @@ export function BookingScreen() {
           // The api's OWN code, not the announce string: a 429, a maps outage
           // and an offline phone are three different things to a rider, and
           // `rider.error.offline` is only reachable through here.
+          //
+          // The RETRY is what makes the failure recoverable at all. `useQuote`
+          // fires only out of `idle`, and re-picking the SAME address changes no
+          // route param, so the effect never re-runs and nothing happens —
+          // leaving the rider a disabled Book button and no way out but a
+          // different destination or killing the app.
           <Banner
             tone="danger"
             text={t(errorMessageKey(draft.quoteErrorCode ?? 'generic'))}
+            action={{
+              label: t('rider.book.retry'),
+              onPress: () => dispatch({ type: 'quoteRetry' }),
+            }}
           />
         ) : null}
         {error ? <Banner tone="danger" text={t(error)} /> : null}

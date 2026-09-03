@@ -5,8 +5,9 @@ import { colors, spacing } from '@taxi/shared';
 
 /**
  * Every screen's frame: safe area, the theme's background, one padding.
- * `scroll` (default) keeps a form reachable above the keyboard; the home
- * screen turns it off so the toggle stays where the thumb expects it.
+ * `scroll` (default) keeps a form reachable above the keyboard; `/book` and
+ * `/book/address` turn it off because each owns its own scrolling region and
+ * has to keep the Book button, or the results list, where the thumb expects it.
  */
 export function Screen({
   children,

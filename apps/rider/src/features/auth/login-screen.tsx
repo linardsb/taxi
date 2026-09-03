@@ -4,10 +4,16 @@ import {
   otpRequestResponseSchema,
   type MessageKey,
 } from '@taxi/shared';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
-import { Button, Screen, TextField, useScreenFocus } from '@/components';
+import {
+  Banner,
+  Button,
+  Screen,
+  TextField,
+  useScreenFocus,
+} from '@/components';
 import { errorMessageKey, useT } from '@/features/i18n';
 import { ApiError } from './api-client';
 import { normalisePhone } from './phone-normalise';
@@ -17,6 +23,10 @@ import { useSession } from './use-session';
  * Step 1 of sign-in: the phone. The button is live only once the number
  * normalises to E.164; a 429 `resend_too_soon` turns it into a countdown
  * from the api's `retryAfterSeconds`.
+ *
+ * `reason` arrives when `SessionGuard` bounced the rider here rather than the
+ * rider choosing to sign in — a `Banner`, so VoiceOver hears why the app moved
+ * them, which is the whole difference between an explanation and a mystery.
  */
 export function LoginScreen() {
   const t = useT();
@@ -24,6 +34,7 @@ export function LoginScreen() {
   const { api } = useSession();
   const heading = useRef<Text>(null);
   useScreenFocus(heading);
+  const { reason } = useLocalSearchParams<{ reason?: string }>();
   const [phone, setPhone] = useState('+371');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
@@ -70,6 +81,9 @@ export function LoginScreen() {
       <Text ref={heading} style={styles.title} accessibilityRole="header">
         {t('rider.login.title')}
       </Text>
+      {reason !== undefined && reason !== '' ? (
+        <Banner tone="warning" text={t(errorMessageKey(reason))} />
+      ) : null}
       <TextField
         label={t('rider.login.phone_label')}
         value={phone}

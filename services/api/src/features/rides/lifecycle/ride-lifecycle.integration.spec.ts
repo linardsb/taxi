@@ -4,6 +4,7 @@ import {
   fareSplitSchema,
   IDEMPOTENCY_KEY_HEADER,
   rideCreatedSchema,
+  rideSchema,
   RT,
   type LatLng,
   type RideOfferRevokedEvent,
@@ -253,8 +254,11 @@ describe('ride lifecycle (integration)', () => {
    * NOT `waitFor`: each lifecycle POST returns AFTER its post-commit
    * `emitStatus` has already fired, so a listener attached after the request
    * has already missed the event and times out with nothing naming the cause.
-   * Attach this BEFORE `POST /rides` — which is also when `notifyRider` runs
-   * the one and only `joinRideRoom` for the rider.
+   * Attach this BEFORE `POST /rides` — which is when `notifyRider` runs the
+   * rider's join, and the only join these tests get for free. A socket opened
+   * AFTER the booking is joined by `GET /rides/:rideId` instead, which is the
+   * path the rider app actually takes; `joins a socket opened after the
+   * booking` below is the test for it.
    */
   function collectStatuses(socket: Socket): RideStatusEvent[] {
     const seen: RideStatusEvent[] = [];
@@ -672,5 +676,87 @@ describe('ride lifecycle (integration)', () => {
     expect(row.driverNetCents).toBe(shown.driverNetCents);
     expect(row.commissionCents! + row.driverNetCents!).toBe(row.totalCents);
     expect((await driverRow(d.id)).status).toBe('online');
+  });
+
+  /**
+   * (failure) C1 — the rider app's REAL ordering: book first, connect after.
+   *
+   * Every other test in this file connects before booking, because that is when
+   * `notifyRider` runs its join. The app cannot: `booking-screen.tsx` reaches
+   * `/book/status` by `router.replace` only once `book()` has resolved, so the
+   * socket that renders the ride is created strictly after the only join the
+   * server used to perform. The REST read the screen fires on `connect` is what
+   * closes it.
+   *
+   * Delete `joinRideRoom` from `findForRider` and this fails with `seen` empty
+   * while the CONTROL still reads `offered` — which is precisely how the bug
+   * looked in the app: a silent screen reporting itself connected.
+   */
+  it('joins a socket opened AFTER the booking, through GET /rides/:rideId (failure)', async () => {
+    // Bound to nothing: this test needs a driver to exist so `offerNext` has a
+    // candidate, and never acts as one.
+    await onlineDriver(10, near(CENTRE_PICKUP.location, 0.001, 0));
+    const r = await rider(58);
+
+    const ride = await book(r.auth);
+    // Only now — the app has no socket before this point.
+    const sock = await connectClient(port, r.token);
+    const seen = collectStatuses(sock);
+
+    // What `useRideStatus` does on every `connect`. This is the join.
+    await http
+      .get(`/rides/${ride.id}`)
+      .set('authorization', r.auth)
+      .expect(200);
+
+    await offerTo(ride);
+
+    const mine = () => seen.filter((e) => e.rideId === ride.id);
+    await waitForCount(() => mine().length, 1);
+    expect(mine().map((e) => e.status)).toEqual(['offered']);
+
+    // CONTROL: the ride moves either way, so an empty `seen` can only mean the
+    // socket was deaf — never that dispatch did nothing.
+    expect((await rideRow(ride.id)).status).toBe('offered');
+  });
+
+  /**
+   * (edge) M3 — a SETTLED ride read by its own rider carries no commission.
+   *
+   * `toRide` fills `split` from the five settlement columns the moment they are
+   * written, so the rider's own read is the one door through which the driver's
+   * commission line could reach a rider surface. Twenty lines from here
+   * `rideQuotePreviewSchema` refuses to carry it; this pins the same rule on the
+   * path that actually has the data.
+   */
+  it('strips the settled split from the rider read (edge)', async () => {
+    const d = await onlineDriver(11, near(CENTRE_PICKUP.location, 0.001, 0));
+    const r = await rider(59);
+
+    const ride = await bookAndAccept(r.auth, d.auth);
+    for (const step of ['arriving', 'arrived', 'start'] as const) {
+      await http
+        .post(`/rides/${ride.id}/${step}`)
+        .set('authorization', d.auth)
+        .expect(201);
+    }
+    await http
+      .post(`/rides/${ride.id}/complete`)
+      .set('authorization', d.auth)
+      .expect(201);
+
+    // CONTROL: the split EXISTS in the database — so a null below is the
+    // stripping, not an unsettled ride.
+    const row = await rideRow(ride.id);
+    expect(row.commissionCents).not.toBeNull();
+
+    const res = await http
+      .get(`/rides/${ride.id}`)
+      .set('authorization', r.auth)
+      .expect(200);
+
+    const body = rideSchema.parse(res.body);
+    expect(body.status).toBe('completed');
+    expect(body.split).toBeNull();
   });
 });

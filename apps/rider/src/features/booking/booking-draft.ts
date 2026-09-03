@@ -27,11 +27,14 @@ export interface BookingDraft {
 
 export type BookingAction =
   | { type: 'setPickup'; point: AddressPoint | null }
+  /** The device's fix — applied only while the rider has chosen nothing. */
+  | { type: 'setPickupIfEmpty'; point: AddressPoint }
   | { type: 'setDropoff'; point: AddressPoint | null; placeId: string | null }
   | { type: 'setPaymentMethod'; paymentMethod: BookablePaymentMethod }
   | { type: 'quoteRequested' }
   | { type: 'quoteArrived'; quote: FareQuote; requestId: number }
-  | { type: 'quoteFailed'; code: string; requestId: number };
+  | { type: 'quoteFailed'; code: string; requestId: number }
+  | { type: 'quoteRetry' };
 
 export function initialDraft(idempotencyKey: string): BookingDraft {
   return {
@@ -66,6 +69,12 @@ export function initialDraft(idempotencyKey: string): BookingDraft {
  *    creates distrust), so there is nothing to re-quote; and the key covers the
  *    booking ATTEMPT, not the payment choice, so minting a new one would turn a
  *    retry into a second car.
+ *
+ * 3. `quoteRetry` RE-OPENS an attempt without ending it. Rule 1 is about the
+ *    corridor changing; a failed quote changes nothing, so the key is preserved
+ *    and only `quoteState` goes back to `idle` for `useQuote` to fire again.
+ *    Routing a retry through `setPickup` would satisfy the letter of rule 1 and
+ *    break its purpose — a new key for a body nobody edited.
  */
 export function bookingDraftReducer(
   state: BookingDraft,
@@ -75,6 +84,15 @@ export function bookingDraftReducer(
   switch (action.type) {
     case 'setPickup':
       return withFreshAttempt({ ...state, pickup: action.point }, newKey);
+    case 'setPickupIfEmpty':
+      // The device's fix NEVER overwrites a pickup the rider chose. `/book` is
+      // PUSHED OVER rather than unmounted when the search sheet opens, so the
+      // mount effect's `cancelled` flag never fires and a slow fix can land
+      // minutes later — on top of a hand-picked address, discarding the quote,
+      // minting a new key and silently re-quoting a corridor nobody chose.
+      return state.pickup === null
+        ? withFreshAttempt({ ...state, pickup: action.point }, newKey)
+        : state;
     case 'setDropoff':
       return withFreshAttempt(
         { ...state, dropoff: action.point, dropoffPlaceId: action.placeId },
@@ -104,6 +122,12 @@ export function bookingDraftReducer(
             quoteState: 'failed',
             quoteErrorCode: action.code,
           };
+    case 'quoteRetry':
+      // Only out of `failed`, so a stray tap cannot cancel a quote in flight or
+      // discard a good one. The key is NOT rotated — see rule 3.
+      return state.quoteState !== 'failed'
+        ? state
+        : { ...state, quoteState: 'idle', quoteErrorCode: null };
   }
 }
 

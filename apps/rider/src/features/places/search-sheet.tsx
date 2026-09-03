@@ -32,15 +32,23 @@ import { currentPositionPoint } from './current-position';
 const DEBOUNCE_MS = 300;
 
 /**
- * Mirrors the api's `PLACES_SEARCH_MIN_CHARS` default. A deliberate duplicate:
- * the app cannot read the server's env, and below this the api answers `[]`
- * anyway — matching it here saves the round trip rather than deciding anything.
+ * Mirrors the api's `PLACES_SEARCH_MIN_CHARS` **default**. A deliberate
+ * duplicate: the app cannot read the server's env, and at the default the api
+ * answers `[]` below this anyway — matching it here saves the round trip rather
+ * than deciding anything.
+ *
+ * WHERE THE MIRROR STOPS AGREEING: the server value is a live knob
+ * (`env.schema.ts`'s `z.coerce.number().int().positive().default(3)`, exposed in
+ * `.env.example`). Raise it to 5 and this app sends 3- and 4-character queries
+ * the api answers `[]` to, and the rider is told «Nekas nav atrasts» — which is
+ * a lie about their query rather than a fact about the world. The two values sit
+ * on opposite sides of a network boundary, so no test can express the
+ * divergence; raising the server floor means raising this line in the same
+ * change.
  */
 const MIN_CHARS = 3;
 
 export type AddressField = 'pickup' | 'dropoff';
-
-type Status = 'idle' | 'searching' | 'empty' | 'failed';
 
 /** A response, tagged with the query it answered — a late reply for an older
  *  query simply never matches the current one. */
@@ -105,18 +113,47 @@ export function SearchSheet() {
   const suggestions = (
     current?.status === 'ok' ? current.suggestions : []
   ).filter((s) => !gone.includes(s.placeId));
-  const status: Status = !searchable
-    ? 'idle'
+
+  /**
+   * The one line the status region speaks, and `''` renders nothing at all — a
+   * `Banner` with empty text would announce emptiness.
+   *
+   * `results_count` is why this exists: the list itself is silent. Before it,
+   * results arriving moved the line from «Meklē…» to `''`, so a blind rider
+   * heard nothing at the one moment the screen changed, and `apps/rider`'s own
+   * rules file describes this as the screen where you HEAR the suggestions.
+   *
+   * `failed` and the cooldown say nothing here because the error `Banner` above
+   * is already speaking; two live regions firing on the same event is the M9
+   * double-announce by another door.
+   */
+  const statusText = !searchable
+    ? coolingDown
+      ? ''
+      : t('rider.book.min_chars', { count: MIN_CHARS })
     : current === null
-      ? 'searching'
+      ? t('rider.book.searching')
       : current.status === 'failed'
-        ? 'failed'
-        : current.status === 'empty'
-          ? 'empty'
-          : 'idle';
+        ? ''
+        : suggestions.length === 0
+          ? t('rider.book.no_results')
+          : t('rider.address.results_count', { count: suggestions.length });
 
   useEffect(() => {
     if (!searchable) return;
+    /**
+     * ABANDONS the request, not just the timer. Clearing the debounce alone
+     * left an already-dispatched call free to write `setResults` for a query
+     * the rider had moved past: `"Brī"` answering after `"Brīvības"` overwrote
+     * the newer list, `current` then evaluated to `null` (the queries no longer
+     * match) and the line fell back to «Meklē…» — with no request in flight.
+     * The only escape was typing another character.
+     *
+     * The effect's cleanup is the right home for it here, unlike `use-quote.ts`,
+     * whose deps flip the instant it dispatches; these deps change per keystroke,
+     * which is exactly the staleness being guarded.
+     */
+    let abandoned = false;
     const timer = setTimeout(() => {
       void api
         .request(
@@ -126,21 +163,30 @@ export function SearchSheet() {
             schema: addressSuggestionsSchema,
           },
         )
-        .then((found) =>
+        .then((found) => {
+          if (abandoned) return;
+          // A successful search retires the previous failure's banner. Without
+          // this it survived over a healthy list — and `Banner` re-announced
+          // the stale text on iOS.
+          setError(null);
           setResults({
             query,
             suggestions: found,
             status: found.length === 0 ? 'empty' : 'ok',
-          }),
-        )
+          });
+        })
         .catch((e: unknown) => {
+          if (abandoned) return;
           const err = e instanceof ApiError ? e : null;
           setError(errorMessageKey(err?.code ?? 'generic'));
           if (err?.retryAfterSeconds) setCooldown(err.retryAfterSeconds);
           setResults({ query, suggestions: [], status: 'failed' });
         });
     }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      abandoned = true;
+      clearTimeout(timer);
+    };
   }, [api, query, searchable]);
 
   function done(
@@ -204,7 +250,11 @@ export function SearchSheet() {
     const point = await currentPositionPoint();
     setBusy(false);
     if (point === null) {
-      setError('rider.error.generic');
+      // NOT `rider.error.generic`. `null` is an ordinary outcome (D7) —
+      // permission refused, an indoor fix, the deadline — and telling a rider
+      // who deliberately refused location that the app broke invites a retry
+      // that fails identically.
+      setError('rider.book.location_unavailable');
       return;
     }
     done(point.address, point.location.lat, point.location.lng, null);
@@ -245,15 +295,14 @@ export function SearchSheet() {
           disabled={busy}
         />
       ) : null}
-      <Text style={styles.status} accessibilityLiveRegion="polite">
-        {status === 'idle' && !searchable
-          ? t('rider.book.min_chars', { count: MIN_CHARS })
-          : status === 'searching'
-            ? t('rider.book.searching')
-            : status === 'empty'
-              ? t('rider.book.no_results')
-              : ''}
-      </Text>
+      {statusText === '' ? null : (
+        // `Banner`, not a bare `<Text accessibilityLiveRegion>`: that attribute
+        // is ANDROID-ONLY (see Banner's own docblock), so on iOS a blind rider
+        // heard no "searching", no "nothing found" and no result count at all —
+        // silence until they swiped into the list to find out whether it had
+        // rows. Banner owns the announce-on-iOS half.
+        <Banner tone="info" text={statusText} testID="search-status" />
+      )}
       <FlatList
         data={suggestions}
         keyExtractor={(s) => s.placeId}
@@ -273,6 +322,5 @@ export function SearchSheet() {
 
 const styles = StyleSheet.create({
   title: { fontSize: fontSize.xl, fontWeight: '700', color: colors.fg },
-  status: { fontSize: fontSize.sm, color: colors.fgMuted },
   list: { gap: spacing.xs },
 });

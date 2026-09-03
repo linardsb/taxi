@@ -20,18 +20,23 @@ export interface BannerAction {
 export interface BannerProps {
   tone: BannerTone;
   text: string;
+  /** The one thing to do about it — the failed quote's «Mēģināt vēlreiz». */
   action?: BannerAction;
-  /** A quieter second choice — the battery explainer's «Izlaist». */
+  /** A quieter second choice. No caller in this app yet. */
   secondary?: BannerAction;
   testID?: string;
 }
 
 /**
- * A state change the driver should hear, with at most one thing to do about
+ * A state change the RIDER should hear, with at most one thing to do about
  * it. `accessibilityLiveRegion` is Android-only, so on iOS the text is
  * announced outright — that is what VoiceOver hears. The announce is
  * iOS-only in turn: on Android both firing should read every fresh banner
  * twice under TalkBack (review F28).
+ *
+ * IT IS THE ONLY ANNOUNCER for the surfaces that use it. A screen that also
+ * announces its own copy makes iOS speak every change twice — see
+ * `status-screen.tsx`, which had exactly that.
  *
  * `expected`, NOT observed: no Android device has run this, and the test
  * below only pins that the announce is absent, not that TalkBack speaks. It

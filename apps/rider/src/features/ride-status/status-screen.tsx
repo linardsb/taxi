@@ -6,8 +6,8 @@ import {
   type RideStatus,
 } from '@taxi/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
+import { useRef, useState } from 'react';
+import { StyleSheet, Text } from 'react-native';
 import { Banner, Button, Screen, useScreenFocus } from '@/components';
 import { ApiError, useSession } from '@/features/auth';
 import { errorMessageKey, useT } from '@/features/i18n';
@@ -29,7 +29,19 @@ function statusKey(
       : 'rider.status.searching';
   }
   if (status.startsWith('cancelled')) return 'rider.status.cancelled';
+  if (isOver(status)) return 'rider.status.completed';
   return 'rider.status.matched';
+}
+
+/**
+ * The ride is finished — nothing more will happen to it, so the only sensible
+ * control is a way back to booking.
+ *
+ * `completed` and `settled` used to fall through to `rider.status.matched`,
+ * which told a rider whose ride had ended «Auto ir atrasts».
+ */
+function isOver(status: RideStatus): boolean {
+  return status === 'completed' || status === 'settled';
 }
 
 /**
@@ -38,11 +50,15 @@ function statusKey(
  * The status line is BOTH an Android live region and an iOS announce, which is
  * the split `Banner` already owns, so it reuses `Banner` rather than
  * reinventing it: `accessibilityLiveRegion` is Android-only, and on iOS
- * VoiceOver hears nothing unless the text is announced outright.
+ * VoiceOver hears nothing unless the text is announced outright. A rider whose
+ * phone is in their pocket is the whole point — nothing here requires looking
+ * at the screen.
  *
- * Every change is also announced through `rider.a11y.status_changed`, because a
- * rider whose phone is in their pocket is the whole point — nothing here
- * requires looking at the screen.
+ * ONE announcement per change, and `Banner` is it. A second effect here
+ * announcing the same line under `rider.a11y.status_changed` made every iOS
+ * transition speak twice: «Auto ir atrasts», then «Brauciena statuss: Auto ir
+ * atrasts». Banner is kept over the effect because it also carries the Android
+ * live region, which an announce alone does not.
  */
 export function StatusScreen() {
   const t = useT();
@@ -63,14 +79,12 @@ export function StatusScreen() {
   // only has to mean "we are still looking".
   const line = t(key);
 
-  useEffect(() => {
-    if (status === null) return;
-    AccessibilityInfo.announceForAccessibility(
-      t('rider.a11y.status_changed', { status: line }),
-    );
-    // Keyed on the rendered LINE, not on `status`: `still_searching` is a change
-    // the rider needs to hear and is not a status transition.
-  }, [line, status, t]);
+  // A ride that has ended, one way or the other. The only control that makes
+  // sense is a way back: `/book/status` is reached by `router.replace`, so there
+  // is no back entry, and «Atcelt braucienu» on a cancelled or completed ride
+  // is a button whose only possible outcome is a 409.
+  const over =
+    status !== null && (status.startsWith('cancelled') || isOver(status));
 
   async function cancel() {
     if (rideId === null) return;
@@ -101,13 +115,20 @@ export function StatusScreen() {
         <Banner tone="warning" text={t('rider.status.reconnecting')} />
       ) : null}
       {error ? <Banner tone="danger" text={t(error)} /> : null}
-      <Button
-        label={t('rider.status.cancel')}
-        onPress={() => void cancel()}
-        variant="danger"
-        loading={busy}
-        disabled={rideId === null}
-      />
+      {over ? (
+        <Button
+          label={t('rider.status.book_again')}
+          onPress={() => router.replace('/book')}
+        />
+      ) : (
+        <Button
+          label={t('rider.status.cancel')}
+          onPress={() => void cancel()}
+          variant="danger"
+          loading={busy}
+          disabled={rideId === null}
+        />
+      )}
     </Screen>
   );
 }

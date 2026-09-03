@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -68,8 +70,12 @@ export class RidesController {
    *
    * No `Idempotency-Key`: a preview creates nothing, so there is nothing to
    * deduplicate.
+   *
+   * `@HttpCode(OK)` because Nest answers 201 to every `@Post` by default, and
+   * 201 Created is exactly the claim this route exists to NOT make.
    */
   @Post('quote')
+  @HttpCode(HttpStatus.OK)
   quote(
     @CurrentUser() user: JwtClaims,
     @Body(new ZodValidationPipe(rideQuoteBodySchema)) body: RideQuoteBody,
@@ -78,8 +84,9 @@ export class RidesController {
   }
 
   /**
-   * The rider's own ride, so a reconnecting app can recover its state — see
-   * `RidesService.findForRider` for why the socket alone cannot deliver that.
+   * The rider's own ride, and the call that puts their sockets in its ride room
+   * — see `RidesService.findForRider` for why the socket alone never gets there.
+   * NOT a pure read, and that is the point.
    *
    * DECLARED LAST among the `@Get`s, and it must stay that way: there is no
    * other `@Get` on a literal path in this controller today, and adding one

@@ -1,4 +1,6 @@
 import {
+  act,
+  fireEvent,
   render,
   screen,
   userEvent,
@@ -13,6 +15,10 @@ const POINT = {
   location: { lat: 56.9496, lng: 24.1052 },
   address: 'Brīvības iela 45, Rīga',
 };
+const OTHER_POINT = {
+  location: { lat: 56.9469, lng: 24.1206 },
+  address: 'Stacijas laukums 1, Rīga',
+};
 
 function Probe() {
   const { places, loading, save, remove } = useSavedPlaces();
@@ -25,6 +31,16 @@ function Probe() {
         onPress={() => void save('Mājas', POINT, 'place-1')}
       >
         <Text>save</Text>
+      </Pressable>
+      {/* A second, DIFFERENT address: `saveSavedPlace` replaces a row whose
+          `point.address` already exists, so two saves of one address are one
+          row by design and cannot show the lost-write. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="save-other"
+        onPress={() => void save('Darbs', OTHER_POINT, 'place-2')}
+      >
+        <Text>save-other</Text>
       </Pressable>
       <Pressable
         accessibilityRole="button"
@@ -70,6 +86,28 @@ describe('SavedPlacesProvider', () => {
     await userEvent.press(screen.getByRole('button', { name: 'remove' }));
 
     await waitFor(() => expect(screen.getByText('count:0')).toBeTruthy());
+  });
+
+  it('keeps BOTH of two saves fired before the first commits (failure — L8)', async () => {
+    await renderProbe();
+    await screen.findByText('count:0');
+
+    // Both fired before either `setPlaces` commits. Closing over `places` made
+    // both reads see the same array, and the second overwrote the first in
+    // AsyncStorage.
+    const first = screen.getByRole('button', { name: 'save' });
+    const second = screen.getByRole('button', { name: 'save-other' });
+    await act(async () => {
+      fireEvent.press(first);
+      fireEvent.press(second);
+    });
+
+    await waitFor(() => expect(screen.getByText('count:2')).toBeTruthy());
+    // In the STORE, not just in React state — the overwrite happened on disk.
+    const stored = JSON.parse(
+      (await AsyncStorage.getItem(PLACES_KEY)) ?? '[]',
+    ) as unknown[];
+    expect(stored).toHaveLength(2);
   });
 
   it('comes up empty rather than stuck when the stored blob is corrupt (failure — E12)', async () => {

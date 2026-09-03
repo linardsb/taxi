@@ -1,8 +1,10 @@
 import {
+  act,
   render,
   screen,
   userEvent,
   waitFor,
+  within,
 } from '@testing-library/react-native';
 import { formatMessage } from '@taxi/shared';
 import * as Location from 'expo-location';
@@ -121,9 +123,13 @@ describe('BookingScreen', () => {
 
     await renderScreen();
 
-    // No blocking error: the pickup row reads "Kurp?" and is tappable.
+    // No blocking error: the pickup row prompts for an address and is tappable.
     const pickup = await screen.findByTestId('pickup-row');
     expect(pickup).toBeTruthy();
+
+    // Its own empty copy, not the dropoff's — see the both-rows-empty case
+    // below for why that matters.
+    expect(screen.getByText(t('rider.book.pickup_empty'))).toBeTruthy();
     await userEvent.press(pickup);
     expect(push).toHaveBeenCalledWith({
       pathname: '/book/address',
@@ -166,6 +172,82 @@ describe('BookingScreen', () => {
     // and a dead network into one sentence — and make this state unreachable.
     await screen.findByText(t('rider.error.offline'));
     expect(screen.queryByText(t('rider.error.generic'))).toBeNull();
+  });
+
+  it('gives the two empty rows different copy when BOTH are empty (edge — M7)', async () => {
+    // Location refused and no destination yet: the E11 path, one step earlier.
+    // This is the only state in which the two empty rows are on screen
+    // together, and the one the shared `rider.book.where_to` broke — a screen
+    // reader read «Kurp?» twice, told apart only by a trailing role word.
+    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue(
+      { status: 'denied' },
+    );
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue({});
+
+    await renderScreen();
+
+    const pickup = await screen.findByTestId('pickup-row');
+    const dropoff = screen.getByTestId('dropoff-row');
+    expect(within(pickup).getByText(t('rider.book.pickup_empty'))).toBeTruthy();
+    expect(within(dropoff).getByText(t('rider.book.where_to'))).toBeTruthy();
+    expect(t('rider.book.pickup_empty')).not.toBe(t('rider.book.where_to'));
+  });
+
+  it('lets a LATE GPS fix land on a pickup the rider chose, and ignores it (failure — H2)', async () => {
+    // Held open, so the fix arrives after the rider has already chosen — the
+    // real window, which is unbounded in the app: `/book` is PUSHED OVER rather
+    // than unmounted while the search sheet is up, so the mount effect's
+    // `cancelled` flag never fires.
+    let arrive: (fix: unknown) => void = () => undefined;
+    (Location.getCurrentPositionAsync as jest.Mock).mockReturnValueOnce(
+      new Promise((resolve) => {
+        arrive = resolve;
+      }),
+    );
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue({
+      field: 'pickup',
+      address: 'Stacijas laukums 1',
+      lat: '56.9469',
+      lng: '24.1206',
+    });
+
+    await renderScreen();
+    await screen.findByText('Stacijas laukums 1');
+
+    await act(async () => {
+      arrive({ coords: { latitude: 56.9496, longitude: 24.1052 } });
+    });
+
+    // The device's position must not silently replace an address the rider
+    // typed — which would also discard the quote, mint a new key and re-quote
+    // a corridor they never chose.
+    await waitFor(() =>
+      expect(screen.queryByText(/Brīvības iela 45/)).toBeNull(),
+    );
+    expect(screen.getByText('Stacijas laukums 1')).toBeTruthy();
+  });
+
+  it('offers a way OUT of a failed quote, on the same key (failure — H1)', async () => {
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue(dropoffParams);
+    mockRequest
+      .mockRejectedValueOnce(new ApiError(0, 'offline'))
+      .mockResolvedValueOnce({ quote: QUOTE });
+
+    await renderScreen();
+    await screen.findByText(t('rider.error.offline'));
+
+    // Re-picking the SAME address cannot rescue this: the route params are
+    // byte-identical, so the effect never re-runs and nothing is dispatched.
+    // The banner's own action is the only escape that does not require
+    // choosing a different destination or killing the app.
+    await userEvent.press(
+      screen.getByRole('button', { name: t('rider.book.retry') }),
+    );
+
+    await screen.findByTestId('quote-card');
+    expect(
+      screen.getByRole('button', { name: t('rider.book.confirm') }),
+    ).toBeEnabled();
   });
 
   it('names a throttle as a throttle (failure — E4)', async () => {

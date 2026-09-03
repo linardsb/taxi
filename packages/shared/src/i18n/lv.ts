@@ -310,12 +310,23 @@ export const lv = {
   'rider.book.dropoff_label': 'Galamērķis',
   'rider.book.use_current_location': 'Izmantot pašreizējo atrašanās vietu',
   'rider.book.where_to': 'Kurp?',
+  // Distinct from `where_to` on purpose: with location refused BOTH rows fall
+  // back to their empty copy, and a screen reader reading «Kurp?» twice, told
+  // apart only by a trailing «Iekāpšanas vieta»/«Galamērķis», is two rows a
+  // rider cannot tell apart.
+  'rider.book.pickup_empty': 'Kur jūs uzņemt?',
   'rider.book.saved_header': 'Saglabātās adreses',
   'rider.book.save_address': 'Saglabāt šo adresi',
   'rider.book.save_prompt': 'Adreses nosaukums',
   'rider.book.retry_in': 'Mēģiniet vēlreiz pēc {seconds} s',
+  'rider.book.retry': 'Mēģināt vēlreiz',
   'rider.book.searching': 'Meklē…',
   'rider.book.no_results': 'Nekas nav atrasts',
+  // Location refused is an ORDINARY outcome (D7), not a failure — so it does
+  // not get `rider.error.generic`, which tells the rider the app broke and
+  // invites a retry that will fail identically.
+  'rider.book.location_unavailable':
+    'Atrašanās vieta nav pieejama — ievadiet adresi',
   'rider.book.min_chars': 'Ievadiet vismaz {count} rakstzīmes',
   'rider.book.quote_total': 'Cena {total}',
   'rider.book.quote_breakdown':
@@ -328,6 +339,10 @@ export const lv = {
   'rider.address.title_pickup': 'Iekāpšanas vieta',
   'rider.address.title_dropoff': 'Galamērķis',
   'rider.address.search_label': 'Adrese',
+  // «Atrasti: 8», not «8 rezultāti»: LV, RU and EN all decline the noun by
+  // count and the catalog has no plural machinery, so the number goes last and
+  // agrees with nothing.
+  'rider.address.results_count': 'Atrasti: {count}',
   'rider.status.title': 'Jūsu brauciens',
   'rider.status.searching': 'Meklējam auto…',
   // NEVER "no drivers found": the dispatcher's board owns that alert
@@ -336,12 +351,15 @@ export const lv = {
   'rider.status.still_searching': 'Vēl meklējam auto.',
   'rider.status.matched': 'Auto ir atrasts',
   'rider.status.cancelled': 'Brauciens ir atcelts',
+  'rider.status.completed': 'Brauciens ir pabeigts',
   'rider.status.cancel': 'Atcelt braucienu',
+  // The only control a FINISHED ride can offer. `/book/status` is reached by
+  // `router.replace`, so there is no back entry to fall through to.
+  'rider.status.book_again': 'Pasūtīt jaunu braucienu',
   'rider.status.reconnecting': 'Atjaunojam savienojumu…',
   'rider.a11y.quote_arrived': 'Cena {total}',
   'rider.a11y.quote_failed': 'Cenu neizdevās aprēķināt',
   'rider.a11y.ride_requested': 'Brauciens pieteikts',
-  'rider.a11y.status_changed': 'Brauciena statuss: {status}',
   'rider.error.too_many_requests': 'Pārāk daudz mēģinājumu — pagaidiet brīdi',
   'rider.error.idempotent_request_in_progress':
     'Pieteikums vēl tiek apstrādāts…',

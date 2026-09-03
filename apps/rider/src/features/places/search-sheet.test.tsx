@@ -6,6 +6,7 @@ import {
   waitFor,
 } from '@testing-library/react-native';
 import { formatMessage } from '@taxi/shared';
+import * as Location from 'expo-location';
 import { AccessibilityInfo } from 'react-native';
 import { ApiError } from '@/features/auth';
 import { SearchSheet } from './search-sheet';
@@ -220,6 +221,101 @@ describe('SearchSheet', () => {
     });
     await type('Brīvības iela 45');
     expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('speaks the result count on iOS, where a live region says nothing (a11y — H4)', async () => {
+    const announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation();
+    try {
+      mockRequest.mockResolvedValueOnce([SUGGESTION]);
+      await render(<SearchSheet />);
+
+      await type('Brīvības');
+
+      // The list itself is silent. Before this the line went «Meklē…» → `''`
+      // on results, so a blind rider heard NOTHING at the one moment the screen
+      // changed — and `accessibilityLiveRegion` is Android-only, so on iOS they
+      // heard nothing at any moment.
+      const line = t('rider.address.results_count', { count: 1 });
+      await screen.findByText(line);
+      await waitFor(() => expect(announce).toHaveBeenCalledWith(line));
+    } finally {
+      announce.mockRestore();
+    }
+  });
+
+  it('ignores a response the rider has already typed past (failure — M2)', async () => {
+    let answerFirst: (rows: unknown) => void = () => undefined;
+    mockRequest
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce([SUGGESTION]);
+
+    await render(<SearchSheet />);
+    await type('Brī');
+    await type('Brīvības');
+    await screen.findByRole('button', {
+      name: 'Brīvības iela 45, Rīga, Latvija',
+    });
+
+    // «Brī» answers AFTER «Brīvības» — the classic out-of-order reply.
+    await act(async () => answerFirst([]));
+
+    // Its `[]` must not wipe the live list. It did: `current` then evaluated to
+    // null (the queries no longer matched) and the line fell back to «Meklē…»
+    // with no request in flight, which the rider could only escape by typing
+    // another character.
+    expect(
+      screen.getByRole('button', { name: 'Brīvības iela 45, Rīga, Latvija' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(t('rider.book.searching'))).toBeNull();
+  });
+
+  it('retires a failure banner once a search succeeds (failure — L1)', async () => {
+    mockRequest
+      .mockRejectedValueOnce(new ApiError(500, 'generic'))
+      .mockResolvedValueOnce([SUGGESTION]);
+
+    await render(<SearchSheet />);
+    await type('Brīvības');
+    await screen.findByText(t('rider.error.generic'));
+
+    await type('Brīvības iela');
+
+    // A dead banner over a healthy list — and on iOS `Banner` re-announces the
+    // stale text every time it re-renders.
+    await waitFor(() =>
+      expect(screen.queryByText(t('rider.error.generic'))).toBeNull(),
+    );
+    await screen.findByRole('button', {
+      name: 'Brīvības iela 45, Rīga, Latvija',
+    });
+  });
+
+  it('says location is unavailable rather than that the app broke (failure — M8, D7)', async () => {
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue({
+      field: 'pickup',
+    });
+    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue(
+      { status: 'denied' },
+    );
+    await render(<SearchSheet />);
+
+    await fireEvent.press(
+      screen.getByRole('button', {
+        name: t('rider.book.use_current_location'),
+      }),
+    );
+
+    // `null` is an ORDINARY outcome (D7). «Kaut kas nogāja greizi. Mēģiniet
+    // vēlreiz.» tells a rider who deliberately refused location that the app
+    // broke, and invites a retry that fails identically.
+    await screen.findByText(t('rider.book.location_unavailable'));
+    expect(screen.queryByText(t('rider.error.generic'))).toBeNull();
   });
 
   it('has one header and moves focus to it on mount (a11y — property 1)', async () => {

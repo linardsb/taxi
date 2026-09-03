@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import type { JwtClaims, MapsProvider, UserRole } from '@taxi/shared';
 import type { Env } from '../../common/config/env.schema';
 import { InMemoryKeyValueStore } from '../../../test/harness';
-import { ROLES_KEY } from '../auth/decorators/roles.decorator';
+import { ROLES_KEY } from '../auth';
 import { AddressSearchController } from './address-search.controller';
 import {
   ADDRESS_SEARCH_MAX_PER_WINDOW,

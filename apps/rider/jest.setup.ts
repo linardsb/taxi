@@ -148,6 +148,9 @@ jest.mock('expo-router', () => {
   return {
     useRouter: () => mockRouter,
     useLocalSearchParams: jest.fn(() => ({})),
+    // `SessionGuard` reads the current route from this to tell an authed screen
+    // from `/login`, which it must not bounce off.
+    useSegments: jest.fn(() => [] as string[]),
     Redirect: ({ href }: { href: string }) =>
       React.createElement(Text, { testID: 'redirect' }, String(href)),
     Stack: () => null,

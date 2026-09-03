@@ -10,6 +10,7 @@ export type {
 export { GateScreen } from './gate-screen';
 export { LoginScreen } from './login-screen';
 export { normalisePhone } from './phone-normalise';
+export { SessionGuard } from './session-guard';
 export { clearSession, readSession, writeSession } from './session-store';
 export { SessionProvider, useSession } from './use-session';
 export type { SessionContextValue, SessionState } from './use-session';

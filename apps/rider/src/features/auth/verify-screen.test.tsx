@@ -137,4 +137,26 @@ describe('VerifyScreen', () => {
     expect(screen.getAllByRole('header')).toHaveLength(1);
     expect(focusSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('refuses to work with no phone rather than posting "undefined" (failure — M1)', async () => {
+    // `app.json` sets `"scheme": "saktacabrider"`, so `saktacabrider://verify`
+    // opens this screen with no params at all.
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue({});
+    await render(<VerifyScreen />);
+
+    // `formatMessage` treats a present-but-undefined key as PRESENT
+    // (`'phone' in { phone: undefined }` is true), so the hint used to render
+    // «Kods nosūtīts uz undefined».
+    expect(screen.queryByText(/undefined/)).toBeNull();
+
+    await fireEvent.changeText(
+      screen.getByLabelText(t('rider.verify.code_label')),
+      '123456',
+    );
+
+    // And nothing is posted: `{ phone: undefined, code }` is a 400 on every
+    // attempt, rendered as `rider.error.generic` with nothing naming the cause.
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(t('rider.verify.code_label'))).toBeDisabled();
+  });
 });

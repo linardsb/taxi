@@ -73,7 +73,25 @@ export class RideQuoteService {
       paymentMethod: 'cash',
     });
 
-    const { quote } = await this.pricing.quote(request);
+    let quote;
+    try {
+      ({ quote } = await this.pricing.quote(request));
+    } catch (error) {
+      // The same reason `RidesService.createRide` writes `ride.request.failed`,
+      // and it transfers verbatim: without this a 500 on `/rides/quote` leaves
+      // nothing to tell "one rider, one corridor" from "maps is down". This is
+      // the HIGHER-volume paid-Routes caller of the two (cap 30 vs 20), and the
+      // only other line a Routes timeout emits is `geo.maps.route_failed`,
+      // which carries a cell hash and no actor by design.
+      this.logger.error({
+        event: 'ride.quote.failed',
+        riderId,
+        category: request.category,
+        reason: error instanceof Error ? error.message : 'unknown',
+        at: new Date().toISOString(),
+      });
+      throw error;
+    }
 
     this.logger.log({
       event: 'ride.quote.previewed',

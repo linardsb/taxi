@@ -109,23 +109,52 @@ describe('useRideStatus', () => {
     await screen.findByText('accepted|not|up');
   });
 
-  it('refetches on every reconnect but not on the opening connect (edge — E7)', async () => {
+  it('refetches on EVERY connect, the opening one included (edge — E7, C1)', async () => {
     await render(<Probe />);
     await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
 
     await act(async () => mockHandlers.get('connect')!(undefined));
-    // The mount read already ran; a second one here would spend a round trip to
-    // learn what it knows.
-    expect(mockRequest).toHaveBeenCalledTimes(1);
+
+    // THE READ IS THE JOIN (`RidesService.findForRider`). Skipping it on the
+    // opening connect — which an earlier `if (seenConnect)` guard did — leaves
+    // the socket in no ride room at all: `notifyRider`'s join ran inside
+    // `POST /rides`, before this socket existed. A saved round trip is not
+    // worth a screen that never updates.
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
 
     mockRequest.mockResolvedValue(rideAt('accepted'));
     await act(async () => mockHandlers.get('disconnect')!(undefined));
     await act(async () => mockHandlers.get('connect')!(undefined));
 
-    // A reconnected socket is NOT in the ride room — without this the rider is
-    // deaf from the first blip onward.
-    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+    // And on every later one: a reconnect gets a new socket, which the old
+    // membership does not follow.
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
     await screen.findByText('accepted|not|up');
+  });
+
+  it('drops a read that resolves after a newer event (failure)', async () => {
+    let settle: (ride: unknown) => void = () => undefined;
+    await render(<Probe />);
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+    await screen.findByText('requested|not|down');
+
+    // The connect read is held open, so the socket event beats it home.
+    mockRequest.mockReturnValueOnce(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    await act(async () => mockHandlers.get('connect')!(undefined));
+    await act(async () =>
+      mockHandlers.get(RT.rideStatus)!(event('accepted', 'requested')),
+    );
+    await screen.findByText('accepted|not|up');
+
+    // The snapshot was taken BEFORE the transition. Status can move backward
+    // (E8), so nothing about the values says which is newer — only the order.
+    await act(async () => settle(rideAt('requested')));
+
+    expect(screen.getByText('accepted|not|up')).toBeTruthy();
   });
 
   it('follows a status that moves BACKWARD (edge — E8)', async () => {

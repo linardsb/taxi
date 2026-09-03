@@ -153,17 +153,38 @@ export class RidesService {
   }
 
   /**
-   * ONE ride, for the rider who owns it (#16) — and the reason it ships now
-   * rather than with #17 is a hole in the socket layer, not a feature request.
+   * ONE ride, for the rider who owns it (#16) — and THE READ IS ALSO THE JOIN.
+   * It ships now rather than with #17 because of a hole in the socket layer,
+   * not as a feature request.
    *
    * `roomsOnConnect()` never returns a ride room and `joinRideRoom()` only moves
-   * the sockets that exist at the moment it runs, so a rider whose socket
-   * reconnects — a three-second tunnel, a backgrounded app — is outside the ride
-   * room for good and hears no further `ride:status`. Without a REST read they
-   * have no way back to the current state, and "the rider is told they were
-   * matched" is true only for a rider whose network never blips.
+   * the sockets that exist at the moment it runs. `notifyRider` runs that join
+   * once, inside `POST /rides`, so EVERY socket created after the booking — the
+   * rider app's status screen, which mounts on the `router.replace` that follows
+   * `book()`, and every socket a reconnect replaces — is outside the ride room
+   * and hears no `ride:status` at all. A REST snapshot alone left the screen
+   * frozen on its first frame while reporting itself connected.
    *
-   * Returns the ride and NOTHING else: no driver, no position, no ETA, no plate.
+   * So this route joins the caller's sockets to the ride room, and the rider app
+   * calls it on EVERY socket `connect`. One mechanism closes both the
+   * first-connect hole and the reconnect one; nothing else in the app needs to
+   * know the room exists. The client still never names a room — `joinRideRoom`
+   * is server-orchestrated, which is the rule `features/realtime/index.ts` sets.
+   *
+   * AFTER the ownership check, never before: the join is the one thing here that
+   * changes server state, and joining first would put a stranger's socket in the
+   * room the 404 below is about to deny them. Best-effort, like `notifyRider`'s
+   * — a realtime failure must not turn a rider's state read into a 500.
+   *
+   * Rejoining a TERMINAL ride's room is deliberate and harmless: nothing emits
+   * to it again (`leaveRideRoom` is called only for a REASSIGNED driver, never
+   * for the rider), and the alternative — a status filter here — would decide by
+   * guesswork which statuses may still move, when E8 says they can move backward.
+   *
+   * Returns the ride and NOTHING else: no driver, no position, no ETA, no plate,
+   * and `split` STRIPPED. The stored split is the driver's transparency card
+   * (S2-5) and `rideQuotePreviewSchema` refuses to carry it to a rider surface;
+   * a settled ride read back by its own rider must not be the door that does.
    * #17 extends it.
    *
    * ONE shape for both "no such ride" and "someone else's ride". A 403 on the
@@ -179,7 +200,19 @@ export class RidesService {
     if (!found || found.ride.riderId !== riderId) {
       throw new NotFoundException('ride_not_found');
     }
-    return found.ride;
+
+    try {
+      this.realtime.joinRideRoom(riderId, rideId);
+    } catch (error) {
+      this.logger.warn({
+        event: 'ride.read.join_failed',
+        rideId,
+        reason: error instanceof Error ? error.message : 'unknown',
+        at: new Date().toISOString(),
+      });
+    }
+
+    return { ...found.ride, split: null };
   }
 
   /**

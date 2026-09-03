@@ -74,9 +74,10 @@ describe('StatusScreen', () => {
     expect(focusSpy).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('status-line')).toBeTruthy();
     // A rider with the phone in their pocket must hear this without looking.
-    expect(announce).toHaveBeenCalledWith(
-      t('rider.a11y.status_changed', { status: t('rider.status.searching') }),
-    );
+    expect(announce).toHaveBeenCalledWith(t('rider.status.searching'));
+    // ONCE. A second effect announcing the same line under
+    // `rider.a11y.status_changed` made every iOS transition speak twice.
+    expect(announce).toHaveBeenCalledTimes(1);
   });
 
   it('says "still searching" and NEVER "no drivers" once the minute has passed (edge — E3)', async () => {
@@ -90,11 +91,7 @@ describe('StatusScreen', () => {
     expect(screen.queryByText(/nav atrast|no drivers/i)).toBeNull();
     // The fifth announce trigger in the spec (property 6): the message is
     // useless to a rider who is not looking at the screen unless it is spoken.
-    expect(announce).toHaveBeenCalledWith(
-      t('rider.a11y.status_changed', {
-        status: t('rider.status.still_searching'),
-      }),
-    );
+    expect(announce).toHaveBeenCalledWith(t('rider.status.still_searching'));
   });
 
   it('reads a matched ride as matched, whatever the status past requested (edge)', async () => {
@@ -137,5 +134,39 @@ describe('StatusScreen', () => {
     // An unmapped code renders `generic`, never the raw code.
     await screen.findByText(t('rider.error.generic'));
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'cancelled_by_driver',
+    'cancelled_by_dispatcher',
+    'completed',
+    'settled',
+  ])(
+    'offers a way out of a %s ride instead of a cancel that 409s (failure — M6)',
+    async (status) => {
+      Object.assign(mockStatus, { status });
+      await render(<StatusScreen />);
+
+      // `/book/status` is reached by `router.replace`, so there is no back
+      // entry — the cancel button was the ONLY control, and on a finished ride
+      // its only possible outcome is a 409.
+      expect(
+        screen.queryByRole('button', { name: t('rider.status.cancel') }),
+      ).toBeNull();
+
+      await userEvent.press(
+        screen.getByRole('button', { name: t('rider.status.book_again') }),
+      );
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('/book'));
+      expect(mockRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not call a completed ride "a car has been found" (edge — M6)', async () => {
+    Object.assign(mockStatus, { status: 'completed' });
+    await render(<StatusScreen />);
+
+    expect(screen.getByText(t('rider.status.completed'))).toBeTruthy();
+    expect(screen.queryByText(t('rider.status.matched'))).toBeNull();
   });
 });
