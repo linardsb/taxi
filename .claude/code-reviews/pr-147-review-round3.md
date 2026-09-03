@@ -172,3 +172,20 @@ Every figure the round-2 commits added or relabelled. Round 2's table covers the
 P3 and P4 are prose in files that already exist, and both have propagated to a second surface, so fix the pair together and grep the noun. P5–P9 are the author's call: P6 (`umask 077`) is one word and worth taking now; P7 is latent until the first Postgres major upgrade but the failure mode is silent and nightly; P8 is a correction to a record, not a reopening of N6.
 
 Next: `piv-fix-review-findings` on this file, then merge. Nothing here touches the suite, so expect run B's counts unchanged — and if `push-token.integration.spec.ts` times out again, that is the flake, not the fix. Round 4, if there is one, compares its `baseRefOid` against `a6481aaadef63712264e569a8f237db416b9e6be` above.
+
+## Addendum — P4 re-checked end to end
+
+The P4 table above was `observed` against `pg-connection-string.parse()` only, which tells you what string comes out, not whether `pg` then authenticates with it. Those are different claims and the finding's fix text ("`@` and `:` happen to survive") was reaching past the evidence. Settled now.
+
+`observed` 2026-09-03: throwaway `postgis/postgis:16-3.4-alpine` on port 55432, four roles created with `CREATE ROLE … LOGIN PASSWORD '…'`, each dialled with `new Pool({ connectionString: 'postgres://<role>:<pw>@127.0.0.1:55432/taxi' })` + `select current_user` — the same code path as `db/src/client.ts:9`.
+
+| password | result |
+|---|---|
+| `deadbeef0123` (hex control) | **connected** |
+| `pa@ss` | **connected** |
+| `pa:ss` | **connected** |
+| `pa%41ss` | **`password authentication failed for user "t_pct"`** |
+
+P4 stands, and the `%` half is now stronger than the review states: it is not merely a wrong password, it is a **failed boot whose error message says nothing about the password's shape** — `pg` authenticates with `paAss` because `decodeURIComponent` rewrote it, and the operator sees only an auth failure. That is the case the current comment mislabels as a parser break.
+
+The prescription is unchanged and correct: hex only. Scratch roles dropped, throwaway stack removed; the dev database is back as it was.
