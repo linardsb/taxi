@@ -10,9 +10,15 @@
  *   no balance movement, and must NOT import payments: the dependency runs
  *   `PaymentsModule → RidesModule` only, which is why the transition writer and
  *   the repository are exported below.
- * - THERE IS NO `GET /rides/:rideId`. `POST /rides/:rideId/complete` returns the
- *   settled ride, which is what a driver needs at the moment they need it. The
- *   general ride read belongs to #16/#17, which know what they want on it.
+ * - `GET /rides/:rideId` EXISTS NOW, and is RIDER-ONLY (#16). It ships because
+ *   a reconnecting rider socket is never re-joined to its ride room, so without
+ *   a REST read the rider is deaf to every later `ride:status` — see
+ *   `RidesService.findForRider`. It returns the ride and nothing else: no
+ *   driver, no position, no ETA, no plate. A DRIVER still has no ride read;
+ *   `POST /rides/:rideId/complete` returns the settled ride, which is what they
+ *   need at the moment they need it. #17 extends the rider read, and a
+ *   driver/dispatcher one would move the route to `RideLifecycleController` and
+ *   give it a per-route `@Roles`.
  * - `cancelled_by_system` STILL HAS NO PRODUCTION TRIGGER. The actor is
  *   supported end to end and covered by a spec. #12 was expected to be its
  *   caller via a payment pre-authorization failure, and is NOT: that ticket

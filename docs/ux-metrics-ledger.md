@@ -9,8 +9,8 @@ How to use: each ticket's acceptance criteria bind to rows here (column "Ticket"
 
 | Metric (outcome) | Target | Ticket | Measured how | Latest |
 |---|---|---|---|---|
-| Taps from intent → booked (saved-address repeat ride) | ≤ 4 | #16 | manual friction audit per release; later event log | — |
-| Screen-reader task success: book + track + pay, VoiceOver & TalkBack, unassisted | 100% of the critical path | #16/#17 | scripted SR audit per release (audit script lives in ticket) | — |
+| Taps from intent → booked (saved-address repeat ride) | ≤ 4 | #16 | manual friction audit per release; later event log | **not measured** — #16 shipped the flow, but the count must come from the BUILT app (walkthrough step 11) and no device is available; the plan's figure of 2 is `derived`, not a measurement |
+| Screen-reader task success: book + track + pay, VoiceOver & TalkBack, unassisted | 100% of the critical path | #16/#17 | scripted SR audit per release — script at `docs/runbooks/rider-a11y-walkthrough.md` | **blocked** — no Android emulator installed and Xcode 26.3 is this Mac's ceiling (SDK 57 needs 26.4), so neither TalkBack nor VoiceOver is reachable; `observed` 2026-09-02. The RNTL suite ships as the automated gate |
 | Rider knows the car: plate + driver visible ≤ 2 interactions from any active-ride state | 100% | #17 | flow review + SR audit | — |
 | Phone-booked rider gets confirmation + tracking link SMS | 100% of phone bookings, ≤ 30 s from booking save | SMS/tracking ticket | api logs (SMS provider seam) | — |
 | Wrong-car starts (PIN mismatch events) | 0 | #17 | platform data | — |

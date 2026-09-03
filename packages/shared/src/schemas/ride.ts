@@ -113,6 +113,51 @@ export const rideRequestBodySchema = rideRequestSchema
 export type RideRequestBody = z.infer<typeof rideRequestBodySchema>;
 
 /**
+ * What `POST /rides/quote` takes (#16) — the booking body minus everything that
+ * does not move an `upfront_fixed` price. Sits here, next to the body it is
+ * derived from, so the relationship is visible rather than inferred.
+ *
+ * `.pick()` for the reason `rideRequestBodySchema` uses `.omit()`/`.extend()`:
+ * it keeps this a plain `ZodObject`, so it carries every default (`stops: []`,
+ * `category: "standard"`, `options`) and the server can re-parse the preview
+ * body into a full `RideRequest` the pricing strategy accepts.
+ *
+ * NO `paymentMethod`. The fare does not depend on it, and requiring one would
+ * make the rider choose how to pay before seeing what it costs — the exact
+ * inversion the upfront-quote criterion forbids. `docs/research/rider-ux-
+ * evidence.md` §7: cash and card show ONE identical price, and diverging prices
+ * are what creates distrust.
+ *
+ * DO NOT ADD `vehicleCount` OR `scheduledFor` HERE — and this is the coupling
+ * the next field added to this list has to answer to. The preview path calls
+ * `PricingService.quote()` directly and therefore skips `RidesService.request`'s
+ * guards, so `multi_taxi_not_supported` and `scheduled_in_past` are unreachable
+ * on a preview. `vehicleCount` defaults to 1 and `scheduledFor` is absent, so
+ * the two paths agree today. A field added here would let the preview happily
+ * price an order the booking path refuses, and the rider would see a quote for a
+ * ride they cannot book.
+ */
+export const rideQuoteBodySchema = rideRequestBodySchema.pick({
+  pickup: true,
+  stops: true,
+  destination: true,
+  category: true,
+  options: true,
+});
+export type RideQuoteBody = z.infer<typeof rideQuoteBodySchema>;
+
+/**
+ * The `POST /rides/quote` response (#16).
+ *
+ * DELIBERATELY NO `split`, unlike `rideCreatedSchema`. The commission line is
+ * the DRIVER's transparency card (S2-5 — "you keep 85%"); a rider-facing
+ * preview has no reason to hold the platform's cut, and returning it would
+ * publish the commission to a surface that never renders it.
+ */
+export const rideQuotePreviewSchema = z.object({ quote: fareQuoteSchema });
+export type RideQuotePreview = z.infer<typeof rideQuotePreviewSchema>;
+
+/**
  * How a ride got its driver, with the audit trail for manual overrides.
  * Dina's force-assign is the anketa's most-cited human-in-the-loop feature
  * (S9-2, S9-4), and an override without an actor is an unauditable one.

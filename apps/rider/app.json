@@ -1,25 +1,47 @@
 {
   "expo": {
-    "name": "rider",
-    "slug": "rider",
+    "name": "Sakta Cab",
+    "slug": "sakta-cab-rider",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "lv.saktacab.rider",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Sakta Cab uses your location to suggest a pickup point."
+      }
     },
     "android": {
+      "package": "lv.saktacab.rider",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      "expo-secure-store",
+      "expo-localization",
+      "expo-status-bar"
+    ],
+    "scheme": "saktacabrider",
+    "locales": {
+      "lv": "./locales/lv.json",
+      "ru": "./locales/ru.json",
+      "en": "./locales/en.json"
     }
   }
 }

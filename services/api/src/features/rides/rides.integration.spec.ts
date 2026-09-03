@@ -4,11 +4,14 @@ import {
   IDEMPOTENCY_KEY_HEADER,
   isFareQuoteConsistent,
   rideCreatedSchema,
+  rideQuotePreviewSchema,
+  rideSchema,
 } from '@taxi/shared';
 import { and, eq, inArray, like } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { createTestApp, phoneFor, type TestApp } from '../../../test/harness';
+import { RIDE_QUOTE_MAX_PER_WINDOW } from './rides.policy';
 import { RidesRepository } from './rides.repository';
 
 /**
@@ -53,6 +56,22 @@ const KENGARAGS = {
 const PURVCIEMS = {
   location: { lat: 56.959, lng: 24.194 },
   address: 'Purvciems, Rīga',
+};
+
+/**
+ * The preview→booking cache case's OWN corridor, for the same reason the three
+ * above exist. `CachingMapsProvider` sits ABOVE `CountingMapsProvider`, so a
+ * corridor any earlier case in this file has routed is already cached and would
+ * not increment the counter — the assertion would read `1` and pass for
+ * entirely the wrong reason.
+ */
+const IMANTA = {
+  location: { lat: 56.951, lng: 24.031 },
+  address: 'Imanta, Rīga',
+};
+const MEZAPARKS = {
+  location: { lat: 57.001, lng: 24.15 },
+  address: 'Mežaparks, Rīga',
 };
 
 describe('rides (integration)', () => {
@@ -397,6 +416,166 @@ describe('rides (integration)', () => {
     // No header here on purpose: the guard rejects before any handler pipe
     // runs, so an anonymous request never reaches the header validation.
     await http.post('/rides').send(body).expect(401);
+  });
+
+  /**
+   * The two routes #16 added: the price a rider sees BEFORE committing, and the
+   * read that lets a reconnecting app recover its ride.
+   */
+  describe('quote preview and rider ride read (#16)', () => {
+    async function ridesOf(riderId: string) {
+      return ctx.db.select().from(rides).where(eq(rides.riderId, riderId));
+    }
+
+    it('prices a corridor and creates NO ride (expected)', async () => {
+      const r = await rider(40);
+
+      const res = await http
+        .post('/rides/quote')
+        .set('authorization', r.auth)
+        .send({ pickup: CENTRE, destination: RIX })
+        .expect(201);
+
+      const preview = rideQuotePreviewSchema.parse(res.body);
+      expect(preview.quote.totalCents).toBeGreaterThan(0);
+      expect(isFareQuoteConsistent(preview.quote)).toBe(true);
+      // The commission line is the DRIVER's card (S2-5) — a rider preview must
+      // not carry it.
+      expect(res.body).not.toHaveProperty('split');
+      // A preview creates nothing. Not "no ride for this corridor" — no ride
+      // AT ALL for this rider, which is the property the route promises.
+      expect(await ridesOf(r.id)).toHaveLength(0);
+    });
+
+    /**
+     * E13 — the "preview then book costs ONE paid Routes call, not two" claim,
+     * made `observed` rather than `derived`.
+     *
+     * It is the arithmetic `RIDE_QUOTE_MAX_PER_WINDOW` was sized against: if a
+     * preview and its booking did NOT share a `routeCacheKey`, the cap of 30
+     * would have been sized at half the true cost. Do NOT weaken this assertion
+     * if it fails — re-derive the cap on the assumption that every preview is a
+     * paid call, because then the cap is the defect, not the test.
+     */
+    it('shares one paid Routes call between a preview and the booking that follows it (edge — E13)', async () => {
+      const r = await rider(41);
+      const before = ctx.maps.routeCalls;
+
+      await http
+        .post('/rides/quote')
+        .set('authorization', r.auth)
+        .send({ pickup: IMANTA, destination: MEZAPARKS })
+        .expect(201);
+
+      expect(ctx.maps.routeCalls - before).toBe(1);
+
+      await http
+        .post('/rides')
+        .set('authorization', r.auth)
+        .set(IDEMPOTENCY_KEY_HEADER, idem())
+        .send({
+          pickup: IMANTA,
+          destination: MEZAPARKS,
+          paymentMethod: 'cash',
+        })
+        .expect(201);
+
+      // Same `'quote'` caller, same coordinates at COORD_PRECISION — one key,
+      // so the booking answers from the cache the preview filled.
+      expect(ctx.maps.routeCalls - before).toBe(1);
+    });
+
+    it('spends the preview cap without touching the booking quota (edge)', async () => {
+      const r = await rider(42);
+
+      // Exactly at the cap: `attempts <= max` passes, so the 30th is served.
+      for (let i = 0; i < RIDE_QUOTE_MAX_PER_WINDOW; i += 1) {
+        await http
+          .post('/rides/quote')
+          .set('authorization', r.auth)
+          .send({ pickup: CENTRE, destination: RIX })
+          .expect(201);
+      }
+
+      await http
+        .post('/rides/quote')
+        .set('authorization', r.auth)
+        .send({ pickup: CENTRE, destination: RIX })
+        .expect(429);
+
+      // The whole point of a SEPARATE key: a rider who previewed to exhaustion
+      // can still book. Sharing `rides:rate:<id>` would 429 this.
+      await http
+        .post('/rides')
+        .set('authorization', r.auth)
+        .set(IDEMPOTENCY_KEY_HEADER, idem())
+        .send({ pickup: CENTRE, destination: RIX, paymentMethod: 'cash' })
+        .expect(201);
+    });
+
+    it("returns the rider's own ride with its quote (expected)", async () => {
+      const r = await rider(43);
+      const created = await http
+        .post('/rides')
+        .set('authorization', r.auth)
+        .set(IDEMPOTENCY_KEY_HEADER, idem())
+        .send({ pickup: CENTRE, destination: RIX, paymentMethod: 'cash' })
+        .expect(201);
+      const { ride } = rideCreatedSchema.parse(created.body);
+
+      const res = await http
+        .get(`/rides/${ride.id}`)
+        .set('authorization', r.auth)
+        .expect(200);
+
+      const read = rideSchema.parse(res.body);
+      expect(read.id).toBe(ride.id);
+      expect(read.status).toBe('requested');
+      expect(read.quote).toEqual(ride.quote);
+    });
+
+    /**
+     * E14 — 404, not 403. A 403 would make this route an existence oracle: a
+     * rider could walk uuids and tell a real ride id from a fabricated one.
+     * "Not yours" and "not there" must be indistinguishable from outside.
+     */
+    it("answers 404 — not 403 — for another rider's ride, and the same for a uuid that never existed (failure — E14)", async () => {
+      const a = await rider(44);
+      const b = await rider(45);
+      const created = await http
+        .post('/rides')
+        .set('authorization', a.auth)
+        .set(IDEMPOTENCY_KEY_HEADER, idem())
+        .send({ pickup: CENTRE, destination: RIX, paymentMethod: 'cash' })
+        .expect(201);
+      const { ride } = rideCreatedSchema.parse(created.body);
+
+      await http
+        .get(`/rides/${ride.id}`)
+        .set('authorization', b.auth)
+        .expect(404);
+
+      await http
+        .get(`/rides/${randomUUID()}`)
+        .set('authorization', b.auth)
+        .expect(404);
+    });
+
+    it('refuses a driver token on both new routes (failure)', async () => {
+      const driverSession = await signIn(p(46), 'driver');
+      const auth = `Bearer ${driverSession.accessToken}`;
+
+      await http
+        .post('/rides/quote')
+        .set('authorization', auth)
+        .send({ pickup: CENTRE, destination: RIX })
+        .expect(403);
+
+      await http
+        .get(`/rides/${randomUUID()}`)
+        .set('authorization', auth)
+        .expect(403);
+    });
   });
 
   /**

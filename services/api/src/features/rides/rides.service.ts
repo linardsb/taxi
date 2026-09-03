@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   rideRequestSchema,
@@ -149,6 +150,36 @@ export class RidesService {
       await this.kv.del(key).catch(() => undefined);
       throw error;
     }
+  }
+
+  /**
+   * ONE ride, for the rider who owns it (#16) — and the reason it ships now
+   * rather than with #17 is a hole in the socket layer, not a feature request.
+   *
+   * `roomsOnConnect()` never returns a ride room and `joinRideRoom()` only moves
+   * the sockets that exist at the moment it runs, so a rider whose socket
+   * reconnects — a three-second tunnel, a backgrounded app — is outside the ride
+   * room for good and hears no further `ride:status`. Without a REST read they
+   * have no way back to the current state, and "the rider is told they were
+   * matched" is true only for a rider whose network never blips.
+   *
+   * Returns the ride and NOTHING else: no driver, no position, no ETA, no plate.
+   * #17 extends it.
+   *
+   * ONE shape for both "no such ride" and "someone else's ride". A 403 on the
+   * second would make this an existence oracle — a rider could walk uuids and
+   * tell a real ride id from a fabricated one.
+   */
+  async findForRider(riderId: string, rideId: string): Promise<Ride> {
+    // `findWithQuote` rather than a new rider-scoped read: the replay path
+    // already reassembles exactly this, and the ownership check is one
+    // comparison in the service. `undefined` also covers a ride with no quote,
+    // which `create()` makes unreachable — every ride is written with one.
+    const found = await this.rides.findWithQuote(rideId);
+    if (!found || found.ride.riderId !== riderId) {
+      throw new NotFoundException('ride_not_found');
+    }
+    return found.ride;
   }
 
   /**
