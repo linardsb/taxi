@@ -134,7 +134,7 @@ Then in GitHub → repo → Settings → Secrets and variables → Actions:
 | `SSH_HOST` | the box's public IPv4 |
 | `SSH_KEY` | the contents of `~/.ssh/taxi-deploy` (the private key) |
 | `SSH_KNOWN_HOSTS` | the `ssh-keyscan -H` output — pinned so a changed host key fails the run |
-| `GHCR_TOKEN` | a classic PAT with `read:packages` — the box uses it to pull the private image |
+| `GHCR_TOKEN` | a classic PAT with `read:packages` — the box uses it to pull the private image. **It stays on the box**: `docker login --password-stdin` writes it to `deploy`'s `~/.docker/config.json` and the deploy does not log out, because §5.2's rollback `pull` needs that login and an incident is the wrong time to go hunting for a PAT. Accepted (§9): the box holds a read-only packages token at rest. Rotate it here and re-run the deploy to replace the copy on the box. |
 
 And one **variable** (not a secret): `API_DOMAIN` = `api.<your domain>`, used
 by the workflow's final health check. Leave it unset until §2 is done; the
@@ -201,7 +201,7 @@ compose hostnames, so the database password lives in one place.
 
 | Variable | Value | Why |
 |---|---|---|
-| `POSTGRES_PASSWORD` | `openssl rand -hex 16` | Read by `initdb` on the volume's **first** start only. To change it later: `ALTER ROLE taxi PASSWORD '…'` in psql, then edit here, then `up -d`. |
+| `POSTGRES_PASSWORD` | `openssl rand -hex 16` | **Hex only** — the overlay interpolates it into `DATABASE_URL` unescaped, so an `@`, `/`, `:`, `#` or `%` breaks `pg`'s URL parser and the `:?` guard will not catch it. Read by `initdb` on the volume's **first** start only. To change it later: `ALTER ROLE taxi PASSWORD '…'` in psql, then edit here, then `up -d`. |
 | `API_DOMAIN` | `api.<domain>` | The one placeholder the `Caddyfile` reads. |
 | `API_IMAGE_TAG` | written by the workflow | Which image `up` starts. Rollback = edit this, `up -d api` (§5.2). |
 | `API_PORT` | `3001` | Must match the healthcheck in `compose.prod.yml` and `reverse_proxy api:3001` in the `Caddyfile`. |
@@ -213,7 +213,7 @@ compose hostnames, so the database password lives in one place.
 | `PUBLIC_TRACKING_BASE_URL` | `https://<tracking host>` | Where SMS tracking links point. **Production refuses localhost.** 404s until #18/#19. |
 | `PUSH_PROVIDER` | `expo` | **Required in production** (#14): the push factory refuses to boot on the stub, which delivers nothing — a driver whose app was force-quit would never get the "you've gone offline" nudge. Expo's push API needs no credential, so this value is the whole switch. |
 | `EXPO_PUSH_ACCESS_TOKEN` | empty | Optional: Expo's "enhanced push security" token, sent as a Bearer on every push. Empty reads as unset. |
-| `ALLOW_STUB_MAPS_PROVIDER` | `true` | **The one documented relaxation** (#13). Quotes are straight-line × 1.35 and there is no polyline until #134 binds OSRM and deletes this variable. Safe only while no Stripe key is set and the pilot is closed — if either changes before #134, unset it and let the deploy fail. Literal `true`/`false` only. |
+| `ALLOW_STUB_MAPS_PROVIDER` | `true` | **The one documented relaxation** (#13). Quotes are straight-line × 1.35 and there is no polyline until #134 binds OSRM and deletes this variable. Safe only while **the pilot is closed**, so no rider is quoted at all — that is the load-bearing condition, and the due date. The empty `STRIPE_SECRET_KEY` covers the **card rail only**; a cash ride quoted straight-line is real money at the kerb. Unset this before the first real rider, whether or not #134 has landed, and let the deploy fail. Literal `true`/`false` only. |
 | `GOOGLE_MAPS_API_KEY` | a Maps Platform key with *Places API (New)* enabled | **Required in production** even with the switch on: the switch accepts straight-line quotes, not a dead address typeahead (#19). Google's free monthly credit covers pilot volume; re-check before opening the pilot. |
 | `MAPS_ROUTE_CACHE_TTL_SECONDS` … `MAPS_PLACE_CACHE_TTL_SECONDS`, `PLACES_*` | omit → schema defaults | The spend knobs. Defaults are the pilot's; `env.schema.ts` explains each. |
 | `TWILIO_ACCOUNT_SID` | `AC…` from console.twilio.com | **All three or none — the schema refuses a partial trio in every environment.** A **trial** account is enough for testing: it sends only to numbers verified in the console (Atis, Dina, Linards) and the sender must be the trial number. Paid account + alphanumeric sender (`SaktaCab`) before the pilot opens (#137). |
@@ -247,7 +247,14 @@ STRIPE_WEBHOOK_SECRET=
 
 Every one of these gates was exercised against the built image on a laptop
 before a server existed (§8.3) — a wrong value fails the container at boot with
-a message naming the variable, and `up -d --wait` fails the deploy.
+a message naming the variable, and `up -d --wait` fails the deploy. That second
+half is `observed` too, not inferred: 2026-09-03, docker 29.2.1 / compose 5.1.0,
+this overlay and an image built from the round-2 head, `up -d --wait
+--wait-timeout 45 api` on this table's values — **exit 0 in 12 s**, api healthy;
+with `PUSH_PROVIDER` alone removed, **exit 1 in 15 s**, `container … is
+unhealthy`, `RestartCount` 4. It fails, and it fails inside the timeout rather
+than parking on it. (Times vary — 8–15 s over the runs; what is stable is the
+exit code and that neither case reaches 45 s.)
 
 ## 4 · First deploy
 
@@ -267,6 +274,13 @@ a message naming the variable, and `up -d --wait` fails the deploy.
    `API_IMAGE_TAG` in `.env`, prunes every image no container uses. The first
    run also creates the `db-data` volume and runs `initdb` with
    `POSTGRES_PASSWORD`.
+
+   That list is `observed` end-to-end, not read off the file: 2026-09-03 the
+   box script was extracted from the workflow exactly as `bash -s` receives it,
+   a marker put after every line, and piped to `bash -s` with a `docker` shim
+   that drains stdin on `run`/`exec` the way the real CLI does. **All 11
+   markers print.** Before the round-2 fix only the first 5 did — the migration
+   swallowed the rest of the script and the step still exited 0 (round 2, N1).
 3. **Seed once, by hand:**
 
    ```bash
@@ -310,7 +324,11 @@ same command (§5.3).
 Every deployed image stays on ghcr.io under its `sha-…` tag. The box does
 **not** keep the previous one: each deploy ends with `docker image prune -af`,
 which removes every image no container is using, so a rollback is a re-pull
-(the `pull` below), not a local switch. To go back one deploy:
+(the `pull` below), not a local switch. That pull works without a `docker
+login` because the deploy leaves `GHCR_TOKEN` in `deploy`'s
+`~/.docker/config.json` (§1.4) — deliberate, and the reason the script does not
+log out. If the PAT has been rotated since the last deploy, `docker login
+ghcr.io` by hand first. To go back one deploy:
 
 ```bash
 cd /opt/taxi
@@ -489,7 +507,8 @@ dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js                  
 ```
 
 Gates — each of these must **fail the container at boot** (`up -d --wait`
-exits non-zero, `dc logs api` names the variable). All seven were `observed`
+exits non-zero, `dc logs api` names the variable; §3 carries the run behind the
+`up -d --wait` half). All seven were `observed`
 on 2026-09-03 against the image built from PR #147's round-1 fix commit,
 before any server existed. The first six were also observed on 2026-08-25; the
 seventh, `PUSH_PROVIDER`, reached `main` with #14 on 2026-08-31 and the rebase
@@ -521,6 +540,7 @@ never 201 — see §9.
 | SMS reaches verified numbers only | Twilio trial | #137 |
 | Direct-to-IP requests bypass Cloudflare | §2.3 | before the pilot opens |
 | No uptime monitoring, no alerting | Uptime Kuma / GlitchTip are the intended €0 answers (architecture amendment) and are not installed here | when someone other than Linards needs to know it is down |
+| A `read:packages` PAT sits at rest on the box | `docker login` persists `GHCR_TOKEN` to `deploy`'s `~/.docker/config.json`; the deploy does not log out because §5.2's rollback pull depends on it. Read-only, one repo's packages, on a key-only box behind a 22/80/443 firewall | a registry the box can read with its own identity |
 
 ## 10 · Resize, snapshot, destroy
 

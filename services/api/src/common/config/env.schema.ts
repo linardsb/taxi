@@ -199,11 +199,13 @@ export const envSchema = z
      * 40 km/h (`stub-maps.provider.ts`), and `route()` returns no polyline, so
      * the tracking page's ETA and any route line are geometry, not roads.
      *
-     * WHY IT IS SAFE TODAY, and only today: with no Stripe key in production no
-     * real money moves off a bad quote (card rides are refused —
-     * `CardPaymentsDisabledProvider`), and the pilot is not open, so no rider
-     * is quoted a straight-line price. If either stops being true before OSRM
-     * lands, unset this and let the deploy fail instead.
+     * WHY IT IS SAFE TODAY, and only today: the pilot is not open, so no rider
+     * is quoted a straight-line price at all. That is the whole of it, and the
+     * due date is the pilot OPENING, not #134. The empty `STRIPE_SECRET_KEY`
+     * buys less than it looks: `CardPaymentsDisabledProvider` refuses the CARD
+     * rail only, and a cash ride quoted at haversine x 1.35 is real money at
+     * the kerb. So: unset this before the first real rider, whether or not OSRM
+     * has landed, and let the deploy fail instead.
      *
      * #134 DELETES THIS VARIABLE together with the branch that reads it. Debt
      * with a due date, not a feature. `z.enum`, not `z.coerce.boolean()`, which

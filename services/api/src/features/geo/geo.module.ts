@@ -23,8 +23,10 @@ import { StubMapsProvider } from './stub-maps.provider';
  * off geometry. Structural rather than conventional, exactly like
  * `smsProviderFactory` — with one documented, single-purpose exception (#13):
  * the switch exists so the first deploy can boot before a real routes provider
- * does, and it is defensible only while no money moves off a quote and the
- * pilot is closed (`env.schema.ts` says why). #134 binds `OsrmMapsProvider`
+ * does, and it is defensible only while the pilot is closed, so nobody is
+ * quoted at all. The absent Stripe key does not extend that — it closes the
+ * card rail, and a cash ride quoted off geometry is real money at the kerb
+ * (`env.schema.ts` says why). #134 binds `OsrmMapsProvider`
  * here and deletes the switch, at which point the routes clause below is
  * unconditional again.
  */

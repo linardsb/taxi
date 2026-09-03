@@ -51,6 +51,13 @@ if ! pg_restore --list "$file" | grep 'TABLE public geozones' >/dev/null; then
   echo "$(date -u +%FT%TZ) backup FAILED: $file has no geozones table" >&2
   exit 1
 fi
+# Disarm: the trap's job was the half-written dump, and it is done. Past this
+# line the file has passed the structural check, so a later failure (rclone's
+# token expired, the network went) must LEAVE it — §6.1's "local copies are a
+# convenience for a fast restore" is the whole point of keeping it. The exit
+# status still travels, so the cron log shows rclone's own stderr and a
+# non-zero run; what it no longer shows is this script's "backup FAILED" line.
+trap - EXIT
 
 rclone copy "$file" "$REMOTE/"
 rclone delete --min-age "${KEEP_REMOTE_DAYS}d" "$REMOTE/"

@@ -35,6 +35,10 @@ services:
       NODE_ENV: production
       # Composed here rather than written twice: the password lives in ONE
       # place (POSTGRES_PASSWORD), and the hostnames are compose's own.
+      # POSTGRES_PASSWORD is interpolated UNESCAPED, so it must be URL-safe —
+      # hex only, as runbook §3 prescribes (`openssl rand -hex 16`). An `@`,
+      # `/`, `:`, `#` or `%` in it breaks `pg`'s URL parser, and the `:?` guard
+      # below checks presence, not shape.
       DATABASE_URL: postgres://taxi:${POSTGRES_PASSWORD}@db:5432/taxi
       REDIS_URL: redis://redis:6379
     depends_on:

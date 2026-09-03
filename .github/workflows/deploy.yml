@@ -61,6 +61,11 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # A bounded failure instead of GitHub's 6 h default: the whole step list is
+    # a pull, a migration and a restart. `up --wait-timeout` (below) already
+    # fails a crash loop fast; this catches the shapes that hang instead —
+    # ssh with no server-side timeout, a stalled pull.
+    timeout-minutes: 20
     # Only checks the repo out; the image is pulled on the box with GHCR_TOKEN.
     permissions:
       contents: read
@@ -99,13 +104,22 @@ jobs:
           export API_IMAGE_TAG="$TAG"
           compose="docker compose -f docker-compose.yml -f compose.prod.yml"
           \$compose pull api
-          \$compose run --rm api node node_modules/@taxi/db/dist/migrate-run.js
-          \$compose up -d --wait
+          # \`</dev/null\` on run and exec, and ONLY on those two: this script IS
+          # bash's stdin, bash reads a pipe one line at a time, and compose's
+          # run/exec default to --interactive, so the docker CLI would read the
+          # REST OF THIS SCRIPT and forward it into the container. Everything
+          # below would be swallowed and the step would exit 0 on the
+          # migration's status. pull/up/prune/ps do not touch stdin.
+          \$compose run --rm api node node_modules/@taxi/db/dist/migrate-run.js </dev/null
+          # 120 s: the api healthcheck's worst legitimate case is start_period
+          # 20 s + 5 retries x 10 s interval = 70 s (compose.prod.yml), after db
+          # and redis report healthy. Without the flag \`--wait\` waits forever.
+          \$compose up -d --wait --wait-timeout 120
           # Caddy reads its config at start only, and \`up\` does not recreate a
           # service when a bind-mounted file's CONTENT changes (not part of the
           # config hash), so the Caddyfile scp'd above is served only after
           # this. A no-op when unchanged, zero-downtime when not. -T: no tty.
-          \$compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+          \$compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile </dev/null
           # Record what is running, so a by-hand \`up\` on the box later starts
           # the same image and a rollback is one edit of this line. The newline
           # guard: a hand-written file with no trailing newline would otherwise

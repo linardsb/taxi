@@ -486,6 +486,8 @@ From the issue, plus what this plan adds:
 
 **The maps switch is the weakest part of this plan** and should be treated as debt with a due date, not a feature. It is defensible only because: (a) Stripe is absent, so no real money moves off a bad quote; (b) the pilot is not open, so no rider is quoted a straight-line price; (c) the OSRM ticket that deletes it is small and next. If any of those three stop being true before OSRM lands, the switch should be removed and the deploy blocked instead.
 
+> **Corrected in review (PR #147, round 2 N4).** (a) does not hold as written. The absent Stripe key closes the **card rail only** — `CardPaymentsDisabledProvider` refuses card charges — and a **cash** ride quoted at haversine × 1.35 is real money at the kerb. (b) is the load-bearing condition and carries the due date on its own: unset the switch before the first real rider, whether or not #134 has landed. The shipped texts (`env.schema.ts`, `.env.example`, runbook §3, `geo.module.ts`, the architecture doc) now say this; the paragraph above is left as written so the record shows what was corrected.
+
 **Sequencing thought.** Phase 1 is worth doing even if the deploy slips: it is the difference between "production is unbootable" and "production boots." It's also entirely local — no account, no card, no server. Consider shipping Phase 1 as its own PR if the host provisioning stalls on anything.
 
 **Rejected: running the seed on every deploy.** Idempotent, and its own comment sanctions re-seeding ("a re-seed corrects a hand-edited row") — but that sanction predates #20's config editor. Automating it now builds in a footgun that fires the day an admin edits the commission. Manual, documented, once.

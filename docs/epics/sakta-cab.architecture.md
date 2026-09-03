@@ -109,9 +109,11 @@ epic carries the posture, not just the ticket.
    **`ALLOW_STUB_MAPS_PROVIDER`** — a documented, single-purpose config switch on the routes clause of
    `mapsProviderSourceFactory` (the #103 precedent: code-level kill switch → config-level). Default
    `false`; production still refuses to boot on the stub unless the switch says otherwise, and the
-   switch does **not** cover a missing `GOOGLE_MAPS_API_KEY`. **This is debt with a due date**: it is
-   defensible only while no money moves off a quote (no Stripe key) and the pilot is closed, and
-   #134 deletes it. Quotes are straight-line × 1.35 with no polyline until then.
+   switch does **not** cover a missing `GOOGLE_MAPS_API_KEY`. **This is debt with a due date, and the
+   date is the pilot opening**: it is defensible only while the pilot is closed, so nobody is quoted
+   at all. The absent Stripe key was written here as half the justification and is not — it closes the
+   card rail, while a cash ride quoted off geometry is real money at the kerb (PR #147, round 2 N4).
+   #134 deletes the switch. Quotes are straight-line × 1.35 with no polyline until then.
 2. **ARM vs x86 — DECIDED: x86.** CX22 is x86; the OSRM amd64-only verification moves to #134, and the
    box must not move to the ARM CAX line before that ticket resolves it.
 3. **Payments posture — DECIDED: refuse, never pretend.** Production with no `STRIPE_SECRET_KEY` binds
