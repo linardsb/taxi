@@ -405,7 +405,18 @@ describe('rideOfferEventSchema — the wire projection', () => {
       breakdown: { baseCents: 300, distanceCents: 1400, timeCents: 300 },
     },
     split: splitFare(2000, { pct: 15, source: 'platform_base' }),
+    paymentMethod: 'cash',
   };
+
+  it('requires the operative payment method on the wire, and only there (#15, failure)', () => {
+    // The card must make «cash»/«card» unmissable at accept; an offer without
+    // it is not an offer the app can render. The domain schema stays as it
+    // was: the `ride_offers` insert shape carries no payment column.
+    const { paymentMethod: _dropped, ...withoutMethod } = wire;
+    expect(rideOfferEventSchema.safeParse(withoutMethod).success).toBe(false);
+    expect(rideOfferSchema.safeParse(withoutMethod).success).toBe(true);
+    expect(rideOfferEventSchema.parse(wire).paymentMethod).toBe('cash');
+  });
 
   it('keeps both timestamps as ISO strings, like the other 8 events (expected)', () => {
     const parsed = rideOfferEventSchema.parse(wire);

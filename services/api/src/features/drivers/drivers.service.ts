@@ -5,6 +5,8 @@ import {
   type DriverPresenceStatus,
   type DriverProfile,
   type DriverProfileUpdate,
+  type Language,
+  type PushMessage,
   type PushProvider,
 } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
@@ -59,7 +61,69 @@ export class DriversService {
     const profile =
       (await this.drivers.find(userId)) ??
       (await this.drivers.findOrCreate(userId));
-    return { profile, vehicles: await this.vehicles.listForDriver(userId) };
+    // `activeRideId` comes from the RIDES table, never `profile.status` — see
+    // `driverMeSchema` (#15) and `hasActiveRide` for why the cache lies.
+    const [vehicles, activeRideId] = await Promise.all([
+      this.vehicles.listForDriver(userId),
+      this.drivers.findActiveRideId(userId),
+    ]);
+    return { profile, vehicles, activeRideId };
+  }
+
+  /**
+   * One push to one driver (#15's offer push; the nudge pass above predates
+   * it and keeps its batch shape). `build` runs with the driver's language so
+   * the caller composes copy through `formatMessage` without a second read.
+   * NEVER throws: a push is best-effort and the caller is a post-commit tail.
+   * `event` is the log prefix — `<event>_skipped | _sent | _failed`.
+   */
+  async sendPush(
+    driverId: string,
+    build: (language: Language) => PushMessage,
+    event: string,
+  ): Promise<void> {
+    const at = new Date().toISOString();
+    try {
+      const target = await this.presence.findPushTarget(driverId);
+      if (!target?.pushToken) {
+        this.logger.log({
+          event: `${event}_skipped`,
+          driverId,
+          reason: 'no_token',
+          at,
+        });
+        return;
+      }
+      const result = await this.push.send(
+        target.pushToken,
+        build(target.language),
+      );
+      if (result.ok) {
+        this.logger.log({
+          event: `${event}_sent`,
+          driverId,
+          language: target.language,
+          at,
+        });
+        return;
+      }
+      if (result.reason === 'device_not_registered') {
+        await this.presence.setPushToken(driverId, null);
+      }
+      this.logger.warn({
+        event: `${event}_failed`,
+        driverId,
+        reason: result.reason,
+        at,
+      });
+    } catch (error) {
+      this.logger.warn({
+        event: `${event}_failed`,
+        driverId,
+        reason: error instanceof Error ? error.message : 'unknown',
+        at,
+      });
+    }
   }
 
   /**

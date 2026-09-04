@@ -6,6 +6,7 @@ import type {
   NearbyDriver,
 } from '../../drivers';
 import { InMemoryDispatchQueueStore } from '../queue/in-memory-dispatch-queue.store';
+import type { QueueNotifier } from '../queue/queue-notifier';
 import { GeozoneQueueStrategy } from './geozone-queue.strategy';
 
 const RIDER_ID = '5a5a5a5a-1111-4222-8333-444444444444';
@@ -47,6 +48,7 @@ const attrs = (
 
 function build(nearby: NearbyDriver[], matchAttrs: DriverMatchAttributes[]) {
   const queue = new InMemoryDispatchQueueStore();
+  const broadcast = jest.fn(() => Promise.resolve());
   const strategy = new GeozoneQueueStrategy(
     {
       findNearest: () => Promise.resolve(nearby),
@@ -55,9 +57,49 @@ function build(nearby: NearbyDriver[], matchAttrs: DriverMatchAttributes[]) {
       findMatchAttributes: () => Promise.resolve(matchAttrs),
     } as unknown as DriversService,
     queue,
+    { broadcast } as unknown as QueueNotifier,
   );
-  return { strategy, queue };
+  return { strategy, queue, broadcast };
 }
+
+describe('GeozoneQueueStrategy — driver:queue after enrolment (#15)', () => {
+  const ctx = {
+    geozoneId: ZONE,
+    cityId: CITY,
+    driverDebtLimitCents: DEBT_LIMIT,
+  } as const;
+  const at = { lat: 56.92, lng: 23.97 };
+
+  it('broadcasts the zone once when newcomers were enrolled (expected)', async () => {
+    const { strategy, broadcast } = build(
+      [
+        { driverId: id(1), location: at, distanceMeters: 100 },
+        { driverId: id(2), location: at, distanceMeters: 200 },
+      ],
+      [attrs(1), attrs(2)],
+    );
+
+    await strategy.findCandidates(request(), ctx);
+
+    // Two newcomers, ONE broadcast: the whole zone hears its ranks after the
+    // batch, not one emit per driver enrolled.
+    expect(broadcast).toHaveBeenCalledTimes(1);
+    expect(broadcast).toHaveBeenCalledWith(ZONE);
+  });
+
+  it('stays silent when every candidate was already ranked (edge)', async () => {
+    const { strategy, queue, broadcast } = build(
+      [{ driverId: id(1), location: at, distanceMeters: 100 }],
+      [attrs(1)],
+    );
+    await queue.joinBack(ZONE, id(1));
+
+    await strategy.findCandidates(request(), ctx);
+
+    // Nothing moved, so nothing to announce — a stale re-emit is noise.
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+});
 
 /** Driver 1 is NEARER; driver 2 is AHEAD in the rank. */
 const NEAR_FIRST: NearbyDriver[] = [

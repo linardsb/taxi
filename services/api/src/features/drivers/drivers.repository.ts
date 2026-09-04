@@ -211,6 +211,25 @@ export class DriversRepository {
     return row ? toProfile(row) : undefined;
   }
 
+  /**
+   * The ride this driver is committed to, or null — `GET /drivers/me`'s
+   * `activeRideId` (#15). Same predicate as `hasActiveRide`; the id is what a
+   * cold-started app needs to land on the active-ride screen.
+   */
+  async findActiveRideId(userId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ id: rides.id })
+      .from(rides)
+      .where(
+        and(
+          eq(rides.driverId, userId),
+          inArray(rides.status, [...ACTIVE_DRIVER_RIDE_STATUSES]),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   /** Follow-up read for the error message ONLY — the WHERE above decides. */
   async hasActiveRide(userId: string): Promise<boolean> {
     const [row] = await this.db

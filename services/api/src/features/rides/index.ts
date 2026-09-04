@@ -10,25 +10,28 @@
  *   no balance movement, and must NOT import payments: the dependency runs
  *   `PaymentsModule → RidesModule` only, which is why the transition writer and
  *   the repository are exported below.
- * - `GET /rides/:rideId` EXISTS NOW, is RIDER-ONLY (#16), AND IT JOINS. A rider
- *   socket is never auto-joined to its ride room — not on a reconnect, and not
- *   on its first connect either, since `notifyRider`'s join runs inside
- *   `POST /rides` and reaches only the sockets alive at that instant. So this
- *   route joins the caller's sockets as it reads — taking its snapshot AFTER
- *   the join, so a transition in the read's own round trip is not lost to both
- *   the room and the body — and the app calls it on every socket `connect`;
- *   without it the rider is deaf to every `ride:status` — see
- *   `RidesService.findForRider`. It returns the `rides` row as `toRide`
- *   projects it, with `split` FORCED NULL: `driverId` and `trackingToken` ARE
- *   on it, `assignment` is null because `toRide` hardcodes it, and there is no
- *   driver identity — no name, no plate, no phone — no position and no ETA,
- *   which are #17's. `split` is stripped rather than merely absent because
- *   `toRide` populates it once a ride settles; `RiderVisibleRide` puts that in
- *   the type rather than only in prose. A DRIVER still has no ride read;
- *   `POST /rides/:rideId/complete` returns the settled ride, which is what they
- *   need at the moment they need it. #17 extends the rider read, and a
- *   driver/dispatcher one would move the route to `RideLifecycleController` and
- *   give it a per-route `@Roles`.
+ * - `GET /rides/:rideId` IS A RIDER'S AND A DRIVER'S READ (#16, #15), AND IT
+ *   JOINS. No socket is ever auto-joined to its ride room on a reconnect —
+ *   `notifyRider`'s join runs inside `POST /rides` and `emitAssigned`'s inside
+ *   the accept, and both reach only the sockets alive at that instant. So this
+ *   route joins the caller's sockets as it reads — ownership first, then the
+ *   join, then the snapshot, so a transition in the read's own round trip is
+ *   not lost to both the room and the body — and both apps call it on every
+ *   socket `connect`; without it the phone is deaf to every `ride:status`.
+ *   The route stayed on `RidesController` with a per-route
+ *   `@Roles('rider', 'driver')` (the guard's `getAllAndOverride` lets the
+ *   method list replace the class list), so the rider path's registration
+ *   never moved. The RIDER branch (`RidesService.findForRider`) returns the
+ *   `rides` row as `toRide` projects it with `split` FORCED NULL: `driverId`
+ *   and `trackingToken` ARE on it, `assignment` is null because `toRide`
+ *   hardcodes it, and there is no driver identity — no name, no plate, no
+ *   phone — no position and no ETA, which are #17's; `RiderVisibleRide` puts
+ *   the stripped split in the type. The DRIVER branch
+ *   (`RideLifecycleService.findForDriver`) returns the same row WITH the split
+ *   once settled — it is their own commission line — and 404s a ride that is
+ *   not theirs with the same shape as a missing one. Still absent for the
+ *   driver: rider identity (name, phone) — a separate ticket. A dispatcher
+ *   read stays unassigned; the board carries what Dina needs.
  * - `cancelled_by_system` STILL HAS NO PRODUCTION TRIGGER. The actor is
  *   supported end to end and covered by a spec. #12 was expected to be its
  *   caller via a payment pre-authorization failure, and is NOT: that ticket

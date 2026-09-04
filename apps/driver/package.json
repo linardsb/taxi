@@ -5,8 +5,10 @@
   "dependencies": {
     "@taxi/shared": "workspace:*",
     "expo": "~57.0.18",
+    "expo-audio": "~57.0.4",
     "expo-constants": "~57.0.16",
     "expo-dev-client": "~57.0.16",
+    "expo-haptics": "~57.0.2",
     "expo-intent-launcher": "~57.0.1",
     "expo-keep-awake": "~57.0.1",
     "expo-linking": "~57.0.8",
@@ -44,7 +46,8 @@
     "dev": "expo start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "jest"
+    "test": "jest",
+    "make:tone": "node scripts/make-offer-tone.mjs"
   },
   "private": true,
   "expo": {

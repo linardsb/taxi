@@ -16,6 +16,7 @@ import { DispatchService } from './dispatch.service';
 import { DispatchSweeper } from './dispatch.sweeper';
 import { ForceAssignService } from './force-assign.service';
 import { DISPATCH_QUEUE_STORE } from './queue/dispatch-queue.store';
+import { QueueNotifier } from './queue/queue-notifier';
 import { RedisDispatchQueueStore } from './queue/redis-dispatch-queue.store';
 import { AutoMatchStrategy } from './strategies/auto-match.strategy';
 import { DispatchStrategyResolver } from './strategies/dispatch-strategy.resolver';
@@ -48,6 +49,7 @@ import { RosterService } from './roster.service';
     DispatchService,
     BookingsService,
     DispatchNotifier,
+    QueueNotifier,
     ForceAssignService,
     ReassignService,
     RosterService,

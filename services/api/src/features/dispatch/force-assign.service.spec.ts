@@ -184,7 +184,9 @@ function build(
         Promise.resolve(over.driverAttrs ?? [attrs()]),
       ),
     } as unknown as DriversService,
-    new DispatchNotifier(realtime, transitions),
+    new DispatchNotifier(realtime, transitions, {
+      sendPush: jest.fn(() => Promise.resolve()),
+    } as unknown as DriversService),
     { DEFAULT_CITY_ID: CITY } as Env,
   );
 

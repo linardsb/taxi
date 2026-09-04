@@ -1,12 +1,16 @@
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import type { ApiClient } from '@/features/auth';
 import type { T } from '@/features/i18n';
+import {
+  routeNotification,
+  type NotificationRoute,
+} from './route-notification';
 
 export type PushRegistration = 'registered' | 'no_project' | 'unavailable';
 
-/** The Android channel the nudge lands on — `channelId` in the api's Expo request. */
+/** The Android channel the nudge AND the offer push land on — `channelId` in the api's Expo request. */
 export const PRESENCE_CHANNEL = 'presence';
 
 /**
@@ -50,22 +54,70 @@ export async function registerPushToken(
   }
 }
 
+export interface NotificationHandlers {
+  /** A tap on a notification — background, or the cold-start response. */
+  onTap(route: NotificationRoute): void;
+  /** A notification delivered while the app is in the foreground. */
+  onReceived?(route: NotificationRoute): void;
+}
+
 /**
- * A nudge arriving while the app is foregrounded still shows; a tap on one
- * lands on the router gate, which decides between the banner and home.
+ * `getLastNotificationResponseAsync` answers with the SAME response on every
+ * call after a cold-start tap; without this a re-mount of the registrar would
+ * route that tap again, on top of whatever the driver navigated to since.
+ * Keyed by the notification id, so each tap routes exactly once per process.
  */
-export function installNotificationHandling(onTap: () => void): () => void {
+const routedColdStartTaps = new Set<string>();
+
+/**
+ * Foreground presentation, taps, and the cold-start tap (#14, #15).
+ *
+ * An OFFER arriving while the app is active is suppressed: the socket path
+ * already showed the card, played the tone and buzzed, and a second banner
+ * plus sound for the same card is noise. Everything else — the offline
+ * nudge included — still shows in the foreground, as before.
+ */
+export function installNotificationHandling(
+  handlers: NotificationHandlers,
+): () => void {
   Notifications.setNotificationHandler({
-    handleNotification: () =>
-      Promise.resolve({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
+    handleNotification: (notification) => {
+      const route = routeNotification(notification.request.content.data);
+      const quiet =
+        route.kind === 'offer' && AppState.currentState === 'active';
+      return Promise.resolve({
+        shouldShowBanner: !quiet,
+        shouldShowList: !quiet,
+        shouldPlaySound: !quiet,
         shouldSetBadge: false,
-      }),
+      });
+    },
   });
-  const sub = Notifications.addNotificationResponseReceivedListener(() =>
-    onTap(),
+  const tapped = Notifications.addNotificationResponseReceivedListener(
+    (response) =>
+      handlers.onTap(
+        routeNotification(response.notification.request.content.data),
+      ),
   );
-  return () => sub.remove();
+  const received = Notifications.addNotificationReceivedListener(
+    (notification) =>
+      handlers.onReceived?.(
+        routeNotification(notification.request.content.data),
+      ),
+  );
+  void Notifications.getLastNotificationResponseAsync()
+    .then((response) => {
+      if (!response) return;
+      const id = response.notification.request.identifier;
+      if (routedColdStartTaps.has(id)) return;
+      routedColdStartTaps.add(id);
+      handlers.onTap(
+        routeNotification(response.notification.request.content.data),
+      );
+    })
+    .catch(() => undefined);
+  return () => {
+    tapped.remove();
+    received.remove();
+  };
 }

@@ -566,7 +566,7 @@ describe('rides (integration)', () => {
         .expect(404);
     });
 
-    it('refuses a driver token on both new routes (failure)', async () => {
+    it('refuses a driver token on the quote route, and 404s them on a ride that is not theirs (failure)', async () => {
       const driverSession = await signIn(p(46), 'driver');
       const auth = `Bearer ${driverSession.accessToken}`;
 
@@ -576,10 +576,14 @@ describe('rides (integration)', () => {
         .send({ pickup: CENTRE, destination: RIX })
         .expect(403);
 
+      // Since #15 the read admits drivers (per-route `@Roles('rider',
+      // 'driver')`) and answers a ride that is not theirs with the same 404 as
+      // a missing one — the driver matrix, including the dispatcher's 403,
+      // lives in `lifecycle/ride-read.integration.spec.ts`.
       await http
         .get(`/rides/${randomUUID()}`)
         .set('authorization', auth)
-        .expect(403);
+        .expect(404);
     });
   });
 

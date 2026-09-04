@@ -27,6 +27,7 @@ import {
   DISPATCH_QUEUE_STORE,
   type DispatchQueueStore,
 } from './queue/dispatch-queue.store';
+import { QueueNotifier } from './queue/queue-notifier';
 import { DispatchStrategyResolver } from './strategies/dispatch-strategy.resolver';
 
 @Injectable()
@@ -45,6 +46,7 @@ export class DispatchService {
     private readonly drivers: DriversService,
     private readonly realtime: RealtimeService,
     private readonly notifier: DispatchNotifier,
+    private readonly queueNotifier: QueueNotifier,
     @Inject(DISPATCH_QUEUE_STORE) private readonly queue: DispatchQueueStore,
     @Inject(KV_STORE) private readonly kv: KeyValueStore,
     @Inject(APP_ENV) private readonly env: Env,
@@ -155,7 +157,10 @@ export class DispatchService {
 
     // ── committed ──
     this.transitions.emitStatus(transitioned, 'requested');
-    this.notifier.emitOffer(offer);
+    // The OPERATIVE method, not `request.paymentMethod`: the rider may have
+    // switched before the lock closes at `accepted`, and the card must show
+    // what they will actually pay with.
+    this.notifier.emitOffer(offer, found.ride.paymentMethod);
 
     this.logger.log({
       event: 'dispatch.offer.sent',
@@ -283,7 +288,11 @@ export class DispatchService {
     if (offer.source === 'geozone_queue') {
       try {
         const geozoneId = await this.rides.findGeozoneId(offer.rideId);
-        if (geozoneId) await this.queue.sendToBack(geozoneId, driverId);
+        if (geozoneId) {
+          await this.queue.sendToBack(geozoneId, driverId);
+          // Everyone behind the demoted driver just moved up one (#15).
+          await this.queueNotifier.broadcast(geozoneId);
+        }
       } catch (error) {
         this.logger.warn({
           event: 'dispatch.queue.demote_failed',

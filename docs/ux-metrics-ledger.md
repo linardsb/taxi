@@ -22,8 +22,8 @@ How to use: each ticket's acceptance criteria bind to rows here (column "Ticket"
 | Metric (outcome) | Target | Ticket | Measured how | Latest |
 |---|---|---|---|---|
 | Offer card answers accept/decline without any further tap (fare, keep-€, destination, pickup km/ETA, €/km, payment method, rider rating) | 100% of offers; 20–30 s timer | #15 | offer-card spec review + field feedback | — |
-| Driver can state their queue position and why any skip happened | position always visible; every deviation carries a one-line explanation | #15 (+#10 engine) | UI review; driver interviews at pilot | — |
-| Per-trip receipt shows constant arithmetic: rider paid → 15% → driver kept | 100% of trips, no exceptions ever | #15 (+#12 ledger) | receipt spec + ledger tests | — |
+| Driver can state their queue position and why any skip happened | position always visible; every deviation carries a one-line explanation | #15 (+#10 engine) | UI review; driver interviews at pilot | shipped #15 (`driver:queue` on every enrolment/demotion, `QueuePosition` on home + card), device-day verification pending; the per-deviation explanation is still open |
+| Per-trip receipt shows constant arithmetic: rider paid → 15% → driver kept | 100% of trips, no exceptions ever | #15 (+#12 ledger) | receipt spec + ledger tests | shipped #15 (`Receipt` renders `ride.split` from `complete()` / `GET /rides/:rideId`; `receipt.test.tsx`), device-day verification pending |
 | Time from ride completed → earnings visible in today's total | ≤ 5 s | #15 | field check | — |
 | Offer → accept rate | tracked, no target (informational — never a penalty input) | #15 | platform data | — |
 | Driver-app fix gap during a shift (GPS stream continuity) | per spike #4 pass criteria (moving gaps p95 ≤ 30 s, max ≤ 120 s) | #14 | fixes telemetry | — |

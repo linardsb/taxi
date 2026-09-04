@@ -31,9 +31,10 @@ import { DispatchService } from '../../dispatch';
  * `+371260` is this spec file's E.164 range — see phoneFor(). `+371210` (auth),
  * `+371220` (drivers), `+371230` (driver-location gateway), `+371240` (rides),
  * `+371250` (dispatch), `+371270` (payments), `+371280`
- * (tracking/notifications) and `+371290` (`scripts/mint-tracked-ride.ts`, the
+ * (tracking/notifications), `+371290` (`scripts/mint-tracked-ride.ts`, the
  * only claimant that is not a spec — it runs against the DEV database, where
- * the collision is permanent) are taken, and `users.phone` is unique across a
+ * the collision is permanent) and `+371300` (the driver ride read, #15) are
+ * taken, and `users.phone` is unique across a
  * run that never resets the database, so a collision reuses another file's
  * user — and its ROLE, which surfaces as a 403 naming nothing.
  */

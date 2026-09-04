@@ -65,6 +65,21 @@ export class GeozonesRepository {
     return row;
   }
 
+  /** One zone by id — the queue notifier needs its slug for `driver:queue` (#15). */
+  async findById(id: string): Promise<ResolvedGeozone | undefined> {
+    const [row] = await this.db
+      .select({
+        id: geozones.id,
+        slug: geozones.slug,
+        name: geozones.name,
+        queueModeEnabled: geozones.queueModeEnabled,
+      })
+      .from(geozones)
+      .where(eq(geozones.id, id))
+      .limit(1);
+    return row;
+  }
+
   /**
    * The city's whole zone CATALOG, ordered by name — what the board frame
    * needs so Dina sees every configured zone, not only the ones with a car in

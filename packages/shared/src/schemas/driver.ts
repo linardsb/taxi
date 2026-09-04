@@ -58,6 +58,15 @@ export type DriverStatusUpdate = z.infer<typeof driverStatusUpdateSchema>;
 export const driverMeSchema = z.object({
   profile: driverProfileSchema,
   vehicles: z.array(vehicleSchema),
+  /**
+   * The ride this driver is committed to right now, or null (#15). Read from
+   * the RIDES table (`ACTIVE_DRIVER_RIDE_STATUSES`), never from
+   * `drivers.status`: that column is a derived cache, and the offline-mid-offer
+   * accept (#61 chain A) is exactly the case where it lies. This is how a
+   * cold-started app lands on the active-ride screen instead of home.
+   * `.default(null)` keeps every pre-#15 payload parsing.
+   */
+  activeRideId: z.string().uuid().nullable().default(null),
 });
 export type DriverMe = z.infer<typeof driverMeSchema>;
 

@@ -3,9 +3,27 @@ import {
   centsSchema,
   commissionCentsFor,
   commissionPctSchema,
+  formatEur,
   nonNegativeCentsSchema,
   nonPositiveCentsSchema,
 } from '../src/money';
+
+describe('formatEur (#15)', () => {
+  it('formats whole and fractional euros, symbol first (expected)', () => {
+    expect(formatEur(1240)).toBe('€12.40');
+    expect(formatEur(8420)).toBe('€84.20');
+  });
+
+  it('pads single-digit cents and zero (edge)', () => {
+    expect(formatEur(5)).toBe('€0.05');
+    expect(formatEur(0)).toBe('€0.00');
+  });
+
+  it('keeps the sign in front of the symbol and truncates a float (failure)', () => {
+    expect(formatEur(-186)).toBe('-€1.86');
+    expect(formatEur(12.9)).toBe('€0.12');
+  });
+});
 
 describe('cent primitives', () => {
   it('parses whole cents, signed and unsigned (expected)', () => {

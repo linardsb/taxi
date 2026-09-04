@@ -18,6 +18,7 @@ import { MAX_OFFER_ATTEMPTS } from './dispatch.policy';
 import type { DispatchRepository, OfferRef } from './dispatch.repository';
 import { DispatchService } from './dispatch.service';
 import { InMemoryDispatchQueueStore } from './queue/in-memory-dispatch-queue.store';
+import type { QueueNotifier } from './queue/queue-notifier';
 import type { DispatchStrategyResolver } from './strategies/dispatch-strategy.resolver';
 
 const CITY = '00000000-0000-4000-8000-000000000001';
@@ -75,6 +76,8 @@ function build(
     claimDriver?: boolean;
     /** What the drivers slice reports for the accepted driver at warn time. */
     driverStatus?: 'offline' | 'on_ride';
+    /** The zone a declined ride was dispatched from — `null` = no zone (#15). */
+    geozoneId?: string | null;
   } = {},
 ) {
   /**
@@ -127,6 +130,7 @@ function build(
     assignDriver,
     findWithQuote: jest.fn(() => Promise.resolve(undefined)),
     setGeozone: jest.fn(() => Promise.resolve()),
+    findGeozoneId: jest.fn(() => Promise.resolve(over.geozoneId ?? null)),
   } as unknown as RidesRepository;
 
   const emitStatus = jest.fn();
@@ -161,6 +165,8 @@ function build(
   const incrWithTtl = jest.fn(() => Promise.resolve(over.incrResult ?? 1));
   const kv = { incrWithTtl } as unknown as KeyValueStore;
 
+  const broadcast = jest.fn(() => Promise.resolve());
+
   const service = new DispatchService(
     db,
     offers,
@@ -181,7 +187,10 @@ function build(
         ),
     } as unknown as DriversService,
     realtime,
-    new DispatchNotifier(realtime, transitions),
+    new DispatchNotifier(realtime, transitions, {
+      sendPush: jest.fn(() => Promise.resolve()),
+    } as unknown as DriversService),
+    { broadcast } as unknown as QueueNotifier,
     new InMemoryDispatchQueueStore(),
     kv,
     { DEFAULT_CITY_ID: CITY } as Env,
@@ -190,6 +199,7 @@ function build(
   return {
     service,
     events,
+    broadcast,
     offers,
     insertAudit,
     revokePendingForRide,
@@ -384,6 +394,27 @@ describe('DispatchService', () => {
       await expect(service.decline(DRIVER_ID, OFFER_ID)).rejects.toBeInstanceOf(
         ConflictException,
       );
+    });
+
+    it('broadcasts the zone ranks after a geozone-queue demotion (#15, expected)', async () => {
+      const { service, offers, broadcast } = build({ geozoneId: CITY });
+      (offers.declineOffer as jest.Mock).mockResolvedValue(
+        offerRef({ status: 'declined', source: 'geozone_queue' }),
+      );
+
+      await service.decline(DRIVER_ID, OFFER_ID);
+
+      // Everyone behind the demoted driver moved up one; the whole zone hears
+      // its new ranks, not only the driver who declined.
+      expect(broadcast).toHaveBeenCalledWith(CITY);
+    });
+
+    it('does not broadcast for an auto-match decline — no queue moved (#15, edge)', async () => {
+      const { service, broadcast } = build({ geozoneId: CITY });
+
+      await service.decline(DRIVER_ID, OFFER_ID); // offerRef() is auto_match
+
+      expect(broadcast).not.toHaveBeenCalled();
     });
   });
 

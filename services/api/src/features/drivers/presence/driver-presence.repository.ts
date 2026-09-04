@@ -72,6 +72,27 @@ export class DriverPresenceRepository {
     }));
   }
 
+  /**
+   * One driver's push token and language — the `findDueNudges` select for a
+   * single id (#15's offer push). `undefined` for a driver with no row yet.
+   */
+  async findPushTarget(
+    userId: string,
+  ): Promise<{ pushToken: string | null; language: Language } | undefined> {
+    const [row] = await this.db
+      .select({ pushToken: drivers.pushToken, language: users.language })
+      .from(drivers)
+      .innerJoin(users, eq(users.id, drivers.userId))
+      .where(eq(drivers.userId, userId))
+      .limit(1);
+    return row
+      ? {
+          pushToken: row.pushToken,
+          language: languageSchema.parse(row.language),
+        }
+      : undefined;
+  }
+
   /** The send lock: nulling the column IS the claim. `false` = someone else got there first. */
   async claimNudge(userId: string): Promise<boolean> {
     const [row] = await this.db

@@ -177,3 +177,26 @@ export function isPaymentMethodLocked(status: RideStatus): boolean {
   ];
   return lockedFrom.includes(status);
 }
+
+/**
+ * The driver's four steps, in order. Every pair is an edge of
+ * `ALLOWED_TRANSITIONS`, which is what lets the api check `ride.status ===
+ * from` and be done: for a FIXED step table a `from` mismatch IS the
+ * illegality, so a separate `canTransition` call would be dead logic. (Cancel
+ * is different — there `to` varies by actor, so it checks `canTransition`.)
+ *
+ * `from` doubles as the api's 409 error code: `ride_not_arrived` for a
+ * `start` on a ride that never arrived.
+ *
+ * Shared since #15: the driver app renders one primary button per status and
+ * needs the same status → step table the api guards with. One definition, so
+ * the button the app shows is always the step the api will accept.
+ */
+export const DRIVER_STEPS = {
+  arriving: { from: 'accepted', to: 'arriving' },
+  arrived: { from: 'arriving', to: 'arrived' },
+  start: { from: 'arrived', to: 'in_progress' },
+  complete: { from: 'in_progress', to: 'completed' },
+} as const satisfies Record<string, { from: RideStatus; to: RideStatus }>;
+
+export type DriverStep = keyof typeof DRIVER_STEPS;

@@ -1,15 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  formatEur,
+  formatMessage,
   RT,
   type AssignmentSource,
+  type PaymentMethodType,
   type RideOffer,
+  type RideOfferEvent,
   type RideStatus,
 } from '@taxi/shared';
+import { DriversService } from '../drivers';
 import { RealtimeService } from '../realtime';
 import { RideTransitionService, type TransitionedRide } from '../rides';
 
 /** What a revoked sibling offer needs for its `ride:offer_revoked`. */
 export type RevokedRef = { offerId: string; driverId: string };
+
+/**
+ * The most bytes of wire offer the push `data` may carry (#15).
+ *
+ * `derived`: Expo's push payload limit is 4,096 bytes for the whole message.
+ * Title + body ≤ ~120 B in any of the three catalogs, `kind` + the three ids
+ * + `expiresAt` ≤ ~200 B, so 2,048 B for the offer JSON leaves ~1.7 KB of
+ * headroom. The only unbounded strings in an offer are the two addresses
+ * (`addressPointSchema.address` has no max); an offer that does not fit
+ * still pushes with the ids alone, and the tap lands on whatever card the
+ * socket already delivered.
+ */
+export const OFFER_PUSH_PAYLOAD_MAX_BYTES = 2_048;
 
 /**
  * The post-commit socket tail of the dispatch slice. Everything here runs
@@ -23,16 +41,28 @@ export class DispatchNotifier {
   constructor(
     private readonly realtime: RealtimeService,
     private readonly transitions: RideTransitionService,
+    private readonly drivers: DriversService,
   ) {}
 
-  /** `rideOfferEventSchema` wants ISO strings where the domain holds `Date`s. */
-  emitOffer(offer: RideOffer): void {
+  /**
+   * `rideOfferEventSchema` wants ISO strings where the domain holds `Date`s,
+   * plus the operative payment method the offer row does not carry (#15).
+   *
+   * Two deliveries of the same card: the socket for a live app, a push for a
+   * backgrounded or killed one. The push carries the wire offer itself so a
+   * tap on a cold app can render the card without a read that does not
+   * exist; the app dedupes by offer id, so whichever arrives first shows it
+   * and the other is a no-op.
+   */
+  emitOffer(offer: RideOffer, paymentMethod: PaymentMethodType): void {
+    const wire: RideOfferEvent = {
+      ...offer,
+      sentAt: offer.sentAt.toISOString(),
+      expiresAt: offer.expiresAt.toISOString(),
+      paymentMethod,
+    };
     try {
-      this.realtime.emitToDriver(offer.driverId, RT.rideOffer, {
-        ...offer,
-        sentAt: offer.sentAt.toISOString(),
-        expiresAt: offer.expiresAt.toISOString(),
-      });
+      this.realtime.emitToDriver(offer.driverId, RT.rideOffer, wire);
     } catch (error) {
       this.logger.warn({
         event: 'dispatch.offer.notify_failed',
@@ -42,6 +72,38 @@ export class DispatchNotifier {
         at: new Date().toISOString(),
       });
     }
+    this.pushOffer(wire);
+  }
+
+  /**
+   * Fire-and-forget on purpose: the sweeper's tick must never wait on Expo's
+   * HTTP timeout, and `sendPush` already logs every outcome. `data` values are
+   * strings only — Expo forwards them verbatim.
+   */
+  private pushOffer(wire: RideOfferEvent): void {
+    const json = JSON.stringify(wire);
+    const fits =
+      Buffer.byteLength(json, 'utf8') <= OFFER_PUSH_PAYLOAD_MAX_BYTES;
+    const data: Record<string, string> = {
+      kind: 'offer',
+      offerId: wire.id,
+      rideId: wire.rideId,
+      expiresAt: wire.expiresAt,
+      ...(fits ? { offer: json } : {}),
+    };
+    void this.drivers
+      .sendPush(
+        wire.driverId,
+        (language) => ({
+          title: formatMessage(language, 'push.offer_title'),
+          body: formatMessage(language, 'push.offer_body', {
+            amount: formatEur(wire.split.driverNetCents),
+          }),
+          data,
+        }),
+        'dispatch.offer.push',
+      )
+      .catch(() => undefined);
   }
 
   /**
