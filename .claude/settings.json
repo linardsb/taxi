@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py\""
+            "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py\"; [ -f \"$f\" ] || f=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/hooks/pre_tool_use.py\"; uv run \"$f\""
           }
         ]
       }
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop_check.py\""
+            "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/stop_check.py\"; [ -f \"$f\" ] || f=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/hooks/stop_check.py\"; uv run \"$f\""
           }
         ]
       }
