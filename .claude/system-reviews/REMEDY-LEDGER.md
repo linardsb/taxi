@@ -71,9 +71,14 @@ fixes for what they missed:
   such script**. The second half is the one that matters: a derived count alone would *not* have caught
   `@taxi/rider` and `@taxi/driver` running with no lint and no test, because the dry run drops the same
   absent tasks the real run does and the two agree at 18. Naming them is what makes the hole visible.
-- It distinguishes **short** (exit 0, fewer tasks than the graph) from **red** (a task failed). The first
-  draft conflated them and labelled a genuinely red run "GATE SHORT — a task name that matches nothing
-  exits 0", which is false about a run that failed. Found by testing the red path deliberately.
+- It distinguishes **short** (exit 0, but the gate did not check the graph) from **red** (a task failed),
+  and treats three separate zero-exit cases as short: fewer tasks than the graph, no summary printed at
+  all, and **zero tasks run**. Both refinements came from running the thing rather than reasoning about
+  it. The first draft conflated short with red and labelled a genuinely red run "GATE SHORT", which is
+  false about a run that failed. The second draft fixed that and thereby made the guard **unreachable in
+  the case it exists for**: `pnpm turbo run build --filter @taxi/config` prints `Tasks: 0 successful,
+  0 total` and exits 0, and `0 == 0` made the equality test agree that all was well — `observed`, the
+  script printed a green ``observed — … exit 0`` block for a gate that checked nothing. Now exit 3.
 - `inherited-figures.sh` gains `--pr <N>` (the published body is the surface no working-tree grep reaches)
   and degrades to a printed note + exit 0 when there is no prior surface, which is the ordinary case for a
   docs-only PR. A check that errors on the ordinary case gets removed from the skill that calls it.

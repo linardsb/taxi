@@ -113,22 +113,22 @@ fi
 # TS6053 — a build/typecheck race, not code. CLAUDE.md's parity gate also
 # specifies a cleared dist. rmSync, not rm -r: the session hook blocks rm -r.
 if [ "$clean" -eq 1 ]; then
-  node -e '
-    const fs = require("fs");
-    const paths = [
-      "apps/dispatch/.next",
-      "apps/dispatch/tsconfig.tsbuildinfo",
-      "packages/shared/dist",
-      "db/dist",
-      "services/api/dist",
-    ];
-    for (const p of paths) {
-      if (fs.existsSync(p)) {
-        fs.rmSync(p, { recursive: true, force: true });
-        console.log("cleared " + p);
-      }
-    }
-  '
+  # Enumerated by find, not by a hardcoded list: a package added later would be
+  # silently missed by a list, and this script's header claims a CI-parity record.
+  find apps packages services db \( -type d -name node_modules \) -prune -o \
+    \( \( -type d \( -name dist -o -name .next \) \) -o -name '*.tsbuildinfo' \) -print 2>/dev/null \
+    | node -e '
+        const fs = require("fs");
+        let s = "";
+        process.stdin.on("data", (d) => (s += d));
+        process.stdin.on("end", () => {
+          for (const p of s.split("\n")) {
+            if (!p) continue;
+            fs.rmSync(p, { recursive: true, force: true });
+            console.log("cleared " + p);
+          }
+        });
+      '
 elif [ -d apps/dispatch/.next ]; then
   echo "WARNING: apps/dispatch/.next exists. A stale one reddens the dispatch typecheck" >&2
   echo "         in ~25 s (TS6053) — a build/typecheck race, not code. Re-run with" >&2
@@ -169,9 +169,23 @@ packages=$(
 # RED gate also runs fewer tasks than it planned, and calling that "short" would
 # mislabel every genuine failure. Short means: it claimed success while running
 # less than the graph. So it is only asked when the gate exited 0.
+#
+# THREE ways a zero exit is not a pass, all reachable — the third was found by
+# running it, after an earlier version of this guard claimed to close it:
+#   - it ran fewer tasks than the graph holds;
+#   - it printed no summary at all, so there is nothing to compare;
+#   - it ran ZERO tasks and said so. `turbo run build --filter @taxi/config`
+#     prints "Tasks: 0 successful, 0 total" and exits 0. Nothing was checked,
+#     and 0 == 0 makes a naive equality test agree that all is well.
 short_gate=0
-if [ "$rc" -eq 0 ] && [ -n "${expected:-}" ] && [ -n "${successful:-}" ] && [ "$successful" != "$expected" ]; then
-  short_gate=1
+if [ "$rc" -eq 0 ]; then
+  if [ -z "${tasks:-}" ] || [ -z "${successful:-}" ]; then
+    short_gate=1
+  elif [ "$successful" -eq 0 ] 2>/dev/null; then
+    short_gate=1
+  elif [ -n "${expected:-}" ] && [ "$successful" != "$expected" ]; then
+    short_gate=1
+  fi
 fi
 
 json="$root/.claude/last-gate.json"
@@ -210,8 +224,8 @@ echo
 if [ "$rc" -eq 0 ] && [ "$short_gate" -eq 0 ]; then
   echo "\`observed\` — \`${gate[*]}\`, at \`$head_short\`, exit 0:"
 elif [ "$short_gate" -eq 1 ]; then
-  echo "**GATE SHORT** — exit 0, but only ${successful:-0} of $expected tasks ran at \`$head_short\`."
-  echo "A task name that matches nothing exits 0. This record is NOT a pass."
+  echo "**GATE SHORT** — exit 0, but ${successful:-no} of ${expected:-?} tasks ran at \`$head_short\`."
+  echo "A gate that runs nothing exits 0 and prints \`0 successful, 0 total\`. This record is NOT a pass."
 else
   echo "**GATE RED** (exit $rc) — \`${gate[*]}\`, at \`$head_short\`:"
   [ "$rc" -eq 137 ] && echo "(137 = killed. A red @taxi/api jest run does not exit; turbo waits, then kills it.)"
