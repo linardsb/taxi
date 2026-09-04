@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   rideCancelSchema,
   ridePaymentMethodUpdateSchema,
+  rideQuoteBodySchema,
+  rideQuotePreviewSchema,
   rideRequestBodySchema,
   rideRequestSchema,
 } from '../src/schemas/ride';
@@ -152,5 +154,80 @@ describe('ridePaymentMethodUpdateSchema', () => {
 describe('rideCancelSchema', () => {
   it('defaults reason to null — a cancel need not explain itself (edge)', () => {
     expect(rideCancelSchema.parse({}).reason).toBeNull();
+  });
+});
+
+describe('rideQuoteBodySchema', () => {
+  const quoteBody = {
+    pickup: { location: riga, address: 'Brīvības iela 1, Rīga' },
+    destination: {
+      location: { lat: 56.9236, lng: 23.9711 },
+      address: 'Lidosta RIX',
+    },
+  };
+
+  it('parses a minimal preview body with the booking defaults applied (expected)', () => {
+    const parsed = rideQuoteBodySchema.parse(quoteBody);
+    expect(parsed.stops).toEqual([]);
+    expect(parsed.category).toBe('standard');
+    expect(parsed.options).toEqual({ childSeat: false, femaleDriver: false });
+  });
+
+  it('strips paymentMethod rather than rejecting it — `.pick()` is non-strict (edge)', () => {
+    // Asserted rather than assumed: the app must not be able to make the fare
+    // depend on how the rider pays, and the failure mode if this were strict is
+    // a 400 on every preview from a client that sends the booking body.
+    const parsed = rideQuoteBodySchema.parse({
+      ...quoteBody,
+      paymentMethod: 'card',
+      vehicleCount: 3,
+      scheduledFor: '2030-01-01T00:00:00.000Z',
+    });
+    expect(parsed).not.toHaveProperty('paymentMethod');
+    expect(parsed).not.toHaveProperty('vehicleCount');
+    expect(parsed).not.toHaveProperty('scheduledFor');
+  });
+
+  it('refuses a body with no destination — a preview needs a corridor (failure)', () => {
+    expect(
+      rideQuoteBodySchema.safeParse({ pickup: quoteBody.pickup }).success,
+    ).toBe(false);
+  });
+});
+
+describe('rideQuotePreviewSchema', () => {
+  const quote = {
+    model: 'upfront_fixed',
+    currency: 'EUR',
+    totalCents: 840,
+    breakdown: {
+      baseCents: 200,
+      distanceCents: 540,
+      timeCents: 100,
+      discountCents: 0,
+    },
+  };
+
+  it('carries the quote a rider is shown before booking (expected)', () => {
+    expect(rideQuotePreviewSchema.parse({ quote }).quote.totalCents).toBe(840);
+  });
+
+  it("drops a split rather than forwarding it — the commission is the driver's card, not the rider's (edge)", () => {
+    const parsed = rideQuotePreviewSchema.parse({
+      quote,
+      split: {
+        currency: 'EUR',
+        totalCents: 840,
+        commissionPct: 15,
+        commissionSource: 'platform_base',
+        commissionCents: 126,
+        driverNetCents: 714,
+      },
+    });
+    expect(parsed).not.toHaveProperty('split');
+  });
+
+  it('refuses a preview with no quote (failure)', () => {
+    expect(rideQuotePreviewSchema.safeParse({}).success).toBe(false);
   });
 });

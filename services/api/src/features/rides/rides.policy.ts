@@ -50,6 +50,42 @@ export const dispatcherBookingRateKey = (dispatcherId: string): string =>
   `rides:rate:dispatcher:${dispatcherId}`;
 
 /**
+ * The QUOTE-PREVIEW cap (#16). `POST /rides/quote` spends a paid Routes call
+ * and creates nothing, so it needs its own bound — the booking cap above bounds
+ * bookings, and a preview is not one.
+ *
+ * `derived`, and stated with the condition it assumes:
+ * - A booking attempt produces 1 preview when the dropoff is chosen, plus 1 per
+ *   re-edit; a rider who re-edits twice = **3 previews per attempt**.
+ * - A rider comparing destinations across one 600 s window at 5 attempts is
+ *   3 × 5 = **15 previews** — the honest worst case.
+ * - **30 is 2× that.**
+ *
+ * It assumes the same "a real rider re-quotes a handful of times at most" model
+ * `RIDE_REQUEST_MAX_PER_WINDOW` already states. That model is itself a guess
+ * with no traffic behind it, and it carries the same "tune against the first
+ * Google bill" trigger as `COORD_PRECISION`.
+ *
+ * The bill this actually bounds is smaller than 30 route calls: a preview and
+ * the booking that follows it share a `routeCacheKey` (same `'quote'` caller,
+ * same coordinates rounded to `COORD_PRECISION`), so confirming after previewing
+ * costs ONE paid call, not two. That is pinned by the E13 case in
+ * `rides.integration.spec.ts` rather than asserted here.
+ *
+ * Shares `RIDE_REQUEST_WINDOW_SECONDS` — one window length for the whole slice.
+ */
+export const RIDE_QUOTE_MAX_PER_WINDOW = 30;
+
+/**
+ * A SEPARATE key from `rideRequestRateKey`, and this is the load-bearing part.
+ * Sharing one would let a rider who previewed 20 times find they can no longer
+ * book — precisely the failure `dispatcherBookingRateKey` was written to
+ * prevent, arriving by a new door.
+ */
+export const rideQuoteRateKey = (riderId: string): string =>
+  `rides:quote:rate:${riderId}`;
+
+/**
  * A booking attempt's key outlives the attempt by a day.
  *
  * Long is safe here in a way it would NOT be for server-side dedupe: the client

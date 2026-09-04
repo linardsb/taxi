@@ -43,3 +43,48 @@ export const ADDRESS_RESOLVE_MAX_PER_WINDOW = 30;
 
 export const addressResolveRateKey = (dispatcherId: string): string =>
   `geo:resolve:rate:${dispatcherId}`;
+
+/**
+ * The RIDER's caps (#16). Both routes widened to `'rider'` when the rider app
+ * gained a dropoff field, and widening a paid route to a POPULATION without
+ * resizing the cap would be a regression: the two above are sized for ONE HUMAN
+ * AT A CONSOLE RUNNING A SHIFT, and a rider is one person booking one ride.
+ *
+ * `derived` from the same debounce model this file already carries (~5 requests
+ * per address field at a 300 ms debounce — `expected`, unmeasured, plan Q5's
+ * figure), and stated with what it assumes:
+ * - A rider books one ride at a time. Pickup is GPS-defaulted or a saved place
+ *   (typically 0 searches); the dropoff is typed → **~5 searches per attempt**.
+ * - A rider who re-edits the dropoff twice inside the same minute is
+ *   3 × 5 = **15 searches/min** — the honest worst case.
+ * - **30 is 2× that**, and **4× tighter than the dispatcher's 120**, which is
+ *   the whole point of a separate constant. A client with a broken debounce
+ *   (~10 req/s ≈ 600/min) is cut at 30.
+ *
+ * Same "tune against the first Google bill" trigger as every other cap here.
+ */
+export const RIDER_ADDRESS_SEARCH_MAX_PER_WINDOW = 30;
+
+/**
+ * The rider's RESOLVE cap — deliberately generous rather than tight, for the
+ * reason the dispatcher resolve cap above spells out at length: a resolve
+ * TERMINATES the billed Places session, so refusing one converts a $5.00/1,000
+ * completion into 5 × $2.83 = **$14.15/1,000** individual autocomplete requests.
+ * Throttling a resolve costs money rather than saving it.
+ *
+ * `derived`: one resolve per completed field, so the same worst case above gives
+ * **3 resolves/min**. **10 is ~3× that.**
+ */
+export const RIDER_ADDRESS_RESOLVE_MAX_PER_WINDOW = 10;
+
+/**
+ * SEPARATE key namespaces, not shared with the dispatcher keys above. One
+ * person can hold both roles in a small operator, and a shared key would spend
+ * a dispatcher's shift quota on their own rider searches — the same reason
+ * `dispatcherBookingRateKey` exists as its own key.
+ */
+export const riderAddressSearchRateKey = (riderId: string): string =>
+  `geo:search:rate:rider:${riderId}`;
+
+export const riderAddressResolveRateKey = (riderId: string): string =>
+  `geo:resolve:rate:rider:${riderId}`;

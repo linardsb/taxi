@@ -10,9 +10,25 @@
  *   no balance movement, and must NOT import payments: the dependency runs
  *   `PaymentsModule → RidesModule` only, which is why the transition writer and
  *   the repository are exported below.
- * - THERE IS NO `GET /rides/:rideId`. `POST /rides/:rideId/complete` returns the
- *   settled ride, which is what a driver needs at the moment they need it. The
- *   general ride read belongs to #16/#17, which know what they want on it.
+ * - `GET /rides/:rideId` EXISTS NOW, is RIDER-ONLY (#16), AND IT JOINS. A rider
+ *   socket is never auto-joined to its ride room — not on a reconnect, and not
+ *   on its first connect either, since `notifyRider`'s join runs inside
+ *   `POST /rides` and reaches only the sockets alive at that instant. So this
+ *   route joins the caller's sockets as it reads — taking its snapshot AFTER
+ *   the join, so a transition in the read's own round trip is not lost to both
+ *   the room and the body — and the app calls it on every socket `connect`;
+ *   without it the rider is deaf to every `ride:status` — see
+ *   `RidesService.findForRider`. It returns the `rides` row as `toRide`
+ *   projects it, with `split` FORCED NULL: `driverId` and `trackingToken` ARE
+ *   on it, `assignment` is null because `toRide` hardcodes it, and there is no
+ *   driver identity — no name, no plate, no phone — no position and no ETA,
+ *   which are #17's. `split` is stripped rather than merely absent because
+ *   `toRide` populates it once a ride settles; `RiderVisibleRide` puts that in
+ *   the type rather than only in prose. A DRIVER still has no ride read;
+ *   `POST /rides/:rideId/complete` returns the settled ride, which is what they
+ *   need at the moment they need it. #17 extends the rider read, and a
+ *   driver/dispatcher one would move the route to `RideLifecycleController` and
+ *   give it a per-route `@Roles`.
  * - `cancelled_by_system` STILL HAS NO PRODUCTION TRIGGER. The actor is
  *   supported end to end and covered by a spec. #12 was expected to be its
  *   caller via a payment pre-authorization failure, and is NOT: that ticket
@@ -65,6 +81,7 @@
  */
 export { RidesModule } from './rides.module';
 export { RidesService } from './rides.service';
+export type { RiderVisibleRide } from './rider-visible-ride';
 /**
  * Exported ACROSS a slice boundary as a deliberate, documented exception.
  *

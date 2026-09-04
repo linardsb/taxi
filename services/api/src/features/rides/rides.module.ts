@@ -6,6 +6,7 @@ import { RealtimeModule } from '../realtime';
 import { RideLifecycleController } from './lifecycle/ride-lifecycle.controller';
 import { RideLifecycleRepository } from './lifecycle/ride-lifecycle.repository';
 import { RideLifecycleService } from './lifecycle/ride-lifecycle.service';
+import { RideQuoteService } from './ride-quote.service';
 import { RideTransitionService } from './ride-transition.service';
 import { RidesController } from './rides.controller';
 import { RidesRepository } from './rides.repository';
@@ -24,6 +25,7 @@ import { RidesService } from './rides.service';
   controllers: [RidesController, RideLifecycleController],
   providers: [
     RidesService,
+    RideQuoteService,
     RidesRepository,
     RideTransitionService,
     RideLifecycleService,
