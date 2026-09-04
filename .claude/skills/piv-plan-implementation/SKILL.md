@@ -354,6 +354,13 @@ Design unit tests with fixtures and assertions following existing testing approa
 
 <Scope and requirements based on project standards>
 
+**If the ticket touches a socket, a room join, or anything under `features/realtime`**, one integration
+test here must **connect the client in the order the app actually does** (if the app books first and
+connects after, the test books first and connects after) and assert that an event *arrives*. A unit test
+that replaces the socket with a handler map pins the wiring, not delivery — #16's status screen never
+received a single `ride:status` event and every such test was green (C1). Name the test and the order it
+uses, so the reviewer can check it is the app's order and not the harness's convenient one.
+
 ### Edge Cases
 
 <List specific edge cases that must be tested for this feature. Every edge case must NAME where it is
@@ -438,7 +445,13 @@ It also tends to be the ticket's own success condition, because that is the inte
 
 ## OPEN QUESTIONS / ASSUMPTIONS
 
-<Surface anything still uncertain instead of silently guessing. List the assumptions this plan makes, and any question that — if answered differently — would change the plan. Flag unresolved critical questions for the user before execution.>
+<Surface anything still uncertain instead of silently guessing. List the assumptions this plan makes, and any question that — if answered differently — would change the plan. Flag unresolved critical questions for the user before execution.
+
+A question about ORDERING or TIMING — who connects first, what fires before what, which of two responses
+wins, what a late arrival overwrites — must be answered with the WORST case, not the typical one. #16's Q4
+asked whether the rider socket had to exist before `POST /rides` and answered "a stale first frame"; the
+worst case was "never updates again", and the implementation followed the answer into a Critical.>
+
 
 ## NOTES (open canvas)
 
