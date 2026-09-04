@@ -106,7 +106,11 @@ Not covered today: `offer-state.test.ts:67` and `use-offers.test.tsx:228` both o
 card is still up.
 
 **Fix**: add `lastOfferId: string | null` to `OfferState`, set it inside `cleared` (so all five
-clearing paths are covered), and `noop` when `incoming.offer.id === state.lastOfferId`.
+clearing paths are covered), and `noop` when `incoming.offer.id === state.lastOfferId`. Checked
+that this actually reaches the reproduced case: `accepted` does route through `cleared` (`:180`),
+and `cleared` is the only clearing helper — its five call sites are `:155`, `:180`, `:203`, `:211`,
+`:225`. A re-offer of the same *ride* after a genuine expiry carries a new offer **row id**, so it
+is not blocked by this.
 
 ### F3 · High · `apps/driver/src/features/active-ride/active-ride-state.ts:152` — a stale `GET /rides/:id` reverts a completed step
 
@@ -155,7 +159,20 @@ accept". A blind driver accepts without knowing whether they are handling cash.
 **`home-screen.tsx:82`** — same bug: `accessibilityLabel={t('driver.action.earnings')}` wrapping
 `<EarningsCard>`, so the day's earnings figure is gone from the audio channel. The new test
 encodes the regression rather than catching it — `home-screen.test.tsx:200` asserts the accessible
-name is *exactly* that label.
+name is that label.
+
+**`observed`**, because the "label replaces the subtree" mechanism is a claim and not worth
+inheriting — probe appended to the existing `home-screen.test.tsx` harness (`earnedCents: 8420`),
+run, then reverted:
+
+```
+accessibilityLabel      = "Ieņēmumi"
+child text /84/ present = true          <- the amount IS rendered
+queryByRole('button', { name: /84[.,]20/ }) = NOT FOUND
+```
+
+So the €84.20 is on screen and absent from the accessible name. The mechanism is confirmed, not
+assumed.
 
 **Fix**: compose rather than replace — append the payment label (and pickup) to `a11yLabel` inside
 `offerCardProps`, and on home either drop the static label (RN then builds it from the child
