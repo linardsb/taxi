@@ -1,4 +1,4 @@
-import { BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import {
   RT,
   type FareQuote,
@@ -96,7 +96,7 @@ function build(
   } as unknown as PricingService;
 
   const rides = {
-    create: (input: { status: string }) => {
+    create: (input: { status: string; request?: { riderId?: string } }) => {
       calls.push('rides.create');
       created = input;
       // A FRESH id per call, deliberately: with a constant, "the repeat
@@ -105,6 +105,9 @@ function build(
       const ride = {
         id: randomUUID(),
         orderId: randomUUID(),
+        // Carried through so `findForRider`'s ownership check has something to
+        // compare; without it every rider read here is a 404.
+        riderId: input.request?.riderId,
         status: input.status,
         createdAt: CREATED_AT,
       } as unknown as Ride;
@@ -117,10 +120,30 @@ function build(
     },
   } as unknown as RidesRepository;
 
+  /**
+   * Once armed, the next `joinRideRoom` rewrites every committed ride's status.
+   *
+   * This is the only way to express "the ride moved DURING the join" against a
+   * fake — and it is the case `findForRider`'s second read exists for. Armed by
+   * the test rather than by an option, because `notifyRider` also joins, inside
+   * `request()`, and a flip there would move the status before the read under
+   * test even starts.
+   */
+  let joinAdvance: string | null = null;
+
   const realtime = {
     joinRideRoom: () => {
       calls.push('joinRideRoom');
       if (options.realtimeThrows) throw new Error('socket server is gone');
+      if (joinAdvance !== null) {
+        for (const [id, entry] of committed) {
+          committed.set(id, {
+            ...entry,
+            ride: { ...entry.ride, status: joinAdvance } as Ride,
+          });
+        }
+        joinAdvance = null;
+      }
     },
     emitToRide: (
       _rideId: string,
@@ -150,6 +173,9 @@ function build(
     emitted,
     kv,
     releaseQuote: () => releaseQuote(),
+    armJoinAdvance: (status: string) => {
+      joinAdvance = status;
+    },
     createdStatus: () => created?.status,
     countOf: (call: string) => calls.filter((c) => c === call).length,
   };
@@ -497,6 +523,53 @@ describe('RidesService', () => {
       // One booking has been charged, not twenty-six — so a NEW booking is
       // still served.
       await expect(req(service)).resolves.toBeDefined();
+    });
+  });
+
+  describe('findForRider', () => {
+    it('reads, joins, then reads AGAIN — the snapshot is taken after the join (edge)', async () => {
+      const { service, calls, armJoinAdvance } = build();
+      const created = await req(service);
+      calls.length = 0;
+
+      // The ride moves DURING the join. A snapshot taken before it — the
+      // shape this route shipped with — would return `requested`, while the
+      // `offered` event went to a room this socket had not yet entered: lost
+      // to the body AND to the socket, with no later `connect` to try again.
+      armJoinAdvance('offered');
+
+      const read = await service.findForRider(RIDER_ID, created.ride.id);
+
+      expect(calls).toEqual([
+        'rides.findWithQuote',
+        'joinRideRoom',
+        'rides.findWithQuote',
+      ]);
+      expect(read.status).toBe('offered');
+    });
+
+    it('joins only AFTER the ownership check clears (failure)', async () => {
+      const { service, calls } = build();
+      const created = await req(service);
+      calls.length = 0;
+
+      await expect(
+        service.findForRider(DISPATCHER_ID, created.ride.id),
+      ).rejects.toThrow(NotFoundException);
+
+      // The order is the security property: joining first would put a
+      // stranger's socket in the room the 404 is about to deny them.
+      expect(calls).toEqual(['rides.findWithQuote']);
+      expect(calls).not.toContain('joinRideRoom');
+    });
+
+    it('strips the split even when the row carries one (edge)', async () => {
+      const { service } = build();
+      const created = await req(service);
+
+      const read = await service.findForRider(RIDER_ID, created.ride.id);
+
+      expect(read.split).toBeNull();
     });
   });
 });

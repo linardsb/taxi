@@ -27,11 +27,36 @@ import { createRiderSocket } from './socket';
  */
 export const STILL_SEARCHING_MS = 60_000;
 
+/**
+ * How long a FAILED read waits before trying again, and the ceiling it doubles
+ * up to. 1 s → 30 s.
+ *
+ * The read is not a refresh — it is the JOIN (`RidesService.findForRider`). A
+ * read that fails therefore leaves the socket connected and DEAF: `connect` has
+ * already fired and will not fire again while the connection holds, so without
+ * a retry the screen sits silent for the life of that socket while reporting
+ * itself live. The ceiling matches `socket.ts`'s `reconnectionDelayMax`: both
+ * are recovering from the same outage, and there is no reason for one to hammer
+ * while the other backs off.
+ */
+const READ_RETRY_MS = 1_000;
+const READ_RETRY_MAX_MS = 30_000;
+
 export interface RideStatusState {
   status: RideStatus | null;
   previousStatus: RideStatus | null;
   stillSearching: boolean;
   connected: boolean;
+  /**
+   * Whether THIS socket is in the ride room — that is, whether a read issued
+   * after the current `connect` has come back.
+   *
+   * `connected` cannot answer it. The join is a separate HTTP request
+   * (`GET /rides/:rideId`), so a socket can be perfectly connected and hear
+   * nothing because that one request failed. Keeping the two apart is what
+   * stops the screen reassuring a rider it is live while no event can reach it.
+   */
+  joined: boolean;
 }
 
 /**
@@ -53,10 +78,25 @@ export interface RideStatusState {
  * reason: a three-second tunnel or a backgrounded app replaces the socket, and
  * the old membership does not follow it.
  *
+ * THE READ CAN FAIL, AND THEN NOTHING ELSE WOULD TRY. `connect` fires once per
+ * connection, so a single failed read used to mean a socket that stayed up and
+ * deaf forever. Failures are retried with backoff for as long as the connection
+ * they belong to lasts, and `joined` — set only by a read issued after the
+ * current `connect` — is what the screen shows the rider, because `connected`
+ * is a claim about the transport and delivery is a claim about the read.
+ *
  * TWO READS ON A COLD START, deliberately. The mount read is the first frame
  * and it still runs when the socket never connects at all; the connect read is
  * the join. They are different jobs, and collapsing them would trade a round
  * trip for a race between the response and the socket's handshake.
+ *
+ * BOTH OF THOSE READS ARE IN FLIGHT AT ONCE, so they are ordered against each
+ * other by `issued`/`newestRead` and not only against events. `applied` counts
+ * EVENTS; two reads with no event between them both pass an `applied` check, so
+ * the later-arriving response would win even when it holds the older snapshot —
+ * and the screen would fall back to «Meklējam auto…» on an accepted ride, and
+ * announce it. `booking-draft.ts`'s `quoteRequestId` is the monotonic-id half
+ * of this rule; `applied` is the event half. Both are needed.
  *
  * STATUS CAN MOVE BACKWARD (E8). #19's dispatcher release emits
  * `accepted → requested`. Nothing here ratchets: the newest event wins, whatever
@@ -72,6 +112,7 @@ export function useRideStatus(rideId: string | null): RideStatusState {
     status: null,
     previousStatus: null,
     connected: false,
+    joined: false,
   });
   const [elapsed, setElapsed] = useState(false);
 
@@ -85,39 +126,75 @@ export function useRideStatus(rideId: string | null): RideStatusState {
      * How many `ride:status` events this socket has applied. A read that
      * resolves AFTER one of them is stale and is dropped: the snapshot was
      * taken before the event, and status can move BACKWARD (E8), so which of
-     * the two is newer cannot be decided from the statuses themselves. The
-     * `quoteRequestId` guard in `booking-draft.ts` is the same rule.
+     * the two is newer cannot be decided from the statuses themselves.
      */
     let applied = 0;
+    /**
+     * A monotonic READ id, which is what orders two reads against each other.
+     * `applied` cannot: it counts events, and the pair that overlaps on a cold
+     * start usually has no event between them.
+     */
+    let issued = 0;
+    let newestRead = 0;
+    /**
+     * Which connection a read belongs to. `0` is the mount read, which happens
+     * before any socket exists — it is a first frame, never a join, so it must
+     * not set `joined`.
+     */
+    let epoch = 0;
+    let disposed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryDelay = READ_RETRY_MS;
+
+    const refetch = (readEpoch: number) => {
+      const at = applied;
+      const id = ++issued;
+      void api
+        .request('GET', `/rides/${rideId}`, { schema: rideSchema })
+        .then((ride) => {
+          if (disposed) return;
+          retryDelay = READ_RETRY_MS;
+          // The join only happened for a socket that was already connected when
+          // the server ran it, which is exactly a read from the live epoch.
+          if (readEpoch !== 0 && readEpoch === epoch) {
+            setState((s) => ({ ...s, joined: true }));
+          }
+          if (applied !== at || id < newestRead) return;
+          newestRead = id;
+          apply(ride.status, null);
+        })
+        .catch(() => {
+          // A read from a superseded connection is not retried — the `connect`
+          // that superseded it has already issued its own.
+          if (disposed || readEpoch !== epoch) return;
+          retryTimer = setTimeout(() => refetch(readEpoch), retryDelay);
+          retryDelay = Math.min(retryDelay * 2, READ_RETRY_MAX_MS);
+        });
+    };
 
     // The cold start: the REST read is also the FIRST frame, so the screen has
     // a status before any event arrives rather than an empty line — and it is
     // the only frame a rider whose socket never connects will ever get.
-    const refetch = () => {
-      const at = applied;
-      void api
-        .request('GET', `/rides/${rideId}`, { schema: rideSchema })
-        .then((ride) => {
-          if (applied !== at) return;
-          apply(ride.status, null);
-        })
-        .catch(() => undefined);
-    };
-    refetch();
+    refetch(epoch);
 
     const socket = createRiderSocket(session.accessToken, {
       onUnauthorized: () => void signOut(),
     });
 
     socket.on('connect', () => {
+      epoch += 1;
+      clearTimeout(retryTimer);
+      retryDelay = READ_RETRY_MS;
       setState((s) => ({ ...s, connected: true }));
       // ON EVERY connect, the first included: this read is what joins this
       // socket to the ride room server-side, so skipping it leaves the socket
       // deaf rather than merely un-refreshed. See the docblock above.
-      refetch();
+      refetch(epoch);
     });
     socket.on('disconnect', () =>
-      setState((s) => ({ ...s, connected: false })),
+      // `joined` goes with the connection: room membership does not follow a
+      // socket the transport replaced.
+      setState((s) => ({ ...s, connected: false, joined: false })),
     );
     socket.on(RT.rideStatus, (payload) => {
       const parsed = rideStatusEventSchema.safeParse(payload);
@@ -135,6 +212,8 @@ export function useRideStatus(rideId: string | null): RideStatusState {
     });
 
     return () => {
+      disposed = true;
+      clearTimeout(retryTimer);
       unhook();
       socket.removeAllListeners();
       socket.disconnect();

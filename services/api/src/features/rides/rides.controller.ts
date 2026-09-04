@@ -13,7 +13,6 @@ import {
   rideQuoteBodySchema,
   rideRequestBodySchema,
   type JwtClaims,
-  type Ride,
   type RideCreated,
   type RideQuoteBody,
   type RideQuotePreview,
@@ -23,6 +22,7 @@ import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
 import { IdempotencyKeyHeader } from './idempotency-key.decorator';
 import { RideQuoteService } from './ride-quote.service';
+import type { RiderVisibleRide } from './rider-visible-ride';
 import { RidesService } from './rides.service';
 
 /**
@@ -96,7 +96,7 @@ export class RidesController {
   read(
     @CurrentUser() user: JwtClaims,
     @Param('rideId', ParseUUIDPipe) rideId: string,
-  ): Promise<Ride> {
+  ): Promise<RiderVisibleRide> {
     return this.rides.findForRider(user.sub, rideId);
   }
 }

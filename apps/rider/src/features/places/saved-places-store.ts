@@ -15,9 +15,18 @@ export const PLACES_KEY = 'sakta.rider.places';
  */
 export const MAX_SAVED_PLACES = 10;
 
+/**
+ * The label's ceiling, in characters. Exported because the INPUT has to carry
+ * it: `toSavedPlace` parses inside the write queue, so a label the schema
+ * refuses is a rejected write rather than a validation message — and the
+ * cheapest place to make that unreachable is `maxLength` on the field the rider
+ * types into. One constant, so the field and the schema cannot drift.
+ */
+export const SAVED_PLACE_LABEL_MAX = 40;
+
 export const savedPlaceSchema = z.object({
   id: z.string().min(1),
-  label: z.string().min(1).max(40),
+  label: z.string().min(1).max(SAVED_PLACE_LABEL_MAX),
   point: addressPointSchema,
   /**
    * The provider place id, kept alongside the point. `place-cache.ts` in the api

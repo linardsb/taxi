@@ -18,6 +18,7 @@ import {
 import { errorMessageKey, useT } from '@/features/i18n';
 import {
   AddressRow,
+  SAVED_PLACE_LABEL_MAX,
   currentPositionPoint,
   useSavedPlaces,
 } from '@/features/places';
@@ -166,14 +167,23 @@ export function BookingScreen() {
               label={t('rider.book.save_prompt')}
               value={label}
               onChangeText={setLabel}
+              // `savedPlaceSchema` parses INSIDE the write queue, so an
+              // over-length label is a rejected write, not a validation
+              // message. Capping the input is what keeps that unreachable.
+              maxLength={SAVED_PLACE_LABEL_MAX}
             />
             <Button
               label={t('rider.book.save_address')}
               variant="secondary"
               disabled={label.trim() === ''}
               onPress={() => {
-                void save(label.trim(), dropoff, draft.dropoffPlaceId);
-                setLabel('');
+                // Cleared ONLY on success. Clearing regardless made a failed
+                // write look exactly like a successful one — the row missing
+                // and nothing to say why. Left in place, the label is both the
+                // signal and the retry.
+                void save(label.trim(), dropoff, draft.dropoffPlaceId)
+                  .then(() => setLabel(''))
+                  .catch(() => undefined);
               }}
             />
           </View>

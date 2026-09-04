@@ -18,6 +18,21 @@ exist is granted on the read instead (corrected at review round 1 — C1). Acces
 note: focus is moved explicitly on every screen, async changes are announced, and each
 of those is pinned by an RNTL test.
 
+**Review round 2 corrected that sentence twice more.** "The read is also the join"
+makes delivery depend on a request that can fail, and both ends of it did:
+
+- the client swallowed a failed read and retried only on the next `connect` — which
+  never arrives while the socket holds — so one failed GET left the socket up and
+  DEAF, with the screen reporting itself live. Reads are retried with backoff now, and
+  `joined` is tracked apart from `connected` so the reconnecting banner covers
+  *connected but never joined* (R1);
+- the route took its snapshot BEFORE the join, so a transition inside that round trip
+  reached neither the room nor the body. It takes a second read after the join (R7).
+
+Round 2 also found that **L5 was never actually fixed**: dropping
+`ACCESS_FINE_LOCATION` from `app.json` does not drop it from the build, because
+`expo-location` adds it from two places of its own. See the permissions check below.
+
 ## Tasks completed
 
 **Phase 1 — contracts (`packages/shared`)**
@@ -89,14 +104,14 @@ Edge cases from the plan's table, and where each is verified:
 | E4 | `search-sheet.test.tsx`, `use-quote.test.tsx`, `address-search.controller.spec.ts` | ✅ |
 | E5 | `use-book-ride.test.tsx` — 409 retried with the SAME key | ✅ |
 | E6 | `use-book-ride.test.tsx` — offline, key preserved | ✅ |
-| E7 | `use-ride-status.test.tsx` — refetch on EVERY connect, first included (the read is the join); `ride-lifecycle.integration.spec.ts` proves delivery to a socket opened after the booking | ✅ |
+| E7 | `use-ride-status.test.tsx` — refetch on EVERY connect, first included (the read is the join), a FAILED read retried, and the two cold-start reads ordered against each other (round 2 — R1, R3); `ride-lifecycle.integration.spec.ts` proves delivery to a socket opened after the booking; `rides.service.spec.ts` pins read → join → read (R7) | ✅ |
 | E8 | `use-ride-status.test.tsx` — `accepted → requested` followed | ✅ |
 | E9 | `search-sheet.test.tsx` — row removed on 404 | ✅ |
 | E10 | `use-session.test.tsx` | ✅ |
 | E11 | `booking-screen.test.tsx` — permission denied, booking still reachable | ✅ |
 | E12 | `saved-places-store.test.ts`, `use-saved-places.test.tsx` | ✅ |
 | E13 | `rides.integration.spec.ts` — `maps.routeCalls === 1` | ✅ |
-| E14 | `rides.integration.spec.ts` — 404, not 403 | ✅ |
+| E14 | `rides.integration.spec.ts` — 404, not 403; and `ride-lifecycle.integration.spec.ts` — a refused read joins no socket, which is the 404's actual security payoff and was asserted nowhere (round 2 — R8) | ✅ |
 
 ## Validation results
 
@@ -115,6 +130,36 @@ tests short" shape root `CLAUDE.md` warns about.
 | `@taxi/db` | 3 | 17 | 17 | 0 |
 | `@taxi/rider` | 29 | 113 | **task did not exist** | +113 |
 
+**The table above is the FIRST-SUBMISSION head (`8cd083f`) and is left as the record
+of it.** Two review rounds have moved two of its rows since. At the review-round-2
+head, `observed` 2026-09-04 on the same command from cleared `dist` / `.turbo` /
+`.next` — **exit 0, 22 successful / 22 total, 0 cached, 1 m 23.6 s**:
+
+| Package | Suites / files | Tests | vs round 1 | Δ |
+|---|---|---|---|---|
+| `@taxi/api` | 73 | **695**, 0 skipped | 691 | **+4** — 3 `findForRider` unit cases (read→join→read, join-only-after-the-check, split stripped) + 1 integration (a refused read joins no socket) |
+| `@taxi/rider` | 30 | **143** | 136 | **+7** — 3 in `use-ride-status.test.tsx`, 1 in `status-screen.test.tsx`, 2 in `use-saved-places.test.tsx`, 1 in `booking-screen.test.tsx` |
+| `@taxi/shared` | 23 | 217 | 217 | 0 |
+| `@taxi/dispatch` | 27 | 224 | 224 | 0 |
+| `@taxi/driver` | 27 | 109 | 109 | 0 |
+| `@taxi/db` | 3 | 17 | 17 | 0 |
+
+Both deltas are `derived` from the diff and agree with the gate: 695 − 691 = 4 and
+143 − 136 = 7. Counting `it(`/`test(` lines in the round-2 diff gives **+4 / −0** under
+`services/api` and **+8 / −1** under `apps/rider` — the lone removal is `Banner.test.tsx`'s
+case being *re-titled* (R10 dropped a citation of PR #139's finding codes from its name),
+which a line diff reads as one removal plus one addition, so the net is +7 and no case
+was deleted.
+
+**The `apps/dispatch` flake was seen once more, and it is still not this branch's.**
+A partial `turbo run test --filter=@taxi/{shared,dispatch,db}` run at this head
+reported `1 failed | 223 passed` for dispatch; the same suite passes **inside the full
+gate** (27/27 files, in the run above) and **alone** (`pnpm --filter @taxi/dispatch
+test` → 224/27). This branch changes no file under `apps/dispatch` (`git diff
+--name-only origin/main...HEAD | grep dispatch` → 0). Recorded rather than quietly
+re-run; the failing case's name was not captured this time, so it is NOT claimed to be
+the same one round 1 saw.
+
 **Baseline** `observed` on the same command at `a6481aa` before any edit: 20
 successful, 20 total, exit 0 — with `@taxi/rider:lint` and `@taxi/rider:test`
 absent from the task list entirely. That absence is R2, and the task count moving
@@ -131,21 +176,37 @@ flake already recorded for this repo, not a regression.
 Additional checks:
 
 - `pnpm --filter @taxi/rider exec tsc --version` → **5.9.3** (R1).
-- `npx expo config --type public` in `apps/rider` resolves
-  `android.permissions` to exactly `ACCESS_COARSE_LOCATION` (plus its
-  fully-qualified twin from the `expo-location` plugin). `ACCESS_FINE_LOCATION`
-  was declared too at first submission and was **removed at review round 1 (L5)**
-  as a wider ask than the design states — pickup defaults from coarse GPS and the
-  code asks for `Accuracy.Balanced` (~100 m), which coarse satisfies. That figure
-  is `expected` for the current tree: the `expo config` run above was made against
-  the pre-review manifest and has not been repeated.
-  No `ACCESS_BACKGROUND_LOCATION`, no
-  `FOREGROUND_SERVICE*`, no `RECEIVE_BOOT_COMPLETED` — **AC #9 `observed`**, not
-  argued from the manifest source.
+- **Android permissions, re-run at review round 2 (R6) — and the round-1 fix did
+  not do what it claimed.** Removing `ACCESS_FINE_LOCATION` from `app.json` does
+  not remove it from the build: `expo-location`'s config plugin adds it
+  unconditionally, and the library's own `AndroidManifest.xml` declares it, which
+  manifest-merges into the APK either way. `blockedPermissions` is what defeats
+  both. `observed` 2026-09-04 at this head:
+  - `npx expo config --type public` → `android.permissions` is
+    `['ACCESS_COARSE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION',
+    'android.permission.ACCESS_FINE_LOCATION']` and `android.blockedPermissions`
+    is `['android.permission.ACCESS_FINE_LOCATION']`. The plugin's FINE entry is
+    still there — which is the point, and why the round-1 figure was never
+    evidence of anything.
+  - `npx expo prebuild --platform android --no-install` →
+    `android/app/src/main/AndroidManifest.xml` line 3 is
+    `<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+    tools:node="remove"/>`, the merge directive that deletes the library's
+    declaration. The generated directory was removed after the run.
+  - the same generated manifest greps clean of `ACCESS_BACKGROUND_LOCATION`,
+    `FOREGROUND_SERVICE*` and `RECEIVE_BOOT_COMPLETED` — **AC #9 `observed`** at
+    the manifest rather than argued from source.
+  - the final MERGED manifest is AGP's output and needs a Gradle build to read,
+    which no machine here has. That last hop is `expected`, resting on documented
+    `tools:node="remove"` behaviour.
 - Largest shipped source file touched: `services/api/src/features/rides/rides.service.ts`
-  at **451** lines (`observed`, `wc -l`, at the review-round-1 head; 418 at first
-  submission, +33 for C1's join and its docblock); `packages/shared/src/schemas/ride.ts`
-  at **372**, unchanged. Cap is 500 — 49 lines of headroom on the largest.
+  at **481** lines (`observed`, `wc -l`, at the review-round-2 head; 418 at first
+  submission, 451 after round 1, +30 for round 2's second read and the docblock that
+  says what crosses the wire); `packages/shared/src/schemas/ride.ts` at **372**,
+  unchanged. Cap is 500 — **19 lines of headroom on the largest**, down from 49, and
+  the next addition to this file should move something out rather than grow it.
+  `RiderVisibleRide` was moved to its own `rider-visible-ride.ts` for exactly that
+  reason: inline it would have left 7.
 
 ## Risk register — every risk closed by its own command
 
@@ -193,7 +254,8 @@ Fourteen, each with its reason. The first two are the ones a reviewer should loo
    the private throttle helper measured out at roughly +100, leaving almost no headroom
    under the `max-lines` cap. The split is along a real seam — the preview creates
    nothing (no reservation, no repository write, no emit, no transition) — and it makes
-   R4 structural rather than a promise. `rides.service.ts` ends at **418**.
+   R4 structural rather than a promise. `rides.service.ts` ended at **418** here; it is
+   **481** after two review rounds (see the line-count check above).
 
 2. **The Places session token IS rotated on a 404 `place_not_found`.** The plan's E9
    says it is not. Reading the source disagrees with the plan, and with the plan's own
@@ -312,7 +374,7 @@ A follow-up ticket should own the hardware and the run.
 Next: `piv-commit`, then `piv-create-pr`, then `piv-review-pr`.
 
 **The PR body must not inherit any figure from this report** — re-derive each at HEAD.
-The ones that carry weight: `lv.ts` at 368 lines, `rides.service.ts` at 418, the 100 s
+The ones that carry weight: `lv.ts` at 386 lines, `rides.service.ts` at 470, the 100 s
 cascade arithmetic behind `STILL_SEARCHING_MS`, and E13's single route call. And when
 closing #16, grep the issue and the PR body for `pin`, `drag` and `map`: the original
 acceptance criterion was retired by subject, not just by sentence.

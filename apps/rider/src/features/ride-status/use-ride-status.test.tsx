@@ -70,11 +70,19 @@ const event = (status: string, previousStatus: string | null) => ({
 });
 
 function Probe() {
-  const { status, stillSearching, connected } = useRideStatus(RIDE_ID);
+  const { status, stillSearching, connected, joined } = useRideStatus(RIDE_ID);
   return (
-    <Text>{`${status ?? 'none'}|${stillSearching ? 'still' : 'not'}|${
-      connected ? 'up' : 'down'
-    }`}</Text>
+    <>
+      <Text>{`${status ?? 'none'}|${stillSearching ? 'still' : 'not'}|${
+        connected ? 'up' : 'down'
+      }`}</Text>
+      {/* A SECOND line rather than a fourth field: `joined` answers a
+          different question from `connected` — whether the ride-room join
+          landed — and folding it into the first string would rewrite every
+          assertion in this file into something that no longer reads as a
+          status. */}
+      <Text>{`joined:${joined ? 'yes' : 'no'}`}</Text>
+    </>
   );
 }
 
@@ -213,5 +221,72 @@ describe('useRideStatus', () => {
     await render(<Probe />);
 
     expect(mockOnBeforeSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a FAILED connect read, and is not "joined" until one lands (failure)', async () => {
+    jest.useFakeTimers({
+      doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'],
+    });
+    try {
+      await render(<Probe />);
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+      // The read is the JOIN. `connect` fires once per connection, so a read
+      // that fails with nothing retrying it leaves the socket UP and DEAF —
+      // and `connected` alone would tell the rider everything is fine.
+      mockRequest.mockRejectedValueOnce(new Error('offline'));
+      await act(async () => mockHandlers.get('connect')!(undefined));
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+
+      await screen.findByText('joined:no');
+      // CONTROL: the transport really is up, which is exactly the state that
+      // used to be reported as healthy.
+      expect(screen.getByText('requested|not|up')).toBeTruthy();
+
+      mockRequest.mockResolvedValue(rideAt('accepted'));
+      await act(async () => {
+        jest.advanceTimersByTime(1_000);
+      });
+
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
+      await screen.findByText('joined:yes');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('is not "joined" on the mount read alone — that read joins no socket (edge)', async () => {
+    await render(<Probe />);
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+    // `joinRideRoom` moves the sockets alive when it runs, and on the mount
+    // read there are none: the socket has not connected yet. Treating that
+    // read as the join would clear the banner before anything was in a room.
+    await screen.findByText('joined:no');
+  });
+
+  it('keeps the NEWER of two reads in flight, whichever answers last (failure)', async () => {
+    let settleMount: (ride: unknown) => void = () => undefined;
+    mockRequest.mockReturnValueOnce(
+      new Promise((resolve) => {
+        settleMount = resolve;
+      }),
+    );
+
+    await render(<Probe />);
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+    // The connect read is issued second and answers first, with the newer
+    // snapshot.
+    mockRequest.mockResolvedValueOnce(rideAt('accepted'));
+    await act(async () => mockHandlers.get('connect')!(undefined));
+    await screen.findByText('accepted|not|up');
+
+    // Now the MOUNT read lands, holding the older snapshot. No event has been
+    // applied, so the `applied` counter cannot separate them — status moves
+    // backward legitimately (E8), so only the issue order can.
+    await act(async () => settleMount(rideAt('requested')));
+
+    expect(screen.getByText('accepted|not|up')).toBeTruthy();
   });
 });

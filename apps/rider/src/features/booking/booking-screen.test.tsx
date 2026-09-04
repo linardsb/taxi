@@ -10,7 +10,11 @@ import { formatMessage } from '@taxi/shared';
 import * as Location from 'expo-location';
 import { AccessibilityInfo } from 'react-native';
 import { ApiError } from '@/features/auth';
-import { SavedPlacesProvider, clearSavedPlaces } from '@/features/places';
+import {
+  SAVED_PLACE_LABEL_MAX,
+  SavedPlacesProvider,
+  clearSavedPlaces,
+} from '@/features/places';
 import { BookingScreen } from './booking-screen';
 
 const mockRequest = jest.fn();
@@ -248,6 +252,22 @@ describe('BookingScreen', () => {
     expect(
       screen.getByRole('button', { name: t('rider.book.confirm') }),
     ).toBeEnabled();
+  });
+
+  it('caps the saved-place label at the schema length (edge)', async () => {
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue(dropoffParams);
+    mockRequest.mockResolvedValue({ quote: QUOTE });
+
+    await renderScreen();
+    await screen.findByTestId('quote-card');
+
+    // `savedPlaceSchema` parses INSIDE the write queue, so an over-length
+    // label is a REJECTED WRITE rather than a validation message — and a
+    // rejected write is what the queue's `catch` now has to absorb. Capping
+    // the field is what keeps that path unreachable from the UI at all.
+    expect(
+      screen.getByLabelText(t('rider.book.save_prompt')).props.maxLength,
+    ).toBe(SAVED_PLACE_LABEL_MAX);
   });
 
   it('names a throttle as a throttle (failure — E4)', async () => {

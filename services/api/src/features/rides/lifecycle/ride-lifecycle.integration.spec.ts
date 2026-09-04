@@ -691,6 +691,14 @@ describe('ride lifecycle (integration)', () => {
    * Delete `joinRideRoom` from `findForRider` and this fails with `seen` empty
    * while the CONTROL still reads `offered` — which is precisely how the bug
    * looked in the app: a silent screen reporting itself connected.
+   *
+   * THE CONTROL RUNS BEFORE THE CLAIM, which is the only order in which it does
+   * its job. It exists to rule out "dispatch did nothing", a distinction that
+   * matters exactly when the claim fails — and `waitForCount` THROWS on that
+   * path, so a control below it never executes and the failing run prints
+   * nothing to distinguish the two. It cost this exact review an inherited
+   * claim: a repro that reported the timeout truthfully and the control's
+   * verdict from memory.
    */
   it('joins a socket opened AFTER the booking, through GET /rides/:rideId (failure)', async () => {
     // Bound to nothing: this test needs a driver to exist so `offerNext` has a
@@ -711,13 +719,62 @@ describe('ride lifecycle (integration)', () => {
 
     await offerTo(ride);
 
+    // CONTROL, and it runs FIRST: the ride moves either way, so an empty `seen`
+    // below can only mean the socket was deaf — never that dispatch did
+    // nothing. `offerNext` has already awaited its own commit, so this needs no
+    // wait of its own.
+    expect((await rideRow(ride.id)).status).toBe('offered');
+
     const mine = () => seen.filter((e) => e.rideId === ride.id);
     await waitForCount(() => mine().length, 1);
     expect(mine().map((e) => e.status)).toEqual(['offered']);
+  });
 
-    // CONTROL: the ride moves either way, so an empty `seen` can only mean the
-    // socket was deaf — never that dispatch did nothing.
-    expect((await rideRow(ride.id)).status).toBe('offered');
+  /**
+   * (failure) The join's ONE security property, which nothing asserted.
+   *
+   * `findForRider` joins AFTER the ownership check and argues at length that the
+   * order matters — "joining first would put a stranger's socket in the room the
+   * 404 below is about to deny them". E14 in `rides.integration.spec.ts` proves
+   * the 404; no test proved the silence. Hoist `joinRideRoom` above the
+   * ownership check and every suite in this repo stayed green while rider B
+   * received rider A's entire `ride:status` stream.
+   */
+  it('does NOT join a socket whose owner the read refuses (failure)', async () => {
+    await onlineDriver(12, near(CENTRE_PICKUP.location, 0.001, 0));
+    const a = await rider(60);
+    const b = await rider(61);
+
+    const ride = await book(a.auth);
+
+    // Both sockets open BEFORE the offer, so the only thing separating them is
+    // whether their read was allowed to join them.
+    const aSock = await connectClient(port, a.token);
+    const bSock = await connectClient(port, b.token);
+    const aSeen = collectStatuses(aSock);
+    const bSeen = collectStatuses(bSock);
+
+    // The same call the app makes on connect. A's is allowed and joins; B's is
+    // refused and must not.
+    await http
+      .get(`/rides/${ride.id}`)
+      .set('authorization', a.auth)
+      .expect(200);
+    await http
+      .get(`/rides/${ride.id}`)
+      .set('authorization', b.auth)
+      .expect(404);
+
+    await offerTo(ride);
+
+    // CONTROL, first: the owner's socket DID hear it, so B's silence below is
+    // the ownership check doing its job rather than an empty room.
+    await waitForCount(
+      () => aSeen.filter((e) => e.rideId === ride.id).length,
+      1,
+    );
+
+    expect(bSeen.filter((e) => e.rideId === ride.id)).toEqual([]);
   });
 
   /**

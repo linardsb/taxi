@@ -4,6 +4,7 @@ export { currentPositionPoint } from './current-position';
 export {
   MAX_SAVED_PLACES,
   PLACES_KEY,
+  SAVED_PLACE_LABEL_MAX,
   clearSavedPlaces,
   readSavedPlaces,
   removeSavedPlace,

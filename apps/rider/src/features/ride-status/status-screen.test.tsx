@@ -27,6 +27,7 @@ const mockStatus = {
   previousStatus: null,
   stillSearching: false,
   connected: true,
+  joined: true,
 };
 jest.mock('./use-ride-status', () => ({
   useRideStatus: () => mockStatus,
@@ -54,6 +55,7 @@ describe('StatusScreen', () => {
       status: 'requested',
       stillSearching: false,
       connected: true,
+      joined: true,
     });
     announce = jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
@@ -101,7 +103,16 @@ describe('StatusScreen', () => {
   });
 
   it('shows a reconnecting line while the socket is down (edge)', async () => {
-    Object.assign(mockStatus, { connected: false });
+    Object.assign(mockStatus, { connected: false, joined: false });
+    await render(<StatusScreen />);
+    expect(screen.getByText(t('rider.status.reconnecting'))).toBeTruthy();
+  });
+
+  it('shows it while CONNECTED but not joined to the ride room (failure)', async () => {
+    // The join is a separate request from the handshake, so a socket can be up
+    // and hear nothing. Reporting the transport alone is what let this screen
+    // reassure a rider it was live while no event could reach it.
+    Object.assign(mockStatus, { connected: true, joined: false });
     await render(<StatusScreen />);
     expect(screen.getByText(t('rider.status.reconnecting'))).toBeTruthy();
   });

@@ -68,7 +68,7 @@ export function StatusScreen() {
   useScreenFocus(heading);
   const params = useLocalSearchParams<{ rideId?: string }>();
   const rideId = params.rideId ?? null;
-  const { status, stillSearching, connected } = useRideStatus(rideId);
+  const { status, stillSearching, connected, joined } = useRideStatus(rideId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
 
@@ -111,7 +111,13 @@ export function StatusScreen() {
         {t('rider.status.title')}
       </Text>
       <Banner tone="info" text={line} testID="status-line" />
-      {!connected ? (
+      {/* `!joined` as well as `!connected`: the socket and the ride-room join
+          are two different requests (`useRideStatus`), and a connected socket
+          whose join read failed hears nothing. Showing the live state on the
+          transport alone is what let the screen reassure a rider it was live
+          while no event could reach it. Same copy — to the rider both mean "the
+          live link is not up yet", and the retry behind it is the same wait. */}
+      {!connected || !joined ? (
         <Banner tone="warning" text={t('rider.status.reconnecting')} />
       ) : null}
       {error ? <Banner tone="danger" text={t(error)} /> : null}

@@ -14,12 +14,17 @@
  *   socket is never auto-joined to its ride room — not on a reconnect, and not
  *   on its first connect either, since `notifyRider`'s join runs inside
  *   `POST /rides` and reaches only the sockets alive at that instant. So this
- *   route joins the caller's sockets as it reads, and the app calls it on every
- *   socket `connect`; without it the rider is deaf to every `ride:status` — see
- *   `RidesService.findForRider`. It returns the ride and nothing else: no
- *   driver, no position, no ETA, no plate, and no `split` — that field is
- *   stripped rather than merely absent, because `toRide` populates it once a
- *   ride settles. A DRIVER still has no ride read;
+ *   route joins the caller's sockets as it reads — taking its snapshot AFTER
+ *   the join, so a transition in the read's own round trip is not lost to both
+ *   the room and the body — and the app calls it on every socket `connect`;
+ *   without it the rider is deaf to every `ride:status` — see
+ *   `RidesService.findForRider`. It returns the `rides` row as `toRide`
+ *   projects it, with `split` FORCED NULL: `driverId` and `trackingToken` ARE
+ *   on it, `assignment` is null because `toRide` hardcodes it, and there is no
+ *   driver identity — no name, no plate, no phone — no position and no ETA,
+ *   which are #17's. `split` is stripped rather than merely absent because
+ *   `toRide` populates it once a ride settles; `RiderVisibleRide` puts that in
+ *   the type rather than only in prose. A DRIVER still has no ride read;
  *   `POST /rides/:rideId/complete` returns the settled ride, which is what they
  *   need at the moment they need it. #17 extends the rider read, and a
  *   driver/dispatcher one would move the route to `RideLifecycleController` and
@@ -76,6 +81,7 @@
  */
 export { RidesModule } from './rides.module';
 export { RidesService } from './rides.service';
+export type { RiderVisibleRide } from './rider-visible-ride';
 /**
  * Exported ACROSS a slice boundary as a deliberate, documented exception.
  *

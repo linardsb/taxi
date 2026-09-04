@@ -32,7 +32,7 @@ export interface BannerProps {
  * it. `accessibilityLiveRegion` is Android-only, so on iOS the text is
  * announced outright — that is what VoiceOver hears. The announce is
  * iOS-only in turn: on Android both firing should read every fresh banner
- * twice under TalkBack (review F28).
+ * twice under TalkBack.
  *
  * IT IS THE ONLY ANNOUNCER for the surfaces that use it. A screen that also
  * announces its own copy makes iOS speak every change twice — see
@@ -42,7 +42,11 @@ export interface BannerProps {
  * below only pins that the announce is absent, not that TalkBack speaks. It
  * rests on the live region firing for a freshly MOUNTED view rather than
  * only for a content change — if that is wrong, Android has no announcement
- * at all. Plan §C.12 owes the TalkBack pass (review F47).
+ * at all. `docs/runbooks/rider-a11y-walkthrough.md` step 12 owes the TalkBack
+ * pass; its Result section records it BLOCKED, with the hardware reason. (The
+ * reasoning came from the driver app's PR #139 review, which reached the same
+ * conclusion about the same component — its finding codes are that PR's and
+ * name nothing in this app, so they are not cited here.)
  */
 export function Banner({ tone, text, action, secondary, testID }: BannerProps) {
   useEffect(() => {

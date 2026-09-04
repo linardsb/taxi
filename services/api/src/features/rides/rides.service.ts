@@ -23,6 +23,7 @@ import { mintTrackingToken, RideNotificationsService } from '../notifications';
 import { PricingService } from '../pricing';
 import { RealtimeService } from '../realtime';
 import { entryStatusFor } from './ride-entry';
+import type { RiderVisibleRide } from './rider-visible-ride';
 import {
   DISPATCHER_BOOKING_MAX_PER_WINDOW,
   RIDE_IDEMPOTENCY_PENDING,
@@ -174,24 +175,47 @@ export class RidesService {
    * AFTER the ownership check, never before: the join is the one thing here that
    * changes server state, and joining first would put a stranger's socket in the
    * room the 404 below is about to deny them. Best-effort, like `notifyRider`'s
-   * — a realtime failure must not turn a rider's state read into a 500.
+   * — a realtime failure must not turn a rider's state read into a 500. The
+   * ordering is pinned by a test, not only by this paragraph: `ride-lifecycle`'s
+   * "does NOT join a socket whose owner the read refuses" asserts a second
+   * rider's socket stays silent after a 404, which is the only assertion that
+   * would fail if someone hoisted the join above the check.
+   *
+   * THE SNAPSHOT IS TAKEN AFTER THE JOIN, in a second read. Taking it before
+   * would leave a window — the first read's DB round trip — in which an
+   * `emitStatus` reaches a room this socket has not joined AND is absent from
+   * the body, so the transition is lost to the rider entirely: the client's next
+   * chance is the next `connect`, and a healthy socket has none. Small (order
+   * milliseconds) and real; a completion landing in it leaves the app showing
+   * Cancel on a finished ride. The extra read costs one round trip per socket
+   * connect, which is what "closes both holes" has to mean to be true.
    *
    * Rejoining a TERMINAL ride's room is deliberate and harmless: nothing emits
    * to it again (`leaveRideRoom` is called only for a REASSIGNED driver, never
    * for the rider), and the alternative — a status filter here — would decide by
    * guesswork which statuses may still move, when E8 says they can move backward.
    *
-   * Returns the ride and NOTHING else: no driver, no position, no ETA, no plate,
-   * and `split` STRIPPED. The stored split is the driver's transparency card
-   * (S2-5) and `rideQuotePreviewSchema` refuses to carry it to a rider surface;
-   * a settled ride read back by its own rider must not be the door that does.
-   * #17 extends it.
+   * WHAT ACTUALLY CROSSES THE WIRE, rather than a list of what does not: the
+   * `rides` row as `toRide` projects it, with `split` FORCED NULL — so `id`,
+   * `orderId`, `status`, `riderId`, `driverId`, `geozoneId`, `paymentMethod`,
+   * the rider's own `request`, the `quote`, `bookingChannel`, `trackingToken`
+   * and the timestamps. `assignment` is `null` because `toRide` hardcodes it, so
+   * a dispatcher's free-text override reason cannot reach a rider. `driverId` is
+   * a bare uuid and NOT driver identity — no name, no plate, no phone, no
+   * position, no ETA; those are #17's. `split` is stripped rather than merely
+   * absent because `toRide` populates it the moment a ride settles: it is the
+   * driver's transparency card (S2-5), and `rideQuotePreviewSchema` refuses to
+   * carry it to a rider surface, so a settled ride read back by its own rider
+   * must not be the door that does.
    *
    * ONE shape for both "no such ride" and "someone else's ride". A 403 on the
    * second would make this an existence oracle — a rider could walk uuids and
    * tell a real ride id from a fabricated one.
    */
-  async findForRider(riderId: string, rideId: string): Promise<Ride> {
+  async findForRider(
+    riderId: string,
+    rideId: string,
+  ): Promise<RiderVisibleRide> {
     // `findWithQuote` rather than a new rider-scoped read: the replay path
     // already reassembles exactly this, and the ownership check is one
     // comparison in the service. `undefined` also covers a ride with no quote,
@@ -212,7 +236,13 @@ export class RidesService {
       });
     }
 
-    return { ...found.ride, split: null };
+    // The snapshot the caller gets, taken after the join — see the docblock.
+    // `riderId` cannot change, so no second ownership check is owed; the
+    // fallback is unreachable (nothing deletes a ride) and exists so a missing
+    // row degrades to the pre-join snapshot rather than a 404 the caller has
+    // already been told does not apply.
+    const fresh = await this.rides.findWithQuote(rideId);
+    return { ...(fresh ?? found).ride, split: null };
   }
 
   /**

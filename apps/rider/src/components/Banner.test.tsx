@@ -16,7 +16,7 @@ describe('Banner announcements', () => {
     }
   });
 
-  it('on Android only the live region speaks — announcing too read every banner twice under TalkBack (edge — review F28)', async () => {
+  it('on Android only the live region speaks — announcing too read every banner twice under TalkBack (edge)', async () => {
     const announce = jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
       .mockImplementation();
