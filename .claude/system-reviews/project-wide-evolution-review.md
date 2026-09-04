@@ -86,7 +86,7 @@ the skill edit changed later behaviour (a near-controlled experiment); #121's D5
 file carrying two paragraphs against it. (b) Remedies landed on the shadowed user-level skill copy were
 inert — #107's numbers pass never fired until the copy question was resolved (#129). (c) The only two
 mechanised gates were destroyed by that very cleanup, and no review noticed — only a memory file records
-it. (d) Logged-not-acted items recur at higher cost — #87's Level-4 item → #94; #86's fact-verify line →
+it. [**Corrected 2026-09-04, PR #156**: "the only two" is false. `.claude/hooks/stop_check.py` (runs `pnpm check`, exits 2 to block the stop) and `pre_tool_use.py` are both live, wired at `settings.json:27,38`. The two gates destroyed in #129 were the `piv-create-pr` scripts, now restored in-repo. This sentence was copied into three downstream surfaces before anyone re-read it.] (d) Logged-not-acted items recur at higher cost — #87's Level-4 item → #94; #86's fact-verify line →
 #150. (e) This skill's own two logged self-fixes (mint review: recurring-mechanism learnings need action
 items; the score is adherence-blind) never landed (`observed`: no such text in the skill before today).
 **Status: OPEN → acted on (A2).**

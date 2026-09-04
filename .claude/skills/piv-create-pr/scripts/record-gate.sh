@@ -18,9 +18,10 @@
 # quietly produce a green-looking record.
 #
 # Restored in-repo 2026-09-04 (ledger L2). The previous copy lived only under
-# ~/.claude/skills/ and was destroyed with that tree in #129 — nothing in the
-# repo referenced it, so nothing noticed. It lives here now, referenced from
-# piv-create-pr/SKILL.md Phase 2.5, so deleting it shows up in a diff.
+# ~/.claude/skills/ and was destroyed with that tree in #129. Five .claude/
+# reports and reviews did mention it in prose, which is exactly the point: no
+# EXECUTABLE path referenced it, so the files went and only the prose survived.
+# It lives here now, referenced from piv-create-pr/SKILL.md Phase 2.5.
 #
 # THREE THINGS IT DOES THAT THE DESTROYED VERSION DID NOT, each from a real miss:
 #
@@ -53,7 +54,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --clean) clean=1; shift ;;
     --) shift; break ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
     *) break ;;
   esac
 done

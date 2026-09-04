@@ -45,14 +45,14 @@ demonstrably do not fire here (see Accepted risks). Each row's grep was run at t
 | L8 | `piv-plan-implementation` Task Format, under the `GOTCHA` field | `grep -in "the GOTCHA is binding and IMPLEMENT is a sketch" …` → 354 |
 | L5 | `piv-plan-implementation` ACCEPTANCE CRITERIA template | `grep -in "owed by #N" …` → 442 |
 | L9 | `piv-review-pr` Phase 4, new **### The constraint pass** | `grep -in "The constraint pass" .claude/skills/piv-review-pr/SKILL.md` → 60 |
-| L11 | `piv-review-pr` Phase 6 — `gh pr comment` is now the only post path | `grep -in "refuses BOTH verbs" …` → 156; and `grep -rn "gh pr review" .claude/skills/` → 1 hit, inside the explanatory comment |
+| L11 | `piv-review-pr` Phase 6 — `gh pr comment` is now the only post path | `grep -in "refuses BOTH verbs" …` → 157; and `grep -rn "gh pr review" .claude/skills/` → 1 hit, inside the explanatory comment |
 | L6 | `piv-validate` new **## 3. Environment or code?**, four signatures with their clearing commands | `grep -in "Environment or code" .claude/skills/piv-validate/SKILL.md` → 42 |
 | L16 | `piv-validate` Notes | `grep -in "A green gate is not a green CI" …` → 88 |
 | L10 | `piv-implement` **Ready for the next step** | `grep -in "Commit before you stop" .claude/skills/piv-implement/SKILL.md` → 138 |
 | L15 | `piv-implement` concurrent-session bullet | `grep -in "keep new migrations additive" …` → 29 |
-| L3 | `piv-commit` Process step 2 | `grep -in "Plan-staleness check" .claude/skills/piv-commit/SKILL.md` → 16 |
-| L12 | `system-evolution-review` front matter + a shape-testing guard | `grep -in "word-split sentence, not a plan path" .claude/skills/system-evolution-review/SKILL.md` → 41 |
-| L2 | **`.claude/skills/piv-create-pr/scripts/{record-gate.sh,inherited-figures.sh}`**, referenced from a blocking **Phase 2.5** | `grep -in "record-gate.sh" .claude/skills/piv-create-pr/SKILL.md` → 63, 67; `ls .claude/skills/piv-create-pr/scripts/` → both files |
+| L3 | `piv-commit` Process step 2 | `grep -in "Plan-staleness check" .claude/skills/piv-commit/SKILL.md` → 19 |
+| L12 | `system-evolution-review` front matter + a shape-testing guard (pattern shortened: the fix for an empty first argument wrapped the original phrase across a line break, and a single-line grep stopped matching a rule that is still there) | `grep -in "word-split sentence, not a plan" .claude/skills/system-evolution-review/SKILL.md` → 41 |
+| L2 | **`.claude/skills/piv-create-pr/scripts/{record-gate.sh,inherited-figures.sh}`**, referenced from a blocking **Phase 2.5** | `grep -in "record-gate.sh" .claude/skills/piv-create-pr/SKILL.md` → 64, 68; `ls .claude/skills/piv-create-pr/scripts/` → both files |
 
 **Three rows were applied against their own origin's trigger, disclosed rather than hidden.** L3's origin
 (Phase C review, `:135`) says "if it recurs a third time" and it has two occurrences. L15 and L16 both
@@ -61,9 +61,9 @@ both. All three were applied because Linards asked for all 15 in one pass; that 
 claim that their thresholds were met.
 
 **L2, in more detail, because it is the row that failed twice.** Both scripts existed before, at
-`~/.claude/skills/piv-create-pr/scripts/`, and `git log --all -- '.claude/skills/piv-create-pr/scripts/'`
-is empty — they were **never in-repo**, which is why the #129 cleanup destroyed them with no review
-noticing. The restored copies are the archived originals (`~/.claude/_skills-archive-2026-08-28/`) plus
+`~/.claude/skills/piv-create-pr/scripts/`, and `git log --all b053c10~1 -- '.claude/skills/piv-create-pr/scripts/'`
+was empty before this PR — they had **never been in-repo**, which is why the #129 cleanup destroyed them
+with no review noticing. (Present tense would now be false: this PR is what put them under version control.) The restored copies are the archived originals (`~/.claude/_skills-archive-2026-08-28/`) plus
 fixes for what they missed:
 
 - `record-gate.sh` now derives the **expected task count at this head** from `turbo … --dry=json` and
@@ -126,7 +126,7 @@ test · deviations re-read widened to UX states/ACs (`piv-implement`) · worktre
 concurrent-sessions paragraph (CLAUDE.md) · provenance clause (CLAUDE.md) · hooks `$CLAUDE_PROJECT_DIR`
 fallback (`settings.json:27,38`) · `completed`-vs-`settled` note (`ride-state-machine.md:19`) · `mint:ride`
 (`services/api/scripts/mint-tracked-ride.ts`) · **L4** Level-4 steps performable
-(`grep -in performable .claude/skills/piv-plan-implementation/SKILL.md` → 419).
+(`grep -in performable .claude/skills/piv-plan-implementation/SKILL.md` → 415).
 
 ## Accepted risks
 

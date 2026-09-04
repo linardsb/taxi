@@ -56,8 +56,9 @@ git log origin/{base}..HEAD --oneline
 ## Phase 2.5 — Generate the validation block, then find the inherited figures (blocking)
 
 Two scripts live beside this skill. **They are referenced here so that deleting them shows up in a
-diff** — the previous copies lived only under `~/.claude/skills/`, nothing in the repo mentioned them,
-and they were destroyed in the #129 cleanup with no review noticing (ledger L2).
+diff** — the previous copies lived only under `~/.claude/skills/`. Nine lines across five `.claude/`
+reports and reviews named them (`git grep -n record-gate c70572b`), but nothing on an executable path
+did, so the #129 cleanup destroyed the files and left only the prose about them (ledger L2).
 
 ```bash
 .claude/skills/piv-create-pr/scripts/record-gate.sh --clean

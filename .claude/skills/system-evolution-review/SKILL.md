@@ -38,7 +38,8 @@ which you got and ask — do not guess. Correct form:
 /system-evolution-review .claude/plans/<feature>.md .claude/execution-reports/<feature>.md
 ```
 
-**A first argument that does not end in `.md` is a word-split sentence, not a plan path** — this file's
+**A first argument that is present but does not end in `.md` is a word-split sentence, not a plan
+path** — an empty first argument is the missing-argument case above, so ask. — this file's
 own project-wide run got `$plan`="the", `$report`="whole" (2026-09-04, ledger L12). Test that suffix
 before reading anything; if it fails, do not ask — run project-wide: scope from the sentence you were
 invoked with, `.claude/system-reviews/*.md` plus `.claude/execution-reports/*.md` read in place of the
@@ -150,8 +151,11 @@ Scoring guide:
 **The adherence score is blind to plan-inherited defects** — a false claim born in the plan and copied
 forward faithfully scores as adherence, not as a defect. #87 and #107 both scored 9/10 and produced the
 only two defects that ever reached `main`.
-When a defect originated in the plan and was reproduced faithfully, say so beside the score and classify
-it as a plan defect (`bad ❌`, root cause at the plan/skill level); do not let adherence absorb it.
+When a defect originated in the plan and was reproduced faithfully, add a **second score** —
+`Plan correctness: __/10 — [the defect, and the plan line it entered at]` — and list it under Divergence
+Analysis as `plan_defect:` with `entered_at:` and `reproduced_at:`. Not as a `bad ❌` divergence: faithful
+reproduction is not a divergence, and a caveat beside a 9/10 does not change the 9/10. #107's review wrote
+one voluntarily and still scored 9.
 
 #### Divergence Analysis
 

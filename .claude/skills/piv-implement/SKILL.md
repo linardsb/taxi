@@ -138,8 +138,9 @@ have been a fine call; not writing it down was not.
 - Commit before you stop, even mid-ticket, so the working tree is never the only copy of the day's work —
   #16's implementation sat uncommitted for a day, then was committed cold by a session with none of its
   context. Check `git status --porcelain` and stage only this ticket's files (review docs and reports for
-  other branches must not ride in). `piv-commit` does not amend, so tell the next session in the message:
-  `git commit -m "wip: <plan-slug>" -m "piv-commit: git reset --soft HEAD~1 first — not a real commit"`
+  other branches must not ride in). `piv-commit` step 1 reads the top commit's subject and folds a `wip:`
+  commit into the real one, so the prefix is what makes the handoff work — it is not decoration:
+  `git commit -m "wip: <plan-slug>"`
 - Next: `piv-commit` the work, then `piv-create-pr` to open the PR (the report fills the PR body), then `piv-review-pr`.
 
 ## Notes

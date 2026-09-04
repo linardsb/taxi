@@ -48,7 +48,7 @@ your diff — report it with that line as evidence, do not edit toward green.
 - `@taxi/db#test` red with `Cannot connect to the Docker daemon` — docker is down (#94). `colima start`;
   on a stale disk lock, `LIMA_HOME=~/.colima/_lima limactl disk unlock colima` first.
 - No output past ~3 min, `@taxi/api:test` still running — a red api suite, not a slow one: jest holds
-  sockets open (healthy: 60–90 s, PR #139). `grep -E "Tasks:|●.*›"` the log, re-run those alone with `--forceExit`.
+  sockets open (healthy: 60–90 s, PR #139). `grep -E "Tasks:|Test Suites:|FAIL |●.*›"` the log, re-run those alone with `--forceExit`.
 - The same silence in a worktree with `REDIS_TEST_URL` set — no `.env`, so `taxi-redis-1` never came up
   and ioredis retries a closed port forever (#19). `docker ps` first; the hook blocks the agent, so
   Linards runs `cp ../taxi/.env .`.
@@ -85,5 +85,7 @@ this skill reports; fixing is a separate step.
   slow step, not to drop it from the checker.
 - A checker that cannot fail is worthless. If `pnpm check` passes suspiciously fast, confirm turbo
   actually ran the tasks (cache hits are fine; missing tasks are not).
-- A green gate is not a green CI: on a cold volume a container healthcheck can report healthy before
-  the real server is up — #6, and why compose's db probe is TCP `pg_isready`, not the socket.
+- **A green gate is not a green CI.** On a PR that touches `compose.yml`, `.github/workflows/*.yml` or a
+  healthcheck, run `gh run list --branch $(git branch --show-current) --limit 1` and report CI's verdict
+  beside your own: on a cold volume a container healthcheck can report healthy before the real server is
+  up — #6, and why compose's db probe is TCP `pg_isready`, not the socket.

@@ -1,6 +1,6 @@
 ---
 name: piv-review-pr
-description: Full pull-request review — fetch the PR, run the project's validation, review the diff with fresh eyes (dispatching the code-reviewer agent), categorize issues by severity, post the review to GitHub (approve / request-changes / comment), and save a report. The agentic gate that runs on an open PR before a human approves. Use after piv-create-pr.
+description: Full pull-request review — fetch the PR, run the project's validation, review the diff with fresh eyes (dispatching the code-reviewer agent), categorize issues by severity, post the review to GitHub as a PR comment (`gh pr review` is refused on this solo repo), and save a report. The agentic gate that runs on an open PR before a human approves. Use after piv-create-pr.
 argument-hint: "<pr-number | pr-url | branch> [--approve | --request-changes]"
 ---
 
@@ -59,8 +59,9 @@ Acknowledge what's done well, too — review is constructive, not just a defect 
 
 ### The constraint pass — before you recommend a fix
 
-For each proposed fix, grep the plan Phase 2 loaded, then read the hits under ACCEPTANCE CRITERIA and
-CONTEXT REFERENCES: `grep -in "do not modify\|do not edit\|read-only\|no changes to\|frozen" <plan>`.
+For each proposed fix, grep the plan Phase 2 loaded, then read every hit — ACCEPTANCE CRITERIA and
+CONTEXT REFERENCES first, but a task's `GOTCHA` is where the template puts constraints
+(`piv-plan-implementation:353`) and a GOTCHA is binding (`:354`): `grep -in "do not modify\|do not edit\|read-only\|no changes to\|frozen" <plan>`.
 #87's M2 prescribed a log line in a file AC #5 froze ("no changes to … CachingMapsProvider"); only the
 fix pass's triage caught it. A fix that breaks the PR's own AC gets `gh issue create` and its number in
 the report, not an inline recommendation. No plan loaded → skip.
