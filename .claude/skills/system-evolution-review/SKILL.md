@@ -1,7 +1,7 @@
 ---
 name: system-evolution-review
 description: Performs a meta-level review of how well an implementation followed its plan, classifying divergences and recommending AI-Layer improvements. Use after an execution report exists to find bugs in the process, not the code.
-argument-hint: "[plan-file] [execution-report-file]"
+argument-hint: "[plan-file] [execution-report-file] — or a free-form scope for a project-wide review"
 arguments: [plan, report]
 ---
 
@@ -37,6 +37,20 @@ which you got and ask — do not guess. Correct form:
 ```
 /system-evolution-review .claude/plans/<feature>.md .claude/execution-reports/<feature>.md
 ```
+
+**A first argument that does not end in `.md` is a word-split sentence, not a plan path** — this file's
+own project-wide run got `$plan`="the", `$report`="whole" (2026-09-04, ledger L12). Test that suffix
+before reading anything; if it fails, do not ask — run project-wide: scope from the sentence you were
+invoked with, `.claude/system-reviews/*.md` plus `.claude/execution-reports/*.md` read in place of the
+pair, and every later `$plan`/`$report` naming those two sets.
+
+**Remedy ledger — read FIRST, before the four artifacts:**
+`.claude/system-reviews/REMEDY-LEDGER.md` — every prior review's recommended-but-unapplied remedies,
+with status. Two things to do with it: (1) check whether any open item's *class* recurred in the loop
+you are reviewing — a recurrence of a logged item is a finding in itself, at higher severity than a new
+one (#87 logged the Level-4 item, #94 paid for it); (2) its top-ranked items are the default candidates
+for this review's 1–2 apply slots, ahead of anything newly discovered of equal weight — the queue exists
+because "first candidate for the next loop's apply slot" once sat unapplied for seven loops (#86 → #150).
 
 You will analyze four key artifacts:
 
@@ -133,6 +147,12 @@ Scoring guide:
 - 4-6: Mix of justified and problematic divergences
 - 1-3: Major problematic divergences
 
+**The adherence score is blind to plan-inherited defects** — a false claim born in the plan and copied
+forward faithfully scores as adherence, not as a defect. #87 and #107 both scored 9/10 and produced the
+only two defects that ever reached `main`.
+When a defect originated in the plan and was reproduced faithfully, say so beside the score and classify
+it as a plan defect (`bad ❌`, root cause at the plan/skill level); do not let adherence absorb it.
+
 #### Divergence Analysis
 
 For each divergence from the execution report:
@@ -193,6 +213,26 @@ Based on analysis, recommend specific actions:
 **For next implementation:**
 
 - [concrete improvements to try]
+
+**Rule for this section: a learning phrased as a recurring mechanism is not allowed to rest here.**
+It either becomes an action item (applied now, or a ranked row in the ledger) or is explicitly marked
+**"accepted risk — not worth a control, because …"**. #87's sharpest insight ("a plan's numbers are
+inherited, not audited") went into Key Learnings with no action item, and #107 reproduced it verbatim.
+A learning without an action item is a prediction, not a control.
+
+#### Update the ledger (mandatory last step)
+
+Before finishing, update `.claude/system-reviews/REMEDY-LEDGER.md`:
+
+- **Append** every "recommended, not applied" item from this review as a ranked row (origin, class,
+  status).
+- **Close** each item this review applied — move it to the closed section with the grep that verifies
+  it exists at HEAD. An "acted on" checkbox in the report body is not the record; the ledger row is.
+- **Increment** the recurrence column of any open item whose class fired again in this loop.
+
+A remedy with no ledger row and no repo reference can be deleted silently and stay "applied" in an old
+report forever — that is how `record-gate.sh` and `inherited-figures.sh` were deleted with no review
+noticing (ledger L2).
 
 ## Important
 

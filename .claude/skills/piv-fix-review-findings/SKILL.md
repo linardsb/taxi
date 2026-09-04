@@ -59,6 +59,12 @@ For each:
 3. Create and run a test that proves it. Where you can, **run the new test against the unfixed
    code and watch it fail** — that is the only thing separating a regression test from a passing
    decoration.
+4. For a **Critical or High**, answer in one line: **what new failure mode does this fix's
+   mechanism have?** — a swallowed `catch`, a promise chain with no terminal `catch`, a flag set
+   before the thing it claims, a read moved before the write it depends on — and add the test for
+   *that* before moving on. The repro from step 3 proves the old failure is gone; it says nothing
+   about the one the mechanism introduced. Both of PR #150's round-2 Highs were round-1 fixes
+   that passed their repros.
 
 ### When a fix changes a NUMBER or a GUARANTEE, chase its copies
 
@@ -77,11 +83,25 @@ of which contains "429". Check:
 - **the PR body** — no working-tree grep can reach it, and it is the first thing the next
   reviewer reads and the number they will re-run the gate against
 
+Chase the **subject** as well as the value: a retired claim survives as a verb ("the cache this
+script *measures*") long after its number is gone — grep the noun (`quantiz`, `grid`, the issue
+number) too. And make the sweep **checkable**: list in `.claude/reports/pr-{N}-review-fixes.md`
+the exact `grep -n` you ran per retired value/noun and its hits in the plan, the report and the
+PR body, so the reviewer diffs a list instead of trusting a sentence. On PR #150 this rule was written in two files, was
+followed for the digits, and still missed the sentence three times (R4, R5, R11) — because its
+output was a feeling, not a list.
+
 ## 3. Validate
 
 Run the `piv-validate` skill to finalize the fixes.
 
 ## 4. If operating on a PR — commit and push
+
+**Before committing: run every finding's closing command NOW, against the fixed tree, before writing
+its closing sentence.** "Every one is fixed; nothing was deferred" is a claim like any other — PR
+#150's L5 quoted an `expo config` run that predated its own fix, and the fix did not work (round 2,
+R6). A finding's closing line in `.claude/reports/pr-{N}-review-fixes.md` quotes the command, when it
+ran, and its output — or says "not run" honestly.
 
 If these fixes are on a PR branch, **commit them (use `piv-commit`) and push** so the PR reflects the fixes and the
 review can re-run on the updated PR. If nothing was fixed (everything deferred), there's nothing to push — just make
@@ -91,3 +111,7 @@ sure the deferred items are logged as issues.
 
 A short report: what was **fixed** (with its test), what was **deferred/logged** (with issue refs), what needs a
 **manual look/test** — and, if on a PR, the **pushed commit** + confirmation the PR is updated.
+
+Write it to `.claude/reports/pr-{N}-review-fixes.md` (round number in the name when there is more
+than one). `piv-review-pr` round ≥ 2 reads this file: a report that exists only in this session's
+transcript cannot be cross-checked by the reviewer it is written for.

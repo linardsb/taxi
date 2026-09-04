@@ -97,6 +97,16 @@ So that <benefit/value>
 - Identify authentication/authorization patterns if relevant
 - **Task-runner env passlist**: if the plan wires new tasks/tests into a monorepo task runner (turbo, nx), check its env-var allowlist (turbo 2.x `globalEnv` / per-task `env`) for every env var the new code reads. Strict mode strips undeclared vars *silently* — the failure mode is tests passing against the wrong target (e.g. a default localhost DB instead of `DATABASE_URL`).
 
+**6. Fact Verification**
+
+- A fact this plan states about existing code is read out of the source, decorators included, and cited
+  `file:line` — never from a comment, a sibling plan or memory. #86 planned `DELETE … → 200` past the
+  controller's `@HttpCode(204)`; #150 stated Places-token behaviour without opening the provider.
+- A pattern this plan proposes is checked the same way against the config that lints it — the package's own
+  `eslint.config.mjs`, or `packages/config/eslint/base.mjs` behind it — and the plan names the rule that
+  would flag it, or that none does. One plan proposed `setState`-in-effect, which the config forbids;
+  another `expect.any()` in an object literal, which trips `@typescript-eslint/no-unsafe-assignment`.
+
 **Clarify Ambiguities:**
 
 - If requirements are unclear at this point, ask the user to clarify before you continue
@@ -160,6 +170,14 @@ So that <benefit/value>
 - Mutable rows: does `updated_at` actually update? (Drizzle: `$onUpdate`, not just `defaultNow`)
 - One index per *known* hot read path of this ticket's consumers; name the owning ticket for deferred ones
 - Constraint-rejection tests: check how the ORM surfaces driver errors before specifying the assertion shape (drizzle 0.44 wraps them in `DrizzleQueryError` — assert on `.cause`)
+
+**Figures and enum-shaped sets:**
+
+- Every figure this plan states carries its provenance where it is written: `observed` (name the run),
+  `derived` (show the arithmetic and the condition it assumes) or `expected`. #107's `30` entered at the
+  plan stage, was inherited twice, and was audited only at review.
+- A set that must stay 1:1 with an enum is specified as a compile-pinned `Record<Enum, X>`, not a prose
+  list — #63's `Record<TrackingPageState, MessageKey>` caught 4 missing keys at compile time.
 
 ### Phase 5: Plan Structure Generation
 
@@ -333,6 +351,8 @@ Use information-dense keywords for clarity:
 - **PATTERN**: {Reference to existing pattern - file:line}
 - **IMPORTS**: {Required imports and dependencies}
 - **GOTCHA**: {Known issues or constraints to avoid}
+  - When this GOTCHA forbids the shape IMPLEMENT sketches, the GOTCHA is binding and IMPLEMENT is a sketch —
+    build to it and say so under Divergences from Plan (#19 Phase C's D1 came out right only because the implementer noticed).
 - **VALIDATE**: `{executable validation command}`
 - **SATISFIES**: {which acceptance criterion this task advances — e.g. AC #2 — so every task traces to a criterion}
 
@@ -417,6 +437,9 @@ It also tends to be the ticket's own success condition, because that is the inte
 ## ACCEPTANCE CRITERIA
 
 <List specific, measurable criteria that must be met for completion>
+
+<An AC whose verification this machine cannot perform — hardware or credentials confirmed absent at planning time —
+is not this ticket's AC. `gh issue create` now, put its number in the AC and mark it "owed by #N" — #16 shipped three unowned.>
 
 - [ ] Feature implements all specified functionality
 - [ ] All validation commands pass with zero errors
@@ -503,6 +526,7 @@ worst case was "never updates again", and the implementation followed the answer
 - [ ] URLs include section anchors when applicable
 - [ ] Task descriptions use codebase keywords
 - [ ] Validation commands are non interactive executable
+- [ ] Every figure carries its provenance — `observed` (which run) / `derived` (arithmetic) / `expected`
 
 ## Success Metrics
 

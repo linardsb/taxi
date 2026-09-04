@@ -21,6 +21,8 @@ android/
 
 # claude — personal overrides stay local
 .claude/settings.local.json
+# written by piv-create-pr/scripts/record-gate.sh
+.claude/last-gate.json
 
 # OS / editor
 .DS_Store
