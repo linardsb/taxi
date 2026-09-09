@@ -56,6 +56,75 @@ describe('location runtime', () => {
     expect(onFix).not.toHaveBeenCalled();
   });
 
+  describe('offer-card listeners (#15)', () => {
+    const socket = {} as Parameters<
+      ReturnType<typeof createLocationRuntime>['setSocket']
+    >[0];
+
+    it('announces every socket change to subscribers, including the detach (expected)', () => {
+      const runtime = createLocationRuntime(new InMemoryFixQueue());
+      const onSocket = jest.fn();
+      runtime.subscribe({ onSocket });
+
+      runtime.setSocket(socket);
+      runtime.setSocket(null);
+
+      expect(onSocket.mock.calls).toEqual([[socket], [null]]);
+    });
+
+    it('hands a late subscriber the socket already in the slot (edge)', () => {
+      const runtime = createLocationRuntime(new InMemoryFixQueue());
+      runtime.setSocket(socket);
+      const onSocket = jest.fn();
+
+      runtime.subscribe({ onSocket });
+
+      // The offers provider mounts in the root layout, but a re-mount after
+      // presence connected must not stay deaf until the next reconnect.
+      expect(onSocket).toHaveBeenCalledWith(socket);
+    });
+
+    it('reports the newest position even when the throttle drops it from the wire (edge)', async () => {
+      const queue = new InMemoryFixQueue();
+      const runtime = createLocationRuntime(queue);
+      jest.spyOn(runtime.uploader, 'kick').mockImplementation();
+      const onLatestFix = jest.fn();
+      runtime.subscribe({ onLatestFix });
+
+      await runtime.handleLocations([raw(0)]);
+      await runtime.handleLocations([
+        { ...raw(1000), coords: { ...raw(1000).coords, speed: 3.5 } },
+      ]);
+
+      // Only the first fix reached the wire queue; the card still saw both.
+      expect(await queue.count()).toBe(1);
+      expect(onLatestFix).toHaveBeenCalledTimes(2);
+      expect(onLatestFix).toHaveBeenLastCalledWith({
+        lat: 56.95,
+        lng: 24.1,
+        speedMps: 3.5,
+        atMs: T0 + 1000,
+      });
+    });
+
+    it('turns an unknown speed (absent or iOS -1) into null, never a number (edge)', async () => {
+      const runtime = createLocationRuntime(new InMemoryFixQueue());
+      jest.spyOn(runtime.uploader, 'kick').mockImplementation();
+      const onLatestFix = jest.fn();
+      runtime.subscribe({ onLatestFix });
+
+      await runtime.handleLocations([raw(0)]);
+      await runtime.handleLocations([
+        { ...raw(4000), coords: { ...raw(4000).coords, speed: -1 } },
+      ]);
+
+      const speeds = onLatestFix.mock.calls.map(
+        ([fix]) => (fix as { speedMps: number | null }).speedMps,
+      );
+      expect(speeds).toEqual([null, null]);
+    });
+  });
+
   it("the task's own error leaves a trace instead of vanishing (failure)", async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation();
     const executor = (TaskManager.defineTask as jest.Mock).mock

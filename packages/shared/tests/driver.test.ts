@@ -217,6 +217,27 @@ describe('driverMeSchema', () => {
     expect(parsed.profile.status).toBe('offline');
     expect(parsed.vehicles).toHaveLength(2);
     expect(parsed.vehicles[1]!.category).toBe('vip');
+    // A pre-#15 payload carries no `activeRideId` and still parses.
+    expect(parsed.activeRideId).toBeNull();
+  });
+
+  it('carries the active ride id when the api sets one (#15, edge)', () => {
+    const parsed = driverMeSchema.parse({
+      profile: { userId: uuid },
+      vehicles: [],
+      activeRideId: '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c',
+    });
+    expect(parsed.activeRideId).toBe('3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c');
+  });
+
+  it('rejects a non-uuid active ride id (#15, failure)', () => {
+    expect(
+      driverMeSchema.safeParse({
+        profile: { userId: uuid },
+        vehicles: [],
+        activeRideId: 'ride-1',
+      }).success,
+    ).toBe(false);
   });
 });
 

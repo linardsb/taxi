@@ -1,12 +1,8 @@
 /**
- * Integer cents → `€84.20` / `-€1.86`. Integer arithmetic only (root rule:
- * never floats). The format — symbol first, dot decimal — is a placeholder
- * pending the brand copy pass (logged in ui-decisions.md).
+ * `formatEur` moved to `@taxi/shared` in #15: the api's offer push carries
+ * the same money string as the card, and two «€ + truncation» implementations
+ * would drift on the first brand-copy change. Re-exported so every consumer
+ * keeps importing through `@/features/availability`, and `format-eur.test.ts`
+ * keeps pinning the behaviour from this side.
  */
-export function formatEur(cents: number): string {
-  const sign = cents < 0 ? '-' : '';
-  const abs = Math.abs(Math.trunc(cents));
-  const euros = Math.trunc(abs / 100);
-  const rest = abs % 100;
-  return `${sign}€${euros}.${String(rest).padStart(2, '0')}`;
-}
+export { formatEur } from '@taxi/shared';

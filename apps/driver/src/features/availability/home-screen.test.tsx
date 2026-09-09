@@ -50,6 +50,34 @@ jest.mock('@/features/auth', () => ({
   ApiError: class extends Error {},
 }));
 
+// The offers slice's provider is replaced by a controllable value; its VIEWS
+// (`QueuePosition`, `offerBannerFor`) stay real, so what home renders is what
+// ships (#15).
+let mockOffers: import('@/features/offers').OfferState = {
+  phase: 'idle',
+  pending: null,
+  remainingMs: 0,
+  banner: null,
+  errorCode: null,
+  speedMps: null,
+  queue: null,
+  answeredOfferIds: [],
+};
+const mockDismissOffer = jest.fn();
+jest.mock('@/features/offers', () => ({
+  ...jest.requireActual<typeof import('@/features/offers')>(
+    '@/features/offers',
+  ),
+  useOffers: () => ({
+    state: mockOffers,
+    latest: null,
+    accept: jest.fn(),
+    decline: jest.fn(),
+    dismissBanner: mockDismissOffer,
+    receive: jest.fn(),
+  }),
+}));
+
 const t = (
   key: Parameters<typeof formatMessage>[1],
   params?: Record<string, string | number>,
@@ -58,8 +86,10 @@ const t = (
 describe('HomeScreen', () => {
   beforeEach(() => {
     mockToggle.mockReset();
+    mockDismissOffer.mockReset();
     mockPresence = initialPresence;
     mockEarningsStatus = 'ready';
+    mockOffers = { ...mockOffers, banner: null, errorCode: null, queue: null };
   });
 
   it('renders the LV catalog copy and the toggle dispatches (expected)', async () => {
@@ -149,5 +179,56 @@ describe('HomeScreen', () => {
     expect(
       screen.getByRole('switch', { name: t('driver.home.go_offline') }),
     ).toBeChecked();
+  });
+
+  it('shows the queue position under the toggle and links the today card to earnings (#15, expected)', async () => {
+    mockOffers = {
+      ...mockOffers,
+      queue: {
+        driverId: 'd0000000-0000-4000-8000-000000000001',
+        geozoneId: '00000000-0000-4000-8000-000000000102',
+        geozoneSlug: 'rix',
+        position: 2,
+        size: 5,
+        at: '2026-09-04T10:00:00.000Z',
+      },
+    };
+    await render(<HomeScreen />);
+
+    expect(screen.getByTestId('queue-position')).toHaveTextContent(
+      t('driver.queue.position', { position: 2, size: 5, zone: 'rix' }),
+    );
+    // F4: the link is a grouping `Pressable`, which collapses its subtree into
+    // one node — so a static `accessibilityLabel` REPLACED the card's text and
+    // the day's earnings were absent from the audio channel entirely. The
+    // accessible name has to carry the number a sighted driver reads.
+    const link = screen.getByRole('button', {
+      name: t('driver.home.today', { amount: '€84.20', rides: 7 }),
+    });
+    expect(link).toBeTruthy();
+    await fireEvent.press(link);
+    const router = jest
+      .requireMock<{ useRouter: () => { push: jest.Mock } }>('expo-router')
+      .useRouter();
+    expect(router.push).toHaveBeenCalledWith('/earnings');
+  });
+
+  it('renders the offers banner beside the presence one, and its dismiss reaches the offers slice (#15, edge)', async () => {
+    mockOffers = { ...mockOffers, banner: 'error', errorCode: 'offline' };
+    await render(<HomeScreen />);
+
+    expect(
+      within(screen.getByTestId('offer-banner')).getByText(
+        t('driver.error.offline'),
+      ),
+    ).toBeTruthy();
+    await fireEvent.press(
+      within(screen.getByTestId('offer-banner')).getByRole('button', {
+        name: t('driver.action.done'),
+      }),
+    );
+    expect(mockDismissOffer).toHaveBeenCalledTimes(1);
+    // No queue line without an event.
+    expect(screen.queryByTestId('queue-position')).toBeNull();
   });
 });

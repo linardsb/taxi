@@ -7,10 +7,26 @@ import type { DriverSocket } from './socket';
 import { SqliteFixQueue } from './sqlite-fix-queue';
 import { FixUploader, type UploaderStats } from './uploader';
 
+/**
+ * The phone's newest position, BEFORE the 4 s wire throttle (#15). The offer
+ * card reads it for pickup distance and for glance mode (speed above
+ * ~10 km/h); both want the OS cadence (~1 s), not the wire's. `speedMps` is
+ * null when the OS gave none or a negative sentinel (iOS `-1` = unknown).
+ */
+export interface LatestFix {
+  lat: number;
+  lng: number;
+  speedMps: number | null;
+  atMs: number;
+}
+
 export interface RuntimeListener {
   onFix?(atMs: number): void;
   onProgress?(stats: UploaderStats): void;
   onServerOffline?(): void;
+  /** The socket slot changed — attach or detach event handlers (#15). */
+  onSocket?(socket: DriverSocket | null): void;
+  onLatestFix?(fix: LatestFix): void;
 }
 
 export interface LocationRuntime {
@@ -21,6 +37,22 @@ export interface LocationRuntime {
   subscribe(listener: RuntimeListener): () => void;
   /** The task body: throttle → enqueue → kick. Exported so a test drives it with a fake queue. */
   handleLocations(locations: readonly RawFix[]): Promise<void>;
+}
+
+function toLatestFix(raw: RawFix): LatestFix {
+  const speed = raw.coords.speed;
+  return {
+    lat: raw.coords.latitude,
+    lng: raw.coords.longitude,
+    speedMps:
+      speed === null ||
+      speed === undefined ||
+      !Number.isFinite(speed) ||
+      speed < 0
+        ? null
+        : speed,
+    atMs: raw.timestamp,
+  };
 }
 
 /**
@@ -47,15 +79,25 @@ export function createLocationRuntime(queue: FixQueue): LocationRuntime {
     uploader,
     setSocket: (next) => {
       socket = next;
+      listeners.forEach((l) => l.onSocket?.(next));
     },
     getSocket: () => socket,
     subscribe: (listener) => {
       listeners.add(listener);
+      // A listener that mounts after presence connected must not wait for the
+      // next reconnect to learn the socket exists.
+      if (socket) listener.onSocket?.(socket);
       return () => {
         listeners.delete(listener);
       };
     },
     async handleLocations(locations) {
+      // Before the throttle: the card wants every OS delivery, the wire does not.
+      const newest = locations[locations.length - 1];
+      if (newest) {
+        const latest = toLatestFix(newest);
+        listeners.forEach((l) => l.onLatestFix?.(latest));
+      }
       const { fixes, lastTs } = selectFixes(locations, lastEnqueuedTs);
       lastEnqueuedTs = lastTs;
       if (fixes.length === 0) return;

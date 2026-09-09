@@ -24,6 +24,8 @@ export interface RawFix {
     latitude: number;
     longitude: number;
     heading?: number | null;
+    /** m/s; iOS reports -1 for "unknown". Read by the offer card's glance mode only (#15). */
+    speed?: number | null;
   };
 }
 

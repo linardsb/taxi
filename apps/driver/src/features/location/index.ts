@@ -6,7 +6,11 @@ export type { RawFix } from './fix-throttle';
 export { InMemoryFixQueue } from './in-memory-fix-queue';
 export { LOCATION_TASK, locationTaskOptions } from './location-options';
 export { createLocationRuntime, getLocationRuntime } from './location-task';
-export type { LocationRuntime, RuntimeListener } from './location-task';
+export type {
+  LatestFix,
+  LocationRuntime,
+  RuntimeListener,
+} from './location-task';
 export {
   batteryPromptDue,
   ensureLocationPermissions,

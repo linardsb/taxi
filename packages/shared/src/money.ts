@@ -40,3 +40,19 @@ export const commissionPctSchema = z.number().min(0).max(100);
 export function commissionCentsFor(totalCents: number, pct: number): number {
   return Math.round((totalCents * pct) / 100);
 }
+
+/**
+ * Integer cents → `€84.20` / `-€1.86`. Integer arithmetic only (root rule:
+ * never floats); a float is truncated, never rounded into money. The format
+ * — symbol first, dot decimal — is a placeholder pending the brand copy pass
+ * (logged in .claude/references/ui-decisions.md). No `Intl`, no locale: the
+ * driver app and the api's push body must produce the same string, and this
+ * file stays a types-and-integers module (#15).
+ */
+export function formatEur(cents: number): string {
+  const sign = cents < 0 ? '-' : '';
+  const abs = Math.abs(Math.trunc(cents));
+  const euros = Math.trunc(abs / 100);
+  const rest = abs % 100;
+  return `${sign}€${euros}.${String(rest).padStart(2, '0')}`;
+}

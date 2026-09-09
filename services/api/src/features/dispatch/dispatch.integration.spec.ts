@@ -9,10 +9,14 @@ import {
   authSessionSchema,
   dispatchBoardEventSchema,
   dispatchRosterSchema,
+  driverQueueEventSchema,
   fareSplitSchema,
+  formatEur,
   IDEMPOTENCY_KEY_HEADER,
   rideCreatedSchema,
+  rideOfferEventSchema,
   RT,
+  type DriverQueueEvent,
   type LatLng,
   type RideOfferEvent,
   type RideOfferRevokedEvent,
@@ -128,7 +132,7 @@ describe('dispatch (integration)', () => {
   async function onlineDriver(
     n: number,
     location: LatLng,
-    car: { hasChildSeat?: boolean } = {},
+    car: { hasChildSeat?: boolean; pushToken?: string } = {},
   ) {
     const session = await signIn(p(n));
     const auth = `Bearer ${session.accessToken}`;
@@ -146,6 +150,16 @@ describe('dispatch (integration)', () => {
         hasChildSeat: car.hasChildSeat ?? false,
       })
       .expect(201);
+
+    // Only the tests that assert on the offer push register one (#15); every
+    // other driver is skipped server-side with `no_token`, as pre-#15.
+    if (car.pushToken) {
+      await http
+        .put('/drivers/me/push-token')
+        .set('authorization', auth)
+        .send({ token: car.pushToken })
+        .expect(204);
+    }
 
     await http
       .put('/drivers/me/status')
@@ -956,6 +970,82 @@ describe('dispatch (integration)', () => {
     expect(typeof event.expiresAt).toBe('string');
     expect(new Date(event.expiresAt).getTime()).toBeGreaterThan(Date.now());
     expect(event.quote.totalCents).toBe(event.split.totalCents);
+    // The operative method rides on the wire (#15) — `bookRide` books cash.
+    expect(event.paymentMethod).toBe('cash');
+  });
+
+  /** The push tail is fire-and-forget after `tick()`; poll rather than race it. */
+  async function waitUntil(
+    predicate: () => boolean,
+    what: string,
+    timeoutMs = 2_000,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+      if (Date.now() > deadline)
+        throw new Error(`timed out waiting for ${what}`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  it('pushes every offer with `kind: offer` and the wire offer as data (#15, expected)', async () => {
+    const token = 'ExponentPushToken[dispatchintegration01]';
+    const d = await onlineDriver(49, near(CENTRE_PICKUP.location, 0.001, 0), {
+      pushToken: token,
+    });
+    const ride = await bookRide(50, CENTRE_PICKUP);
+    const before = ctx.push.sent.length;
+
+    await sweeper.tick();
+
+    await waitUntil(() => ctx.push.sent.length > before, 'the offer push');
+    const pushed = ctx.push.sent[before]!;
+    expect(pushed.token).toBe(token);
+    expect(pushed.message.data).toMatchObject({
+      kind: 'offer',
+      rideId: ride.id,
+    });
+
+    // The payload is the same wire event the socket got, so a killed app can
+    // draw the card from the notification alone.
+    const carried = rideOfferEventSchema.parse(
+      JSON.parse(pushed.message.data!.offer!),
+    );
+    const row = await pendingOffer(ride.id);
+    expect(carried.id).toBe(row!.id);
+    expect(carried.driverId).toBe(d.id);
+    expect(carried.paymentMethod).toBe('cash');
+    // The body names the driver's NET, formatted by the shared `formatEur`.
+    expect(pushed.message.body).toContain(
+      formatEur(carried.split.driverNetCents),
+    );
+  });
+
+  it('tells a newly ranked driver their queue position over the socket (#15, expected)', async () => {
+    const d = await onlineDriver(51, near(RIX_PICKUP.location, 0.0005, 0));
+    const sock = await driverSocket(d.id);
+    const ranked = new Promise<DriverQueueEvent>((resolve) =>
+      sock.once(RT.driverQueue, resolve),
+    );
+    const ride = await bookRide(52, RIX_PICKUP);
+    // The in-memory queue outlives each test in this file, so earlier tests'
+    // RIX drivers are still ranked ahead: a newcomer joins the BACK.
+    const ahead = (await ctx.queue.snapshot(RIGA_ZONE_IDS.rix)).length;
+
+    // Lazy enrolment happens inside this tick — it is the first `driver:queue`
+    // this driver ever receives (no zone-entry enrolment exists).
+    await sweeper.tick();
+
+    const event = driverQueueEventSchema.parse(await ranked);
+    expect(event).toMatchObject({
+      driverId: d.id,
+      geozoneId: RIGA_ZONE_IDS.rix,
+      geozoneSlug: 'rix',
+      position: ahead + 1,
+      size: ahead + 1,
+    });
+    // CONTROL: the ride really went through the queue path.
+    expect((await pendingOffer(ride.id))?.source).toBe('geozone_queue');
   });
 
   it('never offers a ride to an offline driver (edge)', async () => {

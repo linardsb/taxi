@@ -27,4 +27,9 @@ export class GeozonesService {
   listForCity(cityId: string): Promise<ResolvedGeozone[]> {
     return this.repository.listForCity(cityId);
   }
+
+  /** One zone by id, for the `driver:queue` slug (#15). `undefined` = no such zone. */
+  findById(id: string): Promise<ResolvedGeozone | undefined> {
+    return this.repository.findById(id);
+  }
 }

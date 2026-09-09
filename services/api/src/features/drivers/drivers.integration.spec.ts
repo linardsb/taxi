@@ -101,7 +101,70 @@ describe('drivers (integration)', () => {
     expect(me.profile.balanceCents).toBe(0);
     expect(me.profile.commissionPctOverride).toBeNull();
     expect(me.vehicles).toEqual([]);
+    // No ride → null, not absent (#15).
+    expect(me.activeRideId).toBeNull();
     expect(await d.row()).toBeDefined();
+  });
+
+  describe('activeRideId (#15)', () => {
+    /** A ride written straight into the table, as the #61 tests do; retired in `finally`. */
+    async function withRide<T>(
+      driverId: string,
+      status: 'accepted' | 'completed',
+      body: (rideId: string) => Promise<T>,
+    ): Promise<T> {
+      const rider = await signIn(p(80), 'rider');
+      const [ride] = await ctx.db
+        .insert(rides)
+        .values({
+          orderId: crypto.randomUUID(),
+          status,
+          riderId: rider.user.id,
+          driverId,
+          request: {},
+          paymentMethod: 'cash',
+          category: 'standard',
+        })
+        .returning({ id: rides.id });
+      try {
+        return await body(ride!.id);
+      } finally {
+        await ctx.db
+          .update(rides)
+          .set({ status: 'cancelled_by_system' })
+          .where(eq(rides.id, ride!.id));
+      }
+    }
+
+    it('names the ride a driver is committed to, read from the rides table (expected)', async () => {
+      const d = await driver(81);
+      await http.get('/drivers/me').set('authorization', d.auth).expect(200);
+
+      await withRide(d.id, 'accepted', async (rideId) => {
+        const res = await http
+          .get('/drivers/me')
+          .set('authorization', d.auth)
+          .expect(200);
+        const me = driverMeSchema.parse(res.body);
+        expect(me.activeRideId).toBe(rideId);
+        // CONTROL: `drivers.status` still says offline — the cache is not the
+        // source, the rides table is (#61 chain A).
+        expect(me.profile.status).toBe('offline');
+      });
+    });
+
+    it('is null once the ride is completed, settled or not (edge)', async () => {
+      const d = await driver(82);
+      await http.get('/drivers/me').set('authorization', d.auth).expect(200);
+
+      await withRide(d.id, 'completed', async () => {
+        const res = await http
+          .get('/drivers/me')
+          .set('authorization', d.auth)
+          .expect(200);
+        expect(driverMeSchema.parse(res.body).activeRideId).toBeNull();
+      });
+    });
   });
 
   it('creates a vehicle and lists it back (expected)', async () => {

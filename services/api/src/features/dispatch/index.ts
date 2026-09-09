@@ -17,9 +17,12 @@
  *   already-queued driver keeps their earned position — without a polygon check
  *   on the hot path. Real enrollment needs an in-memory polygon cache and its
  *   own ticket.
- * - `driver:queue` IS NEVER EMITTED. A driver cannot see their own place in the
- *   rank; the schema is typed and unused until #15 draws the offer card the
- *   position belongs next to (#14 deferred it there).
+ * - `driver:queue` IS EMITTED ON EVERY QUEUE MUTATION (#15): `QueueNotifier`
+ *   broadcasts the whole zone's ranks after lazy enrolment and after a decline
+ *   demotion, so every queued driver reads the same number Dina's grid shows.
+ *   What is still NOT there follows from the first gap: no zone-entry
+ *   enrolment means the first `driver:queue` a driver ever sees arrives when
+ *   dispatch first ranks them for a ride, not when they park at the rank.
  * - DOUBLE-ASSIGNMENT IS CLOSED AT BOTH ENDS (#61), WITH ONE ms-WIDE SEAM
  *   ACCEPTED. Going online is gated on "no live post-acceptance ride" read from
  *   the RIDES table (`setOnlineIfEligible`), so the offline-mid-offer driver of

@@ -312,7 +312,12 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         teardownSocket();
         runtime.uploader.stop();
         await runtime.queue.clear().catch(() => undefined);
-        await deactivateKeepAwake(KEEP_AWAKE_TAG);
+        // Guarded for the same reason as the `keep_awake` effect above:
+        // Android throws when the Activity that took the lock is gone. Here the
+        // throw would skip everything below it — the intent write, the offline
+        // PUT and the state reset — leaving `drivers.status` online in Postgres
+        // and the persisted intent online, which the next cold launch re-asserts.
+        await deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
         await writeIntent('offline');
         if (wasOnline) {
           await api

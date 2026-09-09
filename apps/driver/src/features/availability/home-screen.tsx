@@ -1,9 +1,10 @@
 import { colors, fontSize, spacing, type MessageKey } from '@taxi/shared';
 import { useRouter } from 'expo-router';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Banner, Button, Screen, type BannerProps } from '@/components';
 import { useSession } from '@/features/auth';
 import { useT, type T } from '@/features/i18n';
+import { offerBannerFor, QueuePosition, useOffers } from '@/features/offers';
 import { useMe } from '@/features/onboarding';
 import { EarningsCard } from './earnings-card';
 import { pillFrom, type Connection } from './presence-pill';
@@ -24,8 +25,11 @@ function clockTime(iso: string | undefined): string {
 }
 
 /**
- * The online screen. One 56 px toggle, the today card, a diagnostics line
- * and at most one banner — each banner carries the one thing to do about it.
+ * The online screen. One 56 px toggle, the queue position under it (#15),
+ * the today card (a link to the earnings screen), a diagnostics line and at
+ * most one banner per concern — each banner carries the one thing to do
+ * about it. Offer banners come from the offers slice's own mapper, so this
+ * file stays a composer.
  */
 export function HomeScreen() {
   const t = useT();
@@ -33,6 +37,7 @@ export function HomeScreen() {
   const { signOut } = useSession();
   const { me } = useMe();
   const { state, nowMs, toggle, dismissBanner, batteryPrompt } = usePresence();
+  const offers = useOffers();
   const online = state.intent === 'online';
   const pill = pillFrom(state, nowMs);
   const vehicle = me?.vehicles[0];
@@ -43,6 +48,7 @@ export function HomeScreen() {
     battery: batteryPrompt,
     dismiss: dismissBanner,
   });
+  const offerBanner = offerBannerFor(offers.state, t, offers.dismissBanner);
 
   return (
     <Screen scroll={false}>
@@ -59,6 +65,7 @@ export function HomeScreen() {
         ) : null}
       </View>
       {banner ? <Banner {...banner} testID="banner" /> : null}
+      {offerBanner ? <Banner {...offerBanner} testID="offer-banner" /> : null}
       <Button
         size="lg"
         accessibilityRole="switch"
@@ -69,7 +76,25 @@ export function HomeScreen() {
         variant={online ? 'secondary' : 'primary'}
         testID="toggle"
       />
-      <EarningsCard online={online} />
+      <QueuePosition queue={offers.state.queue} />
+      {/*
+        No `accessibilityLabel` here on purpose. `Pressable` defaults
+        `accessible` to true, which collapses the subtree into a single node,
+        and an explicit label then REPLACES the accumulated child text rather
+        than adding to it — a static «Ieņēmumi» erased the day's earnings from
+        the audio channel while leaving it on screen. Without one, RN builds
+        the name from `EarningsCard`'s own text, so the number is announced;
+        `accessibilityRole` still says it is a button.
+      */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityHint={t('driver.action.earnings')}
+        onPress={() => router.push('/earnings')}
+        style={styles.earningsLink}
+        testID="earnings-link"
+      >
+        <EarningsCard online={online} />
+      </Pressable>
       {online ? (
         <Text style={styles.diagnostics} testID="diagnostics">
           {state.lastFixAt === null
@@ -187,6 +212,7 @@ const styles = StyleSheet.create({
   header: { gap: spacing.xs },
   status: { fontSize: fontSize.xl, fontWeight: '700', color: colors.fg },
   pill: { fontSize: fontSize.sm, color: colors.fgMuted },
+  earningsLink: { minHeight: 44 },
   diagnostics: { fontSize: fontSize.sm, color: colors.fgMuted },
   footer: { marginTop: 'auto', gap: spacing.sm },
 });

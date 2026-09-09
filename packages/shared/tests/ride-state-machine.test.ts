@@ -3,6 +3,7 @@ import {
   ACTIVE_DRIVER_RIDE_STATUSES,
   ALLOWED_TRANSITIONS,
   BOARD_LIVE_RIDE_STATUSES,
+  DRIVER_STEPS,
   InvalidRideTransitionError,
   RIDE_STATUSES,
   assertTransition,
@@ -11,6 +12,34 @@ import {
   isPaymentMethodLocked,
   isTerminal,
 } from '../src/ride-state-machine';
+
+describe('DRIVER_STEPS (#15)', () => {
+  it('every step is an edge of ALLOWED_TRANSITIONS (expected)', () => {
+    // The api guards a step with `ride.status === from` and nothing else; that
+    // is only sound while every pair here is a legal hop.
+    for (const step of Object.values(DRIVER_STEPS)) {
+      expect(canTransition(step.from, step.to), `${step.from}→${step.to}`).toBe(
+        true,
+      );
+    }
+  });
+
+  it('the four `from` statuses are exactly the active-driver set, in order (edge)', () => {
+    // The app renders one primary button per active status by looking up the
+    // step whose `from` matches — a status with no step would be a dead end.
+    expect(Object.values(DRIVER_STEPS).map((s) => s.from)).toEqual([
+      ...ACTIVE_DRIVER_RIDE_STATUSES,
+    ]);
+  });
+
+  it('the steps chain: each `to` is the next step`s `from`, ending at completed (edge)', () => {
+    const steps = Object.values(DRIVER_STEPS);
+    for (let i = 0; i < steps.length - 1; i++) {
+      expect(steps[i]!.to).toBe(steps[i + 1]!.from);
+    }
+    expect(steps[steps.length - 1]!.to).toBe('completed');
+  });
+});
 
 describe('ride state machine', () => {
   it('allows the full happy path', () => {

@@ -3,6 +3,7 @@ import {
   ASSIGNMENT_SOURCES,
   BOOKING_CHANNELS,
   DRIVER_STATUSES,
+  PAYMENT_METHOD_TYPES,
   SMS_KINDS,
 } from './enums';
 import { dispatchExplanationSchema } from './dispatch-explanation';
@@ -111,10 +112,28 @@ export type RideStatusEvent = z.infer<typeof rideStatusEventSchema>;
  *
  * Producers serialize before emitting; a consumer that wants the domain object
  * calls `rideOfferSchema.parse(payload)`, which re-hydrates both fields.
+ *
+ * `paymentMethod` is WIRE-ONLY (#15): the operative `ride.paymentMethod` at
+ * emit time, so the card can make it unmissable at accept. The rider may
+ * still change it until the offer is accepted, so it is a snapshot, not a
+ * lock (see `isPaymentMethodLocked`); the app compares it with the accepted
+ * ride's method and announces a change. Not on `rideOfferSchema`, which is
+ * the `ride_offers` insert shape — no column, no migration.
+ *
+ * **DEPLOY ORDER: the api ships BEFORE the driver binary.** `paymentMethod` is
+ * required here — no `.default`, no `.optional` — and that is asymmetric on
+ * purpose. New payload → old client is safe (zod strips the unknown key). Old
+ * payload → new client is NOT: `safeParse` fails, `use-offers.tsx` logs
+ * `ride:offer dropped` and returns, `route-notification.ts` yields
+ * `offer: null`, and a driver on the new binary receives no work at all with a
+ * console warning as the only trace. Do **not** "fix" that with
+ * `.default('cash')`: inventing a payment method the rider did not choose is
+ * worse than dropping the card, because the driver acts on it.
  */
 export const rideOfferEventSchema = rideOfferSchema.extend({
   sentAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
+  paymentMethod: z.enum(PAYMENT_METHOD_TYPES),
 });
 export type RideOfferEvent = z.infer<typeof rideOfferEventSchema>;
 

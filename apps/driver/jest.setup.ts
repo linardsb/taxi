@@ -76,6 +76,34 @@ jest.mock('expo-notifications', () => ({
   addNotificationResponseReceivedListener: jest.fn(() => ({
     remove: jest.fn(),
   })),
+  addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  getLastNotificationResponseAsync: jest.fn(() => Promise.resolve(null)),
+}));
+
+// The offer tone and haptics (#15). One player object per test file, so a
+// test reads the same `play`/`pause` spies the hook called.
+const mockAudioPlayer = {
+  play: jest.fn(),
+  pause: jest.fn(),
+  seekTo: jest.fn(() => Promise.resolve()),
+  remove: jest.fn(),
+  loop: false,
+  playing: false,
+};
+jest.mock('expo-audio', () => ({
+  useAudioPlayer: jest.fn(() => mockAudioPlayer),
+  setAudioModeAsync: jest.fn(() => Promise.resolve()),
+}));
+
+jest.mock('expo-haptics', () => ({
+  NotificationFeedbackType: {
+    Success: 'success',
+    Warning: 'warning',
+    Error: 'error',
+  },
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  notificationAsync: jest.fn(() => Promise.resolve()),
+  impactAsync: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock('expo-localization', () => ({
@@ -97,12 +125,20 @@ jest.mock('expo-constants', () => ({
 
 // One router object per test file, so `useRouter().push` is the same spy a
 // test reads back through `jest.requireMock('expo-router').useRouter()`.
-const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
+const mockRouter = {
+  push: jest.fn(),
+  replace: jest.fn(),
+  back: jest.fn(),
+  navigate: jest.fn(),
+};
 jest.mock('expo-router', () => {
   const { Text } = require('react-native') as typeof import('react-native');
   const React = require('react') as typeof import('react');
   return {
     useRouter: () => mockRouter,
+    // `jest.mocked(usePathname).mockReturnValue('/offer')` in a test that
+    // needs the offer screen to believe it is already showing.
+    usePathname: jest.fn(() => '/home'),
     useLocalSearchParams: jest.fn(() => ({})),
     Redirect: ({ href }: { href: string }) =>
       React.createElement(Text, { testID: 'redirect' }, String(href)),

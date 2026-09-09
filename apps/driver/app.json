@@ -14,7 +14,11 @@
           "location"
         ],
         "NSLocationWhenInUseUsageDescription": "Sakta Cab sends your position to dispatch while you are online.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sakta Cab keeps sending your position to dispatch while you are online, even with the screen locked."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sakta Cab keeps sending your position to dispatch while you are online, even with the screen locked.",
+        "LSApplicationQueriesSchemes": [
+          "comgooglemaps",
+          "waze"
+        ]
       }
     },
     "android": {
@@ -60,7 +64,8 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-localization",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-audio"
     ],
     "scheme": "saktacabdriver",
     "locales": {

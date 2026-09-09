@@ -10,6 +10,7 @@ import {
   DISPATCH_QUEUE_STORE,
   type DispatchQueueStore,
 } from '../queue/dispatch-queue.store';
+import { QueueNotifier } from '../queue/queue-notifier';
 import { toCandidates } from './candidate-filter';
 
 /**
@@ -28,6 +29,7 @@ export class GeozoneQueueStrategy implements DispatchStrategy {
     private readonly locations: DriverLocationService,
     private readonly drivers: DriversService,
     @Inject(DISPATCH_QUEUE_STORE) private readonly queue: DispatchQueueStore,
+    private readonly queueNotifier: QueueNotifier,
   ) {}
 
   async findCandidates(
@@ -67,6 +69,10 @@ export class GeozoneQueueStrategy implements DispatchStrategy {
     for (const driverId of newcomers) {
       await this.queue.joinBack(zoneId, driverId);
     }
+    // The zone's ranks changed: every queued driver hears theirs (#15). No
+    // zone-entry enrolment exists, so this is the FIRST `driver:queue` a
+    // newcomer ever receives.
+    if (newcomers.length) await this.queueNotifier.broadcast(zoneId);
 
     const positions = newcomers.length
       ? await this.queue.positions(zoneId, ids)

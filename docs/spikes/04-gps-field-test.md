@@ -60,6 +60,27 @@ Per platform (Android on Atis's actual phone is the one that matters):
 
 PASS → #14 proceeds as designed with these exact `startLocationUpdatesAsync` options. FAIL → #14 is designed around the free mounted-phone pattern instead: screen kept awake while online (`expo-keep-awake`), background streaming best-effort, server-side gap tolerance. No paid library for the pilot. *Superseded 2026-08-26 (status line): #14 ships the superset regardless of outcome; a later run decides only whether keep-awake can be relaxed after the pilot.*
 
+## #15 device day — offer card, active ride, receipt (Level 4; written 2026-09-04, NOT run)
+
+**Prerequisite: rebuild the dev client.** #15 added two native modules to `apps/driver` (`expo-audio ~57.0.4`, `expo-haptics ~57.0.2`, `observed` pins from `npx expo install`); a client built before #15 has no tone and no haptics and crashes on the first offer. Same recipe as "Build & run" above, from `apps/driver` (`npx expo run:android` / the out-of-repo iOS copy on this Mac). Also `npx expo install --check` before the build — it reports nine pre-existing patch-level drifts on the #139 pins (`expo`, `expo-constants`, `expo-dev-client`, `expo-linking`, `expo-location`, `expo-notifications`, `expo-router`, `expo-secure-store`, `expo-task-manager`; `observed` 2026-09-04); decide on the bump before the device build, never `--fix` past the `typescript` exclusion.
+
+Means that already exist: a provisioned dispatcher (`pnpm --filter @taxi/api provision:dispatcher +371…`), Dina's console phone-booking form (`POST /dispatch/bookings` → the normal cascade), the OTP code from the api console (stub SMS), the rider app on a second phone for step 13.
+
+1. Device A: driver signed in, online, streaming (pill «Tiešraide»). No other driver online in the city.
+2. Console: book a phone order with a pickup within ~2 km of device A. Expect within ~2 s: the full-screen card with «Cena €X», «Jūs saņemat €Y (85%)», pickup + destination, ETA + km, payment pill, countdown starting near 20; tone looping, card flashing, one buzz.
+3. Let it expire untouched. Expect: card clears at 0, home shows «Piedāvājuma laiks beidzās»; the console's board shows the cascade moving on. Book again; accept with one tap anywhere on the card. Expect: the active-ride screen at «Brauciens pieņemts», payment pill, «Braucu pie pasažiera» button.
+4. Background the app before a third booking. Expect: a push «Jauns brauciens / Jūs saņemat €Y…»; tapping it opens the card (if still within the countdown). Force-stop the app, book again, tap the push. Expect: the card renders from the notification payload; accepting works.
+5. Walk «Braucu pie pasažiera → Esmu klāt → Sākt braucienu → Pabeigt braucienu». Expect: each tap advances; the board mirrors each status; «Atvērt Google Maps» opens the pickup (the destination from «Esmu klāt» on); returning shows the ride unchanged. Airplane mode 30 s mid-ride and back: expect a re-read and the next `ride:status` to arrive.
+6. Complete. Expect: the receipt «Pasažieris samaksāja → Sakta (15%) → Jūs saņemat» to the cent, equal to the ride's `split` row; the earnings screen (tap the today card) shows today's total including this ride.
+7. Console: force-assign a fresh booking to device A. Expect: the active-ride screen opens with no card shown first.
+8. Console: reassign the ride to another driver while device A is at «Ceļā pie pasažiera». Expect: device A shows «Dispečers nodeva braucienu citam šoferim» and a «Gatavs» button home.
+9. Drive above 10 km/h with a pending offer (passenger seat). Expect: the card collapses to fare + you-keep + payment + accept/decline.
+10. Kill the app ~75 s. Expect: no new offer reaches it; the «you've gone offline» push arrives; reopening re-asserts online (#14 unchanged).
+11. Kill the app mid-ride, reopen. Expect: the gate lands on the active-ride screen at the right status.
+12. Two devices online in the RIX zone (queue mode in the seed), a RIX pickup booked: expect both to show «Rindā: N. no 2 · rix» on home, updating when one declines.
+13. Rider app on a second phone: book cash, and while device A's card is up switch to card; device A accepts. Expect: the active-ride screen opens with the «Ar karti» pill and a one-time «Pasažieris nomainīja apmaksas veidu: Ar karti» banner, announced by the screen reader.
+14. TalkBack / VoiceOver on the card: expect the whole-card label («Jauns brauciens. Cena €X, jūs saņemat €Y. Atlikušas N sekundes…»), a countdown announcement every 5 s then each of the last 5, and the decline button as a separate 44 px target.
+
 ## Field results
 
 <!-- Paste analyze.mjs output per run. Note phone model + OEM + OS version — OEM battery policy is the known risk. -->

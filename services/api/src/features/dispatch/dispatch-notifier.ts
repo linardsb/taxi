@@ -1,10 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  formatEur,
+  formatMessage,
+  OFFER_PUSH_PAYLOAD_MAX_BYTES,
   RT,
   type AssignmentSource,
+  type OfferPushData,
+  type PaymentMethodType,
   type RideOffer,
+  type RideOfferEvent,
   type RideStatus,
 } from '@taxi/shared';
+import { DriversService } from '../drivers';
 import { RealtimeService } from '../realtime';
 import { RideTransitionService, type TransitionedRide } from '../rides';
 
@@ -23,16 +30,28 @@ export class DispatchNotifier {
   constructor(
     private readonly realtime: RealtimeService,
     private readonly transitions: RideTransitionService,
+    private readonly drivers: DriversService,
   ) {}
 
-  /** `rideOfferEventSchema` wants ISO strings where the domain holds `Date`s. */
-  emitOffer(offer: RideOffer): void {
+  /**
+   * `rideOfferEventSchema` wants ISO strings where the domain holds `Date`s,
+   * plus the operative payment method the offer row does not carry (#15).
+   *
+   * Two deliveries of the same card: the socket for a live app, a push for a
+   * backgrounded or killed one. The push carries the wire offer itself so a
+   * tap on a cold app can render the card without a read that does not
+   * exist; the app dedupes by offer id, so whichever arrives first shows it
+   * and the other is a no-op.
+   */
+  emitOffer(offer: RideOffer, paymentMethod: PaymentMethodType): void {
+    const wire: RideOfferEvent = {
+      ...offer,
+      sentAt: offer.sentAt.toISOString(),
+      expiresAt: offer.expiresAt.toISOString(),
+      paymentMethod,
+    };
     try {
-      this.realtime.emitToDriver(offer.driverId, RT.rideOffer, {
-        ...offer,
-        sentAt: offer.sentAt.toISOString(),
-        expiresAt: offer.expiresAt.toISOString(),
-      });
+      this.realtime.emitToDriver(offer.driverId, RT.rideOffer, wire);
     } catch (error) {
       this.logger.warn({
         event: 'dispatch.offer.notify_failed',
@@ -42,6 +61,40 @@ export class DispatchNotifier {
         at: new Date().toISOString(),
       });
     }
+    this.pushOffer(wire);
+  }
+
+  /**
+   * Fire-and-forget on purpose: the sweeper's tick must never wait on Expo's
+   * HTTP timeout, and `sendPush` already logs every outcome. `data` values are
+   * strings only — Expo forwards them verbatim.
+   */
+  private pushOffer(wire: RideOfferEvent): void {
+    const json = JSON.stringify(wire);
+    const fits =
+      Buffer.byteLength(json, 'utf8') <= OFFER_PUSH_PAYLOAD_MAX_BYTES;
+    // Built through the shared schema so a rename cannot pass typecheck on one
+    // side only. `expiresAt` used to ride along here and nothing ever read it —
+    // a dead field on a size-constrained wire, so it is gone.
+    const data: OfferPushData = {
+      kind: 'offer',
+      offerId: wire.id,
+      rideId: wire.rideId,
+      ...(fits ? { offer: json } : {}),
+    };
+    void this.drivers
+      .sendPush(
+        wire.driverId,
+        (language) => ({
+          title: formatMessage(language, 'push.offer_title'),
+          body: formatMessage(language, 'push.offer_body', {
+            amount: formatEur(wire.split.driverNetCents),
+          }),
+          data,
+        }),
+        'dispatch.offer.push',
+      )
+      .catch(() => undefined);
   }
 
   /**
