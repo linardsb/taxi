@@ -39,7 +39,8 @@ export interface OfferState {
   /** The last `driver:queue` heard; shown on home and beside the card. */
   queue: DriverQueueEvent | null;
   /**
-   * Ids of cards cleared through `cleared` — accepted, declined, expired or
+   * Ids of cards cleared through `cleared` — every path through it: accepted,
+   * declined, expired, refused by the api (the 409 «taken» / error banner) or
    * revoked — newest first, capped at {@link ANSWERED_MEMORY}. `pending` alone
    * cannot dedupe: the api emits the socket event and the push together, so an
    * offer answered before Expo delivers its push would otherwise be re-shown

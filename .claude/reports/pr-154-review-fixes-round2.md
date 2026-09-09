@@ -100,10 +100,13 @@ in the surviving copy fixed: 2,048 is **this project's sub-cap on the offer JSON
 per-notification `data` budget", and the guard measures the **offer JSON alone**
 (`Buffer.byteLength(json,'utf8')`), not the whole payload.
 
-`derived`, and the envelope term is now `observed` rather than the old `≤ ~200 B` guess:
-`JSON.stringify({kind:'offer',offerId:<uuid>,rideId:<uuid>,offer:''})` is **124 B**
-(`node -e`, `Buffer.byteLength`). So 4,096 − 120 − 124 − 2,048 = **1,804 B** spare, which is also
-what absorbs the escaping the offer JSON picks up nested as a string.
+`derived`, with **both** other terms re-derived rather than inherited — the old row estimated one
+and guessed the other. `JSON.stringify({kind:'offer',offerId:<uuid>,rideId:<uuid>,offer:''})` is
+**124 B** (`observed`, `Buffer.byteLength`), against the old `≤ ~200 B`; and `push.offer_title` +
+`push.offer_body` is at most **103 B** — RU, the longest of the three catalogs, with `€99,999.99`
+standing in for `{amount}` — against the old `≤ ~120 B`, which was carried straight out of the
+docblock being deleted. So 4,096 − 103 − 124 − 2,048 = **1,821 B** spare, which is also what
+absorbs the escaping the offer JSON picks up nested as a string.
 
 ### F21 — the `kind` half of F7's guarantee was a bare literal · FIXED
 
@@ -124,8 +127,10 @@ have it — asserted directly (`not.toMatch(/\.\./)`) alongside the boundary its
 
 `answeredOfferIds` is written only inside `cleared`, so "cards that have already left the screen"
 over-claimed: the replace branch swaps `state.pending` without going through it. Narrowed to
-"cleared through `cleared` — accepted, declined, expired or revoked", with the replace branch's
-absence stated and justified (`findDriverIdsWithLiveOffers` keeps one live card per driver, so it
+"every path through `cleared` — accepted, declined, expired, refused (409) or revoked" (five call
+sites: `:218`, `:243`, `:266`, `:274`, `:288` — the `rejected` one is easy to leave out, and
+claiming less than the code does is the same defect in the other direction), with the replace
+branch's absence stated and justified (`findDriverIdsWithLiveOffers` keeps one live card per driver, so it
 has no reachable case). Wording, not behaviour — the review offered both and there is no failure
 scenario to pin.
 
@@ -139,7 +144,16 @@ four older cases passed while pinning a wire shape F7 removed from the producer.
 `Math.max(entries.length, entries.at(-1)?.position ?? 0)` → `entries.at(-1)?.position ?? entries.length`.
 `snapshotFrom` assigns `position = index + 1` over the raw list and only ever drops repeats, so
 positions ascend and the last is always the largest; `entries.length` can never win, and the `?? 0`
-sat behind an `entries.length === 0` early return. The comment now names that monotonicity as the
+sat behind an `entries.length === 0` early return.
+
+**The invariant was verified at the caller's actual path, not inherited from the review.** The
+notifier calls `this.queue.snapshot(geozoneId)`, not `snapshotFrom` — so a store that re-sorted or
+renumbered would break it and `queue-notifier.spec.ts` could not tell, because it mocks
+`snapshotFrom`'s *output*. Both implementations, and there are only two, `return snapshotFrom(…)`
+unaltered: Redis reads an insertion-ordered `LRANGE` (a list, not a ZSET) at
+`redis-dispatch-queue.store.ts:123-129`, and the in-memory twin at
+`in-memory-dispatch-queue.store.ts:93`. Had either re-sorted, the fix would have been the comment
+alone with `Math.max` kept. The comment now names that monotonicity as the
 invariant it rests on and says what `size` means — the largest issued rank, over-counting by the
 duplicates ahead of the last unique driver — instead of "take the larger of the two", which implied
 either could win. Behaviour identical under the invariant; `queue-notifier.spec.ts:68-86`
@@ -176,6 +190,11 @@ F22's boundary assertions and F19's docblock live inside files that already exis
 no count — the two that moved are the two new files, and nothing else did. Both PR-body test
 tables are re-derived from this run rather than copied forward; that inheritance is what F18 is
 about.
+
+**Re-run after the self-audit commit** (F19's inherited `120`, F23's missing `rejected` path —
+both docblock-only), same recipe from cleared dist: `Tasks: 22 successful, 22 total`,
+`GATE_EXIT=0`, `Cached: 0 cached, 22 total`, `Time: 1m30.913s`, every per-package count identical
+to the table above. Comments do not move a count, and none did.
 
 Per-fix runs before the gate, `observed`:
 

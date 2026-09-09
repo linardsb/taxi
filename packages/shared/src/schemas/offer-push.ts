@@ -36,12 +36,14 @@ export type OfferPushData = z.infer<typeof offerPushDataSchema>;
  * NOT Expo's limit: `dispatch-notifier.ts` measures the offer JSON alone
  * against it, and past that the push carries the ids only.
  *
- * `derived`: Expo's limit is 4,096 B for the whole message. Title + body
- * ≤ ~120 B in any of the three catalogs, and the rest of the envelope —
- * `kind` plus the two uuids, with `offer` empty — is 124 B (`observed`,
- * `Buffer.byteLength` of that object stringified), so 2,048 B leaves
- * 4,096 − 120 − 124 − 2,048 = 1,804 B spare. That headroom also absorbs the
- * escaping the offer JSON picks up when it is nested here as a string.
+ * `derived`: Expo's limit is 4,096 B for the whole message. Both other terms
+ * are `observed` via `Buffer.byteLength`, not estimated — `push.offer_title` +
+ * `push.offer_body` is at most **103 B** (RU, the longest of the three
+ * catalogs, with an absurd `€99,999.99` net standing in for `{amount}`), and
+ * the rest of the envelope — `kind` plus the two uuids, `offer` empty — is
+ * **124 B**. So 2,048 B leaves 4,096 − 103 − 124 − 2,048 = **1,821 B** spare.
+ * That headroom also absorbs the escaping the offer JSON picks up when it is
+ * nested here as a string.
  *
  * The only unbounded strings in an offer are the two addresses
  * (`addressPointSchema.address` has no max), so a long pair is what drops an
