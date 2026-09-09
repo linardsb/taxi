@@ -1,6 +1,6 @@
 ---
 name: piv-review-pr
-description: Full pull-request review — fetch the PR, run the project's validation, review the diff with fresh eyes (dispatching the code-reviewer agent), categorize issues by severity, post the review to GitHub (approve / request-changes / comment), and save a report. The agentic gate that runs on an open PR before a human approves. Use after piv-create-pr.
+description: Full pull-request review — fetch the PR, run the project's validation, review the diff with fresh eyes (dispatching the code-reviewer agent), categorize issues by severity, post the review to GitHub as a PR comment (`gh pr review` is refused on this solo repo), and save a report. The agentic gate that runs on an open PR before a human approves. Use after piv-create-pr.
 argument-hint: "<pr-number | pr-url | branch> [--approve | --request-changes]"
 ---
 
@@ -56,6 +56,15 @@ tests present · maintainability.
 | **Low** | Suggestions, minor polish |
 
 Acknowledge what's done well, too — review is constructive, not just a defect list.
+
+### The constraint pass — before you recommend a fix
+
+For each proposed fix, grep the plan Phase 2 loaded, then read every hit — ACCEPTANCE CRITERIA and
+CONTEXT REFERENCES first, but a task's `GOTCHA` is where the template puts constraints
+(`piv-plan-implementation:353`) and a GOTCHA is binding (`:354`): `grep -in "do not modify\|do not edit\|read-only\|no changes to\|frozen" <plan>`.
+#87's M2 prescribed a log line in a file AC #5 froze ("no changes to … CachingMapsProvider"); only the
+fix pass's triage caught it. A fix that breaks the PR's own AC gets `gh issue create` and its number in
+the report, not an inline recommendation. No plan loaded → skip.
 
 ### The numbers pass — do this explicitly, it is not covered by the agent
 
@@ -117,12 +126,24 @@ For every PR whose base changed since the last review round:
   function whose inputs cannot distinguish that case is a seam problem, not a fixture problem — say so,
   because no test can be added to catch it.
 
+### The fix-mechanism pass — round ≥ 2
+
+A prior round exists (`.claude/code-reviews/pr-{N}-review*.md`) → for **each Critical/High the previous
+round raised and the fix pass closed, ask what the fix's mechanism newly permits**, not only whether the
+original repro passes. A fix that reroutes delivery through a request can swallow that request's failure;
+a chain added for one error can lack a terminal `catch`; a flag can be set before the thing it claims.
+Both of PR #150's round-2 Highs were round-1 fixes whose repros passed — round 2 found them by asking
+this question by instinct; ask it by procedure. Cross-check `.claude/reports/pr-{N}-review-fixes.md` —
+its per-finding grep list and closing-command outputs (`piv-fix-review-findings` §2/§4 require both):
+a closed finding with neither, or no such file at all, is re-opened, not trusted.
+
 ## Phase 5 — Decide
 
 - **Approve** — no critical/high issues, validation passes, matches intent.
 - **Request changes** — high issues, or fixable validation failures, or undocumented pattern violations.
 - **Block** (request-changes, strongly) — critical security/data issues, or wrong fundamental approach.
-- Honor an explicit `--approve` / `--request-changes` flag, but never approve over an unresolved critical issue.
+- Honor an explicit `--approve` / `--request-changes` flag (this skill's own argument, not `gh`'s — the
+  verdict lands in the report body), but never approve over an unresolved critical issue.
 
 ## Phase 6 — Post to GitHub + save the report
 
@@ -132,11 +153,8 @@ validation table · what's good · recommendation). **The header must carry `**H
 unchanged by a rebase and so cannot detect one. Then post it:
 
 ```bash
-# approve
-gh pr review {N} --approve --body-file .claude/code-reviews/pr-{N}-review.md
-# request changes
-gh pr review {N} --request-changes --body-file .claude/code-reviews/pr-{N}-review.md
-# or just comment (draft PRs / advisory)
+# `gh pr review` is unusable here: solo repo, gh is authenticated as the PR's own author, so GitHub
+# refuses BOTH verbs ("Can not approve your own pull request"; same on --request-changes, PR #122).
 gh pr comment {N} --body-file .claude/code-reviews/pr-{N}-review.md
 ```
 

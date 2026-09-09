@@ -53,6 +53,42 @@ git log origin/{base}..HEAD --oneline
 - Linked issue: look for `#123`, `Fixes #…` in the commits/branch name.
 - PR template: if `.github/PULL_REQUEST_TEMPLATE.md` exists, fill it; else use the default below.
 
+## Phase 2.5 — Generate the validation block, then find the inherited figures (blocking)
+
+Two scripts live beside this skill. **They are referenced here so that deleting them shows up in a
+diff** — the previous copies lived only under `~/.claude/skills/`. Ten lines across five `.claude/`
+reports and reviews named them (`git grep -n record-gate c70572b`), but nothing on an executable path
+did, so the #129 cleanup destroyed the files and left only the prose about them (ledger L2).
+
+```bash
+.claude/skills/piv-create-pr/scripts/record-gate.sh --clean
+.claude/skills/piv-create-pr/scripts/inherited-figures.sh <draft-body.md> <report.md> [--pr {N}]
+```
+
+**`record-gate.sh` runs the gate and prints the Validation block. Paste it; do not retype it.** It
+exits with the gate's own code, so a red gate cannot produce a green-looking record. **STOP and fix
+before opening the PR if** `.claude/last-gate.json` is missing, its `head` is not the current `HEAD`
+(the record describes a different tree — most often after a rebase), `exit_code` is non-zero, or
+`short_gate` is true. Read `tasks_not_in_graph` too: a package that defines no `test` or `lint` script
+is not checked by a green gate, which is how two apps went unchecked at "18 successful, 18 total".
+
+**`inherited-figures.sh` prints every measurement it can bind to a unit word or a duration that this
+body shares with the implementation report or with the PR's own previous body** — not every shared
+figure: its duration matcher drops a minute prefix, so `1m22.325s` and a bare `22.325s` reduce to one
+key. Each hit is *unaudited*, not necessarily wrong: re-derive it at this
+head, or say why it is head-independent. Pass `--pr {N}` when updating an existing PR — the published
+body is the most-read surface and the only one no working-tree grep can reach. No implementation report
+(a docs-only PR) is an ordinary case: it prints a note and exits 0, which is not a pass.
+
+**What neither script can catch — these stay by-eye checks:**
+
+- **A right number under a wrong label.** #87's figure was correct; the label was the defect.
+- **A claim with no numeral at all.** #121 shipped "GitHub retargets the base branch automatically"
+  — no digit for a numeric check to bind to, and false.
+- **Retire the claim's subject, not its digits.** A retired claim survives as a verb ("the cache this
+  script *measures*") long after its number is gone. Grep the noun — `quantiz`, `grid`, the issue
+  number — and read every hit, including the PR body.
+
 ## Phase 3 — Push and open the PR
 
 ```bash

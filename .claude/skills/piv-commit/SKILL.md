@@ -13,7 +13,15 @@ Create a new commit for all of our uncommitted changes.
    section and follow it — those rules win over the defaults below. That file is where a project's specifics
    live; this skill stays general.
 1. Run `git status && git diff HEAD && git status --porcelain` to see what files are uncommitted.
-2. Add the untracked and changed files.
+   Then run `git log -1 --format=%s`; if the subject starts with `wip:`, run `git reset --soft HEAD~1`
+   before staging — that is a `piv-implement` end-of-day snapshot, not a real commit, and after one the
+   other three commands print nothing at all.
+2. **Plan-staleness check**, then add the untracked and changed files. Run `ls .claude/reports/`; if this
+   branch's plan has a report there, read both its `## Deviations from the plan` **and** its
+   `## Tasks completed`, and edit every divergence — including a task whose shipped files or queries
+   differ from the plan's IMPLEMENT line (#19's C4: the report named `findOffersForRides`, the plan
+   still names `countAttempts`) — into the plan's `## STEP-BY-STEP TASKS`, or date it under
+   `## AMENDMENTS` as superseded. Staged here, not later. #120 lost 2 adherence points to this, #121 lost 1; Task C4 named a retired coupling on `main` days after the ticket shipped.
 3. Write an atomic commit message with an appropriate, descriptive summary.
 4. Add a tag such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, etc. that reflects our work.
 

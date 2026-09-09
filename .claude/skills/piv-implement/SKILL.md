@@ -26,6 +26,9 @@ won't be in this branch's PR.** If you're still on base, this step creates the b
   mid-flight branch collisions cost ref surgery. In the worktree, run DB-touching tests and the gate with
   `COMPOSE_PROJECT_NAME=taxi` so compose reuses the shared containers instead of starting a second Postgres
   on an occupied port; remove any stray `<worktree-name>-db-1` containers when done.
+  While sessions share one dev DB, keep new migrations additive — nullable columns, no drops or renames — and
+  record `ls db/migrations/*.sql | tail -1` in the report's **Issues encountered** so skew is visible: #86
+  migrated to 0008 while sibling sessions still carried 0007.
 
 (One branch per ticket is also what makes parallel worktrees clean later.)
 
@@ -132,6 +135,12 @@ have been a fine call; not writing it down was not.
 
 ### Ready for the next step
 - Confirm all changes are complete and validations pass.
+- Commit before you stop, even mid-ticket, so the working tree is never the only copy of the day's work —
+  #16's implementation sat uncommitted for a day, then was committed cold by a session with none of its
+  context. Check `git status --porcelain` and stage only this ticket's files (review docs and reports for
+  other branches must not ride in). `piv-commit` step 1 reads the top commit's subject and folds a `wip:`
+  commit into the real one, so the prefix is what makes the handoff work — it is not decoration:
+  `git commit -m "wip: <plan-slug>"`
 - Next: `piv-commit` the work, then `piv-create-pr` to open the PR (the report fills the PR body), then `piv-review-pr`.
 
 ## Notes
