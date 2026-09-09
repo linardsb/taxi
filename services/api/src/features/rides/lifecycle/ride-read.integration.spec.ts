@@ -211,10 +211,19 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
     return ride;
   }
 
-  function collectStatuses(socket: Socket): RideStatusEvent[] {
+  /**
+   * `stop` is not optional housekeeping: a listener left attached outlives the
+   * test and fires into a closed socket during teardown — the same hazard
+   * `dispatch.integration.spec.ts` detaches for explicitly.
+   */
+  function collectStatuses(socket: Socket): {
+    seen: RideStatusEvent[];
+    stop: () => void;
+  } {
     const seen: RideStatusEvent[] = [];
-    socket.on(RT.rideStatus, (e: RideStatusEvent) => seen.push(e));
-    return seen;
+    const onStatus = (e: RideStatusEvent) => seen.push(e);
+    socket.on(RT.rideStatus, onStatus);
+    return { seen, stop: () => void socket.off(RT.rideStatus, onStatus) };
   }
 
   async function waitForCount(
@@ -251,7 +260,7 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
     a.close();
 
     const b = await connectClient(port, d.token);
-    const seen = collectStatuses(b);
+    const { seen, stop } = collectStatuses(b);
 
     await http
       .post(`/rides/${ride.id}/arriving`)
@@ -284,6 +293,7 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
       status: 'arrived',
       previousStatus: 'arriving',
     });
+    stop();
   });
 
   it('404s a driver reading a ride assigned to someone else, with the same shape as a missing ride (failure)', async () => {
