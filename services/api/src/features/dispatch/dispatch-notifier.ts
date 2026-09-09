@@ -2,8 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   formatEur,
   formatMessage,
+  OFFER_PUSH_PAYLOAD_MAX_BYTES,
   RT,
   type AssignmentSource,
+  type OfferPushData,
   type PaymentMethodType,
   type RideOffer,
   type RideOfferEvent,
@@ -27,7 +29,6 @@ export type RevokedRef = { offerId: string; driverId: string };
  * still pushes with the ids alone, and the tap lands on whatever card the
  * socket already delivered.
  */
-export const OFFER_PUSH_PAYLOAD_MAX_BYTES = 2_048;
 
 /**
  * The post-commit socket tail of the dispatch slice. Everything here runs
@@ -84,11 +85,13 @@ export class DispatchNotifier {
     const json = JSON.stringify(wire);
     const fits =
       Buffer.byteLength(json, 'utf8') <= OFFER_PUSH_PAYLOAD_MAX_BYTES;
-    const data: Record<string, string> = {
+    // Built through the shared schema so a rename cannot pass typecheck on one
+    // side only. `expiresAt` used to ride along here and nothing ever read it —
+    // a dead field on a size-constrained wire, so it is gone.
+    const data: OfferPushData = {
       kind: 'offer',
       offerId: wire.id,
       rideId: wire.rideId,
-      expiresAt: wire.expiresAt,
       ...(fits ? { offer: json } : {}),
     };
     void this.drivers

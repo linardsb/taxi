@@ -119,6 +119,16 @@ export type RideStatusEvent = z.infer<typeof rideStatusEventSchema>;
  * lock (see `isPaymentMethodLocked`); the app compares it with the accepted
  * ride's method and announces a change. Not on `rideOfferSchema`, which is
  * the `ride_offers` insert shape — no column, no migration.
+ *
+ * **DEPLOY ORDER: the api ships BEFORE the driver binary.** `paymentMethod` is
+ * required here — no `.default`, no `.optional` — and that is asymmetric on
+ * purpose. New payload → old client is safe (zod strips the unknown key). Old
+ * payload → new client is NOT: `safeParse` fails, `use-offers.tsx` logs
+ * `ride:offer dropped` and returns, `route-notification.ts` yields
+ * `offer: null`, and a driver on the new binary receives no work at all with a
+ * console warning as the only trace. Do **not** "fix" that with
+ * `.default('cash')`: inventing a payment method the rider did not choose is
+ * worse than dropping the card, because the driver acts on it.
  */
 export const rideOfferEventSchema = rideOfferSchema.extend({
   sentAt: z.string().datetime(),

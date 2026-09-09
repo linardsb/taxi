@@ -61,6 +61,7 @@ let mockOffers: import('@/features/offers').OfferState = {
   errorCode: null,
   speedMps: null,
   queue: null,
+  answeredOfferIds: [],
 };
 const mockDismissOffer = jest.fn();
 jest.mock('@/features/offers', () => ({
@@ -197,9 +198,14 @@ describe('HomeScreen', () => {
     expect(screen.getByTestId('queue-position')).toHaveTextContent(
       t('driver.queue.position', { position: 2, size: 5, zone: 'rix' }),
     );
+    // F4: the link is a grouping `Pressable`, which collapses its subtree into
+    // one node — so a static `accessibilityLabel` REPLACED the card's text and
+    // the day's earnings were absent from the audio channel entirely. The
+    // accessible name has to carry the number a sighted driver reads.
     const link = screen.getByRole('button', {
-      name: t('driver.action.earnings'),
+      name: t('driver.home.today', { amount: '€84.20', rides: 7 }),
     });
+    expect(link).toBeTruthy();
     await fireEvent.press(link);
     const router = jest
       .requireMock<{ useRouter: () => { push: jest.Mock } }>('expo-router')

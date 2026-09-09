@@ -230,7 +230,7 @@ describe('OffersProvider (#15)', () => {
     await act(async () => handlers['ride:offer']!(wire()));
     await screen.findByText(/€12\.40/);
 
-    await act(async () => ctx!.receive(wire()));
+    await act(async () => ctx!.receive(wire(), 'push'));
 
     expect(screen.getAllByTestId('offer-accept')).toHaveLength(1);
     expect(player.play).toHaveBeenCalledTimes(1);

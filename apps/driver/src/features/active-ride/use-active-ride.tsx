@@ -72,6 +72,17 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
   const runRef = useRef<(effect: ActiveRideEffect) => Promise<void | 'stop'>>(
     () => Promise.resolve(),
   );
+  /**
+   * Monotonic read token. `loaded` guards ride IDENTITY but not RECENCY, and
+   * `fetch_ride` is issued from three independent triggers (`open`, socket
+   * `connect`, `foreground`) with no abort, so reads overlap — the ApiClient
+   * timeout is 8 s, which is how stale an answer can be. Bumped when a read is
+   * ISSUED so the newest read wins, and bumped again on `post_step` /
+   * `post_complete` so a read issued before a step cannot revert it: without
+   * that second bump the step's own answer is overtaken by the older read and
+   * the driver's button reverts to a step the ride has already passed.
+   */
+  const seqRef = useRef(0);
   const myDriverId = session.session?.user.id ?? null;
   const myDriverIdRef = useRef(myDriverId);
   useEffect(() => {
@@ -92,17 +103,23 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
 
   const run = async (effect: ActiveRideEffect): Promise<void | 'stop'> => {
     switch (effect.type) {
-      case 'fetch_ride':
+      case 'fetch_ride': {
+        const seq = (seqRef.current += 1);
         try {
           const ride = await api.request('GET', `/rides/${effect.rideId}`, {
             schema: rideSchema,
           });
+          // A newer read, or a step, has happened since this one was issued.
+          if (seq !== seqRef.current) return;
           dispatch({ type: 'loaded', ride });
         } catch (error) {
+          if (seq !== seqRef.current) return;
           dispatch({ type: 'load_failed', code: codeOf(error) });
         }
         return;
+      }
       case 'post_step':
+        seqRef.current += 1;
         try {
           await api.request('POST', `/rides/${effect.rideId}/${effect.step}`);
           dispatch({ type: 'step_done', step: effect.step });
@@ -111,6 +128,7 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
         }
         return;
       case 'post_complete':
+        seqRef.current += 1;
         try {
           const { ride } = await api.request(
             'POST',

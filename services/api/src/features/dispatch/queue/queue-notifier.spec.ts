@@ -57,6 +57,34 @@ describe('QueueNotifier.broadcast (#15)', () => {
     });
   });
 
+  /**
+   * F6: `size` was `entries.length`, which counts DEDUPLICATED entries, while
+   * `position` is the raw list index — `snapshotFrom` skips a repeat driver but
+   * keeps `index + 1` for everyone behind them, on purpose, so the app and
+   * Dina's grid agree. On the double-append `joinBack` tolerates, ['A','A','B']
+   * yields positions 1 and 3 from a list of length 2 and B was told «3 of 2».
+   * `driverQueueEventSchema` permits it, so nothing else rejects it.
+   */
+  it('size never contradicts the largest position when the queue held a duplicate (edge)', async () => {
+    const { notifier, queue, emitToDriver } = build();
+    // What `snapshotFrom(['A','A','B'])` returns: two entries, positions 1 and 3.
+    jest.spyOn(queue, 'snapshot').mockResolvedValue([
+      { driverId: id(1), position: 1, joinedAt: null },
+      { driverId: id(2), position: 3, joinedAt: null },
+    ]);
+
+    await notifier.broadcast(ZONE);
+
+    const payloads = (
+      emitToDriver.mock.calls as [string, string, unknown][]
+    ).map(([, , payload]) => driverQueueEventSchema.parse(payload));
+    expect(payloads).toHaveLength(2);
+    for (const p of payloads) {
+      expect(p.size).toBe(3);
+      expect(p.position).toBeLessThanOrEqual(p.size);
+    }
+  });
+
   it('emits nothing for an empty queue (edge)', async () => {
     const { notifier, emitToDriver } = build();
     await notifier.broadcast(ZONE);

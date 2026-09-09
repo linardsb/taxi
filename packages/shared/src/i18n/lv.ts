@@ -306,7 +306,10 @@ export const lv = {
   'driver.offer.revoked_expired': 'Piedāvājuma laiks beidzās',
   'driver.offer.revoked_cancelled': 'Brauciens tika atcelts',
   'driver.offer.a11y_card':
-    'Jauns brauciens. Cena {amount}, jūs saņemat {net}. Atlikušas {seconds} sekundes. Pieskarieties, lai pieņemtu.',
+    'Jauns brauciens. Cena {amount}, jūs saņemat {net}. Atlikušas {seconds} sekundes.',
+  // Kept separate and appended LAST: the card is one accessible node, so the
+  // instruction must not land before the fare, payment method and addresses.
+  'driver.offer.a11y_accept': 'Pieskarieties, lai pieņemtu.',
   // «Rindā: 2. no 5», label form again — the LV ordinal takes a full stop.
   'driver.queue.position': 'Rindā: {position}. no {size} · {zone}',
   'driver.ride.title_accepted': 'Brauciens pieņemts',

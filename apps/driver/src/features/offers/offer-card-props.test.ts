@@ -63,6 +63,7 @@ function pendingFor(
     paymentMethod: 'cash',
     receivedAtMs: 0,
     durationMs: 20_000,
+    source: 'socket',
     ...over,
   };
 }
@@ -99,12 +100,18 @@ describe('offerCardProps (#15)', () => {
     expect(props!.eta).toBe(t('driver.offer.eta', { minutes: 5, km: '1.0' }));
     expect(props!.glance).toBe(false);
     expect(props!.queue).toBeNull();
-    expect(props!.a11yLabel).toBe(
-      t('driver.offer.a11y_card', {
-        amount: '€12.40',
-        net: '€10.54',
-        seconds: 18,
-      }),
+    // F4: the whole card is ONE accessible node (Pressable defaults
+    // `accessible`), so this label REPLACES the child text rather than adding
+    // to it. Everything the sighted driver reads has to be in here, and the
+    // accept instruction has to come last — a blind driver must not be told to
+    // tap before hearing whether the fare is cash.
+    expect(props!.a11yLabel).toContain(t('driver.offer.payment_cash'));
+    expect(props!.a11yLabel).toContain('Brīvības iela 1');
+    expect(props!.a11yLabel).toContain('Teika');
+    expect(props!.a11yLabel).toContain('€12.40');
+    expect(props!.a11yLabel).toContain('€10.54');
+    expect(props!.a11yLabel.trimEnd()).toMatch(
+      new RegExp(`${t('driver.offer.a11y_accept')}$`),
     );
   });
 

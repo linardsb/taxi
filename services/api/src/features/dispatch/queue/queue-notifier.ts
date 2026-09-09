@@ -16,8 +16,11 @@ import {
  * everyone behind the demoted driver, and emitting to one would leave the
  * others reading a stale number — the "unexplained skip" the evidence says
  * destroys more trust than no number at all (`driver-ux-evidence.md` §6.1).
- * At ≤ 10 drivers per zone that is one `LRANGE` and ≤ 10 room emits per
- * mutation (`expected`).
+ * At ≤ 10 drivers per zone that is one `LRANGE`, one Postgres `SELECT` (the
+ * `geozones.findById` below, needed for the zone slug) and ≤ 10 room emits per
+ * mutation (`expected`). The `SELECT` is named because it is the only one of
+ * the three that leaves the process for a different store, and this runs on
+ * the sweeper's per-tick path (`geozone-queue.strategy.ts`).
  *
  * A post-commit tail like `DispatchNotifier`: never throws. A lost event
  * costs one stale rank until the next mutation, never a fairness bug — the
@@ -51,14 +54,23 @@ export class QueueNotifier {
       }
 
       // `position` is the store's own 1-based rank — the same number Dina's
-      // grid shows for this driver, by the `snapshot()` identity.
+      // grid shows for this driver, by the `snapshot()` identity. Leave it
+      // alone: `snapshotFrom` counts a duplicated driver for everyone behind
+      // them on purpose, so the app and the grid agree.
+      //
+      // `size` therefore cannot be `entries.length`, which counts DEDUPLICATED
+      // entries: on the double-append `joinBack` deliberately tolerates,
+      // ['A','A','B'] yields positions 1 and 3 from a list of length 2, and B
+      // is told «3 of 2». The schema permits it (position min 1, size
+      // nonnegative), so nothing else rejects it. Take the larger of the two.
+      const size = Math.max(entries.length, entries.at(-1)?.position ?? 0);
       for (const entry of entries) {
         this.realtime.emitToDriver(entry.driverId, RT.driverQueue, {
           driverId: entry.driverId,
           geozoneId,
           geozoneSlug: zone.slug,
           position: entry.position,
-          size: entries.length,
+          size,
           at,
         });
       }

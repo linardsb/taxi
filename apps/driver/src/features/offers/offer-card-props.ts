@@ -87,24 +87,47 @@ export function offerCardProps(
   const seconds = Math.ceil(state.remainingMs / 1000);
   const fare = formatEur(offer.quote.totalCents);
   const net = formatEur(offer.split.driverNetCents);
+  const pickup = t('driver.offer.pickup', { address: offer.pickup.address });
+  const destination = t('driver.offer.destination', {
+    address: offer.destination.address,
+  });
+  const eta = t('driver.offer.eta', {
+    minutes: Math.ceil(offer.etaSeconds / 60),
+    km: km === null ? '—' : km.toFixed(1),
+  });
+  const payment = paymentLabel(pending.paymentMethod, t);
+  const queue = queueLabel(state.queue, t);
   return {
     fare: t('driver.offer.fare', { amount: fare }),
     youKeep: youKeepLabel(offer, t),
-    pickup: t('driver.offer.pickup', { address: offer.pickup.address }),
-    destination: t('driver.offer.destination', {
-      address: offer.destination.address,
-    }),
-    eta: t('driver.offer.eta', {
-      minutes: Math.ceil(offer.etaSeconds / 60),
-      km: km === null ? '—' : km.toFixed(1),
-    }),
+    pickup,
+    destination,
+    eta,
     km,
-    payment: paymentLabel(pending.paymentMethod, t),
+    payment,
     seconds,
     countdown: t('driver.offer.countdown', { seconds }),
     glance: state.speedMps !== null && state.speedMps > GLANCE_SPEED_MPS,
-    queue: queueLabel(state.queue, t),
-    a11yLabel: t('driver.offer.a11y_card', { amount: fare, net, seconds }),
+    queue,
+    // The card is ONE accessible node: `Pressable` defaults `accessible` to
+    // true, which collapses the subtree, and an explicit label then REPLACES
+    // the child text instead of adding to it. So this composes every line the
+    // sighted driver reads rather than restating three of them — the payment
+    // method above all, which is the field `ride:offer` carries it for. The
+    // accept instruction is appended LAST so nobody is told to tap before
+    // hearing whether the fare is cash. Glance mode hides the addresses
+    // visually only; audio keeps them, because speed is not blindness.
+    a11yLabel: [
+      t('driver.offer.a11y_card', { amount: fare, net, seconds }),
+      payment,
+      pickup,
+      destination,
+      eta,
+      queue,
+      t('driver.offer.a11y_accept'),
+    ]
+      .filter(Boolean)
+      .join(' '),
     accepting: state.phase === 'accepting',
   };
 }

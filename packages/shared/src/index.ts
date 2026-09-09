@@ -16,6 +16,7 @@ export * from './schemas/vehicle';
 export * from './schemas/ride';
 export * from './schemas/customer';
 export * from './schemas/dispatch';
+export * from './schemas/offer-push';
 export * from './schemas/tariff';
 export * from './schemas/tracking';
 export * from './schemas/api-error';

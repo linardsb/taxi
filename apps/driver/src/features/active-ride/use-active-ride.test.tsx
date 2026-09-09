@@ -272,4 +272,60 @@ describe('ActiveRideProvider (#15)', () => {
     );
     expect(screen.queryByTestId('ride-step')).toBeNull();
   });
+
+  /**
+   * F3: `loaded` guards ride IDENTITY but not RECENCY, and the provider issues
+   * `fetch_ride` from three independent triggers (open, socket connect,
+   * foreground) with no sequence number and no abort. The ApiClient timeout is
+   * 8 s, so a read issued before a step can answer after it and revert the
+   * step on screen. Pressing the reverted button then posts the step the ride
+   * has already passed and earns a 409 on a perfectly healthy ride.
+   */
+  it('a GET that was in flight before a step cannot revert it (edge — overlapping reads)', async () => {
+    let releaseStale: (r: Ride) => void = () => undefined;
+    const stale = new Promise<Ride>((resolve) => {
+      releaseStale = resolve;
+    });
+    let getCalls = 0;
+    mockRequest.mockImplementation((method: string) => {
+      if (method === 'GET') {
+        getCalls += 1;
+        // The FIRST read answers at once; the second is left hanging.
+        return getCalls === 1 ? Promise.resolve(ride()) : stale;
+      }
+      return Promise.resolve(undefined);
+    });
+    await mount();
+    const { handlers, socket } = makeSocket();
+    await act(async () => {
+      for (const listener of mockListeners) {
+        listener.onSocket?.(
+          socket as unknown as Parameters<
+            NonNullable<RuntimeListener['onSocket']>
+          >[0],
+        );
+      }
+    });
+    await act(async () => ctx!.open(RIDE_ID));
+    await screen.findByTestId('ride-step');
+
+    // The room re-join puts a second read in flight; it never answers yet.
+    await act(async () => handlers['connect']!());
+    expect(getCalls).toBe(2);
+
+    // The driver steps while that read is still outstanding.
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('ride-step'));
+    });
+    await waitFor(() => expect(ctx!.state.ride?.status).toBe('arriving'));
+
+    // Now the pre-step read answers with the pre-step snapshot.
+    await act(async () => {
+      releaseStale(ride({ status: 'accepted' }));
+      await stale;
+    });
+
+    expect(ctx!.state.ride?.status).toBe('arriving');
+    expect(screen.getByTestId('status')).toHaveTextContent('arriving');
+  });
 });

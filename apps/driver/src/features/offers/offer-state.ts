@@ -17,6 +17,11 @@ export interface PendingOffer {
   paymentMethod: PaymentMethodType;
   receivedAtMs: number;
   durationMs: number;
+  /**
+   * How this card reached the phone. Only `'push'` can be genuinely late, and
+   * only `'push'` is checked for it — see {@link deadOnArrival}.
+   */
+  source: 'socket' | 'push';
 }
 
 export type OfferPhase = 'idle' | 'pending' | 'accepting' | 'declining';
@@ -33,7 +38,29 @@ export interface OfferState {
   speedMps: number | null;
   /** The last `driver:queue` heard; shown on home and beside the card. */
   queue: DriverQueueEvent | null;
+  /**
+   * Ids of cards that have already left the screen, newest first, capped at
+   * {@link ANSWERED_MEMORY}. `pending` alone cannot dedupe: the api emits the
+   * socket event and the push together, so an offer answered before Expo
+   * delivers its push would otherwise be re-shown as a brand-new card over the
+   * active ride.
+   *
+   * A set rather than one id, because one id remembers only the last card:
+   * declining A, being offered B and answering B would forget A, and A's slow
+   * push then resurrects it inside the window `deadOnArrival` still tolerates.
+   *
+   * A re-offer of the same RIDE after a genuine expiry carries a new offer row
+   * id, so it is never blocked by this.
+   */
+  answeredOfferIds: string[];
 }
+
+/**
+ * How many answered cards to remember. `deadOnArrival` already drops anything
+ * more than one full offer window past its deadline, and the server keeps one
+ * live card per driver, so a handful covers every push that can still arrive.
+ */
+const ANSWERED_MEMORY = 8;
 
 export const initialOffers: OfferState = {
   phase: 'idle',
@@ -43,6 +70,7 @@ export const initialOffers: OfferState = {
   errorCode: null,
   speedMps: null,
   queue: null,
+  answeredOfferIds: [],
 };
 
 export type OfferEvent =
@@ -86,13 +114,27 @@ export function remainingFor(pending: PendingOffer, nowMs: number): number {
 
 /**
  * Already dead on arrival? A late push is the only way an expired offer
- * reaches the phone (the socket path is live by construction). The check
- * uses the wire's absolute `expiresAt` against the phone clock, tolerating a
- * skew of one whole window: an offer more than `durationMs` past its
- * deadline is dropped, anything closer renders and is corrected by the
- * server's 409 (`taken`) on accept — recoverable, never a crash (AC3).
+ * reaches the phone — the socket path is live by construction — so this is
+ * asked of PUSHES ONLY. It compares the wire's absolute `expiresAt` against
+ * the phone clock, and that is the whole reason for the restriction: the
+ * countdown is deliberately server-relative to survive clock skew, and this
+ * is the one check that is not.
+ *
+ * Two tolerances, because they are not the same number and the old docstring
+ * gave one of them for both. Measured as LATENESS past the deadline it
+ * tolerates one whole window (`durationMs`). Measured as CLOCK SKEW on a
+ * fresh offer it tolerates two: the phone reads `receivedAtMs ≈ sentAt + skew`
+ * while `expiresAtMs = sentAt + W` arrives unskewed, so the drop condition
+ * reduces to `skew − W > W`, i.e. `skew > 2W` — 40 s at the default
+ * `offerTimeoutSeconds: 20`. Applying it to the socket path meant a phone
+ * 40 s fast silently dropped EVERY offer: no card, no banner, no log, and a
+ * driver who reads as online on the dispatch board and never gets work.
+ *
+ * Anything inside the tolerance renders and is corrected by the server's 409
+ * (`taken`) on accept — recoverable, never a crash (AC3).
  */
 function deadOnArrival(pending: PendingOffer): boolean {
+  if (pending.source !== 'push') return false;
   const expiresAtMs = pending.offer.expiresAt.getTime();
   return pending.receivedAtMs - expiresAtMs > pending.durationMs;
 }
@@ -108,6 +150,15 @@ const cleared = (
   remainingMs: 0,
   banner,
   errorCode,
+  // Every clearing path runs through here, so this is the one place that has
+  // to remember the id. A `cleared` with no card on screen adds nothing and
+  // forgets nothing.
+  answeredOfferIds: state.pending
+    ? [state.pending.offer.id, ...state.answeredOfferIds].slice(
+        0,
+        ANSWERED_MEMORY,
+      )
+    : state.answeredOfferIds,
 });
 
 /**
@@ -120,9 +171,21 @@ export function decide(state: OfferState, event: OfferEvent): OfferDecision {
   switch (event.type) {
     case 'offer_received': {
       const incoming = event.pending;
-      // Socket and push both deliver the same card; the second is a no-op.
+      // Socket and push both deliver the same card; the second is a no-op —
+      // whether the first is still on screen or has already been answered.
       if (state.pending?.offer.id === incoming.offer.id) return noop(state);
-      if (deadOnArrival(incoming)) return noop(state);
+      if (state.answeredOfferIds.includes(incoming.offer.id)) {
+        return noop(state);
+      }
+      if (deadOnArrival(incoming)) {
+        // The one drop with no user-visible trace; without this it is
+        // indistinguishable from the api never having offered at all.
+        console.warn(
+          'offer dropped: push arrived more than one window past its deadline',
+          incoming.offer.id,
+        );
+        return noop(state);
+      }
       // An answer is in flight for the card on screen: the server has one
       // live card per driver, so a second one cannot be live — leave it.
       if (state.phase === 'accepting' || state.phase === 'declining') {

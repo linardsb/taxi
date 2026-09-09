@@ -46,6 +46,7 @@ const pending = (
     paymentMethod: 'cash',
     receivedAtMs,
     durationMs: o.expiresAt.getTime() - o.sentAt.getTime(),
+    source: 'socket',
     ...over,
   };
 };
@@ -74,9 +75,25 @@ describe('decide — receiving a card', () => {
     expect(again.effects).toEqual([]);
   });
 
+  /**
+   * F5: `deadOnArrival` compares the wire's absolute `expiresAt` against the
+   * PHONE clock, so on the socket path a fast phone clock read as lateness.
+   * The drop condition reduces to `skew > 2W` — 40 s at the default 20 s
+   * window — and the drop is a `noop`: no card, no banner, no trace. The
+   * driver reads as online on Dina's board and simply never gets work.
+   */
+  it('a fresh SOCKET offer on a phone clock 45 s fast still shows (edge — skew is not lateness)', () => {
+    const skewed = pending({}, Date.parse(SENT_AT) + 45_000);
+    const { state, effects } = received(skewed);
+
+    expect(state.phase).toBe('pending');
+    expect(types(effects)).toEqual(['alert_start', 'route_offer', 'announce']);
+  });
+
   it('drops a late push for an offer already a full window past its deadline (edge)', () => {
-    // Received 21 s after expiry: 20 s window + 1 s, so beyond the tolerated skew.
-    const late = pending({}, Date.parse(EXPIRES_AT) + 21_000);
+    // Received 21 s after expiry: 20 s window + 1 s, so beyond the tolerance.
+    // `source: 'push'` is load-bearing — the check is asked of pushes only.
+    const late = pending({ source: 'push' }, Date.parse(EXPIRES_AT) + 21_000);
     const { state, effects } = received(late);
     expect(state).toBe(initialOffers);
     expect(effects).toEqual([]);
@@ -99,6 +116,79 @@ describe('decide — receiving a card', () => {
       pending: other,
     });
     expect(ignored.state).toBe(accepting);
+  });
+
+  /**
+   * F2: the dedupe used to compare only against the card ON SCREEN, and every
+   * clearing path nulls `pending` — so after an answer the same offer id was a
+   * brand-new card. The api emits the socket event and the push together, so a
+   * driver who accepts faster than Expo delivers always has one in flight; the
+   * card reappeared over the active ride and `route_offer` pulled them off it.
+   */
+  it('a push carrying an ALREADY-ANSWERED offer id does not resurrect the card (edge)', () => {
+    const first = received();
+    const accepting = decide(first.state, { type: 'accept_pressed' }).state;
+    const done = decide(accepting, { type: 'accepted', rideId: 'r1' }).state;
+    expect(done.pending).toBeNull();
+
+    // The push for the offer just accepted, delivered 3 s later.
+    const late = decide(done, {
+      type: 'offer_received',
+      pending: pending({ source: 'push' }, Date.parse(SENT_AT) + 3_300),
+    });
+
+    expect(late.state.phase).toBe('idle');
+    expect(late.state.pending).toBeNull();
+    expect(late.effects).toEqual([]);
+  });
+
+  /**
+   * The fix's own failure mode. A single `lastOfferId` remembers one card, so
+   * declining A, being offered B and answering B forgets A — and A's slow push
+   * then resurrects it inside the window `deadOnArrival` still tolerates
+   * (one full offer window past expiry, ~40 s). Hence a bounded set, not one id.
+   */
+  it('a late push for an offer answered TWO cards ago is still dropped (edge — the fix’s own hole)', () => {
+    const a = received();
+    const declining = decide(a.state, { type: 'decline_pressed' }).state;
+    const afterA = decide(declining, { type: 'declined' }).state;
+
+    const bOffer = offer('22222222-3333-4444-8555-666666666666');
+    const b = decide(afterA, {
+      type: 'offer_received',
+      pending: pending({ offer: bOffer }, Date.parse(SENT_AT) + 5_000),
+    }).state;
+    const bAccepting = decide(b, { type: 'accept_pressed' }).state;
+    const afterB = decide(bAccepting, { type: 'accepted', rideId: 'r2' }).state;
+
+    // A's push finally arrives, 10 s in — still inside deadOnArrival's tolerance.
+    const lateA = decide(afterB, {
+      type: 'offer_received',
+      pending: pending({ source: 'push' }, Date.parse(SENT_AT) + 10_000),
+    });
+
+    expect(lateA.state.phase).toBe('idle');
+    expect(lateA.state.pending).toBeNull();
+    expect(lateA.effects).toEqual([]);
+  });
+
+  it('a genuinely new offer still shows after one was answered (expected — the guard is not a mute)', () => {
+    const first = received();
+    const accepting = decide(first.state, { type: 'accept_pressed' }).state;
+    const done = decide(accepting, { type: 'accepted', rideId: 'r1' }).state;
+
+    const next = pending(
+      { offer: offer('11111111-2222-4333-8444-555555555555') },
+      Date.parse(SENT_AT) + 3_300,
+    );
+    const shown = decide(done, { type: 'offer_received', pending: next });
+
+    expect(shown.state.phase).toBe('pending');
+    expect(types(shown.effects)).toEqual([
+      'alert_start',
+      'route_offer',
+      'announce',
+    ]);
   });
 });
 

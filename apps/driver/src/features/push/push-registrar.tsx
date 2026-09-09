@@ -35,7 +35,7 @@ export function PushRegistrar() {
             // `navigate` (not `push`) makes the second hop to `/offer` land on
             // the same screen instead of stacking a duplicate. Without a
             // payload the screen shows whatever is pending, or redirects home.
-            if (route.offer) receive(route.offer);
+            if (route.offer) receive(route.offer, 'push');
             router.navigate('/offer');
             return;
           }
@@ -44,7 +44,8 @@ export function PushRegistrar() {
         onReceived: (route) => {
           // Foreground receipt while the socket is down (a reconnect in
           // progress): the push is the card's only way in.
-          if (route.kind === 'offer' && route.offer) receive(route.offer);
+          if (route.kind === 'offer' && route.offer)
+            receive(route.offer, 'push');
         },
       }),
     [router, receive],

@@ -77,9 +77,18 @@ export function HomeScreen() {
         testID="toggle"
       />
       <QueuePosition queue={offers.state.queue} />
+      {/*
+        No `accessibilityLabel` here on purpose. `Pressable` defaults
+        `accessible` to true, which collapses the subtree into a single node,
+        and an explicit label then REPLACES the accumulated child text rather
+        than adding to it — a static «Ieņēmumi» erased the day's earnings from
+        the audio channel while leaving it on screen. Without one, RN builds
+        the name from `EarningsCard`'s own text, so the number is announced;
+        `accessibilityRole` still says it is a button.
+      */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={t('driver.action.earnings')}
+        accessibilityHint={t('driver.action.earnings')}
         onPress={() => router.push('/earnings')}
         style={styles.earningsLink}
         testID="earnings-link"

@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
 import {
   formatMessage,
+  OFFER_PUSH_PAYLOAD_MAX_BYTES,
+  offerPushDataSchema,
   rideOfferEventSchema,
   splitFare,
   type Language,
@@ -10,10 +12,7 @@ import {
 import type { DriversService } from '../drivers';
 import type { RealtimeService } from '../realtime';
 import type { RideTransitionService } from '../rides';
-import {
-  DispatchNotifier,
-  OFFER_PUSH_PAYLOAD_MAX_BYTES,
-} from './dispatch-notifier';
+import { DispatchNotifier } from './dispatch-notifier';
 
 const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
 const OFFER_ID = '7c6b5a49-3827-4160-9504-3f2e1d0c9b8a';
@@ -110,8 +109,10 @@ describe('DispatchNotifier.emitOffer (#15)', () => {
       kind: 'offer',
       offerId: OFFER_ID,
       rideId: RIDE_ID,
-      expiresAt: '2026-09-04T10:00:20.000Z',
     });
+    // F7: the envelope is a cross-surface contract, so it is pinned by the
+    // SHARED schema the driver app parses with — not by literals on this side.
+    expect(offerPushDataSchema.parse(message.data)).toBeTruthy();
     // The payload IS the wire event: a cold-started app renders the card from it.
     const carried = rideOfferEventSchema.parse(
       JSON.parse(message.data!.offer!),
@@ -144,9 +145,10 @@ describe('DispatchNotifier.emitOffer (#15)', () => {
       kind: 'offer',
       offerId: OFFER_ID,
       rideId: RIDE_ID,
-      expiresAt: '2026-09-04T10:00:20.000Z',
     });
     expect(data).not.toHaveProperty('offer');
+    // Ids-only is still a VALID envelope: `offer` is optional by contract.
+    expect(offerPushDataSchema.parse(data)).toBeTruthy();
     await flush();
   });
 

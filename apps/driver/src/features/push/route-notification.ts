@@ -1,4 +1,8 @@
-import { rideOfferEventSchema, type RideOfferEvent } from '@taxi/shared';
+import {
+  offerPushDataSchema,
+  rideOfferEventSchema,
+  type RideOfferEvent,
+} from '@taxi/shared';
 
 /**
  * Where a notification sends the app (#15). `offer` carries the wire offer
@@ -22,14 +26,26 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /** Pure: notification `data` (strings only, Expo forwards them verbatim) → route. */
 export function routeNotification(data: unknown): NotificationRoute {
   if (!isRecord(data) || data.kind !== 'offer') return { kind: 'gate' };
-  const offerId = typeof data.offerId === 'string' ? data.offerId : null;
-  const rideId = typeof data.rideId === 'string' ? data.rideId : null;
+  // Parsed through the SHARED envelope, which the api builds against — a
+  // rename on either side now fails typecheck rather than silently degrading
+  // every offer push to ids-only. A malformed envelope still routes the tap by
+  // whatever ids survive, so a bad `offerId` never costs the driver the card.
+  const envelope = offerPushDataSchema.safeParse(data);
+  const offerId = envelope.success
+    ? envelope.data.offerId
+    : typeof data.offerId === 'string'
+      ? data.offerId
+      : null;
+  const rideId = envelope.success
+    ? envelope.data.rideId
+    : typeof data.rideId === 'string'
+      ? data.rideId
+      : null;
+  const raw = envelope.success ? envelope.data.offer : data.offer;
   let offer: RideOfferEvent | null = null;
-  if (typeof data.offer === 'string') {
+  if (typeof raw === 'string') {
     try {
-      const parsed = rideOfferEventSchema.safeParse(
-        JSON.parse(data.offer) as unknown,
-      );
+      const parsed = rideOfferEventSchema.safeParse(JSON.parse(raw) as unknown);
       if (parsed.success) offer = parsed.data;
     } catch {
       offer = null; // junk JSON: the ids still route the tap

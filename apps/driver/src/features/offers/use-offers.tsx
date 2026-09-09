@@ -43,7 +43,7 @@ export interface OffersContextValue {
   decline(): void;
   dismissBanner(): void;
   /** The push path's entry: the same wire event the socket delivers. */
-  receive(event: RideOfferEvent): void;
+  receive(event: RideOfferEvent, source: 'socket' | 'push'): void;
 }
 
 const OffersContext = createContext<OffersContextValue | null>(null);
@@ -153,7 +153,7 @@ export function OffersProvider({ children }: { children: ReactNode }) {
   });
 
   const receive = useCallback(
-    (event: RideOfferEvent) => {
+    (event: RideOfferEvent, source: 'socket' | 'push') => {
       // The domain object re-hydrates the two dates and strips the wire-only
       // `paymentMethod`, which travels beside it on the card.
       const offer = rideOfferSchema.parse(event);
@@ -164,6 +164,7 @@ export function OffersProvider({ children }: { children: ReactNode }) {
           paymentMethod: event.paymentMethod,
           receivedAtMs: Date.now(),
           durationMs: offer.expiresAt.getTime() - offer.sentAt.getTime(),
+          source,
         },
       });
     },
@@ -183,7 +184,7 @@ export function OffersProvider({ children }: { children: ReactNode }) {
           console.warn('ride:offer dropped', parsed.error.issues[0]?.message);
           return;
         }
-        receive(parsed.data);
+        receive(parsed.data, 'socket');
       };
       const onRevoked = (payload: unknown) => {
         const parsed = RT_EVENT_SCHEMAS[RT.rideOfferRevoked].safeParse(payload);

@@ -186,26 +186,26 @@ describe('signOut ordering (#140)', () => {
   /**
    * The keep-awake hazard at `use-presence.tsx` (`await deactivateKeepAwake`
    * unwrapped inside `onBeforeSignOut`): on Android the call throws when the
-   * Activity that took the lock is gone, and the throw skips the intent write
-   * and the offline PUT — the store keeps saying «online» and the server is
-   * never told. Documented as `test.failing` so the suite stays green; the
-   * fix is one `.catch(() => undefined)` and the reviewer's call (#15 plan,
-   * T21). When someone adds it, this test starts PASSING and jest fails it
-   * as "expected to fail" — flip it to a plain `it` then.
+   * Activity that took the lock is gone, and the throw skipped the intent
+   * write and the offline PUT — the store kept saying «online» and the server
+   * was never told, so the next cold launch re-asserted online, on a
+   * handed-over phone under a new session.
+   *
+   * Shipped as `it.failing` with the reviewer's call pending (#15 plan T21);
+   * PR #154's review ruled fix-it-here, so `use-presence.tsx` now guards that
+   * call the same way the `keep_awake` effect above it already did, and this
+   * is a plain `it`. Reverting the `.catch` makes it fail again — verified.
    */
-  it.failing(
-    'a rejecting deactivateKeepAwake still writes the intent and tells the server (edge — the hazard)',
-    async () => {
-      jest.mocked(deactivateKeepAwake).mockImplementation(() => {
-        mockCalls.push('keepAwake.off');
-        return Promise.reject(new Error('Activity gone'));
-      });
-      await signedInAndOnline();
+  it('a rejecting deactivateKeepAwake still writes the intent and tells the server (edge — the hazard)', async () => {
+    jest.mocked(deactivateKeepAwake).mockImplementation(() => {
+      mockCalls.push('keepAwake.off');
+      return Promise.reject(new Error('Activity gone'));
+    });
+    await signedInAndOnline();
 
-      await act(() => sessionCtx!.signOut());
+    await act(() => sessionCtx!.signOut());
 
-      expect(mockCalls).toContain('writeIntent:offline');
-      expect(mockCalls).toContain('put:offline');
-    },
-  );
+    expect(mockCalls).toContain('writeIntent:offline');
+    expect(mockCalls).toContain('put:offline');
+  });
 });

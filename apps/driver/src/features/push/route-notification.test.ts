@@ -1,4 +1,4 @@
-import { splitFare } from '@taxi/shared';
+import { offerPushDataSchema, splitFare } from '@taxi/shared';
 import { routeNotification } from './route-notification';
 
 const OFFER_ID = '7c6b5a49-3827-4160-9504-3f2e1d0c9b8a';
@@ -78,5 +78,46 @@ describe('routeNotification (#15)', () => {
     expect(
       routeNotification(offerData({ offer: JSON.stringify(noMethod) })),
     ).toMatchObject({ kind: 'offer', offer: null });
+  });
+
+  /**
+   * F7: the envelope used to be bare string literals on BOTH sides with nothing
+   * spanning them, so a rename of `data.offer` or a change to `kind` kept
+   * typecheck, lint and both suites green while every offer push silently
+   * degraded to ids-only — or, on `kind`, dumped a tapping driver on the gate.
+   * This is the test that spans the two: the envelope the api builds is parsed
+   * by the shared schema, and what comes out of it is what routes the tap.
+   */
+  it('routes an envelope validated by the SHARED schema the api builds against (expected)', () => {
+    const envelope = offerPushDataSchema.parse({
+      kind: 'offer',
+      offerId: OFFER_ID,
+      rideId: RIDE_ID,
+      offer: JSON.stringify(wire),
+    });
+
+    const route = routeNotification(envelope);
+
+    expect(route).toMatchObject({
+      kind: 'offer',
+      offerId: OFFER_ID,
+      rideId: RIDE_ID,
+    });
+    expect(route.kind === 'offer' && route.offer?.id).toBe(OFFER_ID);
+  });
+
+  it('an ids-only envelope is valid by contract and still routes the tap (edge)', () => {
+    const envelope = offerPushDataSchema.parse({
+      kind: 'offer',
+      offerId: OFFER_ID,
+      rideId: RIDE_ID,
+    });
+
+    expect(routeNotification(envelope)).toMatchObject({
+      kind: 'offer',
+      offer: null,
+      offerId: OFFER_ID,
+      rideId: RIDE_ID,
+    });
   });
 });
