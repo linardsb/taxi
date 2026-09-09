@@ -209,9 +209,9 @@ body`), because no working-tree grep reaches the body. `observed` at `6be079b`.
 | `Nine lines` | 0 hits | was `:170` → **fixed** |
 | `Ten lines` | `piv-create-pr/SKILL.md:59` ✅ | present ✅ |
 | `one hit` (the `gh pr review` count) | 0 hits in the ledger | was `:42` → **fixed** |
-| `2 hits` | `REMEDY-LEDGER.md:62` ✅ | present ✅ |
-| `full-path` / `0 mismatches` | `REMEDY-LEDGER.md:21` — now the *corrected* framing ✅ | was `:178` → **fixed** |
-| `10, 25` (L17 locator) | `REMEDY-LEDGER.md:43` → now `10, 25, 86` ✅ | 0 hits |
+| `2 hits` | `REMEDY-LEDGER.md:64` ✅ | present ✅ |
+| `full-path` / `0 mismatches` | `REMEDY-LEDGER.md:23` — now the *corrected* framing ✅ | was `:178` → **fixed** |
+| `10, 25` (L17 locator) | `REMEDY-LEDGER.md:45` → now `10, 25, 86` ✅ | 0 hits |
 | `every measurement` | `SKILL.md:75`, `inherited-figures.sh:34` → both bounded ✅ | 0 hits |
 | `two .claude/system-reviews. docs` | 0 hits | was `:11` → **fixed** to three |
 
