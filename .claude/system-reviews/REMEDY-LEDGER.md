@@ -11,11 +11,13 @@ Status verified: 2026-09-09 on `docs/remedy-ledger-apply` (`observed`). **3 open
 IDs are stable and never renumbered.
 
 > **Every locator below was re-run at this head, and the check that says so names its own scope.**
-> `observed`, 2026-09-09: all **15 rows** of the Closed table — **18 checks: 17 greps and one `ls`** —
-> plus L4 in *Closed earlier* and the 3 rows in *Open*. Seventeen of the eighteen reproduce; **two did
-> not**, and both are corrected in place: L11's `grep -rn "gh pr review" .claude/skills/` claimed 1 hit
-> and returns **2** (`07aeb1a`'s own fix added the front-matter description in the same commit that
-> published the count), and L17's `pnpm check` locator listed 2 of **3** hits.
+> `observed`, 2026-09-09: **22 checks in three groups** — the Closed table's 15 rows (**18 checks: 17
+> greps and one `ls`**), plus L4 in *Closed earlier* (1), plus the 3 rows in *Open*. **20 reproduce; two
+> did not**, one in each of two different groups, which is why the two figures do not sum against 18:
+> 17 of the Closed table's 18 hold, and 2 of *Open*'s 3. Both failures are corrected in place — L11's
+> `grep -rn "gh pr review" .claude/skills/` claimed 1 hit and returns **2** (`07aeb1a`'s own fix added
+> the front-matter description in the same commit that published the count), and L17's `pnpm check`
+> locator listed 2 of **3** hits. All **17 line-number** locators reproduce: no position moved.
 >
 > **The scope sentence matters as much as the digits.** `07aeb1a` reported this same sweep as
 > "7 full-path greps, 0 mismatches" — true of the 7 rows whose verify cell spells out a

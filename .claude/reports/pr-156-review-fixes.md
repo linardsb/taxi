@@ -89,10 +89,18 @@ $ awk '/^## Closed this loop/,/^### Also closed/' .claude/system-reviews/REMEDY-
 mechanism, not a coincidence.
 
 **I did not adopt the review's "16".** It showed no working. My own machine count of the Closed-this-loop
-table is **15 rows / 18 checks — 17 greps and one `ls`**; adding L4 in *Closed earlier* and the 3 *Open*
-rows makes the full set. Re-run at `6be079b`: **17 of 18 reproduce, 2 published results did not** (L11,
-L17), both corrected here. The ledger header now names the set and the date instead of a bare count, so
-the next added row cannot silently fall outside it.
+table is **15 rows / 18 checks — 17 greps and one `ls`**; adding L4 in *Closed earlier* (1) and the 3
+*Open* rows makes **22 checks in three groups**.
+
+Re-run at `6be079b`: **20 of 22 reproduce; 2 published results did not.** The two failures sit in
+*different groups* — L11 is one of the Closed table's 18, L17 is one of *Open*'s 3 — so "17 of 18" would
+be the wrong frame for both: it reads as if both failures were inside the 18, and 17 + 2 does not sum
+against 18. Stated per group: **17 of the Closed table's 18 hold, 1 of 1 in *Closed earlier*, 2 of
+*Open*'s 3.** Separately, all **17 line-number** locators reproduce — no position moved; both
+corrections are to published *results*.
+
+The ledger header now names the set, the grouping and the date instead of a bare count, so the next added
+row cannot silently fall outside it.
 
 ## Mediums
 
@@ -234,8 +242,9 @@ L18 ^arguments:   → piv-fix-review-findings, system-evolution-review, system-e
 L19 33 skipped    → CLAUDE.md:43                   (still stale by design — L19 is an OPEN row)
 ```
 
-**All 17 grep locators reproduce; no line number moved under this round's edits.** The two corrections
-are to published *results* (H2, M6), not to positions. The `ls` and the three Open-table rows reproduce.
+**All 17 line-number locators reproduce; no position moved under this round's edits.** The two
+corrections are to published *results* (H2, M6), not to positions. Group totals: Closed table 17/18,
+*Closed earlier* 1/1, *Open* 2/3 — **20 of 22**.
 
 ## Validation
 
@@ -246,14 +255,29 @@ because the reviewer observed this gate flaking on two different tasks (`@taxi/d
 an `@taxi/api` transport-level `Parse Error`), neither attributable here:
 
 ```
-$ git diff --stat 07aeb1a..HEAD -- . ':(exclude).claude' ':(exclude).gitignore'
-(empty)
-$ git diff --stat origin/main...HEAD -- . ':(exclude).claude' ':(exclude).gitignore'
-(empty)
+$ git diff --stat 07aeb1a..af0cfe4 -- . ':(exclude).claude' ':(exclude).gitignore'
+(empty — 0 files)
+$ git diff --stat origin/main...af0cfe4 -- . ':(exclude).claude' ':(exclude).gitignore'
+(empty — 0 files)
+$ git diff --name-only 07aeb1a..af0cfe4          # the same range with NO excludes
+.claude/reports/pr-156-review-fixes.md
+.claude/skills/piv-create-pr/SKILL.md
+.claude/skills/piv-create-pr/scripts/inherited-figures.sh
+.claude/skills/piv-create-pr/scripts/record-gate.sh
+.claude/system-reviews/REMEDY-LEDGER.md
 ```
 
 Every file this branch touches is under `.claude/` plus two `.gitignore` lines. No package compiles,
 lints or tests any of it.
+
+**The third command is not decoration — it is what stops the first two being an identity function.**
+An earlier draft of this section printed the same two commands written `07aeb1a..HEAD`, and they were
+run while `HEAD` *was* `07aeb1a`: `A..B` with `A == B` is empty by construction, proves nothing, and
+would not have shown the then-uncommitted changes in any case, since `..` compares commits and not the
+working tree. That is #107's shape exactly — a correctly-derived counterfactual printed as **Observed**
+where the mechanism was an identity function — reproduced inside the report written to catch it. The
+endpoints above are distinct commits, and the unexcluded run shows five files really do differ across
+that range, so the empty result is a genuine comparison rather than a tautology.
 
 **2. The gate was re-run anyway, at `6be079b`, by the edited `record-gate.sh`** — which makes it two
 things at once: the gate record, and the evidence that this round's script edits did not break the
@@ -284,26 +308,42 @@ this run's own wall clock. Neither gate flake the review recorded reproduced her
 ## Re-verified against the **published** body, after publishing
 
 The sweep table above was written before `gh pr edit` ran, so its "fixed" column was a prediction. Re-run
-against the live body (`gh pr view 156 --json body`) at head `13523c9`:
+against the **live** body (`gh pr view 156 --json body`) after the final publish:
 
 ```
-→ 156                          → 0 hits   OK        Nine lines                     → 0 hits   OK
-→ 16 |                         → 0 hits   OK        returns one hit                → 0 hits   OK
-63, 67                         → 0 hits   OK        the two `.claude/system-reviews/` → 0 hits   OK
-## Summary / ## What changed / ## Validation  → 1 each        footer → present
+→ 156                             → 0 hits   OK      Nine lines                        → 0 hits   OK
+→ 16 |                            → 0 hits   OK      returns one hit                   → 0 hits   OK
+63, 67                            → 0 hits   OK      the two `.claude/system-reviews/` → 0 hits   OK
+## Summary / ## What changed / ## Validation  → 1 each          footer → present
 ```
 
-**Three patterns still match, and all three are deliberate quotations of the retired claim** — checked
-in context rather than counted:
+**Four patterns still match, and all four are deliberate quotations of the retired claim** — checked in
+context rather than counted:
 
 | Pattern | Line | Why it is correct |
 |---|---|---|
-| `not a plan path` | 260 | inside the round-1 section, naming the pattern that broke: "the fix for L12 was the *pattern*, not the line (a wrap broke `…not a plan path`)" |
-| `0 mismatches` | 203 | inside the H3 correction, quoting `07aeb1a`'s wrong claim before refuting it |
+| `not a plan path` | 266 | the round-1 section, naming the pattern that broke: "the fix for L12 was the *pattern*, not the line (a wrap broke `…not a plan path`)" |
+| `0 mismatches` | 203 | the H3 correction, quoting `07aeb1a`'s wrong claim before refuting it |
+| `17 of 18` | 212 | the H3 correction, quoting *this round's own* first wrong framing before refuting it |
 | `1m13.444s` | 149 | the drift paragraph, listing all four runs and saying only the last describes the shipped commit |
 
 This is the distinction the "retire the subject, not the digits" rule needs in both directions: a retired
 value quoted *as retired* is not a stale claim, and a grep count alone cannot tell the two apart.
+
+## Two defects found in this fix round itself, before it shipped
+
+Recorded because both are the class this PR exists to remove, and both were caught after the first push.
+
+- **The Validation diff was an identity function.** Detailed under Validation above: `07aeb1a..HEAD` run
+  while `HEAD` *was* `07aeb1a`. Fixed by re-running with distinct endpoints and printing the unexcluded
+  range alongside, so the empty result is visibly a comparison and not a tautology.
+- **"17 of 18 reproduce; two did not" does not sum.** The two failures sit in different groups — L11
+  inside the Closed table's 18, L17 inside *Open*'s 3 — so the sentence read as if both were inside the
+  18, and 17 + 2 ≠ 18. Corrected to 22 checks in three groups, 20 reproduce, with the per-group split
+  spelled out, on all three surfaces (ledger header, PR body, this report).
+
+Both were arithmetic-and-scope defects in prose that no typecheck, lint or test can read — the same
+reason CLAUDE.md puts the burden on the author.
 
 ## Deferred — with reasons, not silence
 
