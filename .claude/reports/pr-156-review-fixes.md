@@ -281,6 +281,30 @@ this run's own wall clock. Neither gate flake the review recorded reproduced her
 
 `REDIS_TEST_URL` was unset, so the Redis-backed suites are `describe.skip` — that is the 35 skipped.
 
+## Re-verified against the **published** body, after publishing
+
+The sweep table above was written before `gh pr edit` ran, so its "fixed" column was a prediction. Re-run
+against the live body (`gh pr view 156 --json body`) at head `13523c9`:
+
+```
+→ 156                          → 0 hits   OK        Nine lines                     → 0 hits   OK
+→ 16 |                         → 0 hits   OK        returns one hit                → 0 hits   OK
+63, 67                         → 0 hits   OK        the two `.claude/system-reviews/` → 0 hits   OK
+## Summary / ## What changed / ## Validation  → 1 each        footer → present
+```
+
+**Three patterns still match, and all three are deliberate quotations of the retired claim** — checked
+in context rather than counted:
+
+| Pattern | Line | Why it is correct |
+|---|---|---|
+| `not a plan path` | 260 | inside the round-1 section, naming the pattern that broke: "the fix for L12 was the *pattern*, not the line (a wrap broke `…not a plan path`)" |
+| `0 mismatches` | 203 | inside the H3 correction, quoting `07aeb1a`'s wrong claim before refuting it |
+| `1m13.444s` | 149 | the drift paragraph, listing all four runs and saying only the last describes the shipped commit |
+
+This is the distinction the "retire the subject, not the digits" rule needs in both directions: a retired
+value quoted *as retired* is not a stale claim, and a grep count alone cannot tell the two apart.
+
 ## Deferred — with reasons, not silence
 
 | Item | Why not now |
