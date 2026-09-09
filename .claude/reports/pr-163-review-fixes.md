@@ -122,6 +122,12 @@ red to keep proving it; the guarantee is `finally` semantics, and both suites pa
 (`ride-read.integration.spec.ts` and `dispatch.integration.spec.ts` both PASS in the gate below).
 Stated rather than dressed up as a regression test.
 
+**What a mechanical re-indent could have broken, checked.** The `finally` now runs the detach on
+paths that previously skipped it, so a read of the collected events placed *after* the block would
+have been silently reordered against it. `observed` — read back: every use of `seen` / `mine()` is
+inside the `try` (`mine` is even declared there), and nothing follows the block; likewise `extra` in
+the dispatch spec. No read moved relative to the detach.
+
 ## N2 — nothing pins the revoke loop against a throwing `emitStatus` — **won't-fix**
 
 The review filed this explicitly as *not* a request for a third `try`, and that reading holds:
@@ -158,8 +164,11 @@ services/api/src/features/dispatch/dispatch-notifier.spec.ts:326
 services/api/src/features/dispatch/dispatch-notifier.spec.ts:357
 ```
 
-All three code hits are the **ride-room** site, which keeps the name — correct, not stale.
-`pr-82-review.md:29` is a review of PR #82 describing that PR's tree; historical record, left.
+All three code hits are the **ride-room** site, which keeps the name — correct, not stale. Two of
+them are pre-existing (`dispatch-notifier.ts:142` and its assertion at `spec.ts:326`); the third,
+`spec.ts:357`, is the ride-room half of the both-throw case **added in this round**, so it is my
+own line, not an inherited hit that survived the sweep. `pr-82-review.md:29` is a review of PR #82
+describing that PR's tree; historical record, left.
 
 ```
 $ grep -rn "notify_failed" services/api/src/features/dispatch/
