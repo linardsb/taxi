@@ -284,7 +284,6 @@ export const ru = {
   'driver.ride.completed_title': 'Поездка завершена',
   'driver.ride.reload': 'Обновить',
   'driver.earnings.title': 'Заработок',
-  'driver.earnings.today': 'Сегодня: {amount} · Поездки: {rides}',
   'driver.earnings.receipt_paid': 'Пассажир заплатил: {amount}',
   'driver.earnings.receipt_commission': 'Sakta ({pct}%): {amount}',
   'driver.earnings.receipt_net': 'Вы получаете: {amount}',

@@ -1,3 +1,4 @@
+export { earningsBody } from './earnings-body';
 export { EarningsCard } from './earnings-card';
 export { formatEur } from './format-eur';
 export { HomeScreen } from './home-screen';

@@ -6,9 +6,11 @@ import { useSession } from '@/features/auth';
 import { useT, type T } from '@/features/i18n';
 import { offerBannerFor, QueuePosition, useOffers } from '@/features/offers';
 import { useMe } from '@/features/onboarding';
+import { earningsBody } from './earnings-body';
 import { EarningsCard } from './earnings-card';
 import { pillFrom, type Connection } from './presence-pill';
 import type { PresenceState } from './presence-state';
+import { useEarnings } from './use-earnings';
 import { usePresence } from './use-presence';
 
 const PILL_KEY: Record<Connection, MessageKey> = {
@@ -39,6 +41,10 @@ export function HomeScreen() {
   const { state, nowMs, toggle, dismissBanner, batteryPrompt } = usePresence();
   const offers = useOffers();
   const online = state.intent === 'online';
+  // Read HERE, not inside `EarningsCard`: the link's accessible name needs the
+  // same string the card renders, and the card's collapse hides it (F20).
+  const today = useEarnings(online);
+  const earnings = earningsBody(today.earnings, today.status, t);
   const pill = pillFrom(state, nowMs);
   const vehicle = me?.vehicles[0];
   const banner = bannerFor(state, t, {
@@ -78,22 +84,30 @@ export function HomeScreen() {
       />
       <QueuePosition queue={offers.state.queue} />
       {/*
-        No `accessibilityLabel` here on purpose. `Pressable` defaults
-        `accessible` to true, which collapses the subtree into a single node,
-        and an explicit label then REPLACES the accumulated child text rather
-        than adding to it — a static «Ieņēmumi» erased the day's earnings from
-        the audio channel while leaving it on screen. Without one, RN builds
-        the name from `EarningsCard`'s own text, so the number is announced;
-        `accessibilityRole` still says it is a button.
+        The label is COMPOSED, never static and never absent. `Pressable`
+        defaults `accessible` to true, which collapses the subtree into a
+        single node, and an explicit label then REPLACES the accumulated child
+        text rather than adding to it — a static «Ieņēmumi» erased the day's
+        earnings from the audio channel while leaving it on screen (F4).
+        Leaning on the collapse instead left the control with NO name at all
+        while the card is a spinner, which is every cold launch: a WCAG 4.1.2
+        failure and a blank row in the rotor (F20). Joining the two gives a
+        name in all three states — «Ieņēmumi» alone while loading, and the
+        number itself once there is one.
+
+        No `accessibilityHint`: it carried «Ieņēmumi» only because the name was
+        missing, and now stutters against a label that opens with that word.
       */}
       <Pressable
         accessibilityRole="button"
-        accessibilityHint={t('driver.action.earnings')}
+        accessibilityLabel={[t('driver.action.earnings'), earnings]
+          .filter(Boolean)
+          .join('. ')}
         onPress={() => router.push('/earnings')}
         style={styles.earningsLink}
         testID="earnings-link"
       >
-        <EarningsCard online={online} />
+        <EarningsCard body={earnings} />
       </Pressable>
       {online ? (
         <Text style={styles.diagnostics} testID="diagnostics">

@@ -5,6 +5,7 @@ import {
   within,
 } from '@testing-library/react-native';
 import { formatMessage } from '@taxi/shared';
+import { NO_EARNINGS } from './earnings-body';
 import { HomeScreen } from './home-screen';
 import { initialPresence, type PresenceState } from './presence-state';
 
@@ -201,9 +202,14 @@ describe('HomeScreen', () => {
     // F4: the link is a grouping `Pressable`, which collapses its subtree into
     // one node — so a static `accessibilityLabel` REPLACED the card's text and
     // the day's earnings were absent from the audio channel entirely. The
-    // accessible name has to carry the number a sighted driver reads.
+    // accessible name has to carry the number a sighted driver reads, which is
+    // why the amount stays inside this assertion even though F20 has since
+    // composed the label rather than leaving it to the collapse.
     const link = screen.getByRole('button', {
-      name: t('driver.home.today', { amount: '€84.20', rides: 7 }),
+      name: `${t('driver.action.earnings')}. ${t('driver.home.today', {
+        amount: '€84.20',
+        rides: 7,
+      })}`,
     });
     expect(link).toBeTruthy();
     await fireEvent.press(link);
@@ -211,6 +217,33 @@ describe('HomeScreen', () => {
       .requireMock<{ useRouter: () => { push: jest.Mock } }>('expo-router')
       .useRouter();
     expect(router.push).toHaveBeenCalledWith('/earnings');
+  });
+
+  it('names the earnings link while the card is still a spinner (#15, edge — F20)', async () => {
+    // The load window on EVERY cold launch: `body === null` renders an
+    // `ActivityIndicator` and no text, so relying on the collapsed child text
+    // alone left the control with no accessible name at all — WCAG 4.1.2, and
+    // a blank row in the rotor. The composed label falls back to the action.
+    mockEarningsStatus = 'loading';
+    await render(<HomeScreen />);
+
+    expect(
+      screen.getByRole('button', { name: t('driver.action.earnings') }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('earnings-link')).toBeTruthy();
+  });
+
+  it('names the earnings link when the first load failed (#15, failure — F20)', async () => {
+    // «—» is punctuation, not a name: on its own it was the whole accessible
+    // name, so the action word has to lead here too.
+    mockEarningsStatus = 'error';
+    await render(<HomeScreen />);
+
+    expect(
+      screen.getByRole('button', {
+        name: `${t('driver.action.earnings')}. ${NO_EARNINGS}`,
+      }),
+    ).toBeTruthy();
   });
 
   it('renders the offers banner beside the presence one, and its dismiss reaches the offers slice (#15, edge)', async () => {
