@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react-native';
 import { formatEur, formatMessage, splitFare } from '@taxi/shared';
-import { Receipt } from './receipt';
+import { pctLabel, Receipt } from './receipt';
 
 const t = (
   key: Parameters<typeof formatMessage>[1],
@@ -62,5 +62,15 @@ describe('Receipt (#15)', () => {
     expect(() =>
       splitFare(1240, { pct: 150, source: 'platform_base' }),
     ).toThrow();
+  });
+});
+
+// Moved from `offers/offer-card-props.test.ts` when that slice's
+// byte-identical copy of `pctLabel` was deleted (F14): the offer card's «you
+// keep» pct now goes through this export, so the assertion sits beside it.
+describe('pctLabel', () => {
+  it('keeps a whole pct whole and a fractional one to one decimal', () => {
+    expect(pctLabel(15)).toBe('15');
+    expect(pctLabel(87.5)).toBe('87.5');
   });
 });

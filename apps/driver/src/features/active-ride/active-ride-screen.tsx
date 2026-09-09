@@ -6,14 +6,13 @@ import {
   spacing,
   type MessageKey,
   type Ride,
-  type RideStatus,
 } from '@taxi/shared';
 import { Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Banner, Button, Screen } from '@/components';
 import { errorMessageKey, useT } from '@/features/i18n';
-import { stepFor } from './active-ride-state';
+import { stepFor, TITLE_KEY } from './active-ride-state';
 import {
   canOpenWaze,
   googleMapsLink,
@@ -22,13 +21,6 @@ import {
 } from './nav-links';
 import { paymentMethodLabel, Receipt } from './receipt';
 import { useActiveRide } from './use-active-ride';
-
-const TITLE_KEY: Partial<Record<RideStatus, MessageKey>> = {
-  accepted: 'driver.ride.title_accepted',
-  arriving: 'driver.ride.title_arriving',
-  arrived: 'driver.ride.title_arrived',
-  in_progress: 'driver.ride.title_in_progress',
-};
 
 const STEP_KEY = {
   arriving: 'driver.ride.step_arriving',
