@@ -19,18 +19,6 @@ import { RideTransitionService, type TransitionedRide } from '../rides';
 export type RevokedRef = { offerId: string; driverId: string };
 
 /**
- * The most bytes of wire offer the push `data` may carry (#15).
- *
- * `derived`: Expo's push payload limit is 4,096 bytes for the whole message.
- * Title + body ≤ ~120 B in any of the three catalogs, `kind` + the three ids
- * + `expiresAt` ≤ ~200 B, so 2,048 B for the offer JSON leaves ~1.7 KB of
- * headroom. The only unbounded strings in an offer are the two addresses
- * (`addressPointSchema.address` has no max); an offer that does not fit
- * still pushes with the ids alone, and the tap lands on whatever card the
- * socket already delivered.
- */
-
-/**
  * The post-commit socket tail of the dispatch slice. Everything here runs
  * AFTER the transaction committed and never throws: Socket.IO has no rollback,
  * so a lost event costs a live update, never correctness.

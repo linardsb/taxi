@@ -32,8 +32,21 @@ export const offerPushDataSchema = z.object({
 export type OfferPushData = z.infer<typeof offerPushDataSchema>;
 
 /**
- * Expo's per-notification `data` budget. The offer JSON is included only if
- * the whole payload stays under it; past that the push carries ids only.
+ * The most bytes of offer JSON the push may carry. This project's sub-cap,
+ * NOT Expo's limit: `dispatch-notifier.ts` measures the offer JSON alone
+ * against it, and past that the push carries the ids only.
+ *
+ * `derived`: Expo's limit is 4,096 B for the whole message. Title + body
+ * ≤ ~120 B in any of the three catalogs, and the rest of the envelope —
+ * `kind` plus the two uuids, with `offer` empty — is 124 B (`observed`,
+ * `Buffer.byteLength` of that object stringified), so 2,048 B leaves
+ * 4,096 − 120 − 124 − 2,048 = 1,804 B spare. That headroom also absorbs the
+ * escaping the offer JSON picks up when it is nested here as a string.
+ *
+ * The only unbounded strings in an offer are the two addresses
+ * (`addressPointSchema.address` has no max), so a long pair is what drops an
+ * offer to ids-only; the tap then lands on whatever card the socket delivered.
+ *
  * Lives beside the schema because whether `offer` is present is part of the
  * envelope's contract, not an api-side implementation detail.
  */

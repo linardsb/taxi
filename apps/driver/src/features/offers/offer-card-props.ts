@@ -126,7 +126,14 @@ export function offerCardProps(
       queue,
       t('driver.offer.a11y_accept'),
     ]
-      .filter(Boolean)
+      .filter((line): line is string => Boolean(line))
+      // Only `a11y_card` and `a11y_accept` end in a full stop; the middle
+      // segments are label forms («Skaidrā naudā», «Iekāpšana: {address}»), so
+      // a bare space runs the payment method into the pickup address with no
+      // pause — the one boundary the ordering above rests on. Terminated per
+      // segment rather than `.join('. ')`, which double-punctuates after the
+      // two that already carry it.
+      .map((line) => (/[.!?]$/.test(line) ? line : `${line}.`))
       .join(' '),
     accepting: state.phase === 'accepting',
   };

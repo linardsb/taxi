@@ -25,7 +25,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** Pure: notification `data` (strings only, Expo forwards them verbatim) → route. */
 export function routeNotification(data: unknown): NotificationRoute {
-  if (!isRecord(data) || data.kind !== 'offer') return { kind: 'gate' };
+  // The literal comes off the SHARED schema, not a copy of it: the gate runs
+  // before the parse, so a bare `'offer'` here would still compile after the
+  // envelope's `kind` changed — and every offer push would fall to the gate.
+  if (!isRecord(data) || data.kind !== offerPushDataSchema.shape.kind.value)
+    return { kind: 'gate' };
   // Parsed through the SHARED envelope, which the api builds against — a
   // rename on either side now fails typecheck rather than silently degrading
   // every offer push to ids-only. A malformed envelope still routes the tap by

@@ -113,6 +113,16 @@ describe('offerCardProps (#15)', () => {
     expect(props!.a11yLabel.trimEnd()).toMatch(
       new RegExp(`${t('driver.offer.a11y_accept')}$`),
     );
+    // F22: the middle segments are label forms with no terminal punctuation,
+    // so each is terminated — without it «Skaidrā naudā Iekāpšana: …» runs on
+    // and the payment method has no pause after it.
+    expect(props!.a11yLabel).toContain(
+      `${t('driver.offer.payment_cash')}. ${t('driver.offer.pickup', {
+        address: 'Brīvības iela 1',
+      })}.`,
+    );
+    // …and the two that already end in a full stop are not double-punctuated.
+    expect(props!.a11yLabel).not.toMatch(/\.\./);
   });
 
   it('a 0% override renders «you keep €12.40 (100%)» — never a hardcoded 85 (edge)', () => {

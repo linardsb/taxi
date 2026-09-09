@@ -44,6 +44,13 @@ export interface OffersContextValue {
   dismissBanner(): void;
   /** The push path's entry: the same wire event the socket delivers. */
   receive(event: RideOfferEvent, source: 'socket' | 'push'): void;
+  /**
+   * Whether `/offer` has a card to draw right now — `offer-screen` redirects
+   * home without one. `dispatch` writes `stateRef` synchronously, so this is
+   * accurate immediately after `receive`, which is how the push tap decides
+   * whether to navigate at all.
+   */
+  hasCard(): boolean;
 }
 
 const OffersContext = createContext<OffersContextValue | null>(null);
@@ -171,6 +178,10 @@ export function OffersProvider({ children }: { children: ReactNode }) {
     [dispatch],
   );
 
+  // Reads the ref, not `state`, so it is stable and a caller may ask straight
+  // after `receive` — the same guard `offer-screen` redirects on.
+  const hasCard = useCallback(() => stateRef.current.pending !== null, []);
+
   // The socket's three offer-side events, parsed before they touch the reducer.
   useEffect(() => {
     let detach: (() => void) | null = null;
@@ -255,8 +266,16 @@ export function OffersProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<OffersContextValue>(
-    () => ({ state, latest, accept, decline, dismissBanner, receive }),
-    [state, latest, accept, decline, dismissBanner, receive],
+    () => ({
+      state,
+      latest,
+      accept,
+      decline,
+      dismissBanner,
+      receive,
+      hasCard,
+    }),
+    [state, latest, accept, decline, dismissBanner, receive, hasCard],
   );
   return (
     <OffersContext.Provider value={value}>{children}</OffersContext.Provider>

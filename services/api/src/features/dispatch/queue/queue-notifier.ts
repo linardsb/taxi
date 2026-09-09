@@ -61,9 +61,17 @@ export class QueueNotifier {
       // `size` therefore cannot be `entries.length`, which counts DEDUPLICATED
       // entries: on the double-append `joinBack` deliberately tolerates,
       // ['A','A','B'] yields positions 1 and 3 from a list of length 2, and B
-      // is told «3 of 2». The schema permits it (position min 1, size
-      // nonnegative), so nothing else rejects it. Take the larger of the two.
-      const size = Math.max(entries.length, entries.at(-1)?.position ?? 0);
+      // would be told «3 of 2». The schema permits it (position min 1, size
+      // nonnegative), so nothing else rejects it.
+      //
+      // So `size` is the LARGEST ISSUED RANK, and the last entry always holds
+      // it: `snapshotFrom` walks the raw list assigning `position = index + 1`
+      // and only ever drops repeats, so positions ascend. That over-counts by
+      // the duplicates ahead of the last unique driver — A hears «1 of 3» with
+      // two drivers queued — which is the deliberate trade for agreeing with
+      // the rank. `entries.length` is a total-expression fallback only; the
+      // empty list already returned above.
+      const size = entries.at(-1)?.position ?? entries.length;
       for (const entry of entries) {
         this.realtime.emitToDriver(entry.driverId, RT.driverQueue, {
           driverId: entry.driverId,

@@ -39,11 +39,15 @@ export interface OfferState {
   /** The last `driver:queue` heard; shown on home and beside the card. */
   queue: DriverQueueEvent | null;
   /**
-   * Ids of cards that have already left the screen, newest first, capped at
-   * {@link ANSWERED_MEMORY}. `pending` alone cannot dedupe: the api emits the
-   * socket event and the push together, so an offer answered before Expo
-   * delivers its push would otherwise be re-shown as a brand-new card over the
-   * active ride.
+   * Ids of cards cleared through `cleared` — accepted, declined, expired or
+   * revoked — newest first, capped at {@link ANSWERED_MEMORY}. `pending` alone
+   * cannot dedupe: the api emits the socket event and the push together, so an
+   * offer answered before Expo delivers its push would otherwise be re-shown
+   * as a brand-new card over the active ride.
+   *
+   * A card REPLACED by a second live offer is deliberately not recorded here:
+   * `dispatch.service.ts` (`findDriverIdsWithLiveOffers`) keeps one live card
+   * per driver, so that branch has no reachable case to remember.
    *
    * A set rather than one id, because one id remembers only the last card:
    * declining A, being offered B and answering B would forget A, and A's slow

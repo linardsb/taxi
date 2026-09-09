@@ -18,7 +18,7 @@ import {
  */
 export function PushRegistrar() {
   const { state, api, onBeforeSignOut } = useSession();
-  const { receive } = useOffers();
+  const { receive, hasCard } = useOffers();
   const router = useRouter();
   const t = useT();
   const tRef = useRef(t);
@@ -31,12 +31,19 @@ export function PushRegistrar() {
       installNotificationHandling({
         onTap: (route) => {
           if (route.kind === 'offer') {
-            // `receive` dedupes by id and routes a fresh card itself;
-            // `navigate` (not `push`) makes the second hop to `/offer` land on
-            // the same screen instead of stacking a duplicate. Without a
-            // payload the screen shows whatever is pending, or redirects home.
+            // `receive` dedupes by id and routes a fresh card itself
+            // (`route_offer`); this hop is for the ids-only push, whose card
+            // the socket already delivered. `navigate` (not `push`) makes the
+            // two hops land on one screen instead of stacking a duplicate.
+            //
+            // Gated on there BEING a card, not on the payload carrying one: a
+            // tray entry for an offer already answered in-app is never
+            // dismissed, and tapping it mid-ride used to pull the driver onto
+            // `/offer`, which redirects to `/home` — a screen with no
+            // active-ride affordance and nothing routing back short of a
+            // relaunch. `hasCard()` reads the ref `receive` just wrote.
             if (route.offer) receive(route.offer, 'push');
-            router.navigate('/offer');
+            if (hasCard()) router.navigate('/offer');
             return;
           }
           router.replace('/');
@@ -48,7 +55,7 @@ export function PushRegistrar() {
             receive(route.offer, 'push');
         },
       }),
-    [router, receive],
+    [router, receive, hasCard],
   );
 
   useEffect(() => {

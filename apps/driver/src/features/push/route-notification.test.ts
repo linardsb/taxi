@@ -27,11 +27,11 @@ const wire = {
   paymentMethod: 'cash',
 };
 
+/** The envelope as the api builds it — F7 removed `expiresAt` from the wire. */
 const offerData = (over: Record<string, string> = {}) => ({
   kind: 'offer',
   offerId: OFFER_ID,
   rideId: RIDE_ID,
-  expiresAt: wire.expiresAt,
   offer: JSON.stringify(wire),
   ...over,
 });
