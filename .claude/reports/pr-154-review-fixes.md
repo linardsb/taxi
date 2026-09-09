@@ -245,6 +245,32 @@ stderr is #156's M2 fix, landed an hour earlier, working on its first real use.)
 `eslint . --fix`; the run above is the re-run. One api prettier error in F6's new spec was caught
 the same way.
 
+
+## The PR body's own Figures table — swept, because this commit moved it
+
+F9 named three figures. But the body carries a nine-row `## Figures` table whose header claims a
+provenance for **all** of them, and this fix commit changed the tree they describe. Re-labelling
+that header `cdddf2f` while re-running only the obvious rows would be the #107 shape — a
+provenance claim over unverified values — so every row was re-executed at `cdddf2f`:
+
+| Row | Command | Was (`602d5fb`) | Is (`cdddf2f`) |
+|---|---|---|---|
+| Diff size | `git diff --shortstat origin/main...HEAD` | 101 files, +7,353 / −164 | **105 files, +8,047 / −166** |
+| Insertions by surface | `git diff --numstat origin/main...HEAD` summed by prefix | 4,983 + 1,275 + 296 + 735 + 64 = 7,353 | **5,320 + 1,320 + 352 + 991 + 64 = 8,047** (sums exact) |
+| Catalog keys added | `git diff … -- i18n/lv.ts \| grep -c "^+  '"` | 50 | **51** (F4's `a11y_accept`) |
+| Push payload guard | `grep -rn "OFFER_PUSH_PAYLOAD_MAX_BYTES = "` | `dispatch-notifier.ts:30` | **`packages/shared/src/schemas/offer-push.ts:40`** (moved by F7) |
+| Line caps (max 500) | `wc -l` on the five named files | `lv.ts` **442** | `lv.ts` **445** — F4's key plus its comment; still under cap |
+| New test/spec files | `git diff --name-status … \| grep -cE '^A.*\.(test\|spec)\.tsx?$'` | 16 | **16** — this round modified test files, added none |
+| Glance threshold | `grep -n GLANCE_SPEED_MPS offer-card-props.ts` | 10 / 3.6 | **10 / 3.6** |
+| Tone asset | `wc -c apps/driver/assets/sounds/offer-tone.wav` | 44,144 B | **44,144 B** |
+| `npx expo install --check` | `… \| grep -E "^ +expo.* - expected version:" \| wc -l` | 9 | **9** |
+
+Five moved, four re-derived identical. The `lv.ts` row is the one that would have shipped stale
+under a blanket header: nothing in F1–F9 points at it, and only re-running the `wc -l` finds it.
+
+**Nothing in shipped source is over the 500-line cap** — `find … | xargs wc -l | awk '$1>500'`
+returns only `dist/` build output, which the rule exempts.
+
 ## Needs a human look
 
 - **Level 4 (device day) is still owed** and is unaffected by this round — no fix here is
