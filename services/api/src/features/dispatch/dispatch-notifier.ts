@@ -166,10 +166,15 @@ export class DispatchNotifier {
         });
       } catch (error) {
         this.logger.warn({
-          event: 'dispatch.assign.notify_failed',
+          // Its OWN action_state, not the `emitToRide` one above. Both lines
+          // carry a `driverId` and it means a different person in each: there
+          // the newly ASSIGNED driver, here a REVOKED one. Under a shared
+          // name, grouping by event + driverId — the 02:00 query — conflates
+          // "the ride room never heard about the assignment" with "driver X's
+          // stale offer card never cleared", which have different blast radii
+          // and different fixes.
+          event: 'dispatch.assign.revoke_failed',
           rideId: ride.id,
-          // The REVOKED driver, as in `emitRevoked` — `offerId` is what tells
-          // this line apart from the `emitToRide` one above.
           driverId: other.driverId,
           offerId: other.offerId,
           reason: error instanceof Error ? error.message : 'unknown',

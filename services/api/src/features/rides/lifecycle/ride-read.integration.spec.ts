@@ -262,38 +262,45 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
     const b = await connectClient(port, d.token);
     const { seen, stop } = collectStatuses(b);
 
-    await http
-      .post(`/rides/${ride.id}/arriving`)
-      .set('authorization', d.auth)
-      .expect(201);
-    await settle();
-    // CONTROL first: the ride DID move, so B's silence below is the missing
-    // room membership, never a dispatch that did nothing.
-    expect((await rideRow(ride.id)).status).toBe('arriving');
-    expect(seen.filter((e) => e.rideId === ride.id)).toEqual([]);
+    // `finally`, not a trailing call: an assertion failure below would
+    // otherwise skip the detach and leave the listener firing into a closing
+    // socket during teardown — noise on exactly the run whose output you are
+    // trying to read.
+    try {
+      await http
+        .post(`/rides/${ride.id}/arriving`)
+        .set('authorization', d.auth)
+        .expect(201);
+      await settle();
+      // CONTROL first: the ride DID move, so B's silence below is the missing
+      // room membership, never a dispatch that did nothing.
+      expect((await rideRow(ride.id)).status).toBe('arriving');
+      expect(seen.filter((e) => e.rideId === ride.id)).toEqual([]);
 
-    // What the app does on every `connect`. This is the join.
-    const res = await http
-      .get(`/rides/${ride.id}`)
-      .set('authorization', d.auth)
-      .expect(200);
-    const body = rideSchema.parse(res.body);
-    expect(body.driverId).toBe(d.id);
-    expect(body.status).toBe('arriving');
-    expect(body.paymentMethod).toBe('cash');
+      // What the app does on every `connect`. This is the join.
+      const res = await http
+        .get(`/rides/${ride.id}`)
+        .set('authorization', d.auth)
+        .expect(200);
+      const body = rideSchema.parse(res.body);
+      expect(body.driverId).toBe(d.id);
+      expect(body.status).toBe('arriving');
+      expect(body.paymentMethod).toBe('cash');
 
-    await http
-      .post(`/rides/${ride.id}/arrived`)
-      .set('authorization', d.auth)
-      .expect(201);
+      await http
+        .post(`/rides/${ride.id}/arrived`)
+        .set('authorization', d.auth)
+        .expect(201);
 
-    const mine = () => seen.filter((e) => e.rideId === ride.id);
-    await waitForCount(() => mine().length, 1);
-    expect(mine()[0]).toMatchObject({
-      status: 'arrived',
-      previousStatus: 'arriving',
-    });
-    stop();
+      const mine = () => seen.filter((e) => e.rideId === ride.id);
+      await waitForCount(() => mine().length, 1);
+      expect(mine()[0]).toMatchObject({
+        status: 'arrived',
+        previousStatus: 'arriving',
+      });
+    } finally {
+      stop();
+    }
   });
 
   it('404s a driver reading a ride assigned to someone else, with the same shape as a missing ride (failure)', async () => {

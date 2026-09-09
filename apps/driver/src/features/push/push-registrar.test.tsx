@@ -1,14 +1,16 @@
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, render, screen, waitFor } from '@testing-library/react-native';
 import * as Notifications from 'expo-notifications';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Text } from 'react-native';
 import {
+  formatMessage,
   offerPushDataSchema,
   splitFare,
   type RideOfferEvent,
 } from '@taxi/shared';
 import type { RuntimeListener } from '@/features/location';
 import {
+  OfferScreen,
   OffersProvider,
   useOffers,
   type OffersContextValue,
@@ -34,7 +36,15 @@ jest.mock('@/features/auth', () => ({
 }));
 
 const mockOpen = jest.fn();
+// PARTIAL, not a replacement: this file imports the `@/features/offers`
+// barrel, which loads `offer-card-props.ts` → the real `paymentMethodLabel`
+// and `pctLabel` (F14 — they live in active-ride now). A full replacement
+// leaves both `undefined` for anything here that draws the card. Same shape
+// `use-offers.test.tsx` and `earnings/earnings-screen.test.tsx` carry.
 jest.mock('@/features/active-ride', () => ({
+  ...jest.requireActual<typeof import('@/features/active-ride')>(
+    '@/features/active-ride',
+  ),
   useActiveRide: () => ({ open: mockOpen, state: {} }),
 }));
 
@@ -104,11 +114,12 @@ type TapListener = Parameters<
 >[0];
 let tap: TapListener | null = null;
 
-async function mount() {
+async function mount(extra?: ReactNode) {
   await render(
     <OffersProvider>
       <PushRegistrar />
       <Probe />
+      {extra}
     </OffersProvider>,
   );
   await waitFor(() => expect(tap).not.toBeNull());
@@ -184,5 +195,29 @@ describe('PushRegistrar tap routing (#15)', () => {
 
     expect(router.replace).toHaveBeenCalledWith('/');
     expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  // The guard on this file's `@/features/active-ride` mock (PR #163, L1).
+  // Nothing else here draws the card, so a full replacement of that module
+  // sat harmless until someone rendered `OfferScreen` — and then failed in a
+  // module the test never names. This renders it, so the mock cannot regress
+  // silently: both `paymentMethodLabel` (the pill) and `pctLabel` (the
+  // you-keep line) resolve through the barrel below.
+  it('the card the tap lands on draws through the real active-ride labels (edge)', async () => {
+    await mount(<OfferScreen />);
+    await act(async () => ctx!.receive(wire(), 'socket'));
+    await tapWith({ kind: 'offer', offerId: OFFER_ID, rideId: RIDE_ID });
+
+    expect(router.navigate).toHaveBeenCalledWith('/offer');
+    expect(screen.getByTestId('offer-payment')).toHaveTextContent(
+      formatMessage('lv', 'driver.offer.payment_cash'),
+    );
+    // `splitFare(1240, 15%)` nets 1054 cents and keeps 85 — `pctLabel(85)`.
+    expect(screen.getByTestId('offer-keep')).toHaveTextContent(
+      formatMessage('lv', 'driver.offer.you_keep', {
+        amount: '€10.54',
+        pct: '85',
+      }),
+    );
   });
 });

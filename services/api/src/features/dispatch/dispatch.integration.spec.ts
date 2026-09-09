@@ -430,12 +430,16 @@ describe('dispatch (integration)', () => {
       if (e.rideId === ride.id) extra += 1;
     };
     dispatchSock.on(RT.dispatchUnclaimed, countExtra);
-    await sweeper.tick();
-    await sweeper.tick();
-    expect(extra).toBe(0);
-    // Removed explicitly: a listener left attached outlives the test and fires
-    // into a closed socket during teardown.
-    dispatchSock.off(RT.dispatchUnclaimed, countExtra);
+    // Removed in a `finally`: a listener left attached outlives the test and
+    // fires into a closed socket during teardown — and a trailing call is
+    // skipped by the assertion failure that most needs a quiet teardown.
+    try {
+      await sweeper.tick();
+      await sweeper.tick();
+      expect(extra).toBe(0);
+    } finally {
+      dispatchSock.off(RT.dispatchUnclaimed, countExtra);
+    }
   });
 
   /**

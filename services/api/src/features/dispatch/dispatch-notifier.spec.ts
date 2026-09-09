@@ -300,7 +300,7 @@ describe('DispatchNotifier.emitAssigned (#15)', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        event: 'dispatch.assign.notify_failed',
+        event: 'dispatch.assign.revoke_failed',
         rideId: RIDE_ID,
         driverId: REVOKED[0]!.driverId,
         offerId: REVOKED[0]!.offerId,
@@ -325,6 +325,46 @@ describe('DispatchNotifier.emitAssigned (#15)', () => {
       expect.objectContaining({
         event: 'dispatch.assign.notify_failed',
         driverId: DRIVER_ID,
+      }),
+    );
+  });
+
+  it('names the ride-room failure and a revoke failure apart in the log (edge)', () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    let calls = 0;
+    const emitToDriver = jest.fn(() => {
+      calls += 1;
+      if (calls === 1) throw new Error('socket down');
+    });
+    const { notifier } = build({
+      emitToDriver,
+      emitToRide: jest.fn(() => {
+        throw new Error('room gone');
+      }),
+    });
+
+    expect(() => assign(notifier)).not.toThrow();
+
+    // PR #163 L2. Both warns carry a `driverId` and it names a different
+    // person in each — the assigned driver above, a revoked one below. Under
+    // one event name, grouping by event + driverId (the 02:00 query) merges
+    // "the ride room never heard about the assignment" into "driver X's stale
+    // card never cleared"; the only discriminator was whether `offerId`
+    // happened to be present, which is implicit and easy to miss.
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'dispatch.assign.notify_failed',
+        rideId: RIDE_ID,
+        driverId: DRIVER_ID,
+      }),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'dispatch.assign.revoke_failed',
+        rideId: RIDE_ID,
+        driverId: REVOKED[0]!.driverId,
+        offerId: REVOKED[0]!.offerId,
       }),
     );
   });
