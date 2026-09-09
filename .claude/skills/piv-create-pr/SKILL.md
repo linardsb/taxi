@@ -56,7 +56,7 @@ git log origin/{base}..HEAD --oneline
 ## Phase 2.5 — Generate the validation block, then find the inherited figures (blocking)
 
 Two scripts live beside this skill. **They are referenced here so that deleting them shows up in a
-diff** — the previous copies lived only under `~/.claude/skills/`. Nine lines across five `.claude/`
+diff** — the previous copies lived only under `~/.claude/skills/`. Ten lines across five `.claude/`
 reports and reviews named them (`git grep -n record-gate c70572b`), but nothing on an executable path
 did, so the #129 cleanup destroyed the files and left only the prose about them (ledger L2).
 
@@ -72,8 +72,10 @@ before opening the PR if** `.claude/last-gate.json` is missing, its `head` is no
 `short_gate` is true. Read `tasks_not_in_graph` too: a package that defines no `test` or `lint` script
 is not checked by a green gate, which is how two apps went unchecked at "18 successful, 18 total".
 
-**`inherited-figures.sh` prints every measurement this body shares with the implementation report or
-with the PR's own previous body.** Each hit is *unaudited*, not necessarily wrong: re-derive it at this
+**`inherited-figures.sh` prints every measurement it can bind to a unit word or a duration that this
+body shares with the implementation report or with the PR's own previous body** — not every shared
+figure: its duration matcher drops a minute prefix, so `1m22.325s` and a bare `22.325s` reduce to one
+key. Each hit is *unaudited*, not necessarily wrong: re-derive it at this
 head, or say why it is head-independent. Pass `--pr {N}` when updating an existing PR — the published
 body is the most-read surface and the only one no working-tree grep can reach. No implementation report
 (a docs-only PR) is an ordinary case: it prints a note and exits 0, which is not a pass.

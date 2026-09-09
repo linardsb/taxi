@@ -27,6 +27,12 @@
 # numeric instances shared. For the gate line specifically, prefer record-gate.sh,
 # which removes the opportunity instead of auditing it.
 #
+# It also does not reach a figure bound to no unit word, and its duration matcher
+# drops a minute prefix — 1m22.325s and a bare 22.325s reduce to the same key, so
+# a genuinely distinct pair of durations can read as one inherited figure and a
+# genuinely shared one can be missed. Do not describe its output as EVERY shared
+# measurement; it is every measurement it can bind to a unit word or a duration.
+#
 # Restored in-repo 2026-09-04 (ledger L2), with two changes to the destroyed
 # version: --pr fetches the published body (the surface that is NOT in the
 # working tree, and the one #121's retired claim survived on), and a missing
@@ -50,9 +56,11 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$new" ] || { usage; exit 2; }
-[ -r "$new" ] || { echo "cannot read $new" >&2; exit 2; }
+# -f, not -r: a directory is readable, extracts nothing, and used to land on the
+# clean-comparison path as a confident PASS.
+[ -f "$new" ] && [ -r "$new" ] || { echo "cannot read file $new" >&2; exit 2; }
 
-tmpdir=$(mktemp -d)
+tmpdir=$(mktemp -d) || { echo "mktemp -d failed" >&2; exit 2; }
 trap 'rm -f "$tmpdir"/* 2>/dev/null; rmdir "$tmpdir" 2>/dev/null' EXIT
 
 if [ -n "$pr" ]; then
@@ -73,14 +81,16 @@ extract() {
   {
     grep -oiE "[0-9][0-9.,]*[[:space:]]*(${UNITS})" "$1" 2>/dev/null
     grep -oiE '[0-9][0-9.]*[[:space:]]*(ms|s)\b' "$1" 2>/dev/null
-  } | tr -s ' ' ' ' | tr 'A-Z' 'a-z' | sed 's/[[:space:]]*$//' | sort -u
+  } | tr '\t' ' ' | tr -s ' ' ' ' | tr 'A-Z' 'a-z' | sed 's/[[:space:]]*$//' | sort -u
 }
 
 prior_all="$tmpdir/prior_all"
 : > "$prior_all"
 readable=0
 for p in "${priors[@]+"${priors[@]}"}"; do
-  if [ -r "$p" ]; then extract "$p" >> "$prior_all"; readable=$((readable + 1))
+  # -f here too: a directory prior would otherwise count as readable, extract
+  # nothing, and be reported below as "a surface with no measurements in it".
+  if [ -f "$p" ] && [ -r "$p" ]; then extract "$p" >> "$prior_all"; readable=$((readable + 1))
   else echo "note: skipping unreadable prior surface $p" >&2; fi
 done
 
@@ -94,6 +104,19 @@ if [ "$readable" -eq 0 ]; then
 fi
 
 sort -u -o "$prior_all" "$prior_all"
+
+# A readable prior with no measurement in it compares nothing, and used to print
+# the same confident PASS as a real clean check. The no-prior-surface path above
+# is careful to say "this is NOT a pass"; this adjacent one has to be too.
+if [ ! -s "$prior_all" ]; then
+  echo "NOTE — $readable prior surface(s) read, but none contains a figure this check can"
+  echo "bind to a unit word or a duration, so there was nothing to compare against."
+  echo "It is NOT a pass: every figure in $(basename "$new") is still unaudited, and the"
+  echo "by-eye checks (a right number under a wrong label, a claim with no numeral) are"
+  echo "the only ones that apply here."
+  exit 0
+fi
+
 carried=$(extract "$new" | grep -Fxf "$prior_all" 2>/dev/null || true)
 
 if [ -z "$carried" ]; then
@@ -108,7 +131,11 @@ echo
 while IFS= read -r fig; do
   [ -n "$fig" ] || continue
   echo "  \"$fig\""
-  grep -niF "$fig" "$new" | head -2 | cut -c1-160 | sed 's/^/      /'
+  # $fig is whitespace-normalised, so a fixed-string grep misses the source line
+  # whenever its spacing is irregular ("22  passed", "22passed") and the figure
+  # then prints with no file:line to chase. Match it space-flexibly instead.
+  pat=$(printf '%s' "$fig" | sed 's/[.]/\\./g; s/ /[[:space:]]*/g')
+  grep -niE "$pat" "$new" | head -2 | cut -c1-160 | sed 's/^/      /'
 done <<< "$carried"
 
 echo

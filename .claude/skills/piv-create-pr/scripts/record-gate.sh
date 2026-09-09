@@ -54,7 +54,9 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --clean) clean=1; shift ;;
     --) shift; break ;;
-    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
+    # Print the whole leading comment block, however long it grows. A fixed line
+    # range went stale twice: the header outgrew it and --help ended mid-sentence.
+    -h|--help) awk 'NR>1 && /^#/ {print; next} NR>1 {exit}' "$0"; exit 0 ;;
     *) break ;;
   esac
 done
@@ -149,7 +151,10 @@ strip() { sed -e 's/\x1b\[[0-9;]*[a-zA-Z]//g' -e 's/\r$//' "$@"; }
 
 tasks=$(strip "$log" | grep -oE '[0-9]+ successful, [0-9]+ total' | tail -1)
 cached=$(strip "$log" | grep -oE '[0-9]+ cached, [0-9]+ total' | tail -1)
-elapsed=$(strip "$log" | grep -E '^[[:space:]]*Time:' | tail -1 | sed 's/.*Time:[[:space:]]*//' | tr -d ' ')
+# Not `tr -d ' '`: a fully-cached run prints "Time: 47ms >>> FULL TURBO", which
+# that mangled into "47ms>>>FULLTURBO" and pasted verbatim into a PR body.
+elapsed=$(strip "$log" | grep -E '^[[:space:]]*Time:' | tail -1 \
+  | sed 's/.*Time:[[:space:]]*//; s/[[:space:]]*>>>.*$//; s/[[:space:]]*$//')
 successful=$(printf '%s' "${tasks:-}" | sed -n 's/^\([0-9][0-9]*\) successful.*/\1/p')
 failed_tasks=$(strip "$log" | grep -oE 'Failed: +[@/a-zA-Z0-9_.-]+#[a-z:-]+' | sed 's/Failed: *//' | sort -u)
 
@@ -197,7 +202,7 @@ mkdir -p "$root/.claude"
   printf '  "head_short": "%s",\n' "$head_short"
   printf '  "branch": "%s",\n' "$branch"
   printf '  "dirty": %s,\n' "$dirty"
-  printf '  "command": "%s",\n' "$(printf '%s ' "${gate[@]}" | sed 's/ $//; s/"/\\"/g')"
+  printf '  "command": "%s",\n' "$(printf '%s ' "${gate[@]}" | sed 's/ $//; s/\\/\\\\/g; s/"/\\"/g')"
   printf '  "exit_code": %d,\n' "$rc"
   printf '  "started": "%s",\n' "$started"
   printf '  "finished": "%s",\n' "$finished"
@@ -209,10 +214,10 @@ mkdir -p "$root/.claude"
   printf '  "cached": "%s",\n' "${cached:-}"
   printf '  "elapsed": "%s",\n' "${elapsed:-}"
   printf '  "failed_tasks": [\n'
-  printf '%s' "$failed_tasks" | awk 'NF{gsub(/"/,"\\\""); printf "    \"%s\",\n", $0}' | sed '$ s/,$//'
+  printf '%s' "$failed_tasks" | sed 's/\\/\\\\/g' | awk 'NF{gsub(/"/,"\\\""); printf "    \"%s\",\n", $0}' | sed '$ s/,$//'
   printf '  ],\n'
   printf '  "packages": [\n'
-  printf '%s' "$packages" | awk 'NF{gsub(/"/,"\\\""); printf "    \"%s\",\n", $0}' | sed '$ s/,$//'
+  printf '%s' "$packages" | sed 's/\\/\\\\/g' | awk 'NF{gsub(/"/,"\\\""); printf "    \"%s\",\n", $0}' | sed '$ s/,$//'
   printf '  ]\n'
   printf '}\n'
 } > "$json"
@@ -231,6 +236,11 @@ else
   echo "**GATE RED** (exit $rc) — \`${gate[*]}\`, at \`$head_short\`:"
   [ "$rc" -eq 137 ] && echo "(137 = killed. A red @taxi/api jest run does not exit; turbo waits, then kills it.)"
 fi
+# The dirty warning above goes to stderr, which is NOT part of what gets pasted.
+# The one reader who needs the caveat reads the block, so it belongs inside it.
+if [ "$dirty" = true ]; then
+  echo "(dirty tree — this run covers uncommitted changes \`$head_short\` does not contain.)"
+fi
 echo
 echo '```'
 [ -n "${tasks:-}" ]   && echo "Tasks:    $tasks"
@@ -238,6 +248,15 @@ echo '```'
 [ -n "${elapsed:-}" ] && echo "Time:     $elapsed"
 echo '```'
 [ -n "$packages" ] && { echo; printf '%s\n' "$packages" | sed 's/^/    /'; }
+# A fully-cached run exits 0, matches the expected count, and is therefore not
+# short — but it re-ran nothing, and the per-package block above is replayed or
+# empty. Say so rather than let the block read like a --force run.
+if read -r c_hit c_tot <<< "$(printf '%s' "${cached:-}" | sed -n 's/^\([0-9][0-9]*\) cached, \([0-9][0-9]*\) total$/\1 \2/p')" \
+   && [ -n "${c_hit:-}" ] && [ "$c_hit" -gt 0 ] && [ "$c_hit" -eq "$c_tot" ]; then
+  echo
+  echo "Every task was a CACHE HIT — nothing was rebuilt or re-run, so the per-package"
+  echo "evidence above is replayed or absent. CLAUDE.md's parity gate specifies --force."
+fi
 if [ -n "$failed_tasks" ]; then
   echo
   echo "Failed tasks (authoritative — ignore the ELIFECYCLE noise from killed siblings):"

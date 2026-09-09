@@ -7,8 +7,22 @@ decay into recurrences (#87's Level-4 item fired again in #94 at higher cost; th
 sat queued for seven loops while its class recurred twice), and remedies with no repo reference can be
 destroyed silently (the two gate scripts, see L2).
 
-Status verified: 2026-09-04 on `docs/remedy-ledger-apply` (`observed`). **3 open, 15 closed this loop.**
+Status verified: 2026-09-09 on `docs/remedy-ledger-apply` (`observed`). **3 open, 15 closed this loop.**
 IDs are stable and never renumbered.
+
+> **Every locator below was re-run at this head, and the check that says so names its own scope.**
+> `observed`, 2026-09-09: all **15 rows** of the Closed table — **18 checks: 17 greps and one `ls`** —
+> plus L4 in *Closed earlier* and the 3 rows in *Open*. Seventeen of the eighteen reproduce; **two did
+> not**, and both are corrected in place: L11's `grep -rn "gh pr review" .claude/skills/` claimed 1 hit
+> and returns **2** (`07aeb1a`'s own fix added the front-matter description in the same commit that
+> published the count), and L17's `pnpm check` locator listed 2 of **3** hits.
+>
+> **The scope sentence matters as much as the digits.** `07aeb1a` reported this same sweep as
+> "7 full-path greps, 0 mismatches" — true of the 7 rows whose verify cell spells out a
+> `.claude/skills/…/SKILL.md` path (L1 L9 L6 L10 L3 L12 L2), because the checking regex matched only
+> those and silently skipped the 8 abbreviated `…` rows (L13 L7 L14 L8 L5 **L11** L16 L15). Both misses
+> above sit in the skipped half. A completeness claim that quietly checked 7 of 15 rows is the C1 shape
+> even when its answer holds — so state the set, not just the count.
 
 > **Greps that verify a remedy's absence run with `-i`, and a row claiming absence names the pattern it
 > ran.** The first version of this table carried an L4 row ("Level-4 manual steps must be performable")
@@ -26,7 +40,7 @@ IDs are stable and never renumbered.
 
 | ID | Remedy | Origin | Class | Recurrences since logged | Status at HEAD |
 |----|--------|--------|-------|--------------------------|----------------|
-| L17 | `piv-validate:10` calls `pnpm check` **the gate**, but CLAUDE.md's gate and `.github/workflows/ci.yml` both run `typecheck lint test build`. `pnpm check` omits `build`, so the skill's own step 1 is not CI parity — and the TS6053 stale-`.next` row added under L6 cannot fire under the command step 1 names | this loop, 2026-09-04 (raised while applying L6; deliberately not folded into it — it changes what the skill *runs*, not how it triages) | C7 | — | present and wrong: `grep -n "pnpm check" .claude/skills/piv-validate/SKILL.md` → 10, 25 |
+| L17 | `piv-validate:10` calls `pnpm check` **the gate**, but CLAUDE.md's gate and `.github/workflows/ci.yml` both run `typecheck lint test build`. `pnpm check` omits `build`, so the skill's own step 1 is not CI parity — and the TS6053 stale-`.next` row added under L6 cannot fire under the command step 1 names | this loop, 2026-09-04 (raised while applying L6; deliberately not folded into it — it changes what the skill *runs*, not how it triages) | C7 | — | present and wrong: `grep -n "pnpm check" .claude/skills/piv-validate/SKILL.md` → 10, 25, 86 |
 | L18 | The word-split argument hazard L12 fixed is not unique to one skill: `piv-fix-review-findings:5` declares `arguments: [review, scope]` and `system-execution-report:5` declares `[plan]`, both of which split a free-form sentence the same way. The fix pattern already exists in-repo — `opportunity-scan:27`, "Read `$ARGUMENTS` as **prose**, not as positional slots" | this loop, 2026-09-04 (found while verifying L12's coupling) | C7 | — | absent — `grep -n "^arguments:" .claude/skills/*/SKILL.md` → 3 files, only `system-evolution-review` now guarded |
 | L19 | CLAUDE.md's Redis-skip figure has drifted again. It states `33 skipped, 582 passed, 615 total` / `2 skipped, 64 passed, 64 of 66 total` at `feed712`. `observed` at `c70572b` (this loop's full parity run): `@taxi/api  Tests: 35 skipped, 660 passed, 695 total` / `Test Suites: 2 skipped, 71 passed, 71 of 73 total`. The digit is the fourth version of this line; CLAUDE.md's own note says to re-observe the whole claim rather than patch the digit, so this is logged rather than edited in passing | this loop, 2026-09-04 | C1 | 4th occurrence of this specific line drifting | stale — `grep -n "33 skipped" CLAUDE.md` |
 
@@ -45,7 +59,7 @@ demonstrably do not fire here (see Accepted risks). Each row's grep was run at t
 | L8 | `piv-plan-implementation` Task Format, under the `GOTCHA` field | `grep -in "the GOTCHA is binding and IMPLEMENT is a sketch" …` → 354 |
 | L5 | `piv-plan-implementation` ACCEPTANCE CRITERIA template | `grep -in "owed by #N" …` → 442 |
 | L9 | `piv-review-pr` Phase 4, new **### The constraint pass** | `grep -in "The constraint pass" .claude/skills/piv-review-pr/SKILL.md` → 60 |
-| L11 | `piv-review-pr` Phase 6 — `gh pr comment` is now the only post path | `grep -in "refuses BOTH verbs" …` → 157; and `grep -rn "gh pr review" .claude/skills/` → 1 hit, inside the explanatory comment |
+| L11 | `piv-review-pr` Phase 6 — `gh pr comment` is now the only post path | `grep -in "refuses BOTH verbs" …` → 157; and `grep -rn "gh pr review" .claude/skills/` → **2 hits, both deliberate**: the explanatory comment at `:156` and the front-matter description at `:3`, which names the refusal so the skill index carries it |
 | L6 | `piv-validate` new **## 3. Environment or code?**, four signatures with their clearing commands | `grep -in "Environment or code" .claude/skills/piv-validate/SKILL.md` → 42 |
 | L16 | `piv-validate` Notes | `grep -in "A green gate is not a green CI" …` → 88 |
 | L10 | `piv-implement` **Ready for the next step** | `grep -in "Commit before you stop" .claude/skills/piv-implement/SKILL.md` → 138 |
