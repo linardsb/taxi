@@ -159,6 +159,45 @@ describe('DispatchNotifier.emitOffer (#15)', () => {
     await flush();
   });
 
+  it('measures the JSON in BYTES, not UTF-16 units, so a Latvian address drops too (edge)', async () => {
+    // CONTROL: the same offer with an EMPTY address still fits, and the JSON it
+    // pushes is the envelope's own size — so the case below is sized against a
+    // measured overhead rather than an assumed one, and the two `expect`s that
+    // follow re-derive it on every run instead of trusting this comment.
+    // `observed` (this run): 727 UTF-16 units, all ASCII.
+    const control = build();
+    control.notifier.emitOffer(
+      offer({ pickup: { location: { lat: 56.95, lng: 24.11 }, address: '' } }),
+      'cash',
+    );
+    const overhead = messageOf(control.sendPush).data!.offer!.length;
+
+    // `ā` (U+0101) is ONE UTF-16 unit and TWO UTF-8 bytes. That divergence is
+    // the only thing the byte guard buys over `json.length`, and Latvian and
+    // Russian addresses are where it actually bites.
+    const address = 'ā'.repeat(1_100);
+    // `derived` from `overhead`: 727 + 1,100 = 1,827 units — under the cap, so
+    // a `.length`-based guard would KEEP the body and this test would fail…
+    expect(overhead + address.length).toBeLessThanOrEqual(
+      OFFER_PUSH_PAYLOAD_MAX_BYTES,
+    );
+    // …while 727 + 2,200 = 2,927 BYTES is over it, so the real guard drops it.
+    expect(overhead + Buffer.byteLength(address, 'utf8')).toBeGreaterThan(
+      OFFER_PUSH_PAYLOAD_MAX_BYTES,
+    );
+
+    const { notifier, sendPush } = build();
+    notifier.emitOffer(
+      offer({ pickup: { location: { lat: 56.95, lng: 24.11 }, address } }),
+      'cash',
+    );
+
+    const { data } = messageOf(sendPush);
+    expect(data).not.toHaveProperty('offer');
+    expect(offerPushDataSchema.parse(data)).toBeTruthy();
+    await flush();
+  });
+
   it('never throws when the push rejects or the socket emit throws (failure)', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const { notifier, sendPush } = build({
