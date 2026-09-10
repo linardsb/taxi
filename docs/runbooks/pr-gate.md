@@ -73,7 +73,7 @@ gh run view <run-id> --log-failed
 | `check` red | The gate is red at this head. Fix, push. The next run flips it if green. |
 | `audit-diff` red | §2. |
 | `codeql` red | §3, then the fix loop in §4. |
-| `ready` red, every other job green | `ready` itself failed to talk to GitHub. Read its log: `set the GH_TOKEN environment variable`, exit 4, means the `PR_READY_TOKEN` secret does not exist (`observed` run 34471798333); `Resource not accessible by integration` means the token it holds lacks pull-request write on this repo, or is the Actions token (`observed` run 34471269249); `Bad credentials` means it expired (`expected`). Fix the secret (§1.1), then re-run the job: `gh run rerun <run-id> --failed`. `gh pr ready` is idempotent (`observed` 2026-09-10 on PR #166: a second call prints `already "ready for review"` and exits 0), so a re-run after an undo works too. |
+| `ready` red, every other job green | `ready` itself failed to talk to GitHub. Read its log: `set the GH_TOKEN environment variable`, exit 4, means the `PR_READY_TOKEN` secret does not exist (`observed` run 34471798333); `Resource not accessible by integration` means it holds the Actions token (`observed` run 34471269249); `Resource not accessible by personal access token` means a fine-grained token, which this mutation refuses (`observed` run 34472223208, §1.1); `Bad credentials` means it expired (`expected`). Fix the secret (§1.1), then re-run the job: `gh run rerun <run-id> --failed`. `gh pr ready` is idempotent (`observed` 2026-09-10 on PR #166: a second call prints `already "ready for review"` and exits 0), so a re-run after an undo works too. |
 | A flake (the payments/customers integration suites under the full run are the known one) | `gh run rerun <run-id> --failed`. The re-run's `ready` job flips the PR if green. Do not push an empty commit to "kick" it; that is a second head and a second run. |
 | A ready PR turned back into a draft | A later push went red. Read `gh pr checks`; the failing check is on the new head. |
 
@@ -89,10 +89,11 @@ with a personal access token from a repository secret:
 
 | Secret | Value | Notes |
 |---|---|---|
-| `PR_READY_TOKEN` | A PAT of Linards' with pull-request write on `linardsb/taxi` | GitHub → Settings → Developer settings → Personal access tokens. Fine-grained: repository access **only this repository**, permission **Pull requests: Read and write**; set an expiry and put the date in your calendar, an expired token leaves every PR a draft (fail closed, and `ready`'s log says `Bad credentials`). If the fine-grained token still answers `Resource not accessible by integration`, GraphQL support for fine-grained tokens is the reason; a classic token with the `repo` scope works and is account-wide, the same trade the deploy runbook accepts for `GHCR_TOKEN`. Then repo → Settings → Secrets and variables → Actions → `PR_READY_TOKEN`. |
+| `PR_READY_TOKEN` | A **classic** PAT of Linards' with the `repo` scope | GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic). Set an expiry and put the date in your calendar: an expired token leaves every PR a draft (fail closed; `ready`'s log says `Bad credentials`, `expected`). Then repo → Settings → Secrets and variables → Actions → `PR_READY_TOKEN`. **A fine-grained token does not work here**: `observed` 2026-09-10, run 34472223208, two re-runs with a fine-grained token (repository access set to this repo, Pull requests: Read and write, per Linards) both answered `GraphQL: Resource not accessible by personal access token (markPullRequestReadyForReview)`; the third re-run with a classic `repo` token flipped #167 at 12:21:42. A classic `repo` token is account-wide, the same trade the deploy runbook accepts for `GHCR_TOKEN`; it lives only in this repo's secrets and one job reads it. |
 
-The flip happens **as Linards**, which is what the PR timeline shows. A
-missing or expired secret makes `ready` red, never green. A PAT's events can
+The flip happens **as Linards**, which is what the PR timeline shows
+(`observed` on #167: `ready_for_review by linardsb`). A missing or expired
+secret makes `ready` red, never green. A PAT's events can
 start workflows (unlike `github.token`'s), but `ready_for_review` and
 `converted_to_draft` are not in `pull_request`'s default activity types, so
 the flip starts no run.

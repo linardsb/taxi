@@ -122,12 +122,13 @@ jobs:
   # head passed". `!cancelled()` rather than `always()`: a cancelled run must
   # not touch the PR; the run that cancelled it will.
   #
-  # The token is a PAT in the PR_READY_TOKEN secret, not github.token: the
-  # Actions token is a GitHub App token, and the draft↔ready mutations are
-  # not open to it (observed on PR #167's first run, 2026-09-10, with
-  # `pull-requests: write`: "Resource not accessible by integration
-  # (markPullRequestReadyForReview)"). A missing secret fails this job, so
-  # the PR stays a draft: fail closed. A PAT's events CAN start workflows,
+  # The token is a CLASSIC `repo`-scope PAT in the PR_READY_TOKEN secret, not
+  # github.token and not a fine-grained PAT: the draft↔ready mutations refuse
+  # both (observed on PR #167, 2026-09-10: "Resource not accessible by
+  # integration" with github.token under `pull-requests: write`, run
+  # 34471269249; "Resource not accessible by personal access token" with a
+  # fine-grained token, run 34472223208; the classic token flipped it). A
+  # missing secret fails this job, so the PR stays a draft: fail closed. A PAT's events CAN start workflows,
   # unlike github.token's, but `ready_for_review` and `converted_to_draft`
   # are not in `pull_request`'s default activity types, so no run follows.
   ready:
