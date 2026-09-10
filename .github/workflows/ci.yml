@@ -57,8 +57,11 @@ jobs:
         run: node -e "require('net').connect(6379,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',(e)=>{console.error(e.message);process.exit(1)})"
       - run: pnpm turbo run typecheck lint test build
 
-  # No new advisories (#165). The backlog rides (66 at 6d72261, observed
-  # 2026-09-10: 2 critical, 47 high, 18 moderate, 1 low); a PR may not grow it.
+  # No new advisories (#165). The backlog rides (66 advisory ids at 6d72261,
+  # observed 2026-09-10: 2 critical, 46 high, 17 moderate, 1 low); a PR may not
+  # grow it. Those are the `.advisories` map this gate diffs. pnpm ALSO reports
+  # `metadata.vulnerabilities` — 2/47/18/1, summing to 68 — which counts
+  # something else; do not mix the two (#165, PR #167 review F9).
   # Base = the target branch's tip, audited from its lockfile alone; head =
   # the PR merge ref actions/checkout gives us, i.e. what would land.
   audit-diff:
@@ -118,9 +121,18 @@ jobs:
   # The only path from draft to ready (#165). No model runs this: the hook
   # refuses `gh pr ready` in every Claude session, and the GitHub UI button is
   # the documented human bypass (docs/runbooks/pr-gate.md). Red anywhere in
-  # `needs` converts the PR back to a draft, so "ready" always means "this
-  # head passed". `!cancelled()` rather than `always()`: a cancelled run must
-  # not touch the PR; the run that cancelled it will.
+  # `needs` converts the PR back to a draft. `!cancelled()` rather than
+  # `always()`: a cancelled run must not touch the PR; the run that cancelled
+  # it will.
+  #
+  # What ready therefore means, exactly: THE HEAD CI LAST FINISHED TESTING
+  # PASSED — not "the PR's current head passed". Between a push and that head's
+  # run reaching this job (about 3.5 min, the `check` job dominating) the PR
+  # keeps whatever state the previous head earned. Nothing re-drafts on
+  # `synchronize`, by choice: the runbook's human bypass is a person clicking
+  # Ready for review, and a job that re-drafted every push would silently undo
+  # it before any gate result existed. The window closes properly with required
+  # status checks on main (`strict: true`), not here (#165, PR #167 review F3).
   #
   # The token is a CLASSIC `repo`-scope PAT in the PR_READY_TOKEN secret, not
   # github.token and not a fine-grained PAT: the draft↔ready mutations refuse
@@ -139,7 +151,22 @@ jobs:
       GH_TOKEN: ${{ secrets.PR_READY_TOKEN }}
       PR: ${{ github.event.pull_request.number }}
       RESULTS: ${{ join(needs.*.result, ' ') }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
+      # A stale re-run must not decide a newer head's draft state. `gh run
+      # rerun` on an older run — the runbook's own remedy in §1 — replays the
+      # ORIGINAL event payload, so it re-tests the old head's merge commit,
+      # joins concurrency group ci-N, cancels the live run for the new head,
+      # and would then flip the PR at a head it never tested (#165, PR #167
+      # review F3c). Compare and refuse; the newer head's own run decides.
+      - name: Refuse to act on a head that is no longer the PR's
+        run: |
+          live=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)
+          if [ "$live" != "$HEAD_SHA" ]; then
+            echo "::error::this run tested $HEAD_SHA but PR #$PR is now at $live; leaving its draft state alone (#165)."
+            exit 1
+          fi
+          echo "head confirmed: $HEAD_SHA"
       - run: |
           case "$RESULTS" in
             *failure*|*cancelled*|*skipped*)

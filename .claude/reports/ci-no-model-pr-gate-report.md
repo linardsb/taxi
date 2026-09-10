@@ -28,7 +28,7 @@ Not in this PR: T7 (throwaway PR for the red and revert `audit-diff` runs; post-
 
 No test framework covers hooks, workflows or shell in this repo and none was added (plan, TESTING STRATEGY). Every part was run instead. All `observed` 2026-09-10 in this session at `6d72261` unless stated.
 
-**Hook, thirteen payload files** (Write tool: the hook is live and refuses a Bash command whose text carries the phrases):
+**Hook, 12 payloads** — 11 written as files plus one empty-stdin case (Write tool: the hook is live and refuses a Bash command whose text carries the phrases). Counted off the table below, whose nine rows carry three payloads in the first and two in the seventh; the session's scratchpad is gone, so the number of files actually on disk is not re-derivable and this table is the surviving evidence. Earlier copies said "thirteen" here and "12 payload files + empty stdin" in the PR body, and neither matched the table (#165, PR #167 review F12):
 
 | Payload | Result |
 |---|---|
@@ -67,6 +67,10 @@ No test framework covers hooks, workflows or shell in this repo and none was add
 **Skill and workflow greps**: `--draft` count 1, `Ready for review._` count 0, flip-command count 1, footer names `check`, `audit-diff` and `codeql` in `piv-create-pr/SKILL.md`; one `gh pr checks` hit on line 27 and one alerts-endpoint hit in `piv-review-pr/SKILL.md`; one feed-command hit in `piv-fix-review-findings/SKILL.md`; `pr-gate.md` count 1 in CLAUDE.md; no `sonar` in any shipped file (plan and this report excepted). `ci.yml` parses under PyYAML: jobs `[check, audit-diff, codeql, ready]`, `ready.needs = [check, audit-diff, codeql]`, `codeql` with four steps and `security-events: write`. `bash -n` clean on both scripts; both `100755` in the index.
 
 **Re-observed figures the plan supplied** (CLAUDE.md: re-derive a figure you copy): the last 8 `ci.yml` runs span 313–361 s (`gh run list`, ids 34354276529 … 34462897943; the window moved one run since the plan and the range held); `pnpm audit --prod --json` at `6d72261`: 66 advisories, 2 critical / 47 high / 18 moderate / 1 low, 1,013 deps, 1.6 s.
+
+> **Both figures on that line were corrected in the PR #167 review round-1 fixes**, and the line is kept as written so the correction has a subject:
+> - *313–361 s* is **run wall**, not the `check` job, and all 8 runs predate the repo going public. `check` re-derived on PR #167's own four runs (34471269249, 34471798333, 34472223208, 34476424460) is **195–206 s**; push-to-flip is about 3.5 min, not six (F10). Run wall is unusable for 34472223208 (2693 s — it sat between the PAT retries), which is the second reason to cite the job.
+> - *2 critical / 47 high / 18 moderate / 1 low* is `metadata.vulnerabilities` and sums to **68**, not 66. The `.advisories` map the gate actually diffs holds **66 ids: 2 critical / 46 high / 17 moderate / 1 low** (`observed` 2026-09-10, re-derived from `6d72261`'s lockfile alone). The plan's NOTES table attributed the breakdown correctly; every downstream copy dropped the qualifier (F9).
 
 **Facts read from GitHub for the CodeQL decision** (`observed` 2026-09-10): the repo private and user-owned with code-scanning endpoints answering 403 "not enabled"; Code Security $30 per active committer per month on `github.com/features/security`; the CodeQL CLI licence forbidding CI use on non-open-source code; `codeql-action` latest major v4; `analyze` inputs `upload` (default `always`) and `wait-for-processing` (default `true`); the alerts endpoint's `ref` accepting `refs/pull/<number>/merge`; standard runners free in public repositories. After the flip: `visibility: public`, default setup `not-configured`.
 

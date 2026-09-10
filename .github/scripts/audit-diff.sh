@@ -17,10 +17,11 @@
 #      at the same moment. Two-dot diff, not three-dot: CI checkouts are
 #      shallow and have no merge base, and HEAD in CI is the PR's merge ref.
 #   2. Suppression guard. An added line naming an audit ignore list
-#      (`ignoreGhsas`, `ignoreCves`, `audit.ignore`, a yaml `ignore:` key) in
-#      package.json, pnpm-workspace.yaml or .npmrc is red before any audit
-#      runs. Without this a PR could add a vulnerable dependency and its GHSA
-#      to the ignore list in one commit and read as green.
+#      (`ignoreGhsas`, `ignoreCves`, `audit.ignore`, a yaml `ignore:` key) or a
+#      `registry=` in package.json, pnpm-workspace.yaml or .npmrc is red before
+#      any audit runs. Without this a PR could add a vulnerable dependency and
+#      its GHSA to the ignore list in one commit and read as green — or point
+#      the head audit alone at a registry that reports less (see the guard).
 #   3. Base audit, from the base's lockfile alone in a temp dir. No manifests,
 #      no node_modules: pnpm 10's audit reads only the lockfile, and `--prod`
 #      is decided from the lockfile's per-importer sections.
@@ -73,11 +74,19 @@ if git diff --quiet "$base" HEAD -- pnpm-lock.yaml; then
 fi
 
 # 2. Suppression guard: an ignore list edited in this PR is red, not a fix.
+#
+# `registry=` is in the pattern for a reason the ignore keys make obvious only
+# once stated: the base audit runs in a temp dir with no .npmrc and the head
+# audit runs at the repo root with one, so an added registry line is asked of a
+# DIFFERENT registry than the base was. A quieter registry reports fewer ids,
+# the diff comes back empty and the job is green — a larger lever than any
+# ignore list, and the asymmetry is structural to step 3 (#165, PR #167 F16).
+SUPPRESSION_RE='^\+.*(ignoreGhsas|ignoreCves|audit\.ignore)|^\+\s+ignore:|^\+[^#]*registry\s*='
 if git diff "$base" HEAD -- package.json pnpm-workspace.yaml .npmrc \
-    | grep -E '^\+.*(ignoreGhsas|ignoreCves|audit\.ignore)|^\+\s+ignore:' >/dev/null; then
-  echo "::error::an audit ignore list changed in this PR; that is a suppression, not a fix (#165)"
+    | grep -E "$SUPPRESSION_RE" >/dev/null; then
+  echo "::error::an audit ignore list or registry changed in this PR; that is a suppression, not a fix (#165)"
   git diff "$base" HEAD -- package.json pnpm-workspace.yaml .npmrc \
-    | grep -nE '^\+.*(ignoreGhsas|ignoreCves|audit\.ignore)|^\+\s+ignore:' >&2
+    | grep -nE "$SUPPRESSION_RE" >&2
   exit 1
 fi
 

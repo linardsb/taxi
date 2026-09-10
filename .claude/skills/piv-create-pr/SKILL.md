@@ -127,8 +127,8 @@ flip. If the PR stays a draft, the failing check is the next finding.
 gh pr view --json number,url,title,baseRefName,headRefName
 ```
 
-Report the PR number + URL, the base ← head branches, and **"Draft. CI flips it ready in about six minutes when
-green (`check` `observed` 313–361 s over the last 8 `ci.yml` runs on 2026-09-10; `ready` starts after it); then run
+Report the PR number + URL, the base ← head branches, and **"Draft. CI flips it ready in about 3.5 minutes when
+green (`check` `observed` 195–206 s over PR #167's four runs, 2026-09-10; `ready` starts after it); then run
 `piv-review-pr <number>`, then a human approves."** This is the handoff point: the agent's loop ends at an open PR;
 review and merge are the gates.
 

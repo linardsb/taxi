@@ -29,11 +29,15 @@
 #   1  at least one new alert; or the PR ref has no analysis (red, not green)
 #   2  usage, gh or jq missing, an API error other than "no analysis found"
 #
-# A base with NO analysis yet (404 "no analysis found") counts as an empty
-# base: every open alert on the PR at the gate's severity is new, with a
-# warning. That is the state on the first PR after this job lands, until a
-# push to main has been analysed; the human bypass in docs/runbooks/pr-gate.md
-# §1 is the path for that one PR.
+# "Was this ref analysed?" is asked of the ANALYSES endpoint, not inferred from
+# an empty alert list. GitHub answers [] for a ref it never analysed exactly as
+# it does for a clean one, so the two are indistinguishable from the alerts
+# endpoint alone once the repo has any upload at all (#165, PR #167 review F6).
+# The PR ref with zero analyses is exit 1, red not green. A base with zero
+# analyses counts as an empty base: every open alert on the PR at the gate's
+# severity is new, with a warning. That is the state until a push to main has
+# been analysed; the human bypass in docs/runbooks/pr-gate.md §1 is the path
+# for that one PR.
 #
 # What it does NOT catch: anything CodeQL does not query for (the default
 # suite is security-only, high precision; `queries: security-extended` in
@@ -68,14 +72,36 @@ fi
 
 # fetch <ref> → JSON array of open alerts on stdout.
 # Returns 44 when GitHub answers "no analysis found" for that ref.
+#
+# stderr goes to its own file, never into `out`: a gh warning on an otherwise
+# successful call would land in the JSON stream and break the `jq -s` below,
+# exiting 2 on a healthy repo (#165, PR #167 review F14).
 fetch() {
-  local ref=$1 out rc
-  out=$(gh api --paginate "repos/$repo/code-scanning/alerts?ref=$ref&state=open&per_page=100" 2>&1); rc=$?
+  local ref=$1 out rc err
+  err=$(mktemp)
+  out=$(gh api --paginate "repos/$repo/code-scanning/alerts?ref=$ref&state=open&per_page=100" 2>"$err"); rc=$?
   if [ "$rc" -ne 0 ]; then
-    if printf '%s' "$out" | grep -q 'no analysis found'; then return 44; fi
-    printf '%s\n' "$out" >&2; return 1
+    if grep -q 'no analysis found' "$err"; then rm -f "$err"; return 44; fi
+    cat "$err" >&2; rm -f "$err"; return 1
   fi
+  rm -f "$err"
   printf '%s' "$out" | jq -s 'add // []'
+}
+
+# analyses <ref> → how many CodeQL analyses GitHub holds for that ref.
+#
+# The alerts endpoint cannot answer "was this ref ever analysed?". Before this
+# repo's first upload it answered 404 "no analysis found" for an unanalysed
+# ref, which is what `fetch`'s 44 keys on; after the first upload it answers a
+# plain empty array instead, exactly like a clean ref (`observed` 2026-09-10:
+# refs/pull/999/merge, refs/heads/main and refs/heads/does-not-exist all
+# return [] with rc=0). So 44 no longer fires here and "no analysis" would
+# read as "no alerts" — green on a PR nothing scanned. Count the analyses to
+# tell the two apart (#165, PR #167 review F6).
+analyses() {
+  local ref=$1 out
+  out=$(gh api --paginate "repos/$repo/code-scanning/analyses?ref=$ref&per_page=100" 2>/dev/null) || return 1
+  printf '%s' "$out" | jq -s 'add // [] | length'
 }
 
 if [ "$offline" -eq 1 ]; then
@@ -87,6 +113,15 @@ if [ "$offline" -eq 1 ]; then
   pr_ref="(fixture $pr_file)"; base_ref="(fixture $base_file)"
 else
   pr_ref="refs/pull/$pr/merge"; base_ref="refs/heads/$base"
+
+  # Ask "was it analysed?" before "what did it find?", so an unanalysed ref is
+  # red rather than an empty alert list read as clean (F6).
+  pr_analyses=$(analyses "$pr_ref") \
+    || { echo "::error::listing CodeQL analyses for $pr_ref failed (#165)"; exit 2; }
+  if [ "$pr_analyses" -eq 0 ]; then
+    echo "::error::no CodeQL analysis for $pr_ref; the analyze step's upload was not processed, so this is red, not green (#165)"
+    exit 1
+  fi
   pr_json=$(fetch "$pr_ref"); rc=$?
   if [ "$rc" -eq 44 ]; then
     echo "::error::no CodeQL analysis for $pr_ref; the analyze step's upload was not processed, so this is red, not green (#165)"
@@ -94,12 +129,20 @@ else
   elif [ "$rc" -ne 0 ]; then
     echo "::error::listing alerts for $pr_ref failed (#165)"; exit 2
   fi
-  base_json=$(fetch "$base_ref"); rc=$?
-  if [ "$rc" -eq 44 ]; then
+
+  base_analyses=$(analyses "$base_ref") \
+    || { echo "::error::listing CodeQL analyses for $base_ref failed (#165)"; exit 2; }
+  if [ "$base_analyses" -eq 0 ]; then
     echo "::warning::no CodeQL analysis on $base_ref yet; every open alert on the PR at the gate's severity counts as new until a push to $base is analysed (#165)"
     base_json='[]'
-  elif [ "$rc" -ne 0 ]; then
-    echo "::error::listing alerts for $base_ref failed (#165)"; exit 2
+  else
+    base_json=$(fetch "$base_ref"); rc=$?
+    if [ "$rc" -eq 44 ]; then
+      echo "::warning::no CodeQL analysis on $base_ref yet; every open alert on the PR at the gate's severity counts as new until a push to $base is analysed (#165)"
+      base_json='[]'
+    elif [ "$rc" -ne 0 ]; then
+      echo "::error::listing alerts for $base_ref failed (#165)"; exit 2
+    fi
   fi
 fi
 
@@ -120,6 +163,19 @@ pr_open=$(printf '%s' "$counts" | awk '{print $2}')
 pr_gated=$(printf '%s' "$counts" | awk '{print $3}')
 base_open=$(printf '%s' "$counts" | awk '{print $4}')
 new=$(printf '%s' "$counts" | awk '{print $5}')
+
+# Without this, an absent or malformed COUNTS line makes `$new` empty, `[ "" -gt
+# 0 ]` errors with status 2, the `if` takes the else branch and the script
+# prints "no new alert" and exits 0 — green because it could not read its own
+# output. `set -u` does not catch a set-but-empty variable and there is no -e.
+# The report records this exact shape biting once during development (a `jq -n`
+# without -r); the cause was fixed, the fail-open was not (#165, PR #167 F7).
+for v in pr_open pr_gated base_open new; do
+  case "${!v}" in
+    ''|*[!0-9]*)
+      echo "::error::codeql-gate could not parse its counts line: '$counts' (#165)"; exit 2 ;;
+  esac
+done
 
 if [ "$new" -gt 0 ]; then
   echo "::error::codeql-gate: $new new alert(s) at high/critical or error on $pr_ref that $base_ref does not carry ($pr_open open on the PR, $pr_gated of them at the gate's severity, $base_open open on the base) (#165)"
