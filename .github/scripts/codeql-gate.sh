@@ -17,6 +17,7 @@
 #
 #   codeql-gate.sh --pr N --base BRANCH               # CI: GH_TOKEN + GITHUB_REPOSITORY set
 #   codeql-gate.sh --pr N --base BRANCH --repo o/r    # locally, with `gh auth`
+#   codeql-gate.sh --pr N --base BRANCH --fallback-base main   # default is main
 #   codeql-gate.sh --pr-alerts f.json --base-alerts f.json   # offline, fixture JSON arrays
 #   codeql-gate.sh -h|--help
 #
@@ -33,25 +34,37 @@
 # an empty alert list. GitHub answers [] for a ref it never analysed exactly as
 # it does for a clean one, so the two are indistinguishable from the alerts
 # endpoint alone once the repo has any upload at all (#165, PR #167 review F6).
-# The PR ref with zero analyses is exit 1, red not green. A base with zero
-# analyses counts as an empty base: every open alert on the PR at the gate's
-# severity is new, with a warning. That is the state until a push to main has
-# been analysed; the human bypass in docs/runbooks/pr-gate.md §1 is the path
-# for that one PR.
+# The PR ref with zero analyses is exit 1, red not green.
+#
+# A base with zero analyses falls back to the default branch's analysis
+# (--fallback-base, default `main`). The codeql job runs on push to main only,
+# so a STACKED PR — one whose base is another feature branch — has a base that
+# was never analysed, and without the fallback every alert it inherits from
+# main would count as new (#172). If the fallback has no analysis either, the
+# base counts as empty: every open alert on the PR at the gate's severity is
+# new, with a warning. That is the state until a push to main has been
+# analysed; the human bypass in docs/runbooks/pr-gate.md §1 is the path for
+# that one PR.
 #
 # What it does NOT catch: anything CodeQL does not query for (the default
 # suite is security-only, high precision; `queries: security-extended` in
 # ci.yml widens it); an alert below the gate's severity; an alert on the base
-# that GitHub tracks as the same alert after the PR moved it.
+# that GitHub tracks as the same alert after the PR moved it; and, through the
+# fallback, an alert the PARENT PR of a stack introduced — the fallback
+# compares against main, which does not carry it until the parent merges, so
+# it counts as new on the child. Fixing that needs the parent's own
+# refs/pull/<n>/merge analysis and therefore its number, which this script is
+# not given; the human bypass (runbook §1) is the path until the parent lands.
 
 set -uo pipefail
 
-pr=""; base=""; repo="${GITHUB_REPOSITORY:-}"; pr_file=""; base_file=""
+pr=""; base=""; repo="${GITHUB_REPOSITORY:-}"; pr_file=""; base_file=""; fallback_base="main"
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) awk 'NR>1 && /^#/ {print; next} NR>1 {exit}' "$0"; exit 0 ;;
     --pr) pr=${2:-}; shift 2 ;;
     --base) base=${2:-}; shift 2 ;;
+    --fallback-base) fallback_base=${2:-}; shift 2 ;;
     --repo) repo=${2:-}; shift 2 ;;
     --pr-alerts) pr_file=${2:-}; shift 2 ;;
     --base-alerts) base_file=${2:-}; shift 2 ;;
@@ -132,13 +145,37 @@ else
 
   base_analyses=$(analyses "$base_ref") \
     || { echo "::error::listing CodeQL analyses for $base_ref failed (#165)"; exit 2; }
+
+  # A stacked PR bases on another feature branch, and the codeql job runs on
+  # push to `main` only — so that base has no analysis of its own and every
+  # alert the PR INHERITS from main would count as new. Fall back to the
+  # default branch, which is the nearest ref that answers "what does this PR
+  # add". base_ref is reassigned, so every message below names the ref the
+  # comparison actually used (#172).
+  if [ "$base_analyses" -eq 0 ] && [ -n "$fallback_base" ] && [ "$base" != "$fallback_base" ]; then
+    fallback_ref="refs/heads/$fallback_base"
+    fallback_analyses=$(analyses "$fallback_ref") \
+      || { echo "::error::listing CodeQL analyses for $fallback_ref failed (#172)"; exit 2; }
+    # Same reason as the counts guard below: an empty value makes `-gt` exit 2
+    # and the `if` take the else branch silently. Here that degrades to the old
+    # behaviour (no fallback), not to green — but say so rather than rely on it.
+    case "$fallback_analyses" in
+      ''|*[!0-9]*) echo "::error::could not read the analysis count for $fallback_ref: '$fallback_analyses' (#172)"; exit 2 ;;
+    esac
+    if [ "$fallback_analyses" -gt 0 ]; then
+      echo "::warning::no CodeQL analysis on refs/heads/$base (the codeql job runs on push to $fallback_base only); comparing against $fallback_ref instead, which has $fallback_analyses (#172)"
+      base_ref="$fallback_ref"
+      base_analyses="$fallback_analyses"
+    fi
+  fi
+
   if [ "$base_analyses" -eq 0 ]; then
-    echo "::warning::no CodeQL analysis on $base_ref yet; every open alert on the PR at the gate's severity counts as new until a push to $base is analysed (#165)"
+    echo "::warning::no CodeQL analysis on $base_ref, and none on the $fallback_base fallback; every open alert on the PR at the gate's severity counts as new until a push to $fallback_base is analysed (#165, #172)"
     base_json='[]'
   else
     base_json=$(fetch "$base_ref"); rc=$?
     if [ "$rc" -eq 44 ]; then
-      echo "::warning::no CodeQL analysis on $base_ref yet; every open alert on the PR at the gate's severity counts as new until a push to $base is analysed (#165)"
+      echo "::warning::no CodeQL analysis on $base_ref; every open alert on the PR at the gate's severity counts as new until that ref is analysed (#165, #172)"
       base_json='[]'
     elif [ "$rc" -ne 0 ]; then
       echo "::error::listing alerts for $base_ref failed (#165)"; exit 2

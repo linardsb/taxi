@@ -233,7 +233,9 @@ for alerts:
 - medium and low alerts never block; they are on the tab and in the
   annotations for a human to read;
 - a PR ref with no analysis is **red**, not green; a base with no analysis
-  yet is treated as empty, with a warning. "Has this ref been analysed?" is
+  yet falls back to `main`'s, and if that has none either the base is treated
+  as empty, with a warning (see **A stacked PR's base** below). "Has this ref
+  been analysed?" is
   asked of the `code-scanning/analyses` endpoint, not inferred from an empty
   alert list: once the repo has any upload at all, the alerts endpoint answers
   `[]` for a never-analysed ref exactly as it does for a clean one, so the
@@ -247,6 +249,38 @@ for alerts:
 | Fixture: same PR list, empty base | 3 new (#1, #3, #5), exit 1 | `observed`, same session |
 | Live: a PR ref with no analysis (`--pr 999`) | exit 1, "no CodeQL analysis for refs/pull/999/merge" | `observed` 2026-09-10 in the PR #167 review session, against this repo, **after** the analyses-count fix. The same call was exit 1 before this repo's first upload and would have been exit 0 between the two (F6); the row now describes the fixed script. `--pr 171` (a real PR whose run had not finished) is exit 1 by the same branch. |
 | Live: PR A's own run | — | `expected`; see the first-run state below |
+
+**A stacked PR's base.** The `codeql` job runs on push to `main` and on every
+PR — never on a push to a feature branch. So a PR based on another feature
+branch has a base ref that was never analysed, and comparing against it would
+count every alert the PR *inherits* from `main` as new: the stack goes red for
+alerts it did not add, and stays red until the human bypass (§1). The gate
+therefore falls back to `refs/heads/main` when the base ref has no analysis,
+and prints which ref it actually compared against:
+
+```
+::warning::no CodeQL analysis on refs/heads/<base> (the codeql job runs on push
+to main only); comparing against refs/heads/main instead, which has <n> (#172)
+```
+
+`--fallback-base` names that ref; it defaults to `main`. **When the fallback
+has nothing to fall back to** — before `main`'s first analysis — the base is
+empty and every open alert at the gate's severity is new, which is the
+first-run state below. The warning says so in one line naming both refs, and
+the human bypass (§1) is the path for that PR. A PR based directly on `main`
+never takes the fallback: the guard is `base != fallback_base`.
+
+**What the fallback still does not cover.** It compares against `main`, so an
+alert the *parent* PR of a stack introduced is not on `main` until that parent
+merges, and counts as new on the child. Closing that would need the parent's
+own `refs/pull/<n>/merge` analysis and therefore its number, which the gate is
+not given. Land the parent, or use the bypass (§1) with the alert named in the
+child's body.
+
+Only the diff changes, never the rule. An alert the PR genuinely adds — one
+`main`'s analysis does not carry — is still red through the fallback
+(`observed` 2026-09-10, `gh` shim, four cases: inherited alert green with the
+warning, added alert red, base `main` unchanged, no fallback analysis red).
 
 **First-run state.** `main` has no CodeQL analysis until a push to `main`
 runs the job, which happens when PR A merges. Until then the gate on any PR
