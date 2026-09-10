@@ -9,7 +9,6 @@ import {
   GLANCE_SPEED_MPS,
   haversineKm,
   offerCardProps,
-  pctLabel,
 } from './offer-card-props';
 import {
   initialOffers,
@@ -189,11 +188,6 @@ describe('offerCardProps (#15)', () => {
 });
 
 describe('helpers', () => {
-  it('pctLabel keeps a whole pct whole and a fractional one to one decimal', () => {
-    expect(pctLabel(15)).toBe('15');
-    expect(pctLabel(87.5)).toBe('87.5');
-  });
-
   it('haversineKm is zero for the same point and symmetric', () => {
     const b = { lat: 56.9236, lng: 23.9711 };
     expect(haversineKm(PICKUP, PICKUP)).toBe(0);

@@ -15,7 +15,14 @@ export function pctLabel(pct: number): string {
   return Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
 }
 
-/** `cash` is the one method the driver handles; every other member settles without them. */
+/**
+ * `cash` is the one method a driver handles differently; every other member
+ * of `PAYMENT_METHOD_TYPES` (`card`, and the not-yet-bookable `balance` /
+ * `corporate`) settles without the driver touching money, so it reads «card».
+ * The offer card reads the same two keys through this one function
+ * (`offers → active-ride`), so a method that ever needs its own label changes
+ * here and both surfaces follow.
+ */
 export function paymentMethodLabel(
   method: PaymentMethodType,
   t: ReturnType<typeof useT>,

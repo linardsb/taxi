@@ -137,18 +137,6 @@ export class DispatchNotifier {
         dispatcherId,
         at,
       });
-
-      // The only consumer of `revokePendingForRide`'s returned pairs: a driver
-      // holding a live offer that someone else took — or that Dina overrode —
-      // must see their card clear.
-      for (const other of revoked) {
-        this.realtime.emitToDriver(other.driverId, RT.rideOfferRevoked, {
-          offerId: other.offerId,
-          rideId: ride.id,
-          reason: 'taken',
-          at,
-        });
-      }
     } catch (error) {
       this.logger.warn({
         event: 'dispatch.assign.notify_failed',
@@ -157,6 +145,42 @@ export class DispatchNotifier {
         reason: error instanceof Error ? error.message : 'unknown',
         at,
       });
+    }
+
+    // The only consumer of `revokePendingForRide`'s returned pairs: a driver
+    // holding a live offer that someone else took — or that Dina overrode —
+    // must see their card clear.
+    //
+    // One `try` PER driver, as `RideLifecycleService.emitRevoked` already does:
+    // under a shared one the first throw left every LATER driver's card lit,
+    // and a force-assign mid-cascade can supersede several pending offers at
+    // once. `emitToRide` above is outside the loop for the same reason — its
+    // failure is the ride room's, not these drivers'.
+    for (const other of revoked) {
+      try {
+        this.realtime.emitToDriver(other.driverId, RT.rideOfferRevoked, {
+          offerId: other.offerId,
+          rideId: ride.id,
+          reason: 'taken',
+          at,
+        });
+      } catch (error) {
+        this.logger.warn({
+          // Its OWN action_state, not the `emitToRide` one above. Both lines
+          // carry a `driverId` and it means a different person in each: there
+          // the newly ASSIGNED driver, here a REVOKED one. Under a shared
+          // name, grouping by event + driverId — the 02:00 query — conflates
+          // "the ride room never heard about the assignment" with "driver X's
+          // stale offer card never cleared", which have different blast radii
+          // and different fixes.
+          event: 'dispatch.assign.revoke_failed',
+          rideId: ride.id,
+          driverId: other.driverId,
+          offerId: other.offerId,
+          reason: error instanceof Error ? error.message : 'unknown',
+          at,
+        });
+      }
     }
   }
 }

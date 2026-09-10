@@ -1,29 +1,16 @@
 import { colors, fontSize, radius, spacing } from '@taxi/shared';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { useT } from '@/features/i18n';
-import { formatEur } from './format-eur';
-import { useEarnings } from './use-earnings';
-
-/** Punctuation, not copy: the card's "no number" state. */
-const NO_VALUE = '—';
 
 /**
- * The one number on the home screen: today's net, integer cents, catalog
- * copy. Loading is a spinner, an error with nothing cached is a dash — the
- * toggle beside it is unaffected either way.
+ * The one number on the home screen: today's net, integer cents, catalog copy.
+ * Loading is a spinner, an error with nothing cached is a dash — the toggle
+ * beside it is unaffected either way.
+ *
+ * Presentational on purpose. `body` is computed by the caller (`earningsBody`)
+ * because the link wrapping this card needs the identical string for its
+ * accessible name — see the note on that helper.
  */
-export function EarningsCard({ online }: { online: boolean }) {
-  const t = useT();
-  const { earnings, status } = useEarnings(online);
-  let body: string | null = null;
-  if (earnings) {
-    body = t('driver.home.today', {
-      amount: formatEur(earnings.earnedCents),
-      rides: earnings.rideCount,
-    });
-  } else if (status === 'error') {
-    body = NO_VALUE;
-  }
+export function EarningsCard({ body }: { body: string | null }) {
   return (
     <View
       style={styles.card}

@@ -1,9 +1,5 @@
-import {
-  formatEur,
-  type LatLng,
-  type PaymentMethodType,
-  type RideOffer,
-} from '@taxi/shared';
+import { formatEur, type LatLng, type RideOffer } from '@taxi/shared';
+import { paymentMethodLabel, pctLabel } from '@/features/active-ride';
 import type { T } from '@/features/i18n';
 import type { LatestFix } from '@/features/location';
 import type { OfferState } from './offer-state';
@@ -45,24 +41,6 @@ export function haversineKm(a: LatLng, b: LatLng): number {
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
 }
 
-/** `15` → «15», `12.5` → «12.5»: the split's double, never a literal. */
-export function pctLabel(pct: number): string {
-  return Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
-}
-
-/**
- * `cash` is the one method a driver handles differently; every other member
- * of `PAYMENT_METHOD_TYPES` (`card`, and the not-yet-bookable `balance` /
- * `corporate`) settles without the driver touching money, so it reads «card».
- */
-export function paymentLabel(method: PaymentMethodType, t: T): string {
-  return t(
-    method === 'cash'
-      ? 'driver.offer.payment_cash'
-      : 'driver.offer.payment_card',
-  );
-}
-
 export function youKeepLabel(offer: RideOffer, t: T): string {
   return t('driver.offer.you_keep', {
     amount: formatEur(offer.split.driverNetCents),
@@ -95,7 +73,7 @@ export function offerCardProps(
     minutes: Math.ceil(offer.etaSeconds / 60),
     km: km === null ? '—' : km.toFixed(1),
   });
-  const payment = paymentLabel(pending.paymentMethod, t);
+  const payment = paymentMethodLabel(pending.paymentMethod, t);
   const queue = queueLabel(state.queue, t);
   return {
     fare: t('driver.offer.fare', { amount: fare }),

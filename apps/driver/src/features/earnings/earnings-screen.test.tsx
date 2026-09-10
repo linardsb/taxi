@@ -13,6 +13,12 @@ const t = (
 
 let mockEarningsStatus: 'loading' | 'ready' | 'error' = 'ready';
 jest.mock('@/features/availability', () => ({
+  // The REAL mapper — it is what picks the catalog key, so a stub would make
+  // the assertions below tautological. Required from the file, not the barrel:
+  // the barrel pulls in `HomeScreen` and every provider behind it.
+  earningsBody: jest.requireActual<
+    typeof import('@/features/availability/earnings-body')
+  >('@/features/availability/earnings-body').earningsBody,
   useEarnings: () => ({
     earnings:
       mockEarningsStatus === 'ready'
@@ -57,8 +63,10 @@ describe('EarningsScreen (#15)', () => {
 
   it('renders the day total to the cent, NET of commission, and the empty receipt state (expected)', async () => {
     await render(<EarningsScreen />);
+    // `driver.home.today`, shared with the home card: the two catalog entries
+    // were byte-identical, so the screen reuses the card's key (F14).
     expect(screen.getByTestId('earnings-today')).toHaveTextContent(
-      t('driver.earnings.today', { amount: '€84.20', rides: 7 }),
+      t('driver.home.today', { amount: '€84.20', rides: 7 }),
     );
     expect(screen.getByTestId('earnings-empty')).toHaveTextContent(
       t('driver.earnings.none_yet'),
