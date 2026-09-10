@@ -24,7 +24,9 @@ gh pr diff {N}
 gh pr checkout {N}
 ```
 
-State guard: `MERGED`/`CLOSED` → stop ("nothing to review"); `DRAFT` → review direction, don't approve/block.
+State guard: `MERGED`/`CLOSED` → stop ("nothing to review"); `DRAFT` → every PR opens as one (#165). `gh pr checks {N}`
+says why it still is: checks pending → review anyway and say so; a red check → that check is finding #1 (Critical if
+it is `check`, High otherwise), and the review does not wait for the flip.
 
 ## Phase 2 — Load the context (so you review against the right bar)
 
@@ -37,7 +39,9 @@ State guard: `MERGED`/`CLOSED` → stop ("nothing to review"); `DRAFT` → revie
 ## Phase 3 — Run validation
 
 Run the project's real suite (the **`piv-validate`** skill, or the plan's validation commands) — tests, type-check,
-lint, build. Capture pass/fail + counts. A red suite is a finding in itself.
+lint, build. Capture pass/fail + counts. A red suite is a finding in itself. If the PR's `codeql` check is red, feed
+the alerts in with the `gh api … code-scanning/alerts?ref=refs/pull/{N}/merge` command in `piv-fix-review-findings`
+§1.5 and fold each line in as a finding at GitHub's severity (#165).
 
 ## Phase 4 — Review the diff (dispatch the code-reviewer agent)
 
