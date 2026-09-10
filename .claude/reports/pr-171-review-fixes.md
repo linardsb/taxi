@@ -132,7 +132,7 @@ All five are outside this diff. M1–M4 are already merged on `main`; the fifth 
 
 | # | Issue | What |
 |---|---|---|
-| M1 (High) | [#174](https://github.com/linardsb/taxi/issues/174) | `audit-diff.sh`'s suppression guard sits **below** the unchanged-lockfile short-circuit, so a two-PR bypass (add `ignoreGhsas` in one PR, the vulnerable dep in the next) is green. Carries the review's three-run `pnpm audit` evidence table and the two prose surfaces that need qualifying |
+| M1 (High) | [#174](https://github.com/linardsb/taxi/issues/174) | `audit-diff.sh`'s suppression guard sits **below** the unchanged-lockfile short-circuit, so a two-PR bypass (add `ignoreGhsas` in one PR, the vulnerable dep in the next) is green. The filtering half was **re-run independently while filing the issue** rather than copied — `observed` 2026-09-10, pnpm 10.33.2, three fresh temp dirs over `6d72261`'s lockfile: 65 / 65 / 66, with `GHSA-p293-qw3h-jr36` absent from the two ignore-list dirs and present in the control. The issue names both runs and which one produced which column |
 | M2 (Medium) | [#175](https://github.com/linardsb/taxi/issues/175) | The same 313–361 s range carries two different `observed` provenance strings (`pr-gate.md:51-52` vs `plan:585`), whose run sets cannot both be right |
 | M3 (Low) | [#175](https://github.com/linardsb/taxi/issues/175) | `ci.yml:121` still carries the absolute the #167 review's F4 disproves; the fixed hook's own docstring says the opposite |
 | M4 (Low) | [#175](https://github.com/linardsb/taxi/issues/175) | `plan:315-316` still carries the unqualified `2/47/18/1` breakdown F9 retired on four other surfaces |
@@ -165,25 +165,30 @@ One decision already taken by Linards and recorded above: M1 is a real High that
 
 Every value and noun retired above, the exact `grep -n` run, and its hits. Run 2026-09-10 against the fixed worktree at `docs/pr-167-review`, and against `origin/main` for the surfaces no worktree grep can reach. `git grep` over `origin/main` covered `.claude/**`, `docs/**` and `.github/**`.
 
-| Retired | Command | Hits in the report | Hits on `origin/main` | Hits in the PR body |
-|---|---|---|---|---|
-| `21` (probe count) | `grep -rn '21 payload\|21 probe'` | 0 | 0 | 0 — the body already said 14 |
-| `208–216` (wall over four runs) | `grep -rn '208–216'` | 1, inside the corrected sentence at `:73` | 0 | 0 |
-| `195–206` as the F3(a) window | `grep -rn '195–206'` | 2 — `:33` corrected, `:97` is the `check` job range and is right | 3 — `plan:226`, `:525`, `:587`, all the `check` job and all correct | 0 |
-| `repo, workflow` | `grep -rn 'repo, workflow'` | 0 | 0 | 0 |
-| `ready.go:89-93` unpinned | `grep -rn 'ready.go:89-93'` | 1, now carrying `3bb5f54` | 0 | 0 |
-| `AlertSuppression.qll:62` unpinned | `grep -rn 'AlertSuppression.qll:62'` | 1, now carrying `c207cfd` | 0 | 0 |
-| "push to `main` only" (the noun, not the digits) | `grep -rn 'push to \`main\` only'` | 0 | 0 | 0 |
-| "there is no `-e`" | `grep -rn 'there is no \`-e\`'` | 0 | 0 | 0 |
-| `1 file changed, 145 insertions` (PR body figure this commit invalidates) | `git diff --shortstat origin/main...docs/pr-167-review` | — | — | rewritten, see **Validation** |
+| Retired | Command | Hits in the report | Hits on `origin/main` | Hits in the PR body | Hits in the #167 comment |
+|---|---|---|---|---|---|
+| `21` (probe count) | `grep -rn '21 payload\|21 probe'` | 0 | 0 | 0 — the body already said 14 | **1** |
+| `208–216` (wall over four runs) | `grep -rn '208–216'` | 1, inside the corrected sentence at `:73` | 0 | 0 | **1** |
+| `195–206` as the F3(a) window | `grep -rn '195–206'` | 2 — `:33` corrected, `:97` is the `check` job range and is right | 3 — `plan:226`, `:525`, `:587`, all the `check` job and all correct | 0 | **1** |
+| `repo, workflow` | `grep -rn 'repo, workflow'` | 0 | 0 | 0 | **1** |
+| `ready.go:89-93` unpinned | `grep -rn 'ready.go:89-93'` | 1, now carrying `3bb5f54` | 0 | 0 | **1** |
+| `AlertSuppression.qll:62` unpinned | `grep -rn 'AlertSuppression.qll:62'` | 1, now carrying `c207cfd` | 0 | 0 | **1** |
+| "push to `main` only" (the noun, not the digits) | `grep -rn 'push to \`main\` only'` | 0 | 0 | 0 | **1** |
+| "there is no `-e`" | `grep -rn 'there is no \`-e\`'` | 0 | 0 | 0 | **1** |
+| `this review: 287` (unlabelled figures) | `grep -rn 'this review: 287'` | 0 | 0 | 0 | **1** |
+| `1 file changed, 145 insertions` (PR body figure these commits invalidate) | `git diff --shortstat origin/main...origin/docs/pr-167-review` | — | — | rewritten to **3 files changed, 596 insertions(+), 0 deletions** at head `2e4e434`; `gh pr view 171` agrees (596 / 0 / 3) | — |
 
 The `195–206` row is the one that needed reading rather than counting: the same digits are correct in three places on `main` and in one place in the report, and wrong in exactly one — the F3(a) window sentence, where they described a `check` duration as if it were the window to `ready`. Retiring the digits everywhere would have been the wrong sweep.
+
+**The last column is the surface a working-tree grep cannot reach, and it held every one of the nine.** The round-1 review of #167 was posted as a comment on that PR (`issues/167/comments`, id `5618963984`, 22 553 characters) as well as landed as a file, and that copy is the more-read of the two. `observed` — `gh api repos/linardsb/taxi/issues/comments/5618963984 --jq .body` piped through the same greps: 1 hit each for all nine retired items.
+
+It is not edited. A round-1 review comment is a timestamped artifact and rewriting it silently would be worse than leaving it. Instead a reply on #167 ([comment `5621664129`](https://github.com/linardsb/taxi/pull/167#issuecomment-5621664129)) tabulates all nine as superseded, names the rejected F3 part (1), and points at the corrected file. That reply is the closing evidence for this row.
 
 ---
 
 ## Validation
 
-Documentation only — two markdown artifacts, no source, no config, no test.
+Documentation only — three markdown artifacts, no source, no config, no test.
 
 **The gate was not re-run for this commit, and here is why that is not a gap.** `turbo.json` declares no `globalDependencies`, and no package's `build`, `lint` or `typecheck` input reaches `.claude/**` markdown, so these files are inert to `pnpm turbo run typecheck lint test build`. The #171 review established the same and also ran the merge preview against `main`'s tip `a4832ca` with this PR's file applied — `COMPOSE_PROJECT_NAME=taxi`, `REDIS_TEST_URL=redis://127.0.0.1:6381`, `--force`, exit 0, `22 successful, 22 total` in 2m24.745s, `@taxi/api` 76 suites / 721 tests with the Redis suites included. That run is evidence about `main`, not about this diff, and is not restated here as if it were.
 
@@ -223,6 +228,6 @@ This commit adds only this section, so the head moves past run 34498130572 and i
 
 | File | Change |
 |---|---|
-| `.claude/code-reviews/pr-167-review.md` | 9 edits: the **Dispositions** header line (F2); the wall qualifier in F10 and F3(a) (F3); the probe count (F4); three provenance slips (F5a/b/c); F15's `codeql`-trigger sentence (M5a); F7's `-e` sentence (M5b) |
+| `.claude/code-reviews/pr-167-review.md` | **9 findings, 9 lines rewritten, 2 lines inserted** — the two counts agree at 9 by coincidence, not by construction, so both are stated. Findings: the **Dispositions** header line (F2); the wall qualifier in F10 and F3(a) (F3); the probe count (F4); three provenance slips (F5a/b/c); F15's `codeql`-trigger sentence (M5a); F7's `-e` sentence (M5b). F5b is one finding across two lines (the `ready.go` pin at `:36` and the `AlertSuppression.qll` pin at `:57`), and the Dispositions line is an insertion, not a rewrite — which is why the two ways of counting land in the same place from different directions. `observed` — `diff -u` of the file at `107bb3a` against the file at `2e4e434`: **11 added, 9 removed**; `git diff --numstat origin/main...origin/docs/pr-167-review` reports `147 0` because the whole file is new to `main` |
 | `.claude/code-reviews/pr-171-review.md` | added, unmodified — the round-1 review this report answers |
 | `.claude/reports/pr-171-review-fixes.md` | this file |
