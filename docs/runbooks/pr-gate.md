@@ -321,6 +321,25 @@ updated before it merges; both PRs open when this landed went to
 `mergeStateStatus: BEHIND` immediately (`observed` 2026-09-10: #167 and #171).
 Update with `gh pr update-branch <N>`, or rebase and force-push the branch.
 
+**The trap, and it bites once.** `pull_request` runs the **PR branch's own copy**
+of `ci.yml`. A branch cut before the commit that added `audit-diff`, `codeql`
+and `ready` therefore produces only the `check` job — and required status checks
+wait forever for contexts that will never report. `observed` 2026-09-10 on #171,
+a docs branch cut from `6d72261`: `gh pr checks 171` lists `check` and nothing
+else, while `main` requires three. Such a PR is unmergeable except by the admin
+bypass.
+
+So the order matters exactly once, while the gate is landing:
+
+1. Update and merge the PR that **carries** the new `ci.yml` (#167) — its own
+   branch has the jobs, so it reports all three.
+2. Then `gh pr update-branch` every other open PR. Once each has `main`'s
+   `ci.yml` in its tree, its run produces all three contexts.
+
+After that the trap is gone: every branch is cut from a `main` that has the
+jobs. It is the same shape as the note on `workflow_dispatch` in `ci.yml` —
+a trigger or a job only exists on refs that carry the file.
+
 **Reading it back:**
 
 ```bash

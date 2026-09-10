@@ -61,7 +61,9 @@ $ python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/ci.yml')); p
 
 Guard logic exercised both ways locally (`observed`): `live=bbbb` vs tested `aaaa` → exit 1, refused; `live=aaaa` vs `aaaa` → proceed. The `gh pr view … --json headRefOid` call shape returns this PR's real head.
 
-**What this fix's mechanism newly permits:** the guard is fail-closed in every direction — an unreachable API or an empty `live` leaves the PR untouched (GitHub runs `run:` blocks under `bash -e`, so a failing `gh` aborts the step before the comparison). The one behaviour change to note: on a stale re-run the job now exits **before** the `--undo` branch, so a stale red run no longer re-drafts. That is correct — the current head's own run decides — and the failed `ready` check attaches to the old head, not the PR's.
+**What this fix's mechanism newly permits:** the guard is fail-closed — an empty or unexpected `live` fails the string comparison, so the step exits 1 and the PR is left untouched (`observed` in the local probe: `live=""` and `live=bbbb` both refuse). The one behaviour change to note: on a stale re-run the job now exits **before** the `--undo` branch, so a stale red run no longer re-drafts. That is correct — the current head's own run decides — and the failed `ready` check attaches to the old head, not the PR's.
+
+`observed` live at `6d0351f` (run 34485378247, job 102899451589): the step printed `head confirmed: 6d0351fd4bd12b95e760afea1b9db04cd2d063fc` and the job went on to the green branch, printing `already "ready for review"` and exiting 0. Only the success branch has been exercised by a real run; the refusal branch is `observed` locally, not in CI.
 
 ### F4 (High) · Both hook guards were bypassed by the tool they did not inspect
 
@@ -219,6 +221,7 @@ The table's nine rows carry **12 payloads** (three in row 1, two in row 7) — 1
 1. **#173 — the SonarCloud red check.** The only finding from round 1 that this branch cannot close.
 2. **Narrow `PR_READY_TOKEN` to `public_repo`.** F5's remaining half. The secret holds a classic `repo`-scope PAT that reaches every repository of the account, private ones included. `public_repo` is its public-only subset and the repo is public now; one re-run of `ready` verifies. Not done here — rotating a secret is Linards'.
 3. **Both open PRs are `BEHIND`** now that `strict: true` is on (#167, #171). Update before merging.
+4. **Merge order matters exactly once.** `pull_request` runs the PR branch's own `ci.yml`, so a branch cut before this ticket produces only the `check` job — and the three required contexts never report. `observed` 2026-09-10: `gh pr checks 171` lists `check` and `SonarCloud` only, no `audit-diff`, `codeql` or `ready`, because `docs/pr-167-review` was cut from `6d72261`. **Merge #167 first** (its branch carries the jobs, and its run at `6d0351f` reported all three green), then `gh pr update-branch 171`. Documented in runbook §5; not a defect, but it would read as a stuck PR. Found by re-checking #171 after applying protection, not before.
 
 ---
 
