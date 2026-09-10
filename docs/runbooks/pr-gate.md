@@ -50,11 +50,12 @@ Two properties of `ready` that matter when reading a PR:
 Time from push to flip: about six minutes when green (`check` `observed`
 313–361 s over the 8 `ci.yml` runs 34354276529 … 34462897943, read with
 `gh run list` on 2026-09-10; `ready` starts after the slowest `needs` job and
-takes seconds). `audit-diff` runs beside `check`: `observed` 0.04 s locally for
-an unchanged lockfile, 2.4 s for a changed one (this session, `6d72261`), plus
-the runner's checkout and pnpm setup. `codeql` also runs beside `check`;
-its wall time is `expected` under `check`'s until PR A's run reads it, and
-this line gets the figure then.
+takes seconds). `audit-diff` and `codeql` run beside `check`, not after it, so neither adds
+to the wall clock: `observed` on PR #167's first run (34471269249,
+2026-09-10) `check` 198 s, `codeql` 82 s, `audit-diff` 7 s (unchanged
+lockfile, short-circuit), run wall 208 s. Locally `audit-diff` is 0.04 s for
+an unchanged lockfile and 2.4 s for a changed one (`observed`, this session,
+`6d72261`); the 7 s in CI is the checkout and pnpm setup around it.
 
 Both diff jobs apply the same rule: **a PR may not add what the base does not
 carry.** The backlog rides; growing it does not.
@@ -72,9 +73,29 @@ gh run view <run-id> --log-failed
 | `check` red | The gate is red at this head. Fix, push. The next run flips it if green. |
 | `audit-diff` red | §2. |
 | `codeql` red | §3, then the fix loop in §4. |
-| `ready` red, every other job green | `ready` itself failed to talk to GitHub (token, permission). Re-run the job: `gh run rerun <run-id> --failed`. `gh pr ready` is idempotent (`observed` 2026-09-10 on PR #166: a second call prints `already "ready for review"` and exits 0), so a re-run after an undo works too. |
+| `ready` red, every other job green | `ready` itself failed to talk to GitHub. `Resource not accessible by integration` means the `PR_READY_TOKEN` secret is missing or its PAT lacks pull-request write on this repo (§1.1); `Bad credentials` means it expired. Fix the secret, then re-run the job: `gh run rerun <run-id> --failed`. `gh pr ready` is idempotent (`observed` 2026-09-10 on PR #166: a second call prints `already "ready for review"` and exits 0), so a re-run after an undo works too. |
 | A flake (the payments/customers integration suites under the full run are the known one) | `gh run rerun <run-id> --failed`. The re-run's `ready` job flips the PR if green. Do not push an empty commit to "kick" it; that is a second head and a second run. |
 | A ready PR turned back into a draft | A later push went red. Read `gh pr checks`; the failing check is on the new head. |
+
+### 1.1 The token the flip runs with
+
+`github.token` cannot flip a draft. It is a GitHub App installation token,
+and the `markPullRequestReadyForReview` / `convertPullRequestToDraft`
+mutations are not open to it: `observed` 2026-09-10 on PR #167's first run
+(34471269249), `ready` with `pull-requests: write` failed with `GraphQL:
+Resource not accessible by integration (markPullRequestReadyForReview)`
+while `check`, `audit-diff` and `codeql` were green. So the job runs `gh`
+with a personal access token from a repository secret:
+
+| Secret | Value | Notes |
+|---|---|---|
+| `PR_READY_TOKEN` | A PAT of Linards' with pull-request write on `linardsb/taxi` | GitHub → Settings → Developer settings → Personal access tokens. Fine-grained: repository access **only this repository**, permission **Pull requests: Read and write**; set an expiry and put the date in your calendar, an expired token leaves every PR a draft (fail closed, and `ready`'s log says `Bad credentials`). If the fine-grained token still answers `Resource not accessible by integration`, GraphQL support for fine-grained tokens is the reason; a classic token with the `repo` scope works and is account-wide, the same trade the deploy runbook accepts for `GHCR_TOKEN`. Then repo → Settings → Secrets and variables → Actions → `PR_READY_TOKEN`. |
+
+The flip happens **as Linards**, which is what the PR timeline shows. A
+missing or expired secret makes `ready` red, never green. A PAT's events can
+start workflows (unlike `github.token`'s), but `ready_for_review` and
+`converted_to_draft` are not in `pull_request`'s default activity types, so
+the flip starts no run.
 
 **The human bypass.** The **Ready for review** button on the PR page. Press it
 when the gate is red for a reason the PR should not carry (§2's unfixable

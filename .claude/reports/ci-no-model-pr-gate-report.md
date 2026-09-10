@@ -85,7 +85,8 @@ No test framework covers hooks, workflows or shell in this repo and none was add
 4. **Hook guard 5 (alert suppression)** was not in the plan; it is the no-model version of S3's "never mark false-positive" rule. The comment guard reads Edit/Write/MultiEdit content and applies only to `.ts/.tsx/.js/.jsx/.mjs/.cjs` paths so documentation may name the forms.
 5. **T7 not run in this session.** The task's own text places it after PR A's `ci.yml` is on `main`. PR A's own run supplies the unchanged-lockfile URL; the red and revert URLs are owed after merge. `expected`, not verified: a throwaway opened against PR A's branch would run PR A's workflow and could supply them before merge; the plan's parenthetical says otherwise and I did not test it.
 6. **`audit-diff.sh` exit code 2** for no argument, base ref not found, or `pnpm`/`jq` missing. The plan specified 0 and 1 only; a missing base ref must read as neither "no new advisories" nor "advisory found".
-7. **Suppression-guard regex restructured** in `audit-diff.sh`: the plan's single pattern carried a `^` inside the alternation; the script uses two alternatives with the same intent and echoes the matching line. Verified by the ignore-list case.
+7. **`ready` runs with a PAT (`secrets.PR_READY_TOKEN`), not `github.token`.** Found by PR #167's first run (34471269249, `observed` 2026-09-10): `check`, `audit-diff` and `codeql` green, `ready` red with `GraphQL: Resource not accessible by integration (markPullRequestReadyForReview)` under `pull-requests: write`. The Actions token is an App token and the draft mutations are not open to it. Until Linards creates the token and secret (runbook §1.1) `ready` is red and every PR stays a draft: fail closed. `expected`: the first flip is observed after the secret exists and the job is re-run.
+8. **Suppression-guard regex restructured** in `audit-diff.sh`: the plan's single pattern carried a `^` inside the alternation; the script uses two alternatives with the same intent and echoes the matching line. Verified by the ignore-list case.
 
 UX states: none declared (process ticket; no user-facing surface).
 
@@ -98,3 +99,5 @@ UX states: none declared (process ticket; no user-facing surface).
 - api suite reports 35 skipped, not the 33 CLAUDE.md records at #121's head; the gated set has grown by two since. Not this ticket's line to rewrite.
 - `ls db/migrations/*.sql | tail -1`: no migration touched (process ticket).
 - #165's issue body on GitHub still names Sonar; the amendments live in the plan and this report only.
+- PR #167's first run (`observed`): `check` 198 s, `audit-diff` 7 s with the short-circuit line, `codeql` 82 s with zero open alerts on the PR ref, `ready` failed in 4 s on the token (deviation 7). The first `record-gate.sh` run at `21d83b3` went red on `drivers.integration.spec.ts` (`connection terminated mid-transaction`) with a local re-validation script running beside it and then hung; the re-run alone was green in 1m23.9s.
+- A "SonarCloud Code Analysis" check showed up red on PR #167: SonarCloud's GitHub app auto-analysing the now-public repo, outside `ci.yml`. Not this ticket's; Linards disables it on the SonarCloud side.
