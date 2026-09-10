@@ -206,6 +206,11 @@ describe('PushRegistrar tap routing (#15)', () => {
   it('the card the tap lands on draws through the real active-ride labels (edge)', async () => {
     await mount(<OfferScreen />);
     await act(async () => ctx!.receive(wire(), 'socket'));
+    // `receive` routes a fresh card itself (`route_offer`), so without this
+    // clear the assertion below is satisfied by the setup and stays green with
+    // the tap hop gated out entirely. The ids-only case above clears for the
+    // same reason.
+    router.navigate.mockClear();
     await tapWith({ kind: 'offer', offerId: OFFER_ID, rideId: RIDE_ID });
 
     expect(router.navigate).toHaveBeenCalledWith('/offer');
