@@ -187,9 +187,35 @@ Documentation only — two markdown artifacts, no source, no config, no test.
 
 **The gate was not re-run for this commit, and here is why that is not a gap.** `turbo.json` declares no `globalDependencies`, and no package's `build`, `lint` or `typecheck` input reaches `.claude/**` markdown, so these files are inert to `pnpm turbo run typecheck lint test build`. The #171 review established the same and also ran the merge preview against `main`'s tip `a4832ca` with this PR's file applied — `COMPOSE_PROJECT_NAME=taxi`, `REDIS_TEST_URL=redis://127.0.0.1:6381`, `--force`, exit 0, `22 successful, 22 total` in 2m24.745s, `@taxi/api` 76 suites / 721 tests with the Redis suites included. That run is evidence about `main`, not about this diff, and is not restated here as if it were.
 
-CI is the gate that matters for F1, because F1 *is* about which CI contexts exist on this head. Closing state, `observed` after `gh pr update-branch 171`:
+CI is the gate that matters for F1, because F1 *is* about which CI contexts exist on this head. Closing state, `observed` 2026-09-10 after `gh pr update-branch 171` — run **34498130572** at head `7ab7c51`, the merge commit:
 
-<!-- FINAL-STATE -->
+```
+$ gh pr checks 171
+CodeQL       pass  3s
+audit-diff   pass  9s
+check        pass  3m32s
+codeql       pass  1m9s
+ready        pass  5s
+
+$ gh pr view 171 --json isDraft,mergeStateStatus,headRefOid
+draft=false  merge=CLEAN  head=7ab7c51
+```
+
+All three required contexts (`check`, `audit-diff`, `codeql`) now report on this head, `ready` ran and flipped the draft on its own, and `mergeStateStatus` went `BEHIND` → `BLOCKED` → `CLEAN`. `SonarCloud Code Analysis` is absent, as expected after #173 was actioned.
+
+Job figures for this run, `derived` from `gh run view 34498130572 --json createdAt,updatedAt,jobs` timestamps:
+
+| | Window | Seconds |
+|---|---|---|
+| `check` | 15:50:49Z → 15:54:21Z | 212 |
+| `codeql` | 15:50:50Z → 15:51:59Z | 69 |
+| `audit-diff` | 15:50:50Z → 15:50:59Z | 9 |
+| `ready` | 15:54:24Z → 15:54:29Z | 5 |
+| run wall | 15:49:13Z → 15:54:29Z | **316** |
+
+`check` at 212 s sits just above the 198–206 s band F10 records for #167's four post-flip runs; the wall at 316 s is larger than the 208–216 s band because this run queued for 96 s before any job started (`createdAt` 15:49:13Z, first job start 15:50:49Z), which is the same `createdAt`-vs-job distinction F3 exists to keep straight. One run is not a range — this is a single `observed` point, not a replacement band.
+
+This commit adds only this section, so the head moves past run 34498130572 and its own run re-confirms the same four contexts. The evidence above is about `7ab7c51`, and is not restated as being about a later head.
 
 ---
 
