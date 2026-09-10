@@ -51,6 +51,33 @@ findings grouped and **ask** rather than fixing everything by default:
 Don't let the reviewer dictate scope — "real, but later" is a valid and common call; a clean small PR beats a
 sprawling one.
 
+## 1.5 A CodeQL-fed round (#165)
+
+When the PR's `codeql` check is red, the findings are GitHub's open alerts on the PR's merge ref, not a reviewer's
+list. Feed them in with this command (`{N}` = the PR number; the executable step, so a broken endpoint shows in a
+diff):
+
+```bash
+gh api --paginate "repos/{owner}/{repo}/code-scanning/alerts?ref=refs/pull/{N}/merge&state=open&per_page=100" \
+  --jq '.[] | "F\(.number) (\(.rule.security_severity_level // .rule.severity), \(.rule.id)) \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line) — \(.most_recent_instance.message.text // .rule.description) \(.html_url)"'
+```
+
+Then triage as in §1, under rules that are not negotiable inside a session:
+
+- **No suppression comments** in source — the `lgtm`/`codeql` bracket forms CodeQL honours. The hook refuses them
+  in shipped-source files.
+- **Never dismiss an alert** through the API; the hook refuses that too. A human dismisses in the GitHub UI, with
+  a reason, and the gate honours that on the next run.
+- **Touch only findings inside this PR's diff.** The gate is a diff against the base (like `audit-diff`): an alert
+  the base already carries is the backlog and rides.
+- **Never remove the feature** to lower a count.
+- **At most 3 push-and-rescan cycles**, then stop and hand to the human. The re-scan is CI's `codeql` job on the
+  pushed commit, never a local scanner.
+- A finding that is genuinely wrong gets one line in the PR body under `## Notes for the reviewer`
+  ("CodeQL disputed: `<rule>` at `<file:line>` — <why>"), not a suppression.
+
+Name the report round `codeql-<n>` (see Output).
+
 ## 2. Fix the "fix now" set — one at a time
 
 For each:

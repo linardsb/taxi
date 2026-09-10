@@ -12,6 +12,11 @@ Blocks (exit 2, reason on stderr):
   3. The anketa fence — edits to the root `app/` and `backend/` mini-project
      (the Sakta Cab anketa). CLAUDE.md says it must never be refactored into
      the workspace; this makes that a guarantee instead of a request.
+  4. The draft→ready flip — `gh pr ready` and its GraphQL mutation. CI's
+     `ready` job is the only path (#165).
+  5. Suppressing a CodeQL finding — dismissing a code-scanning alert through
+     the API, or a `lgtm`/`codeql` suppression comment in shipped source. A
+     human dismisses in the GitHub UI, with a reason (#165).
 
 Everything else is allowed. FAILS OPEN: any unexpected error exits 0 so a bug
 here can never brick a session.
@@ -40,6 +45,20 @@ ENV_DUMP = (
 # absolute paths that pass through the repo root.
 ANKETA_FENCE = re.compile(r"(^|/taxi/)(app|backend)/")
 
+# `gh pr ready` (and `--undo`, on purpose: re-drafting is CI's too) plus the
+# GraphQL mutation behind it. REST has no un-draft endpoint, so these are the
+# only two routes to the flip.
+PR_READY_FLIP = re.compile(r"\bgh\s+pr\s+ready\b|markPullRequestReadyForReview")
+
+# Dismissing a code-scanning alert (REST: PATCH …/code-scanning/alerts/N with
+# state=dismissed) and the in-source suppression comment forms CodeQL honours
+# (`lgtm[rule]`, `codeql[rule]`). Both are a human's call, in the GitHub UI,
+# with a reason (#165). The comment guard applies to shipped-source suffixes
+# only, so docs that mention the forms are not caught.
+ALERT_DISMISS = re.compile(r"code-scanning/alerts/\d+.*dismiss", re.IGNORECASE | re.DOTALL)
+SUPPRESSION_COMMENT = re.compile(r"\b(lgtm|codeql)\s*\[")
+SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+
 BLOCKED_ENV_MESSAGE = (
     "BLOCKED: access to secrets is not allowed.\n"
     "Read a committed .env.example template instead."
@@ -50,6 +69,18 @@ BLOCKED_ANKETA_MESSAGE = (
     "CLAUDE.md: do not modify it or refactor it into the workspace. The\n"
     "monorepo apps live under apps/. If the user explicitly asked to work on\n"
     "the anketa itself, ask them to confirm and edit it outside this guard."
+)
+BLOCKED_PR_READY_MESSAGE = (
+    "BLOCKED: `gh pr ready` is CI's to run, never a model's (#165).\n"
+    "A PR leaves draft only when ci.yml's `ready` job sees every gate job green.\n"
+    "If it is stuck: read the failing check on the PR, fix, push. A human can\n"
+    "flip it in the GitHub UI; that path is documented in docs/runbooks/pr-gate.md."
+)
+BLOCKED_ALERT_SUPPRESSION_MESSAGE = (
+    "BLOCKED: suppressing a CodeQL finding is a human's call, never a model's (#165).\n"
+    "Fix the finding inside this PR's diff, or leave it and say why under\n"
+    "`## Notes for the reviewer`. A human dismisses it in the GitHub UI with a\n"
+    "reason; see docs/runbooks/pr-gate.md."
 )
 
 
@@ -95,6 +126,25 @@ def is_anketa_write(tool_name: str, tool_input: dict) -> bool:
     return bool(ANKETA_FENCE.search(path))
 
 
+def is_pr_ready_flip(tool_name: str, tool_input: dict) -> bool:
+    if tool_name != "Bash":
+        return False
+    return bool(PR_READY_FLIP.search(tool_input.get("command", "")))
+
+
+def is_alert_suppression(tool_name: str, tool_input: dict) -> bool:
+    if tool_name == "Bash":
+        return bool(ALERT_DISMISS.search(tool_input.get("command", "")))
+    if tool_name in ("Edit", "MultiEdit", "Write"):
+        path = tool_input.get("file_path", "").replace("\\", "/")
+        if not path.endswith(SOURCE_SUFFIXES):
+            return False
+        texts = [tool_input.get("new_string", ""), tool_input.get("content", "")]
+        texts += [e.get("new_string", "") for e in tool_input.get("edits", []) if isinstance(e, dict)]
+        return any(SUPPRESSION_COMMENT.search(t or "") for t in texts)
+    return False
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -111,6 +161,14 @@ def main() -> None:
 
         if is_anketa_write(tool_name, tool_input):
             print(BLOCKED_ANKETA_MESSAGE, file=sys.stderr)
+            sys.exit(2)
+
+        if is_pr_ready_flip(tool_name, tool_input):
+            print(BLOCKED_PR_READY_MESSAGE, file=sys.stderr)
+            sys.exit(2)
+
+        if is_alert_suppression(tool_name, tool_input):
+            print(BLOCKED_ALERT_SUPPRESSION_MESSAGE, file=sys.stderr)
             sys.exit(2)
 
         sys.exit(0)

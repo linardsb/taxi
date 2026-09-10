@@ -12,6 +12,14 @@ on:
   # on that ref too, so a branch cut before this merged still cannot use it.
   workflow_dispatch:
 
+# One run per PR head. A green run for an OLD head must not flip a PR whose
+# NEW head is still being tested (#165); cancelling the old run also stops it
+# spending minutes on a tree nobody will merge. Pushes to main are never
+# cancelled: each is a merge that should get its own baseline.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -48,3 +56,88 @@ jobs:
       - name: Verify Redis is reachable from the runner
         run: node -e "require('net').connect(6379,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',(e)=>{console.error(e.message);process.exit(1)})"
       - run: pnpm turbo run typecheck lint test build
+
+  # No new advisories (#165). The backlog rides (66 at 6d72261, observed
+  # 2026-09-10: 2 critical, 47 high, 18 moderate, 1 low); a PR may not grow it.
+  # Base = the target branch's tip, audited from its lockfile alone; head =
+  # the PR merge ref actions/checkout gives us, i.e. what would land.
+  audit-diff:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      # The checkout is depth-1 on the merge ref; without this fetch the base
+      # ref does not exist in the runner's clone.
+      - run: git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+      - run: .github/scripts/audit-diff.sh "origin/${GITHUB_BASE_REF}"
+
+  # CodeQL (#165). The repo went public on 2026-09-10 so code scanning is
+  # free; a private repo needs a Code Security licence and the CodeQL CLI
+  # licence forbids CI use on private code without one. The upload gives the
+  # alerts tab and the PR annotations. The GATE is codeql-gate.sh: it reads
+  # the alerts GitHub produced from this upload and fails when the PR adds a
+  # high/critical (or error-level) alert the base does not carry, the same
+  # diff rule as audit-diff. The "Code scanning results" check GitHub adds on
+  # its own is a check run outside this workflow, which `ready.needs` cannot
+  # see. Default setup must stay off: GitHub rejects an advanced-setup SARIF
+  # while default setup is on. On push to main this job is the baseline the
+  # PR gate diffs against; the gate step itself is PR-only.
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload the SARIF; also reads the alerts
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          # `app`/`backend` are the fenced anketa mini-project (CLAUDE.md): a
+          # session may not edit them, so a finding there could never be fixed
+          # by the loop that reads it. The rest are build outputs.
+          config: |
+            paths-ignore:
+              - app
+              - backend
+              - '**/dist'
+              - '**/.next'
+              - '**/.expo'
+              - '**/coverage'
+      - uses: github/codeql-action/analyze@v4
+        with:
+          upload: always
+      - if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: .github/scripts/codeql-gate.sh --pr "$PR" --base "$GITHUB_BASE_REF"
+
+  # The only path from draft to ready (#165). No model runs this: the hook
+  # refuses `gh pr ready` in every Claude session, and the GitHub UI button is
+  # the documented human bypass (docs/runbooks/pr-gate.md). Red anywhere in
+  # `needs` converts the PR back to a draft, so "ready" always means "this
+  # head passed". `!cancelled()` rather than `always()`: a cancelled run must
+  # not touch the PR; the run that cancelled it will.
+  ready:
+    needs: [check, audit-diff, codeql]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - run: |
+          case "$RESULTS" in
+            *failure*|*cancelled*|*skipped*)
+              gh pr ready --undo --repo "$GITHUB_REPOSITORY" "$PR"
+              echo "::error::gate results: $RESULTS. PR #$PR stays a draft (#165)."
+              exit 1 ;;
+            *)
+              gh pr ready --repo "$GITHUB_REPOSITORY" "$PR" ;;
+          esac

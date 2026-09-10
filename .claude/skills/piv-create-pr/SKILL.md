@@ -1,6 +1,6 @@
 ---
 name: piv-create-pr
-description: Push the current feature branch and open a pull request, ready for review. Use after a ticket's implementation is committed on its own branch — it detects the base branch, pushes, opens the PR with a clear body (summary · what changed · validation status), and returns the URL to hand to a reviewer.
+description: Push the current feature branch and open a pull request as a draft; CI's `ready` job flips it to ready for review when the gate is green (#165). Use after a ticket's implementation is committed on its own branch — it detects the base branch, pushes, opens the PR with a clear body (summary · what changed · validation status), and returns the URL to hand to a reviewer.
 argument-hint: "[--base <branch>] (default: auto-detected)"
 ---
 
@@ -96,7 +96,7 @@ git push -u origin HEAD
 ```
 
 ```bash
-gh pr create --base "{base}" --title "{type}: {concise description}" --body "$(cat <<'EOF'
+gh pr create --draft --base "{base}" --title "{type}: {concise description}" --body "$(cat <<'EOF'
 ## Summary
 {1-2 sentences: what this ticket delivers}
 
@@ -113,12 +113,13 @@ gh pr create --base "{base}" --title "{type}: {concise description}" --body "$(c
 ## Linked
 {ticket / issue refs, or "none"}
 
-_Ready for review._
+_Opened as a draft; CI's `ready` job flips it when `check`, `audit-diff` and `codeql` are green (#165). A red job leaves it here with the failing check on the PR._
 EOF
 )"
 ```
 
-(`{type}` = feat/fix/refactor/… from the work. Use `--draft` if the work isn't ready for a real review.)
+(`{type}` = feat/fix/refactor/… from the work.) Never run `gh pr ready`; the hook refuses it and CI owns the
+flip. If the PR stays a draft, the failing check is the next finding.
 
 ## Output
 
@@ -126,8 +127,10 @@ EOF
 gh pr view --json number,url,title,baseRefName,headRefName
 ```
 
-Report the PR number + URL, the base ← head branches, and **"Ready for review → run `piv-review-pr <number>`, then a
-human approves."** This is the handoff point: the agent's loop ends at an open PR; review and merge are the gates.
+Report the PR number + URL, the base ← head branches, and **"Draft. CI flips it ready in about six minutes when
+green (`check` `observed` 313–361 s over the last 8 `ci.yml` runs on 2026-09-10; `ready` starts after it); then run
+`piv-review-pr <number>`, then a human approves."** This is the handoff point: the agent's loop ends at an open PR;
+review and merge are the gates.
 
 ## Notes
 
