@@ -195,8 +195,36 @@ claim.
 | L5 | `pnpm --filter @taxi/driver test -- push-registrar` | after the fix, no mutation | `Tests: 4 passed, 4 total` |
 | L5 | same, with the tap hop gated out | after the fix | `Tests: 2 failed, 2 passed, 4 total` — the new case now red |
 | L4 | the five probes in the table above | after L5's fix | as tabulated |
-| L4 | `gh pr edit 163 --body-file …` then `gh pr view 163 --json closingIssuesReferences` | after the push | see below |
-| both | the full gate | after both fixes | `22 successful, 22 total`, exit 0 |
+| L4 | `gh pr edit 163 --body-file …` then `gh pr view 163 --json closingIssuesReferences` | after the push | **5** — #157, #158, #159, #160, #161. Unchanged by the body rewrite, and the new `#169` / `#170` references were **not** picked up. |
+| both | the full gate | after both fixes, before the commit | `22 successful, 22 total`, exit 0 |
+
+The gate ran on the working tree a moment before `dab716e` was written. The
+only thing the commit added on top of what was tested is this report, which no
+task compiles, so the run describes `dab716e`'s tree.
+
+## CI on the pushed head
+
+`observed` — `gh pr checks 163` on `dab716e`:
+
+| Check | Result |
+|---|---|
+| `check` (the CI-parity gate) | **pass** — https://github.com/linardsb/taxi/actions/runs/34480359594 |
+| SonarCloud Code Analysis | **fail** — *Quality Gate failed: 3.2% Duplication on New Code (required ≤ 3%)* |
+
+**SonarCloud is not this repo's gate and not this commit's failure.** #165 chose
+CodeQL in Sonar's place: there is no `sonar` job in `ci.yml`, no
+`sonar-project.properties`, and `git grep -il sonar` finds hits only in #165's
+own plan and report. What runs is the SonarCloud **GitHub App**, auto-analysing
+the repo since it was made public — outside `ci.yml` entirely, which
+`.claude/reports/ci-no-model-pr-gate-report.md:104` already recorded as
+Linards's to disable on the SonarCloud side.
+
+`observed` — it never ran on this PR before:
+`gh api repos/linardsb/taxi/commits/800768f/check-runs` returns **only**
+`check`, and merged PRs #143, #156 and #162 have `check` alone as well. The
+failing condition is a duplication threshold over the whole PR diff, not a
+correctness finding, and this commit contributes six lines of test comment plus
+one line of code.
 
 ## Deferred, with issue refs
 
