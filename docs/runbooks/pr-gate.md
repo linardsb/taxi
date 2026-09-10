@@ -73,7 +73,7 @@ gh run view <run-id> --log-failed
 | `check` red | The gate is red at this head. Fix, push. The next run flips it if green. |
 | `audit-diff` red | §2. |
 | `codeql` red | §3, then the fix loop in §4. |
-| `ready` red, every other job green | `ready` itself failed to talk to GitHub. `Resource not accessible by integration` means the `PR_READY_TOKEN` secret is missing or its PAT lacks pull-request write on this repo (§1.1); `Bad credentials` means it expired. Fix the secret, then re-run the job: `gh run rerun <run-id> --failed`. `gh pr ready` is idempotent (`observed` 2026-09-10 on PR #166: a second call prints `already "ready for review"` and exits 0), so a re-run after an undo works too. |
+| `ready` red, every other job green | `ready` itself failed to talk to GitHub. Read its log: `set the GH_TOKEN environment variable`, exit 4, means the `PR_READY_TOKEN` secret does not exist (`observed` run 34471798333); `Resource not accessible by integration` means the token it holds lacks pull-request write on this repo, or is the Actions token (`observed` run 34471269249); `Bad credentials` means it expired (`expected`). Fix the secret (§1.1), then re-run the job: `gh run rerun <run-id> --failed`. `gh pr ready` is idempotent (`observed` 2026-09-10 on PR #166: a second call prints `already "ready for review"` and exits 0), so a re-run after an undo works too. |
 | A flake (the payments/customers integration suites under the full run are the known one) | `gh run rerun <run-id> --failed`. The re-run's `ready` job flips the PR if green. Do not push an empty commit to "kick" it; that is a second head and a second run. |
 | A ready PR turned back into a draft | A later push went red. Read `gh pr checks`; the failing check is on the new head. |
 

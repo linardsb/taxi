@@ -100,4 +100,5 @@ UX states: none declared (process ticket; no user-facing surface).
 - `ls db/migrations/*.sql | tail -1`: no migration touched (process ticket).
 - #165's issue body on GitHub still names Sonar; the amendments live in the plan and this report only.
 - PR #167's first run (`observed`): `check` 198 s, `audit-diff` 7 s with the short-circuit line, `codeql` 82 s with zero open alerts on the PR ref, `ready` failed in 4 s on the token (deviation 7). The first `record-gate.sh` run at `21d83b3` went red on `drivers.integration.spec.ts` (`connection terminated mid-transaction`) with a local re-validation script running beside it and then hung; the re-run alone was green in 1m23.9s.
+- PR #167's second run at `061fa4b` (34471798333, `observed`): `check` 203 s, `codeql` 80 s (0 open alerts), `audit-diff` 12 s, all green; `ready` red in 5 s with exit 4, `set the GH_TOKEN environment variable`, the secret not existing yet. Fail closed confirmed on both token failure modes.
 - A "SonarCloud Code Analysis" check showed up red on PR #167: SonarCloud's GitHub app auto-analysing the now-public repo, outside `ci.yml`. Not this ticket's; Linards disables it on the SonarCloud side.
