@@ -182,7 +182,7 @@ Re-derived from `6d72261`'s lockfile alone (`observed` 2026-09-10), not inherite
 
 `.metadata.dependencies` = 1013 holds.
 
-**Surfaces swept** (`grep -rn '47 high'`): `.github/workflows/ci.yml:61` ✅ corrected and both counters named · `docs/runbooks/pr-gate.md:123` ✅ corrected, counter named · `.claude/plans/…:316` ✅ inline marker + AMENDMENTS · `.claude/reports/…-report.md:69` ✅ line kept with a correction block beneath it, so the claim has a subject · **PR body** ✅ rewritten.
+**Surfaces swept** (`grep -rn '47 high'`): `.github/workflows/ci.yml:61` ✅ corrected and both counters named · `docs/runbooks/pr-gate.md:123` ✅ corrected, counter named · `.claude/plans/…:316` ✅ inline marker + AMENDMENTS · `.claude/reports/…-report.md:69` ✅ line kept with a correction block beneath it, so the claim has a subject · **PR body** ✅ rewritten · **issue #165's own body** ❌ **missed by this sweep** — it carries the same counts as a severity table (`critical | 2 advisories`, `high | 47 advisories`) rather than the `2/47/18/1` string the grep looked for. Found by #175 M4's re-sweep on 2026-09-10 and corrected in place with a block beneath the table. Grepping the string, not the noun, is what let it through.
 
 ### F10 (Medium) · "about six minutes / `check` 313–361 s" was stale the day it shipped
 
