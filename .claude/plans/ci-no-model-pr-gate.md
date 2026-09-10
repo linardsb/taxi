@@ -584,7 +584,7 @@ Every step is performable with what this ticket ships and the repo's live GitHub
 | Base (`origin/main`) vs head id sets identical (`comm` empty); lockfile unchanged on this branch | `observed` |
 | Pinning `lodash@4.17.20` alone adds 5 ids: GHSA-35jh-r3h4-6jhm (high), GHSA-r5fr-rjxr-66jc (high), GHSA-29mw-wpgm-hmr9, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg (moderate) | `observed`, scratch package |
 | Shipped `.ts/.tsx` under `apps/ services/ packages/ db/`, spec/test/scripts/`.d.ts`/dist/.next/.expo dropped, blank and `//`/`/*`/`*` lines removed: **23,976** lines over 390 files; 53,599 with spec and test files kept | `observed`; equals the ticket's figure, re-derived with the command in this session's log |
-| Last 8 `ci.yml` runs: 313–361 s each (ids 34354124913 … 34460135710) | `observed`, `gh run list` — **run wall, not the `check` job, and all 8 predate the repo going public; `check` is 195–206 s on PR #167's runs. See AMENDMENTS** |
+| Last 8 `ci.yml` runs: 313–361 s each | `observed`, `gh run list` — the run ids, their per-run walls and the re-derivation are in the **2026-09-10 (#175 M2)** amendment; do not restate them here. **Run wall, not the `check` job, and all 8 predate the repo going public; `check` is 195–206 s on PR #167's runs. See AMENDMENTS** |
 | Actions default workflow permission: `read` | `observed` |
 | Hook today: `gh pr ready` payload → exit 0; GraphQL mutation payload → 0; `cat .env` payload → 2 | `observed` |
 | Draft PR support, `gh pr ready` idempotency, `--undo`: PR #166 | `observed`; its CI run 34462897943 started on open, which is the evidence for A4 (a draft fires `pull_request`) and nothing else: the PR was closed before the run finished |
@@ -609,6 +609,24 @@ Every step is performable with what this ticket ships and the repo's live GitHub
 **Rejected: refusing `gh pr create` without `--draft` in the hook.** The skill is the only thing that opens PRs in a session; a hook that pattern-matches `gh pr create` would also refuse the throwaway probes this plan needs. If a non-draft PR ever appears from a session, that is the moment to add it.
 
 ## AMENDMENTS
+
+- 2026-09-10 (#175 M2, after the PR #171 review) — **the two `observed` run sets behind 313–361 s are both real, and this entry is now the single citation for them.** M2 read the disagreement between this plan's NOTES row (`34354124913 … 34460135710`) and the runbook's then-current text (`34354276529 … 34462897943`) as one range carrying two provenance strings that could not both be right. Re-derived here — `gh run list --workflow ci.yml --limit 40 --json databaseId,createdAt,updatedAt,headBranch,event`, each endpoint confirmed with `gh api repos/linardsb/taxi/actions/runs/<id>` — they are two genuine 8-run windows over the same `ci.yml` history, one run apart, sharing seven runs. Wall = `updated_at − created_at`, seconds:
+
+  | run | branch (event) | wall |
+  |---|---|---|
+  | 34354124913 | `main` (push) | 325 |
+  | 34354276529 | `docs/pr-154-review` | 314 |
+  | 34354866213 | `main` (push) | 325 |
+  | 34373346365 | `fix/pr-154-deferred-lows` | **313** |
+  | 34375354100 | `docs/pr-163-review` | **361** |
+  | 34377814497 | `fix/pr-154-deferred-lows` | 350 |
+  | 34377893053 | `fix/pr-154-deferred-lows` | 332 |
+  | 34460135710 | `docs/pr-163-review` | 340 |
+  | 34462897943 | `probe/draft-pr-165` | 322 |
+
+  Rows 1–8 are this plan's window, rows 2–9 the runbook's. Both min at 34373346365 = **313 s** and max at 34375354100 = **361 s**, and both extremes sit in the seven-run overlap — which is exactly why the range agreed to the second across a window that had moved by one run. M2's inference is therefore **refuted**: the two windows are different, the range is stable because the extremes are shared, and neither citation is invented. What stands is that nobody had checked, which is what re-derivation is for.
+
+  **The figure is still retired for meaning** — 313–361 s is run **wall** over runs that all predate the visibility flip; `check` is 195–206 s and push-to-flip about 3.5 min (the F10 entry below). This entry corrects the *provenance* only. It is the one place the ids are derived: the NOTES row above no longer restates them, and `.claude/reports/ci-no-model-pr-gate-report.md:69` keeps its historical line with a correction block beneath it (`:72`) pointing here. Anything else that wants the run set cites this entry rather than copying it.
 
 - 2026-09-10 (PR #167 review, round-1 fixes) — **four figures and three guarantees in this plan are retired.** The plan's own copies are left as written; this entry is the correction, and the line numbers are where the stale text sits.
   - **`check` is 195–206 s, not 313–361 s** (lines 226, 523, 585, and the copy the plan prescribed into `piv-create-pr` SKILL.md:130). 313–361 was **run wall**, not the `check` job, over 8 runs that all predate the repo going public. Re-derived `observed` 2026-09-10 on PR #167's four runs (34471269249, 34471798333, 34472223208, 34476424460). Push-to-flip is about **3.5 min**, not six. Do not re-derive this from run wall: 34472223208's wall is 2693 s because it sat between the PAT retries (F10).

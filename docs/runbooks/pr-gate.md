@@ -165,7 +165,7 @@ The rule is the **diff**, not a clean audit: HEAD may not report a `pnpm audit
 | Backlog at `main` (`6d72261`) | 66 advisory ids over 1,013 production dependencies; 2 critical, 46 high, 17 moderate, 1 low | `observed` 2026-09-10, `pnpm audit --prod --json` at `6d72261`, re-derived in the PR #167 review: `.advisories \| length` = 66 and the per-id severities sum to 66. **Not** `metadata.vulnerabilities`, a separate counter that reads 2/47/18/1 and sums to 68 — earlier copies of this row mixed the two (F9). The gate diffs ids and never reads severity. |
 | Pinning `lodash@4.17.20` alone | 5 new ids (GHSA-35jh-r3h4-6jhm high, GHSA-r5fr-rjxr-66jc high, GHSA-29mw-wpgm-hmr9, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg moderate); 66 at base, 71 at HEAD; exit 1 in 2.4 s | `observed` 2026-09-10, scratch worktree off `6d72261` |
 | Unchanged lockfile | exit 0 in 0.04 s without auditing | `observed`, same session |
-| An added `ignore:` under `audit:` in `pnpm-workspace.yaml` | exit 1 in 0.06 s, before any audit | `observed`, same session |
+| An added `ignore:` under `audit:` in `pnpm-workspace.yaml`, lockfile unchanged | exit 1 in 0.04 s, before the lockfile short-circuit and before any audit | `observed` 2026-09-10, scratch worktree off `main` at `aff34b4`, three runs, 0.04 s each. This row read "0.06 s" until #174: with the guard sitting *below* the short-circuit, this exact case — ignore list added, lockfile untouched — exited **0** (`observed`, same fixture, `main`'s script), so the 0.06 s came from a run whose lockfile had also changed (`derived`: that was the only path to the guard). |
 | Registry unreachable | exit 1 with `audit output is not JSON`; pnpm retried for 2 min 21 s first | `observed`, same session, `npm_config_registry=http://127.0.0.1:9/` |
 | Live CI runs (unchanged lockfile / new advisory / revert) | — | `expected`; PR A's own run and the throwaway PR of #165 T7 supply the URLs, recorded in PR A's body |
 
@@ -178,8 +178,11 @@ git fetch origin main
 
 **A dependency you need carries an advisory with no fixed version.** The
 script has no allow-list on purpose, and `audit.ignore`, `ignoreGhsas` and
-`ignoreCves` edits are refused before the audit runs (§2 table, row 4): an
-ignore entry in the same PR as the dependency is a suppression, not a fix.
+`ignoreCves` edits are refused before the audit runs — and before the
+unchanged-lockfile short-circuit, so an ignore list that touches no lockfile is
+still red (§2 table, row 4). An ignore entry is a suppression, not a fix,
+whether it arrives in the same PR as the dependency or in a PR of its own
+ahead of it (#174).
 The path is the button (§1) plus the line in the PR body naming the GHSA and
 why it does not apply, so the exception is on the most-read surface and
 reviewable. If the advisory is real and unfixable, the dependency is the
@@ -230,7 +233,9 @@ for alerts:
 - medium and low alerts never block; they are on the tab and in the
   annotations for a human to read;
 - a PR ref with no analysis is **red**, not green; a base with no analysis
-  yet is treated as empty, with a warning. "Has this ref been analysed?" is
+  yet falls back to `main`'s, and if that has none either the base is treated
+  as empty, with a warning (see **A stacked PR's base** below). "Has this ref
+  been analysed?" is
   asked of the `code-scanning/analyses` endpoint, not inferred from an empty
   alert list: once the repo has any upload at all, the alerts endpoint answers
   `[]` for a never-analysed ref exactly as it does for a clean one, so the
@@ -244,6 +249,38 @@ for alerts:
 | Fixture: same PR list, empty base | 3 new (#1, #3, #5), exit 1 | `observed`, same session |
 | Live: a PR ref with no analysis (`--pr 999`) | exit 1, "no CodeQL analysis for refs/pull/999/merge" | `observed` 2026-09-10 in the PR #167 review session, against this repo, **after** the analyses-count fix. The same call was exit 1 before this repo's first upload and would have been exit 0 between the two (F6); the row now describes the fixed script. `--pr 171` (a real PR whose run had not finished) is exit 1 by the same branch. |
 | Live: PR A's own run | — | `expected`; see the first-run state below |
+
+**A stacked PR's base.** The `codeql` job runs on push to `main` and on every
+PR — never on a push to a feature branch. So a PR based on another feature
+branch has a base ref that was never analysed, and comparing against it would
+count every alert the PR *inherits* from `main` as new: the stack goes red for
+alerts it did not add, and stays red until the human bypass (§1). The gate
+therefore falls back to `refs/heads/main` when the base ref has no analysis,
+and prints which ref it actually compared against:
+
+```
+::warning::no CodeQL analysis on refs/heads/<base> (the codeql job runs on push
+to main only); comparing against refs/heads/main instead, which has <n> (#172)
+```
+
+`--fallback-base` names that ref; it defaults to `main`. **When the fallback
+has nothing to fall back to** — before `main`'s first analysis — the base is
+empty and every open alert at the gate's severity is new, which is the
+first-run state below. The warning says so in one line naming both refs, and
+the human bypass (§1) is the path for that PR. A PR based directly on `main`
+never takes the fallback: the guard is `base != fallback_base`.
+
+**What the fallback still does not cover.** It compares against `main`, so an
+alert the *parent* PR of a stack introduced is not on `main` until that parent
+merges, and counts as new on the child. Closing that would need the parent's
+own `refs/pull/<n>/merge` analysis and therefore its number, which the gate is
+not given. Land the parent, or use the bypass (§1) with the alert named in the
+child's body.
+
+Only the diff changes, never the rule. An alert the PR genuinely adds — one
+`main`'s analysis does not carry — is still red through the fallback
+(`observed` 2026-09-10, `gh` shim, four cases: inherited alert green with the
+warning, added alert red, base `main` unchanged, no fallback analysis red).
 
 **First-run state.** `main` has no CodeQL analysis until a push to `main`
 runs the job, which happens when PR A merges. Until then the gate on any PR

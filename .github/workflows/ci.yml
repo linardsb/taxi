@@ -118,9 +118,16 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: .github/scripts/codeql-gate.sh --pr "$PR" --base "$GITHUB_BASE_REF"
 
-  # The only path from draft to ready (#165). No model runs this: the hook
-  # refuses `gh pr ready` in every Claude session, and the GitHub UI button is
-  # the documented human bypass (docs/runbooks/pr-gate.md). Red anywhere in
+  # The only path from draft to ready (#165). The hook refuses that flip in a
+  # Claude session, but it does so by matching TEXT — a Bash command's text,
+  # and the text a write tool would put into a NON-`.md` file — so it makes
+  # the flip deliberate rather than convenient and cannot make it impossible:
+  # writing the command into a script and running the script matches no
+  # pattern, and the `.md` exemption is a deliberate escape hatch
+  # (`.claude/hooks/pre_tool_use.py:25-30`, `:218-224`). The control that
+  # holds is branch protection on `main`, runbook §5 (#165, PR #167 review
+  # F4/F5, #175 M3). The GitHub UI button is the documented human bypass
+  # (docs/runbooks/pr-gate.md §1). Red anywhere in
   # `needs` converts the PR back to a draft. `!cancelled()` rather than
   # `always()`: a cancelled run must not touch the PR; the run that cancelled
   # it will.

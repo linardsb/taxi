@@ -19,9 +19,15 @@ Resolve the input to a PR number (a number, a URL, or a branch via
 `gh pr list --head <branch> --json number -q '.[0].number'`). Then:
 
 ```bash
-gh pr view {N} --json number,title,body,author,headRefName,baseRefName,baseRefOid,state,additions,deletions,changedFiles,files
+gh pr view {N} --json number,title,body,author,headRefName,baseRefName,baseRefOid,mergeStateStatus,state,additions,deletions,changedFiles,files
 gh pr diff {N}
 gh pr checkout {N}
+
+# The base branch's LIVE tip, which is what Phase 3's guarantees trigger compares.
+# `baseRefOid` is the base sha recorded ON THE PR: it moves only when someone
+# reconciles the branch, so it cannot answer "has the base moved under this PR?"
+# — by the time it changes, the drift is already fixed (#176).
+git fetch origin && git rev-parse "origin/$(gh pr view {N} --json baseRefName --jq .baseRefName)"
 ```
 
 State guard: `MERGED`/`CLOSED` → stop ("nothing to review"); `DRAFT` → every PR opens as one (#165). `gh pr checks {N}`
@@ -108,10 +114,19 @@ A rebase onto a merged base sweeps *figures* well, because figures look like fig
 because both sides were re-run, and only the *relationship* between them broke. #121 shipped one to review
 in a file whose own comment named the exact condition that would invalidate it.
 
-**The trigger, so it is observable rather than remembered:** compare Phase 1's `baseRefOid` against the
-`**Base** … @ <sha>` recorded in the newest existing `.claude/code-reviews/pr-{N}-review*.md`. Different → the
-base moved, run this pass. No prior report → first round, skip it. `baseRefName` alone cannot answer this: a
-rebase leaves the name identical.
+**The trigger, so it is observable rather than remembered:** compare the base branch's **live tip** — Phase 1's
+`git rev-parse origin/<baseRefName>`, after a `git fetch origin` — against the `**Base** … @ <sha>` recorded in
+the newest existing `.claude/code-reviews/pr-{N}-review*.md`. Different → the base moved, run this pass. No prior
+report → first round, skip it. `baseRefName` alone cannot answer this: a rebase leaves the name identical.
+
+**Not `baseRefOid`**, which is what this trigger compared until #176. That field is the base sha recorded *on the
+PR*; it moves when someone reconciles the branch, which is *after* the drift has been fixed, so the comparison
+returned equal for exactly the window in which the pass was needed. `observed` 2026-09-10 on PR #171: between
+#167 merging at 14:10:52Z and the `gh pr update-branch` at 15:49Z, `baseRefOid` read `6523573` — the same sha
+round 1's report header recorded — while `origin/main` was `a4832ca`. Old comparison equal, pass skipped; live
+tip different, pass fires. That was the one PR whose only High finding was a guarantee broken by that base move.
+`mergeStateStatus == BEHIND` corroborates it on the same `gh pr view` call, but it is not the comparison: GitHub
+computes it lazily and answers `UNKNOWN` until it has (`observed` 2026-09-10, PR #171 → `UNKNOWN`).
 
 For every PR whose base changed since the last review round:
 
@@ -154,7 +169,9 @@ a closed finding with neither, or no such file at all, is re-opened, not trusted
 Write the report to `.claude/code-reviews/pr-{N}-review.md` (summary · issues by severity with `file:line` + fix ·
 validation table · what's good · recommendation). **The header must carry `**Head** <sha> · **Base** <ref> @
 `<baseRefOid>`** — the base SHA is what makes the next round's guarantees pass triggerable; a base *name* is
-unchanged by a rebase and so cannot detect one. Then post it:
+unchanged by a rebase and so cannot detect one. Keep recording `baseRefOid`: it is the right thing to *record*
+(the base this round actually reviewed against). The next round compares it against the base branch's **live
+tip**, never against `baseRefOid` again — Phase 3 says why (#176). Then post it:
 
 ```bash
 # `gh pr review` is unusable here: solo repo, gh is authenticated as the PR's own author, so GitHub
