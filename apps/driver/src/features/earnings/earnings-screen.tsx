@@ -35,7 +35,7 @@ export function EarningsScreen() {
         testID="earnings-today"
       >
         {today === null ? (
-          <ActivityIndicator color={colors.fgMuted} />
+          <ActivityIndicator color={colors.fgMuted} testID="earnings-loading" />
         ) : (
           <Text style={styles.today}>{today}</Text>
         )}
