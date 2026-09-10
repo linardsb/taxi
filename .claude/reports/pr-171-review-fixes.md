@@ -182,7 +182,9 @@ The `195–206` row is the one that needed reading rather than counting: the sam
 
 **The last column is the surface a working-tree grep cannot reach, and it held every one of the nine.** The round-1 review of #167 was posted as a comment on that PR (`issues/167/comments`, id `5618963984`, 22 553 characters) as well as landed as a file, and that copy is the more-read of the two. `observed` — `gh api repos/linardsb/taxi/issues/comments/5618963984 --jq .body` piped through the same greps: 1 hit each for all nine retired items.
 
-It is not edited. A round-1 review comment is a timestamped artifact and rewriting it silently would be worse than leaving it. Instead a reply on #167 ([comment `5621664129`](https://github.com/linardsb/taxi/pull/167#issuecomment-5621664129)) tabulates all nine as superseded, names the rejected F3 part (1), and points at the corrected file. That reply is the closing evidence for this row.
+It is not edited. A round-1 review comment is a timestamped artifact and rewriting it silently would be worse than leaving it. Instead a reply on #167 ([comment `5621664129`](https://github.com/linardsb/taxi/pull/167#issuecomment-5621664129)) names all nine as superseded — **seven in its table, and the two pinned external anchors in the bullets below it** — plus the rejected F3 part (1), and points at the corrected file. That reply is the closing evidence for this row.
+
+The distinction is not pedantry: "tabulates all nine" is what this sentence said first, and it does not re-derive from the reply, whose table has seven data rows (`observed` — `gh api …/comments/5621664129 --jq .body | grep -c '^| '` → 8, one of which is the header). That is F4's defect — a count that does not fall out of the surface it describes — committed inside the paragraph that files it.
 
 ---
 
