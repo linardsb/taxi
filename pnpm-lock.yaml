@@ -12,9 +12,9 @@ importers:
 
   .:
     dependencies:
-      lodash:
-        specifier: 4.17.20
-        version: 4.17.20
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
     devDependencies:
       turbo:
         specifier: ^2.5.0
@@ -6197,9 +6197,6 @@ packages:
 
   lodash.throttle@4.1.1:
     resolution: {integrity: sha512-wIkUCfVKpVsWo3JSZlc+8MB5it+2AN5W8J7YVMST30UrvcQNZ1Okbj+rbVniijTWE6FGYy4XJq/rHkas8qJMLQ==}
-
-  lodash@4.17.20:
-    resolution: {integrity: sha512-PlhdFcillOINfeV7Ni6oF1TAEayyZBoZ8bcshTHqOYJYlrqzRK5hagpagky5o4HfCzzd1TRkXPMFq6cKk9rGmA==}
 
   lodash@4.18.1:
     resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
@@ -15167,8 +15164,6 @@ snapshots:
   lodash.once@4.1.1: {}
 
   lodash.throttle@4.1.1: {}
-
-  lodash@4.17.20: {}
 
   lodash@4.18.1: {}
 
