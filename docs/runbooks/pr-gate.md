@@ -165,7 +165,7 @@ The rule is the **diff**, not a clean audit: HEAD may not report a `pnpm audit
 | Backlog at `main` (`6d72261`) | 66 advisory ids over 1,013 production dependencies; 2 critical, 46 high, 17 moderate, 1 low | `observed` 2026-09-10, `pnpm audit --prod --json` at `6d72261`, re-derived in the PR #167 review: `.advisories \| length` = 66 and the per-id severities sum to 66. **Not** `metadata.vulnerabilities`, a separate counter that reads 2/47/18/1 and sums to 68 — earlier copies of this row mixed the two (F9). The gate diffs ids and never reads severity. |
 | Pinning `lodash@4.17.20` alone | 5 new ids (GHSA-35jh-r3h4-6jhm high, GHSA-r5fr-rjxr-66jc high, GHSA-29mw-wpgm-hmr9, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg moderate); 66 at base, 71 at HEAD; exit 1 in 2.4 s | `observed` 2026-09-10, scratch worktree off `6d72261` |
 | Unchanged lockfile | exit 0 in 0.04 s without auditing | `observed`, same session |
-| An added `ignore:` under `audit:` in `pnpm-workspace.yaml` | exit 1 in 0.06 s, before any audit | `observed`, same session |
+| An added `ignore:` under `audit:` in `pnpm-workspace.yaml`, lockfile unchanged | exit 1 in 0.04 s, before the lockfile short-circuit and before any audit | `observed` 2026-09-10, scratch worktree off `main` at `aff34b4`, three runs, 0.04 s each. This row read "0.06 s" until #174: with the guard sitting *below* the short-circuit, this exact case — ignore list added, lockfile untouched — exited **0** (`observed`, same fixture, `main`'s script), so the 0.06 s came from a run whose lockfile had also changed (`derived`: that was the only path to the guard). |
 | Registry unreachable | exit 1 with `audit output is not JSON`; pnpm retried for 2 min 21 s first | `observed`, same session, `npm_config_registry=http://127.0.0.1:9/` |
 | Live CI runs (unchanged lockfile / new advisory / revert) | — | `expected`; PR A's own run and the throwaway PR of #165 T7 supply the URLs, recorded in PR A's body |
 
@@ -178,8 +178,11 @@ git fetch origin main
 
 **A dependency you need carries an advisory with no fixed version.** The
 script has no allow-list on purpose, and `audit.ignore`, `ignoreGhsas` and
-`ignoreCves` edits are refused before the audit runs (§2 table, row 4): an
-ignore entry in the same PR as the dependency is a suppression, not a fix.
+`ignoreCves` edits are refused before the audit runs — and before the
+unchanged-lockfile short-circuit, so an ignore list that touches no lockfile is
+still red (§2 table, row 4). An ignore entry is a suppression, not a fix,
+whether it arrives in the same PR as the dependency or in a PR of its own
+ahead of it (#174).
 The path is the button (§1) plus the line in the PR body naming the GHSA and
 why it does not apply, so the exception is on the most-read surface and
 reviewable. If the advisory is real and unfixable, the dependency is the

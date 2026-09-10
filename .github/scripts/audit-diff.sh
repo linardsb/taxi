@@ -12,16 +12,17 @@
 #   audit-diff.sh -h|--help
 #
 # Steps, in order:
-#   1. Short-circuit. If pnpm-lock.yaml is byte-identical to the base's, exit 0
+#   1. Suppression guard. An added line naming an audit ignore list
+#      (`ignoreGhsas`, `ignoreCves`, `audit.ignore`, a yaml `ignore:` key) or a
+#      `registry=` in package.json, pnpm-workspace.yaml or .npmrc is red before
+#      any audit runs — and before the short-circuit below, which is why it is
+#      step 1. Without this a PR could add a vulnerable dependency and its GHSA
+#      to the ignore list in one commit and read as green — or point the head
+#      audit alone at a registry that reports less (see the guard).
+#   2. Short-circuit. If pnpm-lock.yaml is byte-identical to the base's, exit 0
 #      without auditing: both audits would ask the registry the same question
 #      at the same moment. Two-dot diff, not three-dot: CI checkouts are
 #      shallow and have no merge base, and HEAD in CI is the PR's merge ref.
-#   2. Suppression guard. An added line naming an audit ignore list
-#      (`ignoreGhsas`, `ignoreCves`, `audit.ignore`, a yaml `ignore:` key) or a
-#      `registry=` in package.json, pnpm-workspace.yaml or .npmrc is red before
-#      any audit runs. Without this a PR could add a vulnerable dependency and
-#      its GHSA to the ignore list in one commit and read as green — or point
-#      the head audit alone at a registry that reports less (see the guard).
 #   3. Base audit, from the base's lockfile alone in a temp dir. No manifests,
 #      no node_modules: pnpm 10's audit reads only the lockfile, and `--prod`
 #      is decided from the lockfile's per-importer sections.
@@ -67,13 +68,15 @@ done
 git rev-parse --verify -q "${base}^{commit}" >/dev/null \
   || { echo "::error::base ref '$base' not found; fetch it first (#165)"; exit 2; }
 
-# 1. Short-circuit on an unchanged lockfile.
-if git diff --quiet "$base" HEAD -- pnpm-lock.yaml; then
-  echo "pnpm-lock.yaml unchanged vs $base; identical trees cannot differ in advisories"
-  exit 0
-fi
-
-# 2. Suppression guard: an ignore list edited in this PR is red, not a fix.
+# 1. Suppression guard: an ignore list edited in this PR is red, not a fix.
+#
+# It runs BEFORE the lockfile short-circuit, not after. An ignore list added on
+# its own changes no lockfile, so behind the short-circuit this guard never
+# executed: commit 1 lands `ignoreGhsas` alone and exits 0 at the short-circuit,
+# commit 2 adds the vulnerable dependency and passes the guard because the
+# ignore list is by then in the BASE diff-side, while the head audit at step 4
+# reads it and drops the GHSA. Green twice. Widening the short-circuit's path
+# list does not close that — the ordering is the defect (#174).
 #
 # `registry=` is in the pattern for a reason the ignore keys make obvious only
 # once stated: the base audit runs in a temp dir with no .npmrc and the head
@@ -88,6 +91,12 @@ if git diff "$base" HEAD -- package.json pnpm-workspace.yaml .npmrc \
   git diff "$base" HEAD -- package.json pnpm-workspace.yaml .npmrc \
     | grep -nE "$SUPPRESSION_RE" >&2
   exit 1
+fi
+
+# 2. Short-circuit on an unchanged lockfile.
+if git diff --quiet "$base" HEAD -- pnpm-lock.yaml; then
+  echo "pnpm-lock.yaml unchanged vs $base; identical trees cannot differ in advisories"
+  exit 0
 fi
 
 tmp=$(mktemp -d)
