@@ -1,6 +1,7 @@
 import {
   colors,
   fontSize,
+  formatEur,
   radius,
   spacing,
   type FareQuote,
@@ -8,7 +9,6 @@ import {
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useT } from '@/features/i18n';
 import type { QuoteState } from './booking-draft';
-import { formatEur } from './format-eur';
 
 /**
  * The price, before anything is booked — and the confirmation surface itself.

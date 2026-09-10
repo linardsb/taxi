@@ -1,10 +1,9 @@
-import { rideQuotePreviewSchema } from '@taxi/shared';
+import { formatEur, rideQuotePreviewSchema } from '@taxi/shared';
 import { useEffect } from 'react';
 import { AccessibilityInfo } from 'react-native';
 import { ApiError, useSession } from '@/features/auth';
 import { useT } from '@/features/i18n';
 import type { BookingAction, BookingDraft } from './booking-draft';
-import { formatEur } from './format-eur';
 
 /**
  * Fires `POST /rides/quote` as soon as both ends are known, and announces the

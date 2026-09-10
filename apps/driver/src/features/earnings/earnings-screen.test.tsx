@@ -90,6 +90,17 @@ describe('EarningsScreen (#15)', () => {
     expect(screen.queryByTestId('earnings-empty')).toBeNull();
   });
 
+  it('the load window is a spinner, never an empty live region (edge)', async () => {
+    // `earningsBody` returns `null` on the first load: a spinner, not text.
+    // The home card's identical window is pinned by `home-screen.test.tsx`
+    // (F20); this screen's was not, and the branch could be deleted with the
+    // suite still green (#169).
+    mockEarningsStatus = 'loading';
+    await render(<EarningsScreen />);
+    expect(screen.getByTestId('earnings-loading')).toBeTruthy();
+    expect(screen.getByTestId('earnings-today')).toHaveTextContent('');
+  });
+
   it('a failed total is a dash, never a crash, and the back button pops (failure)', async () => {
     mockEarningsStatus = 'error';
     await render(<EarningsScreen />);
