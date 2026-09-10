@@ -35,7 +35,14 @@ jest.mock('@/features/auth', () => ({
 }));
 
 const mockOpen = jest.fn();
+// PARTIAL, not a replacement: the card's payment pill goes through the real
+// `paymentMethodLabel` (F14 — it lives in active-ride now), so only the hook
+// that hands the ride over is faked. Same shape `earnings-screen.test.tsx`
+// uses for this module.
 jest.mock('@/features/active-ride', () => ({
+  ...jest.requireActual<typeof import('@/features/active-ride')>(
+    '@/features/active-ride',
+  ),
   useActiveRide: () => ({ open: mockOpen, state: {} }),
 }));
 

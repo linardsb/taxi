@@ -1,13 +1,10 @@
-import { colors, fontSize, formatEur, radius, spacing } from '@taxi/shared';
+import { colors, fontSize, radius, spacing } from '@taxi/shared';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Button, Screen } from '@/components';
 import { Receipt, useActiveRide } from '@/features/active-ride';
-import { useEarnings } from '@/features/availability';
+import { earningsBody, useEarnings } from '@/features/availability';
 import { useT } from '@/features/i18n';
-
-/** Punctuation, not copy: the "no number" state, as on the home card. */
-const NO_VALUE = '—';
 
 /**
  * Today's total (`GET /drivers/me/earnings/today`, NET of commission — never
@@ -23,16 +20,9 @@ export function EarningsScreen() {
   const { earnings, status } = useEarnings(true);
   const { state } = useActiveRide();
   const last = state.ended?.kind === 'completed' ? state.ended.ride : null;
-
-  let today: string | null = null;
-  if (earnings) {
-    today = t('driver.earnings.today', {
-      amount: formatEur(earnings.earnedCents),
-      rides: earnings.rideCount,
-    });
-  } else if (status === 'error') {
-    today = NO_VALUE;
-  }
+  // The same three states, and the same catalog string, as the home card —
+  // `driver.earnings.today` was a byte-identical second copy of it (F14).
+  const today = earningsBody(earnings, status, t);
 
   return (
     <Screen>

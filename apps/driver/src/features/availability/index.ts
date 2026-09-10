@@ -1,5 +1,5 @@
+export { earningsBody } from './earnings-body';
 export { EarningsCard } from './earnings-card';
-export { formatEur } from './format-eur';
 export { HomeScreen } from './home-screen';
 export { readIntent, writeIntent } from './intent-store';
 export type { Intent } from './intent-store';

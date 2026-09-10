@@ -330,7 +330,6 @@ export const lv = {
   'driver.ride.completed_title': 'Brauciens pabeigts',
   'driver.ride.reload': 'Ielādēt vēlreiz',
   'driver.earnings.title': 'Ieņēmumi',
-  'driver.earnings.today': 'Šodien: {amount} · Braucieni: {rides}',
   'driver.earnings.receipt_paid': 'Pasažieris samaksāja: {amount}',
   'driver.earnings.receipt_commission': 'Sakta ({pct}%): {amount}',
   'driver.earnings.receipt_net': 'Jūs saņemat: {amount}',

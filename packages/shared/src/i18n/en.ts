@@ -281,7 +281,6 @@ export const en = {
   'driver.ride.completed_title': 'Ride complete',
   'driver.ride.reload': 'Reload',
   'driver.earnings.title': 'Earnings',
-  'driver.earnings.today': 'Today: {amount} · Rides: {rides}',
   'driver.earnings.receipt_paid': 'Rider paid: {amount}',
   'driver.earnings.receipt_commission': 'Sakta ({pct}%): {amount}',
   'driver.earnings.receipt_net': 'You keep: {amount}',

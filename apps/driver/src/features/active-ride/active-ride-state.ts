@@ -96,7 +96,13 @@ export function stepFor(status: RideStatus): DriverStep | null {
   return null;
 }
 
-const TITLE_KEY: Partial<Record<RideStatus, MessageKey>> = {
+/**
+ * The heading for an active status. Exported for the screen, which renders it
+ * as the title while the reducer announces it after a step — one table, so a
+ * new status cannot get a heading on one of the two and not the other. Stays
+ * off `index.ts`: nothing outside the slice reads it.
+ */
+export const TITLE_KEY: Partial<Record<RideStatus, MessageKey>> = {
   accepted: 'driver.ride.title_accepted',
   arriving: 'driver.ride.title_arriving',
   arrived: 'driver.ride.title_arrived',
