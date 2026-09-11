@@ -7,9 +7,11 @@
 ## commit
 
 **Mechanical (regex-checkable):**
-- Subject line uses a conventional tag with an optional scope: `feat|fix|docs|refactor|test|chore(scope)?:` —
-  imperative, ≤72 chars. Scopes in use: the surface or package touched (`shared`, `api`, `db`, `rider`,
-  `driver`, `dispatch`, `admin`, `spikes`, `skills`).
+- Subject line uses a conventional tag with an optional scope — imperative, ≤72 chars:
+  `feat|fix|docs|refactor|test|chore|ci|style(scope)?:`. `ci` and `style` were shipping on `main` before
+  they were in this list (`observed` 2026-09-11: 3 commits each); the branch-prefix rule under **pr**
+  mirrors this set, so the two stay in step. Scopes in use: the surface or package touched (`shared`,
+  `api`, `db`, `rider`, `driver`, `dispatch`, `admin`, `spikes`, `skills`).
 - Reference the GitHub issue in the subject or body when one exists (`#N`).
 - Commits end with the standard trailers (`Co-Authored-By: Claude … <noreply@anthropic.com>` and the
   `Claude-Session:` link) — this repo keeps them; do not strip them.
@@ -23,7 +25,12 @@
 ## pr
 
 **Mechanical (regex-checkable):**
-- Base branch is `main`; head is a `feature/<kebab-slug>` branch — never PR from `main` itself.
+- Base branch is `main`; head is `<prefix>/<kebab-slug>` — never PR from `main` itself. The prefix mirrors
+  the commit tag the branch's work carries — `feat` takes `feature/`, every other tag is its own name
+  (`fix/`, `docs/`, `chore/`, `test/`, `ci/`, `refactor/`) — plus `spike/` and `probe/` for throwaway
+  exploration that lands no product code. `observed` 2026-09-11 across all 99 PRs the repo has ever had:
+  `feature` 50, `docs` 23, `fix` 10, `chore` 9, `spike` 2, `probe` 2, `ci` 2, `test` 1. `refactor/` is
+  allowed by the mirror rule but has never been used; the other seven are each attested above.
 - PR body contains the sections: `## Summary`, `## What changed`, `## Validation`.
 - PR body ends with the standard "Generated with Claude Code" footer and session link — keep it.
 
