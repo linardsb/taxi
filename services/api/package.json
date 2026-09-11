@@ -35,7 +35,7 @@
     "@socket.io/redis-adapter": "^8.3.0",
     "@taxi/db": "workspace:*",
     "@taxi/shared": "workspace:*",
-    "drizzle-orm": "^0.44.7",
+    "drizzle-orm": "^0.45.2",
     "ioredis": "^5.11.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
