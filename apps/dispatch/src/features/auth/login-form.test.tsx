@@ -89,11 +89,18 @@ describe('LoginForm', () => {
     // Step 2 swaps the input IN PLACE with focus parked on the submit button,
     // whose accessible name silently changes «Sūtīt kodu» → «Pieslēgties».
     // Nothing would announce the new field, and it costs a Tab to reach.
+    //
+    // Retried, not asserted once: `reachCodeStep` waits for the input to be in
+    // the DOM, but the focus is applied by a passive effect that React flushes
+    // on a LATER macrotask. The assertion is right; only reading it on the commit
+    // that inserted the node is wrong, and that gap took `main` red twice (#189).
     render(<LoginForm />);
     await reachCodeStep();
 
-    expect(screen.getByLabelText(formatMessage('lv', 'console.code'))).toBe(
-      document.activeElement,
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText(formatMessage('lv', 'console.code'))).toBe(
+        document.activeElement,
+      ),
     );
   });
 
