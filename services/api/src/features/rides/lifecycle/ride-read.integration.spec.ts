@@ -62,7 +62,6 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
 
   beforeAll(async () => {
     ctx = await createTestApp();
-    await ctx.app.listen(0);
     port = (
       ctx.app.getHttpServer() as { address(): AddressInfo | null }
     ).address()!.port;

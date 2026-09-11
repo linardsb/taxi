@@ -475,6 +475,18 @@ export interface TestApp {
  * that owns them. Serial workers plus each file retiring its rides keep every
  * tick's world single-owner — which is the architecture's own assumption
  * (one process, one sweeper).
+ *
+ * The app LISTENS before it is returned, and specs must not listen again (#193).
+ * supertest's `serverAddress()` binds the server itself whenever `address()` is
+ * null — once per REQUEST, closing it again when the response lands — so an
+ * init-only app cost the suite 630 ephemeral binds per run (`observed`, the
+ * #193 RCA) where listening once costs one per app built. The host argument is
+ * the half that matters: `listen(0)` binds the WILDCARD, and a
+ * wildcard bind over a foreign `127.0.0.1` listener succeeds and then loses the
+ * routing, handing the request to that other process. A loopback-specific bind
+ * either wins (foreign wildcard listener) or fails loudly with EADDRINUSE
+ * (foreign specific listener) — never silently answers from somewhere else.
+ * `src/test-harness.spec.ts` asserts both halves.
  */
 export async function createTestApp(options?: {
   controllers?: Type<unknown>[];
@@ -525,6 +537,7 @@ export async function createTestApp(options?: {
   const app = moduleRef.createNestApplication();
   await options?.configure?.(app);
   await app.init();
+  await app.listen(0, '127.0.0.1');
 
   // THE SELF-CHECK. Seeding a queue the strategy never reads would leave it
   // empty at dispatch time, the strategy would fall back to proximity order,
@@ -599,7 +612,12 @@ export function connectClient(
   token?: string,
   transports: ('websocket' | 'polling')[] = ['websocket'],
 ): Promise<Socket> {
-  const client = io(`http://localhost:${port}`, {
+  // `127.0.0.1`, not `localhost`: the app now binds loopback IPv4 only, and
+  // `localhost` resolves to `::1` first here. Happy Eyeballs (autoSelectFamily,
+  // on by default in Node 20) does reach us either way — but it reaches
+  // whoever answers ::1 FIRST, which is the same wrong-process hole the
+  // loopback bind closes on the HTTP path (#193).
+  const client = io(`http://127.0.0.1:${port}`, {
     auth: token ? { token } : {},
     transports,
     reconnection: false, // a rejected handshake must not retry forever

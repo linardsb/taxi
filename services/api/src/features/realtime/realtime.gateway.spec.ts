@@ -35,7 +35,6 @@ describe('realtime gateway (integration)', () => {
     ctx = await createTestApp();
     // Deliberately NOT RedisIoAdapter: the in-memory adapter is correct for a
     // single-process test. The adapter has its own opt-in spec.
-    await ctx.app.listen(0);
     const http = ctx.app.getHttpServer() as { address(): AddressInfo | null };
     port = http.address()!.port;
 
