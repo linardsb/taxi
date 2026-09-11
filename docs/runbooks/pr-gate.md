@@ -162,7 +162,7 @@ The rule is the **diff**, not a clean audit: HEAD may not report a `pnpm audit
 
 | Figure | Value | Provenance |
 |---|---|---|
-| Backlog at `main` (`6d72261`) | 66 advisory ids over 1,013 production dependencies; 2 critical, 46 high, 17 moderate, 1 low | `observed` 2026-09-10, `pnpm audit --prod --json` at `6d72261`, re-derived in the PR #167 review: `.advisories \| length` = 66 and the per-id severities sum to 66. **Not** `metadata.vulnerabilities`, a separate counter that reads 2/47/18/1 and sums to 68 — earlier copies of this row mixed the two (F9). The gate diffs ids and never reads severity. |
+| Backlog at `main` (`6d72261`, still 66 at `6819d25`) | 66 advisory ids over 1,013 production dependencies; 2 critical, 46 high, 17 moderate, 1 low | `observed` 2026-09-10, `pnpm audit --prod --json` at `6d72261`, re-derived in the PR #167 review: `.advisories \| length` = 66 and the per-id severities sum to 66, and again on 2026-09-11 at `6819d25` (the lockfile had not moved between them). **Not** `metadata.vulnerabilities`, a separate counter that reads 2/47/18/1 and sums to 68 — earlier copies of this row mixed the two (F9). The gate diffs ids and never reads severity. **This row is the pre-#180 baseline; §2.1 is what the backlog is now.** |
 | Pinning `lodash@4.17.20` alone | 5 new ids (GHSA-35jh-r3h4-6jhm high, GHSA-r5fr-rjxr-66jc high, GHSA-29mw-wpgm-hmr9, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg moderate); 66 at base, 71 at HEAD; exit 1 in 2.4 s | `observed` 2026-09-10, scratch worktree off `6d72261` |
 | Unchanged lockfile | exit 0 in 0.04 s without auditing | `observed`, same session |
 | An added `ignore:` under `audit:` in `pnpm-workspace.yaml`, lockfile unchanged | exit 1 in 0.04 s, before the lockfile short-circuit and before any audit | `observed` 2026-09-10, scratch worktree off `main` at `aff34b4`, three runs, 0.04 s each. This row read "0.06 s" until #174: with the guard sitting *below* the short-circuit, this exact case — ignore list added, lockfile untouched — exited **0** (`observed`, same fixture, `main`'s script), so the 0.06 s came from a run whose lockfile had also changed (`derived`: that was the only path to the guard). |
@@ -188,9 +188,135 @@ why it does not apply, so the exception is on the most-read surface and
 reviewable. If the advisory is real and unfixable, the dependency is the
 question, not the gate.
 
-**Working the backlog down** is a separate chore, filed at PR A's merge
-(`chore(deps): work down the pnpm audit --prod backlog, next critical first`).
-Removing an advisory is always green here: the diff lists additions only.
+**Working the backlog down** is #180, filed after #165 T7 rather than at PR A's
+merge as the first draft of this section claimed. Removing an advisory is always
+green here: the diff lists additions only. §2.1 is the ledger.
+
+### 2.1 The backlog work-down (#180)
+
+Four PRs, one dependency family each. They were **opened** in parallel off the same
+`main` and every one measured 66 at base; they **merged** sequentially, and each merge
+moved the base under the next one, so three of the four were rebased and re-gated. The
+ledger is the merged chain below, not the four opening runs — those describe a tree that
+no longer exists. Plan: `.claude/plans/deps-audit-backlog-180.md`.
+
+| PR | Family | Base → head | Merged as |
+|---|---|---|---|
+| #182 | `next` 16.2.10 → 16.3.4 (`apps/dispatch`) | 66 → 51 | `1a9e5a9` |
+| #184 | `drizzle-orm` 0.44.7 → 0.45.2 (`db` + `services/api`) | 51 → 50 | `c3feb7c` |
+| #183 | `multer` → 2.3.0, `qs` → 6.16.0 (`services/api`, overrides) | 50 → 43 | `b30051e` |
+| #185 | the Expo build-time leaves (11 overrides) | 43 → 3 | `0b07c03` |
+
+What each one took out:
+
+| PR | Ids | Detail |
+|---|---|---|
+| #182 | 15 | **both criticals** (`GHSA-p293-qw3h-jr36`, `GHSA-2xp9-vwfh-vxw4`, Next.js unauthenticated RCE), 7 high, 6 moderate. By module: `next` 11, `sharp` 2, `postcss` 2 |
+| #184 | 1 | high: `GHSA-gpj5-g38j-94v9`, SQL injection via unescaped `sql.identifier()` / `sql.as()` |
+| #183 | 7 | `multer` 5, `qs` 2 — 3 high, 3 moderate, 1 low, and that low was the last one in the tree |
+| #185 | 40 | `@xmldom/xmldom` 23, `brace-expansion` 5, `js-yaml` 4, `nanoid` 2, `browserslist` 2, `postcss` 2, `uuid` 1, `baseline-browser-mapping` 1 — 33 high, 7 moderate. By path root: 32 under `expo`, 5 under `expo-router`, 3 under `next` |
+
+Provenance differs by row and it matters. #182's 66 → 51 is its **opening** run at
+`77680a1`: it merged first and was never rebased. #184's 51 → 50 (`f5dfc60`), #183's
+50 → 43 (`d5c3442`) and #185's 43 → 3 (`79a3728`) are each at that PR's **rebased** head.
+All four are `observed` 2026-09-11, `.github/scripts/audit-diff.sh origin/main`, exit 0,
+"none new".
+
+**The four PRs' opening figures do not add up to the endpoint, and the reason is not
+double-counting.** Measured independently against the 66-id base they cleared 15, 7, 1
+and 38 — each `observed` by auditing that branch's own `pnpm-lock.yaml` in isolation (the
+step-3 method `audit-diff.sh` itself uses) and `comm`-ing the key sets against the base's.
+The four sets are pairwise **disjoint**: all six intersections are empty and the union is
+61, equal to the sum. So the naive residue is 66 − 61 = 5, and those five are nameable —
+`image-size` ×2, `decode-uri-component` ×1, and `postcss`'s `GHSA-r28c-9q8g-f849` and
+`GHSA-fxqj-rqcc-2cmp`. The observed residue is **3**. The sum *understates* what merging
+achieves, because two of the five are clearable only in **combination**, which no single
+PR's own measurement can see:
+
+- All four `postcss` ids read against `apps__dispatch>next>postcss` at 8.4.31 at
+  `6819d25` — `pnpm audit` prints one path per advisory and that is the one it picked.
+- #182 moves `next`'s postcss to 8.5.23, satisfying all four patched ranges. Two of them,
+  `GHSA-qx2v-qp2m-jg93` (`>=8.5.10`) and `GHSA-6g55-p6wh-862q` (`>=8.5.12`), are also
+  satisfied by the other copy in the tree, `@expo/metro-config`'s 8.5.16 — so they leave
+  outright and count in #182's 15.
+- The other two, `GHSA-r28c-9q8g-f849` (`>=8.5.18`) and `GHSA-fxqj-rqcc-2cmp`
+  (`>=8.5.23`), are **not** satisfied by 8.5.16. They did not leave; they re-attached to
+  the expo path.
+- #185's `@expo/metro-config>postcss` → 8.5.28 clears exactly those two. Against the
+  66-id base it could not, because there they still read as `next`'s, where an override
+  scoped to `@expo/metro-config` does not reach. That is why #185 measured 38 alone and
+  cleared 40 once rebased, and it is the whole of the 5-versus-3 gap.
+
+Use the sequential chain, never the sum. And observe the endpoint rather than deriving
+it — a combination effect is invisible to every PR that measures itself alone:
+
+```bash
+pnpm audit --prod --json | jq '.advisories | length'
+```
+
+**Before reading any number here: the gate counts npm advisory keys, not distinct
+GHSAs.** `audit-diff.sh` diffs `.advisories | keys[]` and reports `.advisories | length`,
+and `pnpm audit` emits one key per affected version *range* — so a package carried at two
+majors reports the same GHSA under two keys. At `6819d25` the 66 keys are only **53
+distinct GHSAs**: 13 are doubled, 9 of them `@xmldom/xmldom` (0.8.x and 0.9.x), 2
+`brace-expansion` (1.x and 5.x), 2 `js-yaml` (3.x and 4.x) — exactly the packages #185
+needed a separate override per major for. This is not a defect: two ranges really are two
+things to fix. But "66 advisory ids" and "66 vulnerabilities" are different statements and
+the second is wrong. Every figure in §2.1 and §2.2 is a key count (`observed` 2026-09-11,
+`jq '.advisories | keys[]'` against `jq '[.advisories[].github_advisory_id] | unique'` on
+the same audit).
+
+**An override is not a suppression.** #183 and #185 use `pnpm.overrides`, which is the
+last resort of three (direct manifest bump → parent-package bump → override) and is
+reached when the parent pins an exact vulnerable version and has no release that moves
+it. It changes the *resolved version*, so the vulnerable code leaves the tree and the id
+goes with it. The guard in `audit-diff.sh` refuses `ignoreGhsas`, `ignoreCves`,
+`audit.ignore`, a yaml `ignore:` key and `registry=`; an override is none of those.
+
+pnpm matches an override *selector* against the **declared range**, not the resolved
+version, so a selector that binds nothing fails silently — and "it bound when the PR was
+opened" is worth nothing once the base has moved under it. #185 re-read all eleven
+resolved versions out of the regenerated lockfile after its rebase, not only before its
+first commit. That same move invalidated a *justification* without invalidating the line
+it justified: `nanoid`'s plain-key override was defended by "the tree holds exactly one
+version", which #182 falsified by adding `nanoid@3.3.19` beside expo's 3.3.15. The
+override stayed correct; the sentence did not. Re-read the reasons on a rebase, not just
+the numbers.
+
+### 2.2 The residue — what stays, and why
+
+**3 ids remain at `main` (`0b07c03`): 0 critical, 2 high, 1 moderate, 0 low, over 1,018
+production dependencies** — `observed` 2026-09-11, `pnpm audit --prod --json`,
+`.advisories | length` = 3 with the per-id severities summing to 3. Here the
+`metadata.vulnerabilities` counter agrees at 3; at the 66-id baseline it did not, reading
+68 (see the baseline row above). All 3 keys are 3 distinct GHSAs. None is a suppression:
+each is recorded here because no released version fixes it, or because the only fix
+cannot be verified by anything this repo runs.
+
+| Id(s) | Severity | Why it stays |
+|---|---|---|
+| `GHSA-w3rx-r6r6-pgpr`, `GHSA-5p2g-fcmc-qvqq` (`image-size@1.2.1`) | high, cvss 7.5 | **No released version fixes either.** `vulnerable_versions` `<=2.0.2`, `patched_versions` `<0.0.0`, npm latest 2.0.2. Nor does the parent move: the only path is `expo>…>metro@0.87.0>image-size`, and `metro@latest` **is** 0.87.0 and still declares `image-size: ^1.0.2` (`observed` 2026-09-11, `npm view metro@latest dependencies.image-size`). It runs at bundle time inside Metro, sizing local asset files that ship in the repo; nothing attacker-supplied reaches it |
+| `GHSA-vcc3-ghjq-m6fr` (`decode-uri-component@0.2.2`) | moderate | The only fixed release, 0.5.0, is `"type": "module"` with no CJS condition in its `exports`; its only consumer here is `query-string@7.1.3`, which is CJS, and `query-string@8`+ is ESM-only too (`observed` 2026-09-11). The only thing that would exercise an override is a Metro bundle, which the gate never builds — a green gate would say nothing about whether `expo-router`'s query parsing still works |
+
+**A reading trap this section has to name.** `pnpm audit` prints **one** path per
+advisory, so a package under several parents is understated. `nanoid` showed this
+across the chore: it read as `next`'s at the 66-id base and as `expo`'s after #182,
+being under both. Do not infer "which PR owns this id" from `paths` alone — and do not
+infer "this override removes no id" from a path either, which is the mistake #185's own
+body made about `postcss` until the rebase corrected it.
+
+**And one artefact that is not a vulnerability at all.**
+`@testing-library/react-native` is a **peerDependency** of `expo-router`, satisfied from
+each app's `devDependencies`, so pnpm's `--prod` walk pulls jest's whole tree into the
+production graph. Some of the `js-yaml` and `brace-expansion` ids #185 cleared arrived
+that way. RNTL never ships in a built app. The packages are real entries in the lockfile
+and the gate is right to see them; the *risk* they imply is not real.
+
+**The issue's acceptance criterion was re-read, not met as written.** #180 said "0
+critical and 0 high". `image-size` makes the second half unreachable by bumping, so it
+reads as **0 critical, and 0 high that any released version clears**, with the remainder
+in the table above (`gh issue comment` on #180, 2026-09-11). The first half is met
+outright: 0 critical at `0b07c03`, `observed`.
 
 ## 3 · `codeql`
 
