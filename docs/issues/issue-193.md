@@ -14,7 +14,7 @@
 |--------|-------|-----------|
 | Severity | Medium | No production code is implicated and it has never been seen in CI (0 of 9 failures in 200 runs); the cost is a wasted local gate run per flake, plus the standing risk that a real regression gets dismissed as "the flake". |
 | Complexity | Low | The change is one line in `test/harness.ts` plus removing nine now-redundant `app.listen(0)` calls. No `src` file moves. |
-| Confidence | **Medium** | The *churn* is proven and the ordering hypothesis is refuted, both with captured runs. What is **not** proven is the final step — why one connection out of ~630 dies. The fix removes the churn rather than fixing that race, so it is a remedy by elimination. A human should read the "What is still open" section before the fix is treated as closed. |
+| Confidence | **Medium** | The churn is proven, the ordering hypothesis is refuted, and the fix holds over 11 consecutive gates (p = 0.025 against the clean-tree rate) — all from captured runs. What is **not** proven is the final step: why one connection in ~630 dies. The fix removes the churn rather than fixing that race, so it is a remedy by elimination. Read "What is still open" before treating this as closed. |
 
 > Two reds were captured and instrumented in this investigation; one of them caught the failing request in the act. Everything labelled `observed` names the run that produced it. Nothing here is inherited from #127, #157 or the issue body.
 
@@ -28,7 +28,7 @@
 
 **Symptoms:**
 - `socket hang up` / `ECONNRESET` on a single request, no pattern in which test.
-- `Parse Error: Expected HTTP/, RTSP/ or ICE/` (reported historically; not reproduced here).
+- `Parse Error: Expected HTTP/, RTSP/ or ICE/` — **reproduced** (`x02`, `rides.integration` › "books for the authenticated rider, ignoring a smuggled riderId"). The client read bytes that were not an HTTP response at all, which is a stronger statement than a reset: the socket was carrying something else.
 - Occasionally a hang instead of a failure — the repo has no `--forceExit`, so jest waits on open handles.
 
 ## Reproduction
@@ -55,9 +55,35 @@ All runs in `/Users/Berzins/taxi-worktrees/wt-193`, branch `investigate/api-gate
 | `a01`–`a03` | api suite alone | X | GREEN ×3, 43–46 s |
 | `L01`–`L03` | api suite alone, 8 CPU hogs | default | GREEN ×3, 70–75 s |
 | `b02` | api suite alone, candidate fix applied | default | GREEN, 40 s |
-| `f01`–`f06` | full gate, candidate fix applied | X **pinned** | GREEN ×6, 79–98 s, `Tasks: 22 successful, 22 total` |
+| `f01`–`f06` | full gate, fix applied, probes wired | X **pinned** | GREEN ×6, 79–98 s, `Tasks: 22 successful, 22 total` |
+| `f07`–`f11` | full gate, fix applied, **probes unwired** | default | GREEN ×5, 74–76 s, 22/22 |
+| `g00` | api alone, `REDIS_TEST_URL` set, **no** fix | default | GREEN, 76/76 suites, 721/721 tests |
+| `g02` | api alone, `REDIS_TEST_URL` set, fix applied | default | GREEN, 76/76 suites, 721/721 tests, 19 binds |
+| `g01` | api alone, `REDIS_TEST_URL` set, fix applied | default | **RED** — and *not* this defect, see below |
+| `x01` | full gate, clean tree, **no** fix | default | **HUNG** — killed at 420 s; the stall variant, below |
+| `x02` | full gate, clean tree, **no** fix | default | **RED** 87 s — `rides.integration`, `Parse Error: Expected HTTP/, RTSP/ or ICE/` |
 
 Discarded, not counted: `r02`–`r04`, where the instrument itself failed `@taxi/api#lint` and turbo killed the test task mid-run.
+
+**`g01` is a different fault and is worth recording separately.** It came back `Test Suites: 8 failed, 68 passed`, `Tests: 50 failed, 671 passed`, first failure `expected 201 "Created", got 409 "Conflict"` on `POST /drivers/me/vehicles`. A concurrent session working in `taxi-worktrees/wt-124` independently reported the same 409 burst across four integration specs in the same window and attributed it to this session's jest loop. `g02`, the identical command once the machine was quiet, is 721/721. So that is the shared-test-database collision `CLAUDE.md` already documents — *"integration runs are mutually destructive across sessions"* — not this issue. It is a **409 on a write**, where this issue is a **`socket hang up` on a connection**: the two are distinguishable at a glance, and conflating them is how #127 got its wrong diagnosis.
+
+### The hang variant, captured — `x01`
+
+The issue notes that a red run sometimes presents as a hang instead. `x01` caught one on a clean tree (harness reverted, no fix, the instruments present but **unwired**), and it is worth its own paragraph because it does **not** look like the reset variant:
+
+- `tracking.integration.spec.ts` took **81.8 s** against a normal 2-4 s, and **four consecutive tests each failed with `Exceeded timeout of 20000 ms`**. 4 x 20 s = 80 s, so the file's whole excess is those four stalls. `observed`.
+- **No `socket hang up` anywhere in the run** (`grep -c` = 0), and no 409s — the four `409` matches in the log are UUID substrings and one dispatch test's duration, so this is not the cross-session database collision either.
+- The suite then *finished* — `Tests: 4 failed, 35 skipped, 682 passed` — and jest printed **"Jest did not exit one second after the test run has completed."** That is what converts a red into a hang: with no `--forceExit`, turbo waits on a jest that will not leave. The issue is right to want that kept.
+- Every other package passed (`rider` 140/140, `driver` 218/218).
+
+**What this shows and what it does not.** It shows the hang is a red run plus a jest that cannot exit, not a separate disease — and that the same file can fail by *stalling* rather than by being reset. A stall fits the same shared-server churn (a connect that is accepted by nobody waits for the test timeout instead of getting an RST), but that is a reading, not a measurement: nothing here observed the stalled request's socket. The four stalls also cluster in this file's maps-seam tests, which is a pattern this investigation has not explained.
+
+Two consequences for the fix:
+
+1. AC #3's five clean runs must watch for **both** shapes. None of the eleven green runs with the change contains a stall, a reset or a parse error.
+2. If the stall survives the fix, it is a second fault and deserves its own ticket rather than being folded into this one.
+
+It also revises one earlier line: the per-teardown handle diff showing no accumulation (0-7, ending lower than it starts) remains true, and jest's exit-time complaint does not contradict it — handles held by four stuck requests appear *after* the last file's teardown, so they are a consequence of the failure, not evidence of the leak the issue went looking for.
 
 ## Root Cause
 
@@ -149,7 +175,13 @@ Order is not irrelevant — it is not the cause. Jest's sequencer sorts by file 
 
 ## Impact Assessment
 
-**Scope:** local full-gate runs, roughly 1 in 5 (`observed`: 2 of 12 valid runs this session; the issue records 3 of 7 in the #189 session — the two denominators are not comparable and are not combined).
+**Scope:** local full-gate runs, **4 bad in 14** on a clean tree this session (`observed`: `r01` reset, `p01` reset, `x01` stall-into-hang, `x02` parse error). The api suite alone reproduced it **0 times in 6**, three of those against 8 saturating CPU hogs — so it needs the other turbo tasks running, not merely a loaded machine. The issue's #189 session recorded 3 of 7; that denominator is not comparable and is not combined.
+
+**A causal story I proposed and then had to withdraw.** `x01` and `x02` failed back to back, and a peer session had just reported a database collision, so I wrote up a "contention window" in which a second Claude session raised the rate. Checking rather than assuming: `lsof -d cwd` on every live `turbo`/`jest`/`vitest` process returned `wt-193` for all of them, and `wt-124` had no file change in 40 minutes. The peer was idle. The two consecutive failures have no identified cause beyond variance, and the earlier quiet-machine screen that made them look special was itself broken — it grepped for `turbo run` and counted **this** session's gate, because the worktree path is not in that command line.
+
+The bad runs do cluster (`r01` was the session's first run; `x01`/`x02` were consecutive) and this investigation has not explained the clustering.
+
+All three symptom shapes have now been seen on a clean tree: a reset (`r01`, `p01`), a stall that becomes a hang (`x01`), and a parse error (`x02`).
 
 **Not CI, so far.** `observed`: across the last 200 GitHub Actions runs (2026-08-11 to 2026-09-11; 190 success, 9 failure, 1 cancelled), `gh run view --log-failed` on all nine failures matches `socket hang up` or `Parse Error: Expected` **zero** times. The two recent `main` failures were `@taxi/dispatch#test` and a permissions error in the ready job. The mechanism is present on a runner too — the same 630 binds happen there — but the failure has never been recorded in CI. That fits a contention-sensitive fault: this machine runs the gate against a full desktop workload, a runner does not. It also means a green CI run is not evidence the fix worked; the five clean local runs in AC #3 are.
 
@@ -167,9 +199,19 @@ Make every test app listen once, so supertest never binds. One line in the harne
 
 `observed` (`b02`, api suite alone with the change): **630 binds → 17** — exactly one per spec file that builds an app, 17 of them — with `Tests: 35 skipped, 686 passed, 721 total`, exit 0. 630 / 17 = 37x less of the churn the root cause is made of.
 
-**Validation run with the change in place** — `f01`-`f06`, six consecutive full gates, order pinned to X (the order both reds used), each from cleared `dist`/`.next`: **6 green**, 79-98 s, `Tasks: 22 successful, 22 total`, and **17 binds on every one of the six**.
+**Validation with the change in place — 11 consecutive green full gates**, each from cleared `dist`/`.next`, `Tasks: 22 successful, 22 total` every time:
 
-Read that honestly. At this session's `observed` red rate of 2 in 12, six consecutive greens happen by luck about a third of the time (`derived`: (10/12)^6 = 0.33), so the colour is supportive, not conclusive. What is conclusive is mechanical and repeated six times: the bind/unbind churn the root cause is made of is gone, 630 to 17, with no test lost.
+| Runs | Setup | Result |
+|---|---|---|
+| `f01`-`f06` | order pinned to X (the order both reset-reds used), probes wired | GREEN x6, 79-98 s, **17 binds each** |
+| `f07`-`f11` | default order, **probes entirely unwired** — the harness change is the only difference from stock | GREEN x5, 74-76 s |
+| `g02` | api alone, `REDIS_TEST_URL` set | GREEN, 76/76 suites, 721/721 tests |
+
+`f07`-`f11` are the cleaner half: their probe logs are **0 bytes**, so nothing but the one-line harness change was in play, and they run 74-76 s against the instrumented 79-98 s.
+
+`derived`, and now worth something: against the clean-tree rate of 4 bad in 14, eleven consecutive greens happen by luck with probability (10/14)^11 = **0.025**, about 1 in 40. The equivalent figure after only six runs was 0.13, which is why six was not claimed as proof. Two independent lines now agree: the statistical one above, and the mechanical one that does not depend on luck at all — the churn the root cause is made of drops 630 to 17 on every instrumented run, with no test lost.
+
+This is evidence the fix works. It is still not an explanation of why one connection in 630 dies; see "What is still open".
 
 ### Files to modify
 
@@ -195,7 +237,8 @@ Read that honestly. At this session's `observed` red rate of 2 in 12, six consec
 
 - A listening app holds a port for the whole file. Seventeen ports across a whole run, against 630 bind/unbind cycles today — strictly less pressure on the ephemeral range, not more.
 - `createTestApp`'s `configure` hook installs custom WebSocket adapters before `init()`; listening after `init()` does not disturb that — `observed` for `realtime.gateway.spec.ts`, `driver-location.gateway.spec.ts` and `redis-io.adapter.spec.ts`'s **ungated** block (`b02`, `f01`-`f06`).
-- **The gated half of `redis-io.adapter.spec.ts` has not been exercised under the change.** Its `nodeA`/`nodeB` apps at `:50`-`:51` sit inside `describeWithRedis`, which is `describe.skip` without `REDIS_TEST_URL`; every run in this investigation reported `2 skipped` suites / `35 skipped` tests, so those two `app.listen(0)` calls — the two most likely to throw under the fix — have never run. CI sets the variable, so the first PR run is where that would surface. `expected`, not observed: `REDIS_TEST_URL=redis://localhost:6381 pnpm --filter @taxi/api test` settles it in one run, and is Testing requirement #3.
+- **The gated half of `redis-io.adapter.spec.ts` needed its own run, and got one.** Its `nodeA`/`nodeB` apps at `:50`-`:51` sit inside `describeWithRedis`, which is `describe.skip` without `REDIS_TEST_URL`, so the two `app.listen(0)` calls most likely to throw under the fix were skipped by every other run here (all of which reported `2 skipped` suites / `35 skipped` tests). `observed` (`g02`, `REDIS_TEST_URL=redis://localhost:6381`, fix applied): **`Test Suites: 76 passed, 76 total`, `Tests: 721 passed, 721 total`, exit 0**, with **19** binds — 17 plus the two extra apps that file builds. Baseline `g00`, same command on a clean tree, is also 76/76 and 721/721, so the comparison is like for like.
+  - One qualification on that run: the worktree's `createTestApp` also no-ops a second `listen`, so those two spec-side calls were absorbed rather than executed. The prescribed fix **deletes** them instead, which cannot throw — but the run validates the harness half, not the deletion half.
 - `afterAll(() => ctx.app.close())` already exists in every spec that builds an app, and now also releases the listening socket.
 - **This does not prove the final link.** It removes the conditions rather than fixing the race. If the flake survives, the next candidate is named below.
 
