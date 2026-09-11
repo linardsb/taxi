@@ -46,9 +46,13 @@
 # analysed; the human bypass in docs/runbooks/pr-gate.md §1 is the path for
 # that one PR.
 #
-# What it does NOT catch: anything CodeQL does not query for (the default
-# suite is security-only, high precision; `queries: security-extended` in
-# ci.yml widens it); an alert below the gate's severity; an alert on the base
+# What it does NOT catch: anything CodeQL does not query for (ci.yml asks for
+# `queries: security-extended` since #187 — the default suite it replaced was
+# security-only and high precision, and answered 0 on this tree every run;
+# `security-and-quality` would widen it further and is deliberately not used,
+# because its maintainability rules are not security findings yet would still
+# reach the `rule.severity == "error"` branch below); an alert below the
+# gate's severity; an alert on the base
 # that GitHub tracks as the same alert after the PR moved it; and, through the
 # fallback, an alert the PARENT PR of a stack introduced — the fallback
 # compares against main, which does not carry it until the parent merges, so

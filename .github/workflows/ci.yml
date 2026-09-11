@@ -98,6 +98,12 @@ jobs:
         with:
           languages: javascript-typescript
           build-mode: none
+          # The default suite asks 87 rules and has answered 0 on every run
+          # (#187). `security-extended` adds lower-precision security queries;
+          # NOT `security-and-quality`, whose maintainability rules are not
+          # security findings and would still block a PR through this gate's
+          # `rule.severity == "error"` branch.
+          queries: security-extended
           # `app`/`backend` are the fenced anketa mini-project (CLAUDE.md): a
           # session may not edit them, so a finding there could never be fixed
           # by the loop that reads it. The rest are build outputs.
