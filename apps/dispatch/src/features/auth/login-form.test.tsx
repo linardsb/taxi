@@ -92,7 +92,7 @@ describe('LoginForm', () => {
     //
     // Retried, not asserted once: `reachCodeStep` waits for the input to be in
     // the DOM, but the focus is applied by a passive effect that React flushes
-    // a macrotask later. The assertion is right; only reading it on the commit
+    // on a LATER macrotask. The assertion is right; only reading it on the commit
     // that inserted the node is wrong, and that gap took `main` red twice (#189).
     render(<LoginForm />);
     await reachCodeStep();
