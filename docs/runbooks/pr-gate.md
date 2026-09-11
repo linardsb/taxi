@@ -336,7 +336,11 @@ budget line.
 
 **What the job does.** `github/codeql-action` v4 (`observed`: latest major on
 the releases page, 2026-09-10), language `javascript-typescript`, `build-mode:
-none`, default query suite (security-only, high precision). `paths-ignore`
+none`, query suite **`security-extended`** since #187 — the default suite it
+replaced asked 87 rules and returned 0 results on every run (`observed`
+2026-09-11). `security-and-quality` is deliberately not used: its
+maintainability rules are not security findings, yet they would still fail a
+PR through the gate's `rule.severity == "error"` branch. `paths-ignore`
 drops the fenced anketa mini-project (`app`, `backend`: CLAUDE.md forbids a
 session editing them, so a finding there could never be fixed by the loop
 that reads it) and build outputs. The SARIF is always uploaded, which gives
@@ -408,6 +412,19 @@ Only the diff changes, never the rule. An alert the PR genuinely adds — one
 (`observed` 2026-09-10, `gh` shim, four cases: inherited alert green with the
 warning, added alert red, base `main` unchanged, no fallback analysis red).
 
+**Widening the suite has the same shape as a first run.** The job runs on push
+to `main` and on every PR, so the PR that changes `queries:` is analysed with
+the new suite while `refs/heads/main` still holds an analysis from the old
+one. Every alert the wider suite surfaces is one the base does not carry, and
+the gate calls that new — so a suite change can go red on the PR that makes
+it, for a reason that is structural rather than a finding about that diff.
+Nothing in the script special-cases it, deliberately: the alternative is a
+gate that ignores a class of alert whenever a config line moved. The path is
+the same as below — the bypass (§1), the alerts named in the PR body, and a
+green baseline on `main` from the merge onward. Whether to bypass-and-merge
+(the backlog rides, only additions are red afterwards) or to fix the alerts
+first is a human's call on the real count (#187).
+
 **First-run state.** `main` has no CodeQL analysis until a push to `main`
 runs the job, which happens when PR A merges. Until then the gate on any PR
 treats every open alert at its severity as new. If the tree has none, PR A is
@@ -440,9 +457,11 @@ This is text matching, not a capability boundary — see the note in the intro.
 It makes suppression a deliberate act rather than a convenient one; the
 control that a session cannot rewrite is §5.
 
-**Knobs, all in `ci.yml`, all Linards' call:** `queries: security-extended`
-(more queries, lower precision), the `paths-ignore` list, and the severity
-threshold in the gate (`high`/`critical`/`error` today).
+**Knobs, all in `ci.yml`, all Linards' call:** the query suite (`security-extended`
+today; `security-and-quality` widens it again, and would need the gate's
+`error` branch revisited first — see §3's "What the job does"), the
+`paths-ignore` list, and the severity threshold in the gate
+(`high`/`critical`/`error` today).
 
 ## 4 · The fix loop
 
