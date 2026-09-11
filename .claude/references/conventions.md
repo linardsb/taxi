@@ -10,8 +10,18 @@
 - Subject line uses a conventional tag with an optional scope — imperative, ≤72 chars:
   `feat|fix|docs|refactor|test|chore|ci|style(scope)?:`. `ci` and `style` were shipping on `main` before
   they were in this list (`observed` 2026-09-11: 3 commits each); the branch-prefix rule under **pr**
-  mirrors this set, so the two stay in step. Scopes in use: the surface or package touched (`shared`,
-  `api`, `db`, `rider`, `driver`, `dispatch`, `admin`, `spikes`, `skills`).
+  mirrors this set, so the two stay in step.
+- Scope names what the change is about, in one of two families — `observed` 2026-09-11 over every commit
+  on `main`, 26 distinct scopes. **Product:** the surface, package or feature slice touched — `api`,
+  `dispatch`, `shared`, `driver`, `rider`, `db`, `auth`, `apps`. `admin` belongs here and has never yet
+  been a commit's scope; the surface is real (`apps/dispatch/src/app/admin`), so keep it listed.
+  **Everything else:** the toolchain or process artifact touched — `ci`, `deploy`, `deps`, `config`,
+  `codeql`, `skills`, `rules`, `plans`, `reports`, `reviews`, `runbooks`, `spikes`, `architecture`,
+  `ai-layer`. For an artifact kind take the PLURAL its directory uses: `review`, `report` and `plan`
+  are older spellings of `reviews`, `reports` and `plans`, and only the first pair has settled on its
+  own (singular last used 2026-08-11, plural still current 2026-09-10). That accounts for 25 of the 26;
+  the last is a one-off `fix(test)` (2026-08-05) whose diff is a single `services/api` spec, so it
+  should have been `api` — a test's scope is the surface it tests, never `test`.
 - Reference the GitHub issue in the subject or body when one exists (`#N`).
 - Commits end with the standard trailers (`Co-Authored-By: Claude … <noreply@anthropic.com>` and the
   `Claude-Session:` link) — this repo keeps them; do not strip them.
