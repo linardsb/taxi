@@ -14,7 +14,7 @@
 |--------|-------|-----------|
 | Severity | Medium | No production code is implicated and it has never been seen in CI (0 of 9 failures in 200 runs); the cost is a wasted local gate run per flake, plus the standing risk that a real regression gets dismissed as "the flake". |
 | Complexity | Low | The change is one line in `test/harness.ts` plus removing nine now-redundant `app.listen(0)` calls. No `src` file moves. |
-| Confidence | **Medium** | The churn is proven, the ordering hypothesis is refuted, and the fix holds over 11 consecutive gates (p = 0.025 against the clean-tree rate) — all from captured runs. What is **not** proven is the final step: why one connection in ~630 dies. The fix removes the churn rather than fixing that race, so it is a remedy by elimination. Read "What is still open" before treating this as closed. |
+| Confidence | **High** for the cause, **Medium** for the exact fix. The mechanism is reproduced on demand against the live foreign listeners, and all three symptom strings are accounted for by it. The `'127.0.0.1'` host argument that closes it is reasoned from that probe and has not itself been through a gate run — the 11 green runs used the host-less form. |
 
 > Two reds were captured and instrumented in this investigation; one of them caught the failing request in the act. Everything labelled `observed` names the run that produced it. Nothing here is inherited from #127, #157 or the issue body.
 
@@ -96,40 +96,77 @@ It also revises one earlier line: the per-teardown handle diff showing no accumu
 
 ### Analysis
 
-`request(ctx.app.getHttpServer())` is created once per file in `beforeAll`, but supertest builds a fresh `Test` for **every request**, and each `Test` checks `app.address()`. On an app that never listens, that is null every time, so supertest binds the shared Nest HTTP server to a new ephemeral port for the request and closes it again when the response lands.
+`request(ctx.app.getHttpServer())` is created once per file in `beforeAll`, but supertest builds a fresh `Test` for **every request**, and each `Test` checks `app.address()`. On an app that never listens, that is null every time, so supertest binds the shared Nest HTTP server to a new ephemeral port for the request (`lib/test.js:63`) and closes it again when the response lands (`:143`).
+
+That alone is only churn. What turns churn into a failure is the second half: **`app.listen(0)` binds the WILDCARD address, and this machine has foreign processes holding listeners inside the ephemeral range.**
+
+`observed` — every ephemeral-range listener on this machine (`lsof -nP -iTCP -sTCP:LISTEN`, range `net.inet.ip.portrange` 49152-65535):
+
+| Port | Process | Bind |
+|---|---|---|
+| 49258, 49262 | `brilliant-mcp` (an unrelated MCP server, up 2 d 6 h, cwd `~/Desktop/Linards_current/ux-factory`) | `127.0.0.1` — **specific** |
+| 57525, 57621 | `Spotify` | `*` — wildcard |
+| 51483 | `limactl` | `127.0.0.1` — specific |
+| 63262 | `rapportd` | `*` — wildcard |
+
+A wildcard bind over a foreign **specific** listener SUCCEEDS, and then loses: the kernel routes a connection to `127.0.0.1:P` to the more specific socket. The test's request goes to the other process.
+
+`observed`, run directly against the live squatters:
+
+```
+port 49262: bind SUCCEEDED on :::49262 despite a foreign listener
+   connect to 127.0.0.1:49262 -> ESTABLISHED, no reply in 1.5 s   (a stall)
+port 57621: bind SUCCEEDED on :::57621 despite a foreign listener
+   connect to 127.0.0.1:57621 -> ESTABLISHED, no reply in 1.5 s   (a stall)
+port 57525: bind SUCCEEDED on :::57525 despite a foreign listener
+   connect answered by: "{\"type\":\"Tier1\",\"version\":\"1.0\"}\r\n"
+```
+
+That last line is the whole issue in one string. Spotify answers with JSON. A Node HTTP client reading JSON where a status line should be reports exactly **`Parse Error: Expected HTTP/, RTSP/ or ICE/`**.
+
+**Every symptom shape maps to one outcome of talking to the wrong process:**
+
+| Shape | What the foreign socket did | Seen in |
+|---|---|---|
+| 20 s stall, then a hang | accepted and never replied | `x01` (`brilliant-mcp`) |
+| `socket hang up` / `ECONNRESET` | reset the connection | `r01`, `p01` (port **57621** — Spotify's) |
+| `Parse Error: Expected HTTP/` | replied in another protocol | `x02`; reproduced above on 57525 |
+
+**The `x01` hang was caught still connected.** Its jest process survived the run by 18 minutes, and `lsof` found it holding four ESTABLISHED sockets — all to `127.0.0.1:49262`, all with their far end inside `brilliant-mcp` (pid 8133), which was simultaneously listening there. Four sockets, four tests that each timed out at 20 s, and four handles that stopped jest exiting. `observed`.
 
 **Evidence chain (5 Whys):**
 
 ```
 WHY does a gate run redden?
-  → because one supertest request gets `socket hang up`.
-    evidence: p01 probe — {"ev":"cerr","code":"ECONNRESET","msg":"socket hang up",
+  → one supertest request never gets a valid HTTP response.
+    evidence: p01 — {"ev":"cerr","code":"ECONNRESET","msg":"socket hang up",
               "path":"/rides","port":57621,"reused":false}
 
-WHY did that request fail?
-  → not because it reused a stale pooled socket: `reused:false`, and the whole
-    suite records ONE pooled reuse.
-    evidence: a03 reuse=1, p01 reuse=1 over 630 binds
-  → the socket was fresh, and the server it was aimed at had been bound 1 ms
-    earlier and was closed in the same millisecond.
-    evidence: p01, port 57621 — listen −1 ms, cerr 0 ms, srv-close 0 ms
+WHY? → the request reached a DIFFERENT PROCESS, not the test's own app.
+    evidence: 57621 is Spotify's; x01's hung jest held 4 sockets into
+              brilliant-mcp on 49262, which was listening there
 
-WHY is a server being bound and closed around single requests at all?
-  → because supertest binds per request when the app is not listening.
-    evidence: supertest/lib/test.js:63 and :143
+WHY did it reach another process?
+  → `app.listen(0)` binds the wildcard. Binding the wildcard over a foreign
+    127.0.0.1 listener succeeds, and the kernel then routes 127.0.0.1 traffic
+    to the more specific foreign socket.
+    evidence: the three-port probe above
+
+WHY does that get hit at all?
+  → supertest re-binds per request when the app is not listening, so one run
+    walks 630 ephemeral ports instead of 17.
+    evidence: 630 binds/run, 623 from nine never-listening specs (a03)
 
 WHY is the app not listening?
-  → because `createTestApp` stops at `init()`.
+  → `createTestApp` stops at `init()`.
     evidence: services/api/test/harness.ts:525-527
 
-ROOT CAUSE: the api suite bind/unbind-cycles one shared HTTP server 630 times
-per run, in bursts of ~111 binds/second, and under full-gate contention one of
-those short-lived connections does not survive.
-    evidence: a03 — 630 binds, 630 distinct ports, 623 of them (98.9%) from the
-              nine never-listening specs; p01 — 80 binds in the 0.719 s around
-              the failure, and rides.integration alone doing 115 binds in 2.1 s
-              at a median 8 ms apart
+ROOT CAUSE: the suite takes 630 wildcard ephemeral binds per run on a machine
+whose ephemeral range contains permanent foreign listeners, and a bind that
+lands on one silently hands the test's traffic to Spotify or an MCP server.
 ```
+
+**This also explains the two properties that made the issue confusing.** It never happens in CI (`observed`: 0 of 9 failures in 200 runs) because a fresh runner has no Spotify, no MCP server, no limactl. And the api suite alone almost never does it, while the full gate does, because the gate's concurrent tasks consume ephemeral ports too and push the allocator further across the range.
 
 **Per-file bind counts** (`observed`, a03, attributed by the probe environment's start/end intervals):
 
@@ -195,7 +232,25 @@ All three symptom shapes have now been seen on a clean tree: a reset (`r01`, `p0
 
 ### Strategy
 
-Make every test app listen once, so supertest never binds. One line in the harness, and the nine `ctx.app.listen(0)` calls in specs become redundant.
+Make every test app listen **once**, and on **the loopback specifically**:
+
+```ts
+await app.listen(0, '127.0.0.1');
+```
+
+Both halves matter, and the second is the one that addresses the mechanism rather than the odds:
+
+- **`once`** takes the run from 630 ephemeral binds to 17 — 37x fewer chances to land on a squatted port. That is a probability reduction, and on its own it would leave the fault in place.
+- **`'127.0.0.1'`** removes the failure mode itself. A loopback-specific bind cannot silently lose the routing:
+
+| Foreign listener | wildcard bind (today) | loopback bind (proposed) |
+|---|---|---|
+| specific, e.g. `brilliant-mcp` on `127.0.0.1:49262` | succeeds, then **loses** — traffic goes to them | **EADDRINUSE**, loud and immediate |
+| wildcard, e.g. Spotify on `*:57621` | succeeds, then **loses** — traffic goes to them | succeeds and **wins** — traffic is ours |
+
+`observed`: `listen(49262,'127.0.0.1')` → `EADDRINUSE`; `listen(57621,'127.0.0.1')` → succeeds, and a connection to `127.0.0.1:57621` then reaches our socket, not Spotify's. And the allocator cooperates — **400 consecutive `listen(0,'127.0.0.1')` calls produced 400 distinct ports and hit a squatted one 0 times.**
+
+The nine `app.listen(0)` calls in specs then become redundant and should be deleted.
 
 `observed` (`b02`, api suite alone with the change): **630 binds → 17** — exactly one per spec file that builds an app, 17 of them — with `Tests: 35 skipped, 686 passed, 721 total`, exit 0. 630 / 17 = 37x less of the churn the root cause is made of.
 
@@ -209,15 +264,25 @@ Make every test app listen once, so supertest never binds. One line in the harne
 
 `f07`-`f11` are the cleaner half: their probe logs are **0 bytes**, so nothing but the one-line harness change was in play, and they run 74-76 s against the instrumented 79-98 s.
 
-`derived`, and now worth something: against the clean-tree rate of 4 bad in 14, eleven consecutive greens happen by luck with probability (10/14)^11 = **0.025**, about 1 in 40. The equivalent figure after only six runs was 0.13, which is why six was not claimed as proof. Two independent lines now agree: the statistical one above, and the mechanical one that does not depend on luck at all — the churn the root cause is made of drops 630 to 17 on every instrumented run, with no test lost.
+**The mechanical result is the one that carries this**, because it does not depend on luck: the churn the root cause is made of drops **630 binds to 17** on every instrumented run, with no test lost. That is reproduced on `b02`, `f01`-`f06` and `g02`.
 
-This is evidence the fix works. It is still not an explanation of why one connection in 630 dies; see "What is still open".
+**The probability is weaker than a pooled figure makes it look, and the pooled figure should not be used.** The probe `appendFileSync`s on every listen and close — about 1260 writes per run, in the hot path of the very bind storm under test — and it costs 4-32% wall time (`observed`: instrumented 79-98 s, uninstrumented 74-76 s). So instrumented and uninstrumented runs are not one population, and 11-from-14 pools them:
+
+| Population | Clean tree | With the fix | P(that many greens by luck) |
+|---|---|---|---|
+| probes wired | 2 bad / 12 | 0 bad / 6 | (10/12)^6 = **0.33** |
+| probes unwired | 2 bad / 2 | 0 bad / 5 | base rate degenerate — no figure |
+| ~~pooled~~ | ~~4 / 14~~ | ~~0 / 11~~ | ~~(10/14)^11 = 0.025~~ — **withdrawn** |
+
+Neither honest subset reaches the 1-in-40 that the pooled number claimed. Read the streak as consistent with the fix working, and let the bind count do the arguing.
+
+Both figures measure the `once` half only — every one of those runs used the host-less `app.listen(0)`, so none of them tested the `'127.0.0.1'` argument that actually closes the mechanism.
 
 ### Files to modify
 
 1. **`services/api/test/harness.ts`** (`createTestApp`, after `app.init()`)
-   - Change: `await app.listen(0);`
-   - Reason: supertest's `serverAddress()` only binds when `app.address()` is null. One listen per file makes every later request reuse the already-bound port and skip the `close()` entirely.
+   - Change: `await app.listen(0, '127.0.0.1');`
+   - Reason: supertest's `serverAddress()` only binds when `app.address()` is null, so one listen per file makes every later request reuse the port and skip the `close()`. The explicit host is what stops a bind from silently losing its traffic to a foreign listener — see the table above. Note the 11 green validation runs used `app.listen(0)` **without** the host, so they measured the probability half only; the host argument is reasoned from the direct probe, not from those runs.
 
 2. **The seven spec files that call `ctx.app.listen(0)` themselves — nine call sites** (`dispatch.integration`, `ride-lifecycle.integration`, `ride-read.integration`, `driver-presence.integration`, `driver-location.gateway`, `realtime.gateway`, `redis-io.adapter` — the last has three)
    - Change: drop the now-duplicate call — a second `listen()` throws `Listen method has been called more than once without closing` (`observed`, run `b01`).
@@ -240,15 +305,17 @@ This is evidence the fix works. It is still not an explanation of why one connec
 - **The gated half of `redis-io.adapter.spec.ts` needed its own run, and got one.** Its `nodeA`/`nodeB` apps at `:50`-`:51` sit inside `describeWithRedis`, which is `describe.skip` without `REDIS_TEST_URL`, so the two `app.listen(0)` calls most likely to throw under the fix were skipped by every other run here (all of which reported `2 skipped` suites / `35 skipped` tests). `observed` (`g02`, `REDIS_TEST_URL=redis://localhost:6381`, fix applied): **`Test Suites: 76 passed, 76 total`, `Tests: 721 passed, 721 total`, exit 0**, with **19** binds — 17 plus the two extra apps that file builds. Baseline `g00`, same command on a clean tree, is also 76/76 and 721/721, so the comparison is like for like.
   - One qualification on that run: the worktree's `createTestApp` also no-ops a second `listen`, so those two spec-side calls were absorbed rather than executed. The prescribed fix **deletes** them instead, which cannot throw — but the run validates the harness half, not the deletion half.
 - `afterAll(() => ctx.app.close())` already exists in every spec that builds an app, and now also releases the listening socket.
-- **This does not prove the final link.** It removes the conditions rather than fixing the race. If the flake survives, the next candidate is named below.
+- **The two halves of the fix carry different weight.** `once` is validated over 11 gates but only lowers the odds; `'127.0.0.1'` addresses the mechanism and has not been through a gate. Run it before closing.
 
 ### What is still open
 
-Why one of ~630 short-lived connections is reset has not been established. The captured evidence narrows it to a connection made 1 ms after its server was bound, on a fresh socket, with the close landing in the same millisecond. Remaining candidates, in order:
+Much less than before. The mechanism is identified and reproduced directly against the live squatters, so the three candidates this section previously listed are resolved: it was not a listen-backlog drop, not a TIME_WAIT collision, and not two supertest `Test`s overlapping. It was a foreign process.
 
-1. **A listen-backlog or accept-queue drop** under the burst — untested; needs client-side source-port and `connect`-level instrumentation.
-2. **A TIME_WAIT 4-tuple collision.** The p01 ledger shows server ports advancing by 2 (57619, 57621, 57623 ...), and that is exactly what the allocator does: `observed`, a standalone probe binds `listen(0)` and connects back six times and gets `srv:54351/cli:54352`, `srv:54353/cli:54354`, and so on — server binds and client source ports come from one sequential range, `net.inet.ip.portrange` 49152-65535 on this machine. `derived`: that range holds 65535 - 49152 + 1 = 16384 ports; one api suite run takes 630 server binds plus 630 client sockets = 1260 of them, 7.7% of the range, and under the full gate every other package's tests and builds draw from the same range concurrently. Repeated runs therefore wrap it. Testable by recording `socket.localPort` on connect and checking a failing port against the run's earlier client ports.
-3. **Two supertest `Test`s overlapping on the shared server**, where the first one's `close()` destroys the second's idle socket. `ledger/earnings.integration.spec.ts:69` is the one `Promise.all` over supertest chains in a never-listening spec; `ride-lifecycle.integration.spec.ts:660` and `dispatch.integration.spec.ts:1218,1260` have the same shape but in specs that do listen, so they are safe today.
+What remains:
+
+1. **The proposed `'127.0.0.1'` host argument has not itself been run through the gate.** The 11 green runs used the host-less `app.listen(0)`. `expected`, not observed.
+2. **A squatter that appears mid-run is still unhandled.** `brilliant-mcp` opens ephemeral listeners while it runs; if one appears on a port a test app already holds, behaviour is untested.
+3. **Whether other developer machines have the same shape.** This is machine-specific by nature — Spotify and an MCP server are not universal — which is exactly why CI has never seen it and why "works on CI" is no evidence either way.
 
 ### Testing requirements
 
@@ -267,6 +334,8 @@ COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force   # x
 ## Investigation instruments
 
 Three files, worktree-only, written for this investigation. They are **not** part of the proposed fix; `piv-implement-issue` should decide whether any of them land (the bind counter is the one worth keeping, as the AC #4 assertion above).
+
+**They are committed on this branch as files, but NOT wired in** — `services/api/package.json` and `turbo.json` are untouched, so jest never loads them and they are inert (`observed`: `f07`-`f11` ran with all three present and produced 0-byte probe logs). Any PR carrying the fix will carry these three files unless `piv-implement-issue` drops them deliberately. It should: keep only the bind-count assertion from Testing requirement #4, and delete the rest.
 
 | File | What |
 |---|---|
