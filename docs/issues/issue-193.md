@@ -8,13 +8,15 @@
 - **Reporter**: linardsb
 - **Status**: OPEN
 
+> **2026-09-11 — implemented. This document is the investigation as it stood before the fix ran; the claims it left open are settled below and in `.claude/reports/api-gate-flake-193-report.md`.** Three of them are struck in place rather than deleted, because each names a limit a reader would otherwise re-inherit: the Confidence cell's ungated host argument, the `g02` deletion-half qualification, and "What is still open" item 1. All three are now closed by runs in the report. Nothing else here is revised — where the report and this document disagree about what has been observed, the report is later and wins.
+
 ## Assessment
 
 | Metric | Value | Reasoning |
 |--------|-------|-----------|
 | Severity | Medium | No production code is implicated and it has never been seen in CI (0 of 9 failures in 200 runs); the cost is a wasted local gate run per flake, plus the standing risk that a real regression gets dismissed as "the flake". |
-| Complexity | Low | The change is one line in `test/harness.ts` plus removing nine now-redundant `app.listen(0)` calls. No `src` file moves. |
-| Confidence | **High** for the cause, **Medium** for the exact fix. The mechanism is reproduced on demand against the live foreign listeners, and all three symptom strings are accounted for by it. The `'127.0.0.1'` host argument that closes it is reasoned from that probe and has not itself been through a gate run — the 11 green runs used the host-less form. |
+| Complexity | Low | The change is one line in `test/harness.ts` plus removing nine now-redundant `app.listen(0)` calls. No `src` file moves. **2026-09-11:** as shipped it is also one line in `connectClient` and a new `src/test-harness.spec.ts` — still no `src` source file, but not "one line". |
+| Confidence | **High** for the cause, ~~**Medium** for the exact fix~~ → **High for both, 2026-09-11.** The mechanism is reproduced on demand against the live foreign listeners, and all three symptom strings are accounted for by it. ~~The `'127.0.0.1'` host argument that closes it is reasoned from that probe and has not itself been through a gate run — the 11 green runs used the host-less form.~~ The host argument has now been through ten consecutive green gates, five of them on one frozen tree, and is pinned by an assertion that fails when it is dropped (`observed`, report). |
 
 > Two reds were captured and instrumented in this investigation; one of them caught the failing request in the act. Everything labelled `observed` names the run that produced it. Nothing here is inherited from #127, #157 or the issue body.
 
@@ -303,9 +305,9 @@ Both figures measure the `once` half only — every one of those runs used the h
 - A listening app holds a port for the whole file. Seventeen ports across a whole run, against 630 bind/unbind cycles today — strictly less pressure on the ephemeral range, not more.
 - `createTestApp`'s `configure` hook installs custom WebSocket adapters before `init()`; listening after `init()` does not disturb that — `observed` for `realtime.gateway.spec.ts`, `driver-location.gateway.spec.ts` and `redis-io.adapter.spec.ts`'s **ungated** block (`b02`, `f01`-`f06`).
 - **The gated half of `redis-io.adapter.spec.ts` needed its own run, and got one.** Its `nodeA`/`nodeB` apps at `:50`-`:51` sit inside `describeWithRedis`, which is `describe.skip` without `REDIS_TEST_URL`, so the two `app.listen(0)` calls most likely to throw under the fix were skipped by every other run here (all of which reported `2 skipped` suites / `35 skipped` tests). `observed` (`g02`, `REDIS_TEST_URL=redis://localhost:6381`, fix applied): **`Test Suites: 76 passed, 76 total`, `Tests: 721 passed, 721 total`, exit 0**, with **19** binds — 17 plus the two extra apps that file builds. Baseline `g00`, same command on a clean tree, is also 76/76 and 721/721, so the comparison is like for like.
-  - One qualification on that run: the worktree's `createTestApp` also no-ops a second `listen`, so those two spec-side calls were absorbed rather than executed. The prescribed fix **deletes** them instead, which cannot throw — but the run validates the harness half, not the deletion half.
+  - ~~One qualification on that run: the worktree's `createTestApp` also no-ops a second `listen`, so those two spec-side calls were absorbed rather than executed. The prescribed fix **deletes** them instead, which cannot throw — but the run validates the harness half, not the deletion half.~~ **Closed 2026-09-11**: re-run with the two calls actually deleted and no shim — `observed`, `REDIS_TEST_URL=redis://localhost:6381`, **77 suites / 724 tests passed, exit 0** (76 + 1 and 721 + 3: the whole delta is the new assertion spec).
 - `afterAll(() => ctx.app.close())` already exists in every spec that builds an app, and now also releases the listening socket.
-- **The two halves of the fix carry different weight.** `once` is validated over 11 gates but only lowers the odds; `'127.0.0.1'` addresses the mechanism and has not been through a gate. Run it before closing.
+- **The two halves of the fix carry different weight.** `once` is validated over 11 gates but only lowers the odds; ~~`'127.0.0.1'` addresses the mechanism and has not been through a gate. Run it before closing.~~ **Done 2026-09-11** — ten green gates on the shipped `listen(0, '127.0.0.1')`, zero occurrences of any of the three symptom strings across all ten logs.
 
 ### What is still open
 
@@ -313,7 +315,8 @@ Much less than before. The mechanism is identified and reproduced directly again
 
 What remains:
 
-1. **The proposed `'127.0.0.1'` host argument has not itself been run through the gate.** The 11 green runs used the host-less `app.listen(0)`. `expected`, not observed.
+1. ~~**The proposed `'127.0.0.1'` host argument has not itself been run through the gate.** The 11 green runs used the host-less `app.listen(0)`. `expected`, not observed.~~ **Closed 2026-09-11.** `observed`, ten consecutive green gates on the shipped line, five of them on one frozen tree (`6acff5f`), 22/22 tasks each, 74–78 s. The 11 earlier runs remain evidence for the host-less form only and are not counted with these.
+   - **New, in its place:** the fix *converts* the failure rather than removing it. Against a foreign **specific** `127.0.0.1` listener the bind now throws `EADDRINUSE` in `beforeAll` — loud instead of silently wrong, which is the point, but a red shape no gate here exercised (no squatter held a bound port during any of the ten runs).
 2. **A squatter that appears mid-run is still unhandled.** `brilliant-mcp` opens ephemeral listeners while it runs; if one appears on a port a test app already holds, behaviour is untested.
 3. **Whether other developer machines have the same shape.** This is machine-specific by nature — Spotify and an MCP server are not universal — which is exactly why CI has never seen it and why "works on CI" is no evidence either way.
 
@@ -333,7 +336,7 @@ COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force   # x
 
 ## Investigation instruments
 
-Three files, worktree-only, written for this investigation. They are **not** part of the proposed fix; `piv-implement-issue` should decide whether any of them land (the bind counter is the one worth keeping, as the AC #4 assertion above).
+Three files, worktree-only, written for this investigation. They are **not** part of the proposed fix; ~~`piv-implement-issue` should decide whether any of them land~~ — **decided 2026-09-11: all three deleted.** The AC #4 assertion landed instead as `services/api/src/test-harness.spec.ts`, which counts binds with a `'listening'` listener on the server instance rather than by patching `net.Server.prototype` — precisely because of the instrument defect recorded at the end of this section.
 
 **They are committed on this branch as files, but NOT wired in** — `services/api/package.json` and `turbo.json` are untouched, so jest never loads them and they are inert (`observed`: `f07`-`f11` ran with all three present and produced 0-byte probe logs). Any PR carrying the fix will carry these three files unless `piv-implement-issue` drops them deliberately. It should: keep only the bind-count assertion from Testing requirement #4, and delete the rest.
 
@@ -345,12 +348,21 @@ Three files, worktree-only, written for this investigation. They are **not** par
 
 Also modified in the worktree: `services/api/package.json` (`testEnvironment`, `setupFiles`, `testSequencer`) and `turbo.json` (`SPEC_PROBE_LOG`, `PINNED_ORDER` in `globalEnv`).
 
-**`test/harness.ts` in the worktree carries a shortcut that must NOT land.** To test the candidate without editing nine spec files, `createTestApp` replaces `app.listen` with a resolved no-op after listening once. That silently swallows a real double-listen. The fix should delete the nine spec-side calls instead and leave `app.listen` alone.
+**`test/harness.ts` in the worktree carries a shortcut that must NOT land.** To test the candidate without editing nine spec files, `createTestApp` replaces `app.listen` with a resolved no-op after listening once. That silently swallows a real double-listen. The fix should delete the nine spec-side calls instead and leave `app.listen` alone. **2026-09-11: it did not land.** The shortcut was already reverted when implementation started (`observed`: a clean `git status`, and `git diff origin/main...HEAD` carrying only this document and the three instruments), and the nine calls are deleted in the shipped diff.
 
 **One instrument defect is worth recording, because it nearly shipped a false figure.** The first `net-probe.ts` wrapped `net.Server.prototype.listen` on every `setupFiles` run. The prototype is process-global but jest gives each spec file its own **copy** of `process.env`, so the wrappers stacked and each layer reported a different spec name for the same event. That manufactured "6952 binds over 630 ports, 629 bound by more than one spec file" — a clean, plausible, entirely false cross-spec-contamination result. The real figures are 630 binds on 630 distinct ports and zero cross-spec ports. The probe now patches once per process and carries no spec name at all; attribution is done by timestamp against the environment's start/end records.
 
 ## Next Steps
 
-1. Review this RCA — in particular the Medium confidence and "What is still open".
-2. `/piv-implement-issue 193` to apply the harness change, drop the nine now-duplicate `app.listen(0)` calls, and add the bind-count assertion.
-3. `/piv-commit`, then five consecutive clean gate runs from cleared output before the issue is closed.
+1. ~~Review this RCA — in particular the Medium confidence and "What is still open".~~ Done; the three claims that were open are struck above.
+2. ~~`/piv-implement-issue 193` to apply the harness change, drop the nine now-duplicate `app.listen(0)` calls, and add the bind-count assertion.~~ **Done 2026-09-11** — `.claude/reports/api-gate-flake-193-report.md`.
+3. ~~`/piv-commit`, then five consecutive clean gate runs from cleared output before the issue is closed.~~ The gates ran **before** the commit, not after: ten of them, five on one frozen tree. `/piv-commit` and `/piv-create-pr` are what remain.
+
+### Acceptance, against the issue's four criteria
+
+| AC | Status |
+|---|---|
+| 1. Spec order captured on a red and a green run of the same tree | Met by the investigation — `r01` vs `a01`–`a03` byte-identical, and `p01`–`p04` pinned. |
+| 2. Leaking spec named, or the ordering hypothesis refuted and the next candidate stated | Refuted explicitly (same order, one red and three green), and the real cause named: wildcard binds losing to foreign ephemeral-range listeners. |
+| 3. `pnpm --filter @taxi/api test` green alone **and** the full gate clean 5× from cleared output | `observed` — 77/724 with the Redis gate on, 75-of-77 with it off; gates 5/5 green on frozen tree `6acff5f` (10/10 counting both batches). |
+| 4. `--forceExit` not used to close it | `observed` — the string appears in no jest config, package script or workflow; the four repo hits are prose. |
