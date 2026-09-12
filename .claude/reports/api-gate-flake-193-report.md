@@ -3,7 +3,7 @@
 **Issue**: api: any integration spec can redden or hang the full gate while the suite alone is green
 **URL**: https://github.com/linardsb/taxi/issues/193
 **RCA**: `docs/issues/issue-193.md` (this branch, `239251d` → `40891c2`)
-**Branch**: `investigate/api-gate-flake-193` in `/Users/Berzins/taxi-worktrees/wt-193`
+**Branch**: `fix/api-test-harness-listen-193` (opened as `investigate/api-gate-flake-193`) in `/Users/Berzins/taxi-worktrees/wt-193`
 
 **Root cause** (from the RCA): `createTestApp` returned an app that had `init()` but
 never `listen()`, so supertest bound the shared Nest server itself once per REQUEST —
@@ -78,7 +78,14 @@ Reverting each half and re-running `src/test-harness.spec.ts` (then restoring):
 |---|---|
 | `await app.listen(0, '127.0.0.1')` (shipped) | 3 passed |
 | `await app.listen(0)` — host dropped | **1 failed**: `address` was `"::"`, expected `"127.0.0.1"` |
-| no `listen` at all — pre-fix | **2 failed**: bind count `3` (one per request), `address()` null |
+| no `listen` at all — pre-fix | **2 failed**: `server.listening` was `false` at `:55`, `address()` null at `:71` |
+
+`observed` 2026-09-12, re-run against the shipped spec for the PR #194 review (F3).
+**The bind counter is never reached on the pre-fix row**: `:55`'s
+`expect(server.listening).toBe(true)` guard was added after the figure above was first
+taken, and it short-circuits case 1 three lines before `countBinds()` is read. An
+earlier draft of this table and of the PR body read "bind count `3`" — true of the
+pre-guard spec at `56ff412`, not of the one that ships.
 
 Without this, the spec could have been green for the wrong reason. The failure case
 is not decoration — it is the only thing that distinguishes "binds once" from "the
@@ -106,6 +113,27 @@ so every run in the RCA's investigation skipped them. The RCA's own `g02` ran wi
 worktree's no-op `listen` shortcut, which **absorbed** those calls rather than exercising
 their deletion (RCA line 306 says so). The run above is the first to execute that block
 with the calls actually gone.
+
+### The review-fix head — the only gate stamped on a tree that contains F1
+
+Every gate below ran before the PR #194 review. F1 moved a line in `test/harness.ts`,
+so none of them describes the tree that now ships. `observed` 2026-09-12,
+`record-gate.sh --clean` at `5aa4159` with `COMPOSE_PROJECT_NAME=taxi` and
+`REDIS_TEST_URL=redis://localhost:6381`, exit 0:
+
+```
+Tasks:    22 successful, 22 total
+Cached:   0 cached, 22 total
+Time:     1m28.912s
+```
+
+`@taxi/api` `77 passed, 77 total` suites / `724 passed, 724 total` tests — identical
+counts to the pre-review head, which is the point: F1 changes when the harness binds,
+not what any test asserts. The 1m28.912s sits with the review's own 1m27.808s and the
+author's 1m29.665s, all three `record-gate.sh --clean`; the 74–78 s batches below used
+the plain clearing script, and that gap is still unexplained and still not load-bearing.
+An earlier run of this same source at `80bafe6`, before PR #194's squash-merge forced a
+re-branch off `main`, gave 1m30.276s.
 
 ### Five consecutive full gates from cleared output — AC #3
 

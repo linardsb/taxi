@@ -537,7 +537,6 @@ export async function createTestApp(options?: {
   const app = moduleRef.createNestApplication();
   await options?.configure?.(app);
   await app.init();
-  await app.listen(0, '127.0.0.1');
 
   // THE SELF-CHECK. Seeding a queue the strategy never reads would leave it
   // empty at dispatch time, the strategy would fall back to proximity order,
@@ -561,6 +560,14 @@ export async function createTestApp(options?: {
       'PAYMENTS_PROVIDER override did not take: the app resolved a different instance than the harness records through. Any charge-count or decline assertion built on this app would be meaningless.',
     );
   }
+
+  // LAST, and after both self-checks on purpose. Either throw above leaves
+  // `ctx` unassigned, so `afterAll`'s `ctx.app.close()` throws on top of it and
+  // the app is never closed — with the listen above, that half-built app is
+  // still LISTENING, and the open socket turns a loud 1.5 s failure into a jest
+  // that never exits (#194 review F1, `observed` both ways). Nothing between
+  // `init()` and here needs a port; both self-checks are `app.get()` calls.
+  await app.listen(0, '127.0.0.1');
 
   return {
     app,

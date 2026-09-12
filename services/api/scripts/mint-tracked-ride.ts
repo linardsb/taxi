@@ -428,8 +428,10 @@ async function main(): Promise<void> {
     app.enableShutdownHooks();
 
     // Port 0 deliberately: the script must run alongside a `pnpm dev` already
-    // holding 3001.
-    await app.listen(0);
+    // holding 3001. The loopback host is the #193 half: a wildcard `listen(0)`
+    // over a foreign 127.0.0.1 listener binds fine and then loses the routing
+    // to it, and the dial below is to 127.0.0.1.
+    await app.listen(0, '127.0.0.1');
     // `getHttpServer()` is typed `any`; narrow it to the one method used here.
     const server = app.getHttpServer() as {
       address: () => AddressInfo | string | null;
