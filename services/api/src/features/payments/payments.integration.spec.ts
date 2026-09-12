@@ -64,9 +64,11 @@ describe('payments + ledger (integration)', () => {
   const usedDrivers: string[] = [];
 
   beforeAll(async () => {
-    // `createTestApp` already calls `app.init()`; a second one re-runs
-    // bootstrap and leaves the HTTP adapter in a state supertest reads as a
-    // malformed response under parallel load.
+    // #193: the harness inits AND listens; never init or listen again here.
+    // The malformed responses this comment used to blame on a double init were
+    // supertest re-binding a never-listening server once per request, onto the
+    // wildcard, over a foreign 127.0.0.1 listener. `init()` early-returns when
+    // already initialized, so a second call could never have been the cause.
     ctx = await createTestApp();
     http = request(ctx.app.getHttpServer());
     dispatch = ctx.app.get(DispatchService);

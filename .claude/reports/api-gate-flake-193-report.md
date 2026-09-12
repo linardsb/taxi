@@ -3,7 +3,7 @@
 **Issue**: api: any integration spec can redden or hang the full gate while the suite alone is green
 **URL**: https://github.com/linardsb/taxi/issues/193
 **RCA**: `docs/issues/issue-193.md` (this branch, `239251d` → `40891c2`)
-**Branch**: `investigate/api-gate-flake-193` in `/Users/Berzins/taxi-worktrees/wt-193`
+**Branch**: `fix/api-test-harness-listen-193` (opened as `investigate/api-gate-flake-193`) in `/Users/Berzins/taxi-worktrees/wt-193`
 
 **Root cause** (from the RCA): `createTestApp` returned an app that had `init()` but
 never `listen()`, so supertest bound the shared Nest server itself once per REQUEST —
@@ -78,7 +78,14 @@ Reverting each half and re-running `src/test-harness.spec.ts` (then restoring):
 |---|---|
 | `await app.listen(0, '127.0.0.1')` (shipped) | 3 passed |
 | `await app.listen(0)` — host dropped | **1 failed**: `address` was `"::"`, expected `"127.0.0.1"` |
-| no `listen` at all — pre-fix | **2 failed**: bind count `3` (one per request), `address()` null |
+| no `listen` at all — pre-fix | **2 failed**: `server.listening` was `false` at `:55`, `address()` null at `:71` |
+
+`observed` 2026-09-12, re-run against the shipped spec for the PR #194 review (F3).
+**The bind counter is never reached on the pre-fix row**: `:55`'s
+`expect(server.listening).toBe(true)` guard was added after the figure above was first
+taken, and it short-circuits case 1 three lines before `countBinds()` is read. An
+earlier draft of this table and of the PR body read "bind count `3`" — true of the
+pre-guard spec at `56ff412`, not of the one that ships.
 
 Without this, the spec could have been green for the wrong reason. The failure case
 is not decoration — it is the only thing that distinguishes "binds once" from "the

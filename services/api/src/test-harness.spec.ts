@@ -1,5 +1,5 @@
-import type { AddressInfo, Server } from 'net';
-import { createServer } from 'http';
+import type { AddressInfo, Server } from 'node:net';
+import { createServer } from 'node:http';
 import request from 'supertest';
 import { createTestApp, type TestApp } from '../test/harness';
 
@@ -47,7 +47,7 @@ describe('createTestApp network invariants (#193)', () => {
     };
   }
 
-  it('serves requests off the harness bind — supertest never re-binds', async () => {
+  it('serves requests off the harness bind — supertest never re-binds (expected)', async () => {
     // Pins "0 binds" to "already listening". Without it a future harness whose
     // getHttpServer() returned a DIFFERENT object from the one supertest
     // re-binds would read 0 here and pass vacuously — the same trap as patching
@@ -64,7 +64,7 @@ describe('createTestApp network invariants (#193)', () => {
     expect(counter.stop()).toBe(0);
   });
 
-  it('binds the loopback specifically, not the wildcard', () => {
+  it('binds the loopback specifically, not the wildcard (edge)', () => {
     // `0.0.0.0` or `::` here means `listen(0)` lost its host argument: the bind
     // would then succeed over a foreign 127.0.0.1 listener and silently lose
     // the traffic to it. A loopback-specific bind either wins or EADDRINUSEs.
@@ -75,10 +75,17 @@ describe('createTestApp network invariants (#193)', () => {
     expect((server.address() as AddressInfo).port).toBeGreaterThan(0);
   });
 
-  it('counts the binds a non-listening server takes — one per request', async () => {
+  it('counts the binds a non-listening server takes — one per request (failure)', async () => {
     // The control. Without it the assertion above could be vacuous: a counter
     // that never fires reads the same as a harness that binds once. This is
-    // exactly what the nine integration specs did before the fix.
+    // exactly what the nine never-listening integration specs did before the fix.
+    //
+    // This case is itself the hazardous path, by construction: it takes 2
+    // WILDCARD ephemeral binds per run — the only ones left in the api suite,
+    // against the 630 the fix removes. You cannot demonstrate per-request
+    // binding without letting a bind happen. If this case ever reddens with
+    // `Parse Error: Expected HTTP/, RTSP/ or ICE/`, it is those two binds
+    // meeting a foreign 127.0.0.1 listener, not a return of #193.
     const bare = createServer((_req, res) => {
       res.statusCode = 204;
       res.end();
