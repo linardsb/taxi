@@ -3,8 +3,9 @@
 One Hetzner CX22 runs the API, Postgres+PostGIS and Redis from the repo's own
 `docker-compose.yml` plus the `compose.prod.yml` overlay, behind Caddy and the
 Cloudflare proxy. Deploys are a manual GitHub Actions run. Migrations run on
-every deploy; the Rīga seed runs once, by hand. Backups are a nightly `pg_dump`
-to off-box object storage, **and a restore has to be rehearsed** (§6.2).
+every deploy; the Rīga seed runs once, by hand. Backups are a nightly `pg_dump`,
+encrypted on the box (#149), to off-box object storage, **and a restore has to
+be rehearsed** (§6.2).
 
 A reader should be able to provision a second box from this document alone.
 Where a figure appears it is labelled `observed` (a run or invoice produced
@@ -342,7 +343,7 @@ If the deploy being rolled back **also shipped a migration**, the old code
 runs against the new schema. Additive migrations (a new nullable column, a new
 table) are fine; a destructive one is not, and the honest rollback is a restore
 from the backup taken before the deploy (§6.3). Take one by hand before any
-migration that drops or renames: `BACKUP_RCLONE_REMOTE=… scripts/backup-db.sh`.
+migration that drops or renames: `BACKUP_RCLONE_REMOTE=r2crypt: scripts/backup-db.sh`.
 
 ### 5.3 By hand on the box
 
@@ -366,50 +367,94 @@ money — and it is backed up nightly, off the box.
 
 ### 6.1 Install
 
-On the box, as `deploy`:
+On the box, as `deploy`. Two rclone remotes: `r2` is the R2 account, and
+`r2crypt` wraps the `sakta-backups` bucket in it so that every dump is
+encrypted on the box before it leaves (#149) —
+a dump is every rider's and driver's name, phone number and address, and until
+#149 the bucket's API token was the only thing protecting it. The script, the
+cron line and the by-hand backup (§5.2) only ever name `r2crypt:`.
 
 ```bash
 sudo apt-get install -y rclone                       # no postgresql-client: the sanity check runs pg_restore in the db container, like §6.2's restore
-rclone config                                        # new remote → s3 → provider Cloudflare (R2) → your R2 API token; name it r2
-rclone mkdir r2:sakta-backups
+rclone config                                        # new remote → s3 → provider Cloudflare (R2) → the sakta-backups-box token; name it r2
+rclone config                                        # new remote → crypt → remote r2:sakta-backups → filename encryption standard → directory names encrypted → password: y, the passphrase → password2 (salt): n → name it r2crypt
 crontab -e
 ```
+
+Both secrets come from the **"Sakta R2 backups"** password-manager entry: the
+R2 API token `sakta-backups-box` (Object Read & Write, scoped to the
+`sakta-backups` bucket) and the crypt passphrase. The passphrase also exists as
+a printed copy at home — the custody decision on #149, 2026-09-12. **A lost
+passphrase is a lost backup**: nothing on Cloudflare's side can open a dump, so
+the passphrase must never live in one place only. There is no salt
+(`password2` left blank), so it is one secret to keep, not two. On the box,
+`~/.config/rclone/rclone.conf` then holds the token and the passphrase
+*obscured*, not encrypted — `rclone reveal` prints them back — so the file is
+a secret too; rclone creates it 0600 (`observed` 2026-09-12, rclone v1.75.1),
+leave it that way. The bucket itself already exists (`wrangler r2 bucket
+create sakta-backups --location weur`, `observed` 2026-09-12, WEUR); the old
+`rclone mkdir` line is gone because an Object Read & Write token cannot create
+buckets — if the bucket is ever deleted, recreate it with wrangler.
 
 Add:
 
 ```
-0 3 * * * BACKUP_RCLONE_REMOTE=r2:sakta-backups /opt/taxi/scripts/backup-db.sh >> /var/log/taxi/backup.log 2>&1
+0 3 * * * BACKUP_RCLONE_REMOTE=r2crypt: /opt/taxi/scripts/backup-db.sh >> /var/log/taxi/backup.log 2>&1
 ```
 
-Then run it once by hand and read the log line. What the script does:
-`pg_dump -Fc` inside the `db` container → `/var/backups/taxi/taxi-<UTC stamp>.dump`
-→ refuses to upload a dump with no `geozones` table → `rclone copy` to the
-remote → prunes remote copies older than 30 days and local ones older than 7.
-Cloudflare R2's free tier (10 GB) holds years of dumps at pilot size —
-`observed` 57 KB for a 24-ride development database (§6.2).
+Then run it once by hand, read the log line, and look at the bucket from both
+sides — this is the check that the encryption is actually in the path:
+
+```bash
+rclone lsf r2crypt:            # taxi-<UTC stamp>.dump — the real name, because this side has the passphrase
+rclone lsf r2:sakta-backups    # the same object under a base32 name. If THIS side shows taxi-…, a dump went up readable: delete it, fix the cron line
+```
+
+What the script does: `pg_dump -Fc` inside the `db` container →
+`/var/backups/taxi/taxi-<UTC stamp>.dump` → refuses to upload a dump with no
+`geozones` table → `rclone copy` to `r2crypt:` (content and name encrypted on
+the way out) → prunes remote copies older than 30 days and local ones older
+than 7. Cloudflare R2's free tier (10 GB) holds years of dumps at pilot size —
+`observed` 57 KB for a 24-ride development database (§6.2); crypt adds a
+32-byte header plus 16 bytes per 64 KiB block (rclone's documented file
+format; `observed` 64 bytes for a 16-byte file), which changes nothing here.
 
 ### 6.2 Restore rehearsal — do this once, then after any Postgres upgrade
 
-**A backup that has never been restored is not a backup.** The rehearsal below
-was run on 2026-08-25 against the local compose Postgres with the same image
-tag, dump format and restore flags (`observed`): a 57 015-byte dump, `pg_restore`
-exit 0, restored counts identical to the source (4 geozones, 24 rides, 10
-applied migrations), `PostGIS_Full_Version()` answering `3.4.3`. Repeat it on
-the box:
+**A backup that has never been restored is not a backup.** And since #149 the
+bucket holds ciphertext, so the rehearsal also proves that the *passphrase* in
+the password manager still opens it. Run it from a machine that is not the box
+— the laptop — starting from nothing but the "Sakta R2 backups" entry: that is
+the situation a dead box leaves you in. Do not copy `rclone.conf` over from
+the box; configure both remotes by hand from the entry, exactly as §6.1 says.
+
+Provenance so far. The restore half was run on 2026-08-25 against the local
+compose Postgres with the same image tag, dump format and restore flags
+(`observed`): a 57 015-byte dump, `pg_restore` exit 0, restored counts
+identical to the source (4 geozones, 24 rides, 10 applied migrations),
+`PostGIS_Full_Version()` answering `3.4.3`. The crypt half was run on
+2026-09-12 with rclone v1.75.1 against a crypt remote wrapping a local
+directory in place of R2 (`observed`): a second `rclone.conf` built from only
+the passphrase copied the dump back byte-identical, and the plain side listed
+one base32 name, not `taxi-…`. Against R2 itself the block below is
+`expected` until its first run — log that run in §7.
 
 ```bash
-cd /opt/taxi
-alias dc='docker compose -f docker-compose.yml -f compose.prod.yml'
-rclone copy "r2:sakta-backups/$(rclone lsf r2:sakta-backups | sort | tail -1)" /tmp/
+sudo apt-get install -y rclone      # laptop: brew install rclone
+rclone config                       # r2 and r2crypt, from the password-manager entry, exactly as §6.1
+rclone copy "r2crypt:$(rclone lsf r2crypt: | sort | tail -1)" /tmp/
 dump=$(ls -t /tmp/taxi-*.dump | head -1)
+cd <repo root>                      # laptop: the dev compose, `docker compose up -d --wait` first
+alias dc='docker compose'           # on the box instead: cd /opt/taxi; alias dc='docker compose -f docker-compose.yml -f compose.prod.yml'
 dc exec -T db psql -U taxi -d postgres -c 'CREATE DATABASE taxi_restore'
 dc exec -T db pg_restore -U taxi -d taxi_restore --no-owner < "$dump"
 dc exec -T db psql -U taxi -d taxi_restore -c 'SELECT count(*) FROM geozones'        # → 4
 dc exec -T db psql -U taxi -d taxi_restore -c 'SELECT count(*) FROM rides'           # → matches production
 dc exec -T db psql -U taxi -d postgres -c 'DROP DATABASE taxi_restore'
+rm /tmp/taxi-*.dump                 # the laptop now holds production data readable; do not leave it there
 ```
 
-Record the date and the counts in §7's log.
+Record the date, the machine and the counts in §7's log.
 
 ### 6.3 A real restore
 
