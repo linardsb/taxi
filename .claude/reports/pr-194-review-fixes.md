@@ -18,8 +18,8 @@ All nine findings fixed, including both **HUMAN DECIDES** items (F7, F8). Two FY
 Two things the review did not have, both from grepping the **value** rather than the noun:
 
 - **F3 had a second copy** — the same false "bind count `3`" claim sat in
-  `.claude/reports/api-gate-flake-193-report.md:80`, which ships inside the PR. The review named only
-  the PR body.
+  `.claude/reports/api-gate-flake-193-report.md:80`, which ships in the tree. The review named only
+  #194's PR body, which is now merged history.
 - **F6 had four more stale sites** than the review's `:257`/`:269`/`:305` — `:159`, `:245`, `:263`
   and `:307` all carried the pre-spec figure too.
 
@@ -101,13 +101,17 @@ replaced with a pointer to the real invariant and the reason the old one was imp
 98-        }
 ```
 
-Closing command: `grep -rn "double-init\|re-runs.*bootstrap" docs/ .claude/ services/api` → **no hits**
-(run 2026-09-12 against the fixed tree).
+Closing command, re-run at `0df5e51` against the fixed tree:
+`grep -rn "double-init\|re-runs.*bootstrap" docs/ .claude/ services/api` → **4 hits, all of them the
+two quotations inside `.claude/code-reviews/pr-194-review.md`** (the review reproducing the comment it
+flagged) and this report. **0 outside those two files** — the comment itself is gone.
 
 ### F3 — Low · "the bind counter reads 3" describes a run the shipped spec cannot produce
 
-Fixed in **two** places: the PR body, and `.claude/reports/api-gate-flake-193-report.md:80`, which the
-review did not have.
+Fixed in **two** places: `.claude/reports/api-gate-flake-193-report.md:80`, which the review did not
+name, and the claim's original home in PR #194's body. #194 squash-merged mid-pass, so its body is
+history and cannot be edited into truth — the correction therefore lives in the report above (which
+ships in the tree) and in this PR's own body.
 
 `observed` 2026-09-12, shipped spec, `npx jest src/test-harness.spec.ts`:
 
@@ -207,27 +211,48 @@ integration specs", removing the collision with the nine deleted call sites at `
 
 ## The retired-value sweep
 
-`grep -n` per retired value and noun, run 2026-09-12 against the **fixed** tree
-(`docs/ .claude/ services/api`, `*.md` + `*.ts`, this report itself excluded — it quotes every
-retired value) and against the **live PR body**
-(`gh pr view 194 --json body`), which no working-tree grep reaches.
+`grep -n` per retired value and noun, **re-run at `0df5e51`** against the fixed tree
+(`docs/ .claude/ services/api`, `*.md` + `*.ts`) and against the **live PR body**, which no
+working-tree grep reaches.
 
-| Pattern | Working tree | PR body | Verdict |
-|---|---|---|---|
-| `Seventeen` | 0 hits | 0 hits | retired |
-| `17 binds` | `issue-193.md:290` | 0 hits | **kept** — `f01`–`f06` run record |
-| `binds → 17` | `issue-193.md:257` | 0 hits | **kept** — `b02` run record, now pointing at the shipped figure |
-| `binds to 17` | 0 hits | 0 hits | retired |
-| `instead of 17` | 0 hits | 0 hits | retired |
-| `bind counter reads` | 0 hits | `:38` | **fixed in the body** (see PR-body edit below) |
-| `double-init` / `re-runs.*bootstrap` | 0 hits | 0 hits | retired (F2) |
-| `nine integration specs` | 0 hits | 0 hits | retired (F9 / FYI-3) |
-| `investigate/api-gate-flake-193` | `issue-193.md:48`, `report:6`, `report:241` | `:57` | **all three carry the rename clause**; the body's names it explicitly |
-| `630` | 17 hits | `:9` | **all correct** — either the pre-fix figure (unchanged) or the "one per app built" phrasing, which stays true as spec files are added. The two in-code copies (`harness.ts:482`, `test-harness.spec.ts:10`) are the per-app-built form and need no edit. |
-| `listen(0)` | 26 hits | `:9`, `:38`, `:53` | **`services/api` is clean** — the only three `.listen(` calls left are `harness.ts:564` and `mint-tracked-ride.ts:432` (both loopback) and `main.ts:21` (production, wildcard on purpose). Remaining hits are RCA prose describing the pre-fix state, and seven `.claude/plans/*.md` lines from earlier tickets that record what those tickets did at the time — run records, left alone. |
+**Two files are excluded from the "scoped" column, and the reason is the same one that keeps two
+`17`s alive**: this report quotes every retired value in order to report on it, and
+`.claude/code-reviews/pr-194-review.md` — which the base gained from PR #195 after this pass began —
+is the review itself, a record of what it found. Neither is a claim about the tree. Their hits are
+counted separately rather than hidden, because a bare "0 hits" next to a file that says
+"the bind counter reads **3**" is exactly the kind of closing command this pass exists to correct.
+
+The first run of this sweep predated the cherry-pick onto a `main` that carries the review file, and
+its zeros were true only of the branch it ran on. This is the re-run.
+
+Exact form:
+
+```
+grep -rn "<pat>" docs/ .claude/ services/api --include='*.md' --include='*.ts' \
+  | grep -v node_modules \
+  | grep -v 'pr-194-review-fixes\|code-reviews/pr-194-review'
+```
+
+(`listen(0)` needs `grep -rFn`: under `-E` the parentheses are a group and the pattern matches
+`listen0`, which returns a confident **0**.)
+
+| Pattern | Scoped tree | In the review file | PR body | Verdict |
+|---|---|---|---|---|
+| `Seventeen` | **0** | 2 | 0 | retired |
+| `17 binds` | **1** — `issue-193.md:290` | 1 | 0 | **kept** — `f01`–`f06` run record |
+| `binds → 17` | **1** — `issue-193.md:257` | 0 | 0 | **kept** — `b02` run record, now pointing at the shipped figure |
+| `binds to 17` | **0** | 0 | 0 | retired |
+| `instead of 17` | **0** | 0 | 0 | retired |
+| `bind counter reads` | **0** | 2 | `:38` on #194 | retired in the tree; #194's body is merged history now, so the correction lives in this PR's body and in `api-gate-flake-193-report.md:80` |
+| `double-init` / `re-runs.*bootstrap` | **0** | 2 | 0 | retired (F2) |
+| `nine integration specs` | **0** | 1 | 0 | retired (F9 / FYI-3) |
+| `investigate/api-gate-flake-193` | **3** — `issue-193.md:48`, `report:6`, `report:241` | 1 | `:57` on #194 | **all three carry the rename clause** |
+| `630` | **17** | 4 | `:9` on #194 | **all correct** — either the pre-fix figure (unchanged) or the "one per app built" phrasing, which stays true as spec files are added. The two in-code copies (`harness.ts:482`, `test-harness.spec.ts:10`) are the per-app-built form and need no edit. |
+| `listen(0)` | **26** | 4 | `:9`, `:38`, `:53` on #194 | **`services/api` is clean** — 3 of the 26 are code (`harness.ts`, `test-harness.spec.ts`, `mint-tracked-ride.ts`) and all are prose or the loopback form. 12 are RCA prose describing the pre-fix state, 4 the implementation report, and 7 are `.claude/plans/*.md` lines from five earlier tickets recording what those tickets did at the time — run records, left alone. |
 
 `observed` — the full `.listen(` sweep, `grep -rn "\.listen(" services/api --include="*.ts"` minus
-`node_modules`, at the fixed tree:
+`node_modules`, at `0df5e51`. This is the one that decides whether the noun is actually retired,
+because it reads calls rather than prose:
 
 ```
 services/api/test/harness.ts:564:  await app.listen(0, '127.0.0.1');
