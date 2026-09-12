@@ -1,8 +1,14 @@
 # PR #194 — review fix pass (round 1)
 
-**Review** `.claude/code-reviews/pr-194-review.md` (ships on PR #195, branch `docs/pr-194-review`)
-**Reviewed head** `e6138ae` · **Fix head** `80bafe6` · **Base** `main` @ `bd13213`
+**Review** `.claude/code-reviews/pr-194-review.md` (merged to `main` as PR #195, `d5bbea1`)
+**Reviewed head** `e6138ae` · **Fix head** `5aa4159` · **Base** `main` @ `d5bbea1`
 **Worktree** `/Users/Berzins/taxi-worktrees/wt-193` · **Ran** 2026-09-12
+
+> **PR #194 squash-merged mid-pass** (`44f16d2`, 2026-09-12 08:00Z), and #195 with it (`d5bbea1`).
+> It was OPEN when this pass started. The squash means `e6138ae` is not an ancestor of `main`, so
+> these fixes were re-branched off `origin/main` as `fix/pr-194-review-findings-193` and carry two
+> commits. `observed`: `git diff 80bafe6 5b676d6` is the review markdown and nothing else, so the
+> source tree the first gate measured and the one on this branch are byte-identical.
 
 ## Verdict
 
@@ -19,13 +25,13 @@ Two things the review did not have, both from grepping the **value** rather than
 
 ## Gate
 
-`observed` — `record-gate.sh --clean` at `80bafe6`, `COMPOSE_PROJECT_NAME=taxi`,
+`observed` — `record-gate.sh --clean` at `5aa4159`, `COMPOSE_PROJECT_NAME=taxi`,
 `REDIS_TEST_URL=redis://localhost:6381`, exit 0:
 
 ```
 Tasks:    22 successful, 22 total
 Cached:   0 cached, 22 total
-Time:     1m30.276s
+Time:     1m28.912s
 ```
 
     @taxi/dispatch  Test Files 27 passed (27)
@@ -44,8 +50,10 @@ Time:     1m30.276s
 Test counts are identical to the pre-review head, which is the point: F1 changes *when* the harness
 binds, not what any test asserts.
 
-**One commit lands after this gate** — the docs-only commit carrying this report and the head-stamp
-note in `api-gate-flake-193-report.md`. No source file moves in it.
+The same gate ran twice on the same source: `1m30.276s` at `80bafe6` (pre-rebranch) and `1m28.912s`
+at `5aa4159`. **One commit lands after the second run** — a docs-only commit correcting the shas in
+this report and in `api-gate-flake-193-report.md`, which is why the sha above is not this file's own
+final commit. No source file moves in it.
 
 ## Fixed
 
