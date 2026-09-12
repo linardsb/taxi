@@ -47,8 +47,6 @@ describeWithRedis('RedisIoAdapter (cross-node)', () => {
   beforeAll(async () => {
     nodeA = await createTestApp({ configure: installAdapter });
     nodeB = await createTestApp({ configure: installAdapter });
-    await nodeA.app.listen(0);
-    await nodeB.app.listen(0);
     portA = portOf(nodeA.app);
   });
 
@@ -153,7 +151,6 @@ describe('RedisIoAdapter CORS', () => {
         return Promise.resolve();
       },
     });
-    await ctx.app.listen(0);
     port = portOf(ctx.app);
   });
 

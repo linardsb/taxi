@@ -44,7 +44,6 @@ describe('driver presence: dark detection + nudge (integration, #14)', () => {
 
   beforeAll(async () => {
     ctx = await createTestApp();
-    await ctx.app.listen(0);
     const server = ctx.app.getHttpServer() as { address(): AddressInfo | null };
     port = server.address()!.port;
     http = request(server as unknown as Parameters<typeof request>[0]);

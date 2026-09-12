@@ -42,7 +42,6 @@ describe('driver location gateway (integration)', () => {
 
   beforeAll(async () => {
     ctx = await createTestApp();
-    await ctx.app.listen(0);
     const http = ctx.app.getHttpServer() as { address(): AddressInfo | null };
     port = http.address()!.port;
     tokens = ctx.app.get(AuthTokenService);
