@@ -114,6 +114,25 @@ worktree's no-op `listen` shortcut, which **absorbed** those calls rather than e
 their deletion (RCA line 306 says so). The run above is the first to execute that block
 with the calls actually gone.
 
+### The review-fix head — the only gate stamped on a tree that contains F1
+
+Every gate below ran before the PR #194 review. F1 moved a line in `test/harness.ts`,
+so none of them describes the tree that now ships. `observed` 2026-09-12,
+`record-gate.sh --clean` at `80bafe6` with `COMPOSE_PROJECT_NAME=taxi` and
+`REDIS_TEST_URL=redis://localhost:6381`, exit 0:
+
+```
+Tasks:    22 successful, 22 total
+Cached:   0 cached, 22 total
+Time:     1m30.276s
+```
+
+`@taxi/api` `77 passed, 77 total` suites / `724 passed, 724 total` tests — identical
+counts to the pre-review head, which is the point: F1 changes when the harness binds,
+not what any test asserts. The 1m30.276s sits with the review's own 1m27.808s and the
+author's 1m29.665s, all three `record-gate.sh --clean`; the 74–78 s batches below used
+the plain clearing script, and that gap is still unexplained and still not load-bearing.
+
 ### Five consecutive full gates from cleared output — AC #3
 
 `node clear-output.js` removes every `dist`, `.next` and `.turbo` before each run
