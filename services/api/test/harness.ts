@@ -563,8 +563,8 @@ export async function createTestApp(options?: {
 
   // LAST, and after both self-checks on purpose. Either throw above leaves
   // `ctx` unassigned, so `afterAll`'s `ctx.app.close()` throws on top of it and
-  // the app is never closed — with the listen above, that half-built app is
-  // still LISTENING, and the open socket turns a loud 1.5 s failure into a jest
+  // the app is never closed — with the listen in its old place, that app was
+  // still LISTENING, and the open socket turned a loud 1.5 s failure into a jest
   // that never exits (#194 review F1, `observed` both ways). Nothing between
   // `init()` and here needs a port; both self-checks are `app.get()` calls.
   await app.listen(0, '127.0.0.1');

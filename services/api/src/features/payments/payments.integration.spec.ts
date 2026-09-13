@@ -65,10 +65,10 @@ describe('payments + ledger (integration)', () => {
 
   beforeAll(async () => {
     // #193: the harness inits AND listens; never init or listen again here.
-    // The malformed responses this comment used to blame on a double init were
-    // supertest re-binding a never-listening server once per request, onto the
-    // wildcard, over a foreign 127.0.0.1 listener. `init()` early-returns when
-    // already initialized, so a second call could never have been the cause.
+    // The malformed responses this comment once blamed on a double init are
+    // what the #193 RCA reproduces: supertest re-binding a never-listening
+    // server per request, onto the wildcard, over a foreign 127.0.0.1 listener.
+    // `init()` early-returns once initialized; a second call was never the cause.
     ctx = await createTestApp();
     http = request(ctx.app.getHttpServer());
     dispatch = ctx.app.get(DispatchService);
