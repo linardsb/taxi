@@ -82,12 +82,20 @@ The `TypeError: Cannot read properties of undefined (reading 'app')` appears on 
 correct to: it is `afterAll` firing with `ctx` unassigned, which is the pre-PR shape.
 
 **What this fix does not do.** It removes the hang, not the leak. A throwing self-check still leaves an
-`init()`ed app with a live Drizzle pool and `ctx` unassigned; the listening socket was only what turned
-that leak into a hang. `redis-io.adapter.spec.ts:48-49`'s multi-app case is unchanged in the same way —
-nodeB still leaks, now without a socket. The review's `try/catch` alternative would fix both, and is the
-better shape if `createTestApp` later grows work that needs the port; it was **not** taken here because
-the prescribed move is the version that has been run green across 77 suites, and this repo has been
-burned by a prescribed fix that killed a working path (#154 F17).
+`init()`ed app with a live Drizzle pool and `ctx` unassigned; the listening socket was what turned that
+leak into a hang for every consumer but one. The Redis-gated block of `redis-io.adapter.spec.ts` opens
+two ioredis clients in `configure`, before `init()` (`installAdapter`, `:41-45`; `redis-io.adapter.ts:37-38`),
+and only `RedisIoAdapter.close()` quits them (`:58`), so a self-check throw there still holds jest with the
+listen below the checks (`observed`, #196 round 2 and its fix pass: the queue check forced to throw on the
+process's second `createTestApp` call, nodeB, `timeout 75 npx jest src/features/realtime/redis-io.adapter.spec.ts`
+with `REDIS_TEST_URL` set → `2 failed, 3 passed, 5 total`, then `Jest did not exit one second after the test
+run has completed.`, exit 124 at 75 s). Not a regression: this block hung with the listen in its old place
+too. The review's `try/catch` alternative (`await app.close()` before the rethrow) fixes the leak and both
+hangs, and is the better shape if `createTestApp` later grows work that needs the port; it was **not**
+taken here because the prescribed move is the version that has been run green across 77 suites, and this
+repo has been burned by a prescribed fix that killed a working path (#154 F17). The #196 round-2 fix pass
+ran that shape on the two spec files (both exit in 5 s or less, zero "did not exit" lines) and filed it as
+**#199** for a full-gate run.
 
 **The new failure mode this mechanism introduces**, in one line: anything later inserted between
 `init()` and the new listen position that reads `server.address()` now silently gets `null`. **Not
@@ -241,13 +249,16 @@ its zeros were true only of the branch it ran on. This is the re-run.
 Exact form:
 
 ```
-grep -rn "<pat>" docs/ .claude/ services/api --include='*.md' --include='*.ts' \
-  | grep -v node_modules \
-  | grep -v 'pr-194-review-fixes\|code-reviews/pr-194-review'
+grep -rn --exclude-dir=node_modules "<pat>" docs/ .claude/ services/api --include='*.md' --include='*.ts' \
+  | grep -v 'pr-194-review-fixes\|code-reviews/pr-194-review\|pr-196-review-fixes'
 ```
 
 (`listen(0)` needs `grep -rFn`: under `-E` the parentheses are a group and the pattern matches
-`listen0`, which returns a confident **0**.)
+`listen0`, which returns a confident **0**. And `node_modules` must be excluded by directory, not by
+piping through `grep -v node_modules`: that stage reads the whole `path:line:content` string and drops
+any hit whose *content* names the directory. One does, `docs/issues/issue-193.md:96`, a quotation of
+supertest's own `listen(0)` line, so the row below read **26** until #196 round 2 (F2) re-ran it. The two
+#196 fix-pass reports are excluded for the same reason this file is: they quote the row to correct it.)
 
 | Pattern | Scoped tree | In the review file | PR body | Verdict |
 |---|---|---|---|---|
@@ -261,7 +272,7 @@ grep -rn "<pat>" docs/ .claude/ services/api --include='*.md' --include='*.ts' \
 | `nine integration specs` | **0** | 1 | 0 | retired (F9 / FYI-3) |
 | `investigate/api-gate-flake-193` | **3** — `issue-193.md:48`, `report:6`, `report:275` | 1 | `:57` on #194 | **all three carry the rename clause** |
 | `630` | **17** | 4 | `:9` on #194 | **all correct** — either the pre-fix figure (unchanged) or the "one per app built" phrasing, which stays true as spec files are added. The two in-code copies (`harness.ts:482`, `test-harness.spec.ts:10`) are the per-app-built form and need no edit. |
-| `listen(0)` | **26** | 4 | `:9`, `:38`, `:53` on #194 | **`services/api` is clean** — 3 of the 26 are code (`harness.ts`, `test-harness.spec.ts`, `mint-tracked-ride.ts`) and all are prose or the loopback form. 12 are RCA prose describing the pre-fix state, 4 the implementation report, and 7 are `.claude/plans/*.md` lines from five earlier tickets recording what those tickets did at the time — run records, left alone. |
+| `listen(0)` | **27** | 4 | `:9`, `:38`, `:53` on #194 | **`services/api` is clean** — 3 of the 27 are code (`harness.ts`, `test-harness.spec.ts`, `mint-tracked-ride.ts`) and all are prose or the loopback form. 13 are RCA prose describing the pre-fix state (one of them the supertest quotation the piped filter ate), 4 the implementation report, and 7 are `.claude/plans/*.md` lines from five earlier tickets recording what those tickets did at the time — run records, left alone. `observed` at `bd733b0` under the corrected form (#196 round-2 fix pass); the first form printed 26 on the same tree, so the 26 described the instrument. |
 
 `observed` 2026-09-13 — the full `.listen(` sweep, `git grep -n "\.listen(" a35d339 -- 'services/api/*.ts'`
 (`node_modules` excluded), at `a35d339`. This is the one that decides whether the noun is actually
@@ -282,8 +293,9 @@ fix pass, comments only) prints the same four lines.
 ## Needs a human look
 
 - **F1's shape is a choice, not a forced move.** The `try/catch` + `await app.close()` alternative fixes
-  the pool leak as well as the hang. It was not taken because it has never been run; the move has.
-  If `createTestApp` ever grows work between the self-checks and the return that needs a port, that is
-  the version to switch to.
+  the pool leak as well as the hang, and the Redis-gated hang the move leaves (#196 round 2, F1). It was
+  not taken because at the time it had never been run; the move had. The #196 round-2 fix pass ran it on
+  two spec files and filed **#199** for the full-gate run. If `createTestApp` ever grows work between the
+  self-checks and the return that needs a port, that is the version to switch to.
 - **`app.e2e-spec.ts`'s non-exit** — pre-existing, but the file is live, so it is a real (small) hole.
 - **FYI-4 and FYI-5** — both are `system-evolution-review` input, not fixes. Worth running that loop.
