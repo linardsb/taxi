@@ -10,6 +10,11 @@
 > commits. `observed`: `git diff 80bafe6 5b676d6` is the review markdown and nothing else, so the
 > source tree the first gate measured and the one on this branch are byte-identical.
 
+> **Corrected 2026-09-13 after the PR #196 review** (its F1–F5): the `.listen(` sweep re-run at
+> `a35d339` (four calls, not three), the "already covered" claim under F1 retracted, `file:line`
+> figures re-derived at `a35d339`, `build` dropped from F7's coverage list, and the commits-after-gate
+> sentence completed. Each correction's closing command is in `.claude/reports/pr-196-review-fixes.md`.
+
 ## Verdict
 
 All nine findings fixed, including both **HUMAN DECIDES** items (F7, F8). Two FYIs deferred to a
@@ -18,10 +23,11 @@ All nine findings fixed, including both **HUMAN DECIDES** items (F7, F8). Two FY
 Two things the review did not have, both from grepping the **value** rather than the noun:
 
 - **F3 had a second copy** — the same false "bind count `3`" claim sat in
-  `.claude/reports/api-gate-flake-193-report.md:80`, which ships in the tree. The review named only
+  `.claude/reports/api-gate-flake-193-report.md:81`, which ships in the tree. The review named only
   #194's PR body, which is now merged history.
-- **F6 had four more stale sites** than the review's `:257`/`:269`/`:305` — `:159`, `:245`, `:263`
-  and `:307` all carried the pre-spec figure too.
+- **F6 had two more stale sites** than the review's `:257`/`:269`/`:305` (pre-edit numbering) —
+  `:159` and `:245` carried the pre-spec figure too and were edited. `:263` and `:307` (today's `:290`
+  and `:334`) carry it as run records and were kept; see F6.
 
 ## Gate
 
@@ -51,9 +57,11 @@ Test counts are identical to the pre-review head, which is the point: F1 changes
 binds, not what any test asserts.
 
 The same gate ran twice on the same source: `1m30.276s` at `80bafe6` (pre-rebranch) and `1m28.912s`
-at `5aa4159`. **One commit lands after the second run** — a docs-only commit correcting the shas in
-this report and in `api-gate-flake-193-report.md`, which is why the sha above is not this file's own
-final commit. No source file moves in it.
+at `5aa4159`. **Two docs-only commits land after the second run**, `0df5e51` and `a35d339`
+(`observed`: `git diff --stat 5aa4159 a35d339` touches only `.claude/reports/`), which is why the sha
+above is not this file's own final commit. The PR #196 fix pass then reworded two test-file comments
+(`7aa91ae`, comments only, line counts unchanged) and re-ran the gate there, green —
+`.claude/reports/pr-196-review-fixes.md`.
 
 ## Fixed
 
@@ -82,13 +90,17 @@ the prescribed move is the version that has been run green across 77 suites, and
 burned by a prescribed fix that killed a working path (#154 F17).
 
 **The new failure mode this mechanism introduces**, in one line: anything later inserted between
-`init()` and the new listen position that reads `server.address()` now silently gets `null`. That is
-already covered — `src/test-harness.spec.ts:55`'s `expect(server.listening).toBe(true)` fails on exactly
-that tree, `observed` below under F3. No new test needed.
+`init()` and the new listen position that reads `server.address()` now silently gets `null`. **Not
+covered by a test** — `src/test-harness.spec.ts:55` runs after `createTestApp` has returned, by which
+point `harness.ts:570` has listened, so `server.listening` is `true` whatever was inserted above it
+(`observed`, PR #196 review F2 and its fix pass: an `address()` read placed between `init()` and the
+listen logs `null` while the spec reports `3 passed, 3 total`). The comment at `harness.ts:568-569` is
+the only guard on that path, which is acceptable for a developer-error path. The "no `listen` at all"
+tree under F3 is a different tree; an earlier version of this paragraph conflated the two.
 
 ### F2 — Medium · a comment blamed a refuted cause
 
-`services/api/src/features/payments/payments.integration.spec.ts:66-70` — the double-`init()` explanation
+`services/api/src/features/payments/payments.integration.spec.ts:67-71` — the double-`init()` explanation
 replaced with a pointer to the real invariant and the reason the old one was impossible.
 
 `observed`, the claim is now mine rather than inherited —
@@ -108,7 +120,7 @@ flagged) and this report. **0 outside those two files** — the comment itself i
 
 ### F3 — Low · "the bind counter reads 3" describes a run the shipped spec cannot produce
 
-Fixed in **two** places: `.claude/reports/api-gate-flake-193-report.md:80`, which the review did not
+Fixed in **two** places: `.claude/reports/api-gate-flake-193-report.md:81`, which the review did not
 name, and the claim's original home in PR #194's body. #194 squash-merged mid-pass, so its body is
 history and cannot be edited into truth — the correction therefore lives in the report above (which
 ships in the tree) and in this PR's own body.
@@ -127,7 +139,7 @@ The second row confirms the other half of the PR body's sentence, which was corr
 `.claude/reports/api-gate-flake-193-report.md:6` now reads
 `` `fix/api-test-harness-listen-193` (opened as `investigate/api-gate-flake-193`) ``. The sweep found a
 second copy the review did not name — `docs/issues/issue-193.md:48` — given the same rename clause. The
-third hit (`api-gate-flake-193-report.md:241`) already documents the rename and is correct as is.
+third hit (`api-gate-flake-193-report.md:275`) already documents the rename and is correct as is.
 
 ### F5 — Low · the control case re-takes two wildcard binds per run
 
@@ -163,18 +175,19 @@ tests**, which looks exactly like a code regression. Moving the marker to a `Sym
 arrived at through per-file `process.env` copies.
 
 Applied to `docs/issues/issue-193.md`: `:159`, `:245`, `:296`, `:332` retired to "one per app built" or
-the shipped figure; a new **Bind count as shipped** subsection carries the table above; `:257` and `:290`
-keep their `17` **because they are `observed` records of named runs** (`b02`, `f01`–`f06`) and rewriting
+the shipped figure; a new **Bind count as shipped** subsection carries the table above; `:257`, `:290` and `:334`
+keep their `17` **because they are `observed` records of named runs** (`b02`, `f01`–`f06`, `g02`) and rewriting
 a run record would be falsifying it — `:257` gains a pointer to the new subsection instead.
 
 ### F7 — Low · the same wildcard bind in a dev script *(HUMAN DECIDES — taken)*
 
-`services/api/scripts/mint-tracked-ride.ts:432` — `await app.listen(0)` → `await app.listen(0, '127.0.0.1')`,
+`services/api/scripts/mint-tracked-ride.ts:434` (`:432` before the comment above it grew) — `await app.listen(0)` → `await app.listen(0, '127.0.0.1')`,
 plus a comment naming why the host is there. Taken because CLAUDE.md's "grep the noun, not the sentence"
 makes this the exact noun the PR retires.
 
-**Coverage is compile-only**: the script is a hand-run instrument outside the gate, so `typecheck`, `lint`
-and `build` cover it and nothing executed it. Stated rather than implied.
+**Coverage is compile-only**: the script is a hand-run instrument outside the gate, so `typecheck`
+(`tsc --noEmit`, whole directory) and `lint` (`{src,test,scripts}/**/*.ts`) cover it and nothing executed
+it. `build` does not: `tsconfig.build.json` excludes `scripts`. Stated rather than implied.
 
 ### F8 — Low · same class, in the unrun Nest scaffold *(HUMAN DECIDES — host fixed, file kept)*
 
@@ -243,22 +256,28 @@ grep -rn "<pat>" docs/ .claude/ services/api --include='*.md' --include='*.ts' \
 | `binds → 17` | **1** — `issue-193.md:257` | 0 | 0 | **kept** — `b02` run record, now pointing at the shipped figure |
 | `binds to 17` | **0** | 0 | 0 | retired |
 | `instead of 17` | **0** | 0 | 0 | retired |
-| `bind counter reads` | **0** | 2 | `:38` on #194 | retired in the tree; #194's body is merged history now, so the correction lives in this PR's body and in `api-gate-flake-193-report.md:80` |
+| `bind counter reads` | **0** | 2 | `:38` on #194 | retired in the tree; #194's body is merged history now, so the correction lives in this PR's body and in `api-gate-flake-193-report.md:81` |
 | `double-init` / `re-runs.*bootstrap` | **0** | 2 | 0 | retired (F2) |
 | `nine integration specs` | **0** | 1 | 0 | retired (F9 / FYI-3) |
-| `investigate/api-gate-flake-193` | **3** — `issue-193.md:48`, `report:6`, `report:241` | 1 | `:57` on #194 | **all three carry the rename clause** |
+| `investigate/api-gate-flake-193` | **3** — `issue-193.md:48`, `report:6`, `report:275` | 1 | `:57` on #194 | **all three carry the rename clause** |
 | `630` | **17** | 4 | `:9` on #194 | **all correct** — either the pre-fix figure (unchanged) or the "one per app built" phrasing, which stays true as spec files are added. The two in-code copies (`harness.ts:482`, `test-harness.spec.ts:10`) are the per-app-built form and need no edit. |
 | `listen(0)` | **26** | 4 | `:9`, `:38`, `:53` on #194 | **`services/api` is clean** — 3 of the 26 are code (`harness.ts`, `test-harness.spec.ts`, `mint-tracked-ride.ts`) and all are prose or the loopback form. 12 are RCA prose describing the pre-fix state, 4 the implementation report, and 7 are `.claude/plans/*.md` lines from five earlier tickets recording what those tickets did at the time — run records, left alone. |
 
-`observed` — the full `.listen(` sweep, `grep -rn "\.listen(" services/api --include="*.ts"` minus
-`node_modules`, at `0df5e51`. This is the one that decides whether the noun is actually retired,
-because it reads calls rather than prose:
+`observed` 2026-09-13 — the full `.listen(` sweep, `git grep -n "\.listen(" a35d339 -- 'services/api/*.ts'`
+(`node_modules` excluded), at `a35d339`. This is the one that decides whether the noun is actually
+retired, because it reads calls rather than prose:
 
 ```
-services/api/test/harness.ts:564:  await app.listen(0, '127.0.0.1');
-services/api/scripts/mint-tracked-ride.ts:432:    await app.listen(0, '127.0.0.1');
+services/api/scripts/mint-tracked-ride.ts:434:    await app.listen(0, '127.0.0.1');
 services/api/src/main.ts:21:  await app.listen(env.API_PORT);
+services/api/test/app.e2e-spec.ts:22:    await app.listen(0, '127.0.0.1');
+services/api/test/harness.ts:570:  await app.listen(0, '127.0.0.1');
 ```
+
+Four calls, not the three an earlier version of this block listed under a sha that never produced
+them: `test/app.e2e-spec.ts:22` is this PR's own F8, and the two line numbers were pre-comment
+positions. Every call outside `main.ts` is the loopback form. The same command at `7aa91ae` (the #196
+fix pass, comments only) prints the same four lines.
 
 ## Needs a human look
 

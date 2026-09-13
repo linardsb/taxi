@@ -114,7 +114,7 @@ worktree's no-op `listen` shortcut, which **absorbed** those calls rather than e
 their deletion (RCA line 306 says so). The run above is the first to execute that block
 with the calls actually gone.
 
-### The review-fix head — the only gate stamped on a tree that contains F1
+### The review-fix head — the first gate stamped on a tree that contains F1
 
 Every gate below ran before the PR #194 review. F1 moved a line in `test/harness.ts`,
 so none of them describes the tree that now ships. `observed` 2026-09-12,
@@ -134,6 +134,12 @@ author's 1m29.665s, all three `record-gate.sh --clean`; the 74–78 s batches be
 the plain clearing script, and that gap is still unexplained and still not load-bearing.
 An earlier run of this same source at `80bafe6`, before PR #194's squash-merge forced a
 re-branch off `main`, gave 1m30.276s.
+
+Two docs-only commits follow this run on the branch, `0df5e51` and `a35d339` (`observed`:
+`git diff --stat 5aa4159 a35d339` touches only `.claude/reports/`). The PR #196 fix pass then
+reworded two test-file comments (`7aa91ae`: comments only, line counts unchanged) and re-ran this
+gate there — `observed` 2026-09-13, exit 0, `22 successful, 22 total`, `1m38.707s`, `@taxi/api`
+`77 passed, 77 total` / `724 passed, 724 total` — recorded in `.claude/reports/pr-196-review-fixes.md`.
 
 ### Five consecutive full gates from cleared output — AC #3
 
