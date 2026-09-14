@@ -23,13 +23,16 @@ Probe D below is the run of that path.
 **Also in the PR, its own commit** — `apps/dispatch` session fixtures. The first gate on this change went
 red at `require-role.test.tsx` "renders children for an allowed role": the `AuthSession` fixture in three
 dispatch specs carried `expiresAt: '2026-09-14T12:00:00.000Z'`, and `session.ts:75` drops a session whose
-`expiresAt <= now`. Main's last CI run finished at 11:57:43Z on 2026-09-14; this gate started at
-12:13:59Z. So it is a time bomb, not a flake: `observed` 3 failures in 3 solo runs of that spec,
+`expiresAt <= now`. Main's last CI run (`fe1acfe`, run 34840844783) started at 11:57:43Z and finished at 12:01:15Z on
+2026-09-14 (`gh run list --branch main`, `createdAt`/`updatedAt`), so its dispatch tests ran before
+noon; this gate started at 12:13:59Z. So it is a time bomb, not a flake: `observed` 3 failures in 3 solo runs of that spec,
 deterministic. `login-form.test.tsx:13`, `require-role.test.tsx:14`, `use-board.test.tsx:48` now read
 `2099-01-01T00:00:00.000Z`, the value every driver and rider auth fixture already uses (`grep -rn
-"expiresAt: '20"` across the apps: 4 dispatch/driver/rider fixtures at `2099`, these 3 were the only
-`AuthSession` fixtures dated this year; `session.test.ts:42`'s `2026-08-15` is a deliberately expired
-case under its own clock and is untouched). Unrelated to #199, required for any PR opened after noon UTC
+"expiresAt: '20" apps`, `observed` 2026-09-14: 8 `AuthSession` fixtures were already at `2099` — rider 4,
+driver 3, dispatch `use-assign.test.tsx:21` — and the two driver `2026-09-04` hits are offer fixtures,
+not sessions. `session.test.ts:18` defaults to the same `2026-09-14T12:00` but every `loadSession` call
+in that file passes its own `NOW` of 2026-08-15, so it cannot expire on the wall clock and is untouched,
+as is its deliberately expired case at `:42`). Unrelated to #199, required for any PR opened after noon UTC
 today to pass CI.
 
 ## The mutation

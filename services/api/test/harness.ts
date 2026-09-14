@@ -545,6 +545,10 @@ export async function createTestApp(options?: {
   // before `init()` — the Redis-gated adapter spec's two ioredis clients,
   // which only `RedisIoAdapter.close()` quits, and which held jest open past
   // its run (#199, `observed` both ways in `.claude/reports/issue-199-fix.md`).
+  // That quit depends on `RealtimeGateway` registering its io server during
+  // `init()`: `SocketModule.close()` calls the adapter's `close()` once per
+  // registered server and then a no-op `dispose()`, so a graph with no
+  // gateway would leave both clients open.
   // The self-check's error is the one that names the defect, so a `close()`
   // that throws in the `catch` is printed and the ORIGINAL is rethrown; it is
   // never allowed to mask it.
