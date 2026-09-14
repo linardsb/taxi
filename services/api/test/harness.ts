@@ -498,7 +498,24 @@ export async function createTestApp(options?: {
    *  when `init()` rejects before `registerModules()`: `SocketModule.close()`
    *  has no `applicationConfig` yet and returns at its first line
    *  (`socket-module.js:49-52`), so `dispose()` never runs. That span is this
-   *  callback's to close (#208). Nothing calls it on the success path. */
+   *  callback's to close (#208). Nothing calls it on the success path.
+   *
+   *  Two constraints on that teardown, both of which the implementation below
+   *  depends on:
+   *
+   *  - **It must be IDEMPOTENT.** It runs on every failure, after
+   *    `app.close()`, which on most paths has already torn the same thing
+   *    down — deciding which span a failure fell in would mean reading Nest's
+   *    private init state. `RedisIoAdapter.dispose()` qualifies because it
+   *    clears both refs before quitting (#205); a `() => server.close()`
+   *    (`ERR_SERVER_NOT_RUNNING`) or `() => pool.end()` ("called end on pool
+   *    more than once") does not, and would print a confusing second error
+   *    from the inner `catch` on every failed boot.
+   *  - **Its lifetime is the FAILURE path only.** Nothing calls it when the
+   *    boot succeeds and `TestApp` exposes no hook to, so whatever it closes
+   *    must also be something `app.close()` reaches once `init()` has got
+   *    past `registerModules()`. A resource `close()` can never reach leaks
+   *    on every green run. */
   configure?: (app: INestApplication) => Promise<(() => Promise<void>) | void>;
 }): Promise<TestApp> {
   const kv = new InMemoryKeyValueStore();
@@ -544,9 +561,15 @@ export async function createTestApp(options?: {
   const app = moduleRef.createNestApplication();
   const teardownConfigured = await options?.configure?.(app);
 
-  // EVERY step that can throw sits inside this `try` — `init()`, both
-  // self-checks, the listen, and the `DRIZZLE` resolution in the returned
-  // object. Any of them throwing would otherwise leave `ctx` unassigned with
+  // Every step AFTER `configure` that can throw sits inside this `try` —
+  // `init()`, both self-checks, the listen, and the `DRIZZLE` resolution in
+  // the returned object. (`configure` itself is the one exception, and the
+  // residual window: it is called on the line above, so a `configure` that
+  // opens something and then throws leaks it, and never gets to return the
+  // teardown that would have closed it. Named in `issue-208-fix.md`'s *Not
+  // done* and in #209 review M1; closing it needs a change to
+  // `RedisIoAdapter.connectToRedis`, not to this file, so it is its own
+  // ticket — #211.) Any of them throwing would otherwise leave `ctx` unassigned with
   // the app still holding whatever `configure` opened — the Redis-gated
   // adapter spec's two ioredis clients — plus, past the listen, a bound
   // socket. `afterAll`'s `ctx.app.close()` then throws on top of it, nothing

@@ -222,25 +222,46 @@ describe('RedisIoAdapter CORS', () => {
 describeWithRedis('RedisIoAdapter teardown', () => {
   const ALLOWED_ORIGIN = 'http://localhost:3000';
 
+  /** What each client gets to reach `end`, counted from the AWAIT. */
+  const END_BUDGET_MS = 2_000;
+
   /**
-   * Resolves with the client's final status once the connection actually ends.
-   * Not read synchronously after `close()`: `quit()` resolves on the server's
-   * `+OK` and the `ready` → `end` transition lands a tick later (`observed`,
-   * still `ready` immediately after and `end` within 100 ms). The 2 s bound
-   * makes a client nothing quit fail here rather than on jest's 20 s timeout.
+   * Starts watching a client for `end` and returns a getter for its status.
+   * Split in two because the watch and the budget belong at different points:
+   * the watch must be attached before the close that ends the connection,
+   * while the budget only means anything from the await. `breakingConfigure`
+   * attaches its watches inside `configure`, which runs before `app.init()` —
+   * a budget running from there would be timing a whole `AppModule` boot, and
+   * would redden the case claiming `close()` was reached when it may never
+   * have been.
+   *
+   * The getter resolves either way — with `end` once the connection actually
+   * ends, or with the live status once `END_BUDGET_MS` is up. Not read
+   * synchronously after `close()`: `quit()` resolves on the server's `+OK` and
+   * the `ready` → `end` transition lands a tick later (`observed`, still
+   * `ready` immediately after and `end` within 100 ms). Resolving rather than
+   * rejecting is what keeps a client nothing quit reddening its own assertion
+   * (`Received: ['ready', 'ready']`) inside the budget rather than on jest's
+   * 20 s timeout — and leaves no window where a timer rejects a promise
+   * nobody is holding yet, which an aggregate attached later cannot close.
    */
-  const ended = (client: Redis): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const timer = setTimeout(
-        () =>
-          reject(new Error(`client still ${client.status} 2 s after close()`)),
-        2_000,
-      );
-      client.once('end', () => {
-        clearTimeout(timer);
-        resolve(client.status);
-      });
+  const ended = (client: Redis): (() => Promise<string>) => {
+    const settled = new Promise<string>((resolve) => {
+      client.once('end', () => resolve(client.status));
     });
+    return () => {
+      let timer: NodeJS.Timeout | undefined;
+      const budget = new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve(client.status), END_BUDGET_MS);
+      });
+      // Cleared on both arms: a live 2 s handle is exactly the shape that
+      // holds jest open past its run (#200).
+      return Promise.race([settled, budget]).finally(() => clearTimeout(timer));
+    };
+  };
+
+  const allEnded = (watches: (() => Promise<string>)[]): Promise<string[]> =>
+    Promise.all(watches.map((status) => status()));
 
   /** A Nest app on an empty module graph: no gateway, so no io server. */
   async function appWithAdapter(): Promise<{
@@ -264,7 +285,7 @@ describeWithRedis('RedisIoAdapter teardown', () => {
 
     await app.close();
 
-    await expect(Promise.all(ending)).resolves.toEqual(['end', 'end']);
+    await expect(allEnded(ending)).resolves.toEqual(['end', 'end']);
   });
 
   it('survives a second close() on the same app (edge)', async () => {
@@ -285,8 +306,9 @@ describeWithRedis('RedisIoAdapter teardown', () => {
    * The harness's two remaining teardown windows, closed in #208. Both are
    * driven from a spec rather than from a mutated `harness.ts`: `configure`
    * runs BEFORE `init()` and is handed the app, so replacing `app.init` or
-   * `app.listen` on the instance reproduces each failure exactly, with the
-   * adapter's two clients as the observable.
+   * `app.listen` on the instance reproduces the STATE each failure leaves the
+   * app in, with the adapter's two clients as the observable. The state, not
+   * the span — see the `init()` case.
    */
   describe('createTestApp boot failures (#208)', () => {
     const BOOM = 'probe: boot failed';
@@ -301,7 +323,7 @@ describeWithRedis('RedisIoAdapter teardown', () => {
       configure: (app: INestApplication) => Promise<() => Promise<void>>;
       ending: () => Promise<string[]>;
     } {
-      let ending: Promise<string>[] = [];
+      let ending: (() => Promise<string>)[] = [];
       return {
         configure: async (app) => {
           const adapter = new RedisIoAdapter(app, [ALLOWED_ORIGIN]);
@@ -315,7 +337,7 @@ describeWithRedis('RedisIoAdapter teardown', () => {
           app[step] = () => Promise.reject(new Error(BOOM));
           return () => adapter.dispose();
         },
-        ending: () => Promise.all(ending),
+        ending: () => allEnded(ending),
       };
     }
 
@@ -323,6 +345,17 @@ describeWithRedis('RedisIoAdapter teardown', () => {
       // The one span `app.close()` cannot cover: with no `applicationConfig`
       // yet, `SocketModule.close()` returns at its first line and never
       // reaches `dispose()`. The `configure` teardown is what quits them.
+      //
+      // Replacing `app.init` wholesale means its body never runs, so the span
+      // the name points at — `applyOptions()` → `httpAdapter.init()` → the
+      // parser middleware (`nest-application.js:99-102`) — is not entered.
+      // The replacement STANDS IN for a rejection inside it: both leave
+      // `applicationConfig` unset, which is the only state `close()` reads
+      // here (`socket-module.js:50`), so the two are indistinguishable to
+      // everything this case asserts. That also means the case is evidence
+      // that the teardown closes the window, not evidence about WHERE the
+      // window is — the where is established by the source read in
+      // `.claude/reports/issue-208-fix.md`'s *Mechanism*.
       const probe = breakingConfigure('init');
 
       await expect(

@@ -49,6 +49,11 @@ written first and failed green-tree for this reason.
 > **Superseded by #208 — both windows in this section are closed.** The section stays as the record of
 > what #205's tree did; it is no longer a description of the harness. `.claude/reports/issue-208-fix.md`
 > has the fix and the two attribution pairs that pin it.
+>
+> **Every `harness.ts` line number in this section is pinned to `3d4046c`** — the commit that landed
+> #205 — and not to the current tree, where the same digits still resolve but land on the fix that
+> refutes them (`git show 3d4046c:services/api/test/harness.ts`; `observed` there: `:586` ends the `try`
+> body, `:608` is the listen, `:619` the `DRIZZLE` resolution, `:599-607` the comment). #209 review L2.
 
 A rejecting `init()` is covered only from `registerModules()` onward. Before that,
 `SocketModule.close()` has no `applicationConfig` and returns at its first line, so `dispose()` is never

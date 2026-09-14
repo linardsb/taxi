@@ -138,4 +138,52 @@ describe('createTestApp network invariants (#193)', () => {
     expect(bound!.listening).toBe(false); // …and the catch released it
     expect(bound!.address()).toBeNull();
   });
+
+  it('rethrows the boot error when the teardown path throws too (failure)', async () => {
+    // The harness's masking guarantee: "anything thrown by the teardown path —
+    // `close()` or the `configure` teardown — is printed and the ORIGINAL is
+    // rethrown". Both `catch` blocks were unexecuted by the suite before this
+    // case (#209 review L3), so the guarantee was prose only. Ungated, not
+    // Redis-gated: a throwing teardown needs no adapter and no clients, and
+    // the point is that these lines run on EVERY suite run.
+    const BOOM = 'probe: boot failed';
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await expect(
+        createTestApp({
+          configure: (app) => {
+            app.init = () => Promise.reject(new Error(BOOM));
+            // Wrapped, not replaced: the real close still runs, so the app
+            // this case abandons holds nothing open. A stubbed-out close
+            // would test the guarantee by leaking the thing the guarantee
+            // exists to release.
+            const close = app.close.bind(app);
+            app.close = async () => {
+              await close();
+              throw new Error('probe: close boom');
+            };
+            return Promise.resolve(() =>
+              Promise.reject(new Error('probe: teardown boom')),
+            );
+          },
+        }),
+      ).rejects.toThrow(BOOM); // …not either teardown error
+
+      // `console.error(message?: any, ...rest: any[])`, so both columns are
+      // `any` at the call site and have to be narrowed before asserting.
+      const printed = errors.mock.calls as [string, Error][];
+      expect(printed.map(([message]) => message)).toEqual([
+        'createTestApp: app.close() after a failed boot threw (the original error follows)',
+        'createTestApp: the configure teardown after a failed boot threw (the original error follows)',
+      ]);
+      // Both printed the error they caught, not the boot error.
+      expect(printed.map(([, caught]) => caught.message)).toEqual([
+        'probe: close boom',
+        'probe: teardown boom',
+      ]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
 });

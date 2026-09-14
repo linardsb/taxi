@@ -29,7 +29,8 @@ a no-op. Anything it throws is printed, never allowed to mask the original error
 
 **`services/api/src/features/realtime/redis-io.adapter.spec.ts`** — `installAdapter` returns
 `() => adapter.dispose()`, and a nested `createTestApp boot failures (#208)` block adds two Redis-gated
-cases. **`services/api/src/test-harness.spec.ts`** — one ungated case for the socket half.
+cases. **`services/api/src/test-harness.spec.ts`** — two ungated cases: the socket half, and (added by
+#209 review L3) the masking guarantee.
 
 ## Why a spec can drive this now, and could not in #205
 
@@ -37,23 +38,40 @@ cases. **`services/api/src/test-harness.spec.ts`** — one ungated case for the 
 reachable from a test: a port-0 `listen()` does not collide, and nothing could make `init()` reject.
 
 `options.configure` is the opening. It runs **before** `init()` and is handed the app, so a spec can
-replace `app.init` or `app.listen` on the instance and reproduce each failure exactly — no mutation, no
-on-disk surgery, and the cases ship. `breakingConfigure(step)` in the adapter spec is that, parameterised
-by which step to break; the clients' `end` events are started inside `configure`, because the clients do
-not exist until `connectToRedis` resolves and that is already inside `createTestApp`.
+replace `app.init` or `app.listen` on the instance and reproduce the **state** each failure leaves the app
+in — no mutation, no on-disk surgery, and the cases ship. `breakingConfigure(step)` in the adapter spec is
+that, parameterised by which step to break; the clients' `end` events are started inside `configure`,
+because the clients do not exist until `connectToRedis` resolves and that is already inside
+`createTestApp`.
 
-## The three new cases
+**The state, not the span** (#209 review L5). Replacing `app.init` wholesale means its body never runs, so
+the `:99-102` window itself is never entered. Both that and a rejection inside it leave
+`applicationConfig` unset, which is the only state `close()` reads here (`socket-module.js:50`), so the
+two are indistinguishable to everything the case asserts. The case is therefore evidence that the
+teardown *closes* the window, not evidence about *where* the window is — the where is established
+independently, by the *Mechanism* source read below.
+
+## The four new cases
 
 | Case | File | Breaks | Asserts |
 |---|---|---|---|
 | `quits the adapter when init() rejects before registerModules() (expected)` | `redis-io.adapter.spec.ts` | `app.init` rejects | both clients reach `end` |
 | `quits the adapter when listen() rejects (edge)` | `redis-io.adapter.spec.ts` | `app.listen` rejects | both clients reach `end` |
 | `releases the bound socket when the boot throws after listen() (failure)` | `test-harness.spec.ts` | real listen binds, then throws | the socket was listening, then is not, and `address()` is null |
+| `rethrows the boot error when the teardown path throws too (failure)` | `test-harness.spec.ts` | `app.init` rejects; `close()` and the teardown both throw on top | `createTestApp` rejects with the BOOT error, and both teardown errors were printed instead |
 
 The third is ungated and asserts the **socket**, not the clients: the first two never bind one (their
 `listen` rejects), so neither can say anything about socket release. It records `listening` at the throw
 rather than asserting inside the callback, because an `expect()` that throws in there is caught by the
 harness and re-emerges as the boot error — the case would then fail for the wrong reason.
+
+The fourth was added by #209 review L3: the masking guarantee ("anything thrown by the teardown path —
+`close()` or the `configure` teardown — is printed and the ORIGINAL is rethrown") had no case, so both
+`catch` blocks were unexecuted by the suite. It is **ungated**: a throwing teardown needs no adapter and no
+clients, and the point is that these lines run on every suite run rather than only where `REDIS_TEST_URL`
+is set. `app.close` is wrapped rather than replaced — the real close still runs, so the app the case
+abandons holds nothing open; a stubbed-out close would test the guarantee by leaking the thing the
+guarantee exists to release.
 
 ## Probes — two attribution pairs
 
@@ -62,6 +80,10 @@ Same recipe throughout: from `services/api`,
 src/features/realtime/redis-io.adapter.spec.ts src/test-harness.spec.ts`. Each probe is the fixed harness
 with **one** hunk reverted; the specs are identical in all four runs. "did not exit" counts the
 `Jest did not exit one second after…` line.
+
+All four rows below were run at `ed3a0dd`, where the two spec files held **13** cases. The #209 review
+fixes added a fourteenth (the masking case), so a re-run today totals 14 — see the note under the failure
+texts.
 
 | Probe | `harness.ts` | Result | Which case flips |
 |---|---|---|---|
@@ -105,6 +127,32 @@ The exit-124 non-exit in both probes is the original defect's own signature — 
 jest open — not an artifact of the probe. `harness.ts` was restored from a saved copy after each and
 `cmp`-verified against all three copies before the gate.
 
+> **The two `client still ready 2 s after close()` lines above are a record of a run against a tree that
+> no longer exists.** #209 review L1 replaced the `ended()` helper's rejecting timer with one that
+> resolves with the live status, so a re-run of probe B now reddens the same case with
+> `Received: ["ready", "ready"]` against `Expected: ["end", "end"]` instead. `observed` 2026-09-14 on the
+> fixes commit: `1 hunk, +0 −13`, `EXIT=124`, `Tests: 2 failed, 12 passed, 14 total`, 1 "did not exit",
+> both W1 cases still green. Two cases flip under probe B now rather than one — the second is the new
+> masking case (below), which deletes along with the teardown call it asserts on; the W1 pair staying
+> green is what still makes it an attribution. The quoted output is left as-is: it is what that run
+> printed.
+
+### Probes C1 and C2 — the masking guarantee (#209 review L3)
+
+Same recipe, one hunk each, against `src/test-harness.spec.ts` alone (the new case is ungated, so no
+`REDIS_TEST_URL`). Each removes one masking `try`/`catch` wrapper and leaves the call it wrapped.
+
+| Probe | `harness.ts` | Result | Which case flips |
+|---|---|---|---|
+| **C1** | the `configure` teardown's guard removed (`+1 −8`) | ❌ exit 1, `1 failed, 4 passed, 5 total` — `Expected substring: "probe: boot failed"` / `Received message: "probe: teardown boom"` | the new masking case |
+| **C2** | `app.close()`'s guard removed (`+1 −8`) | ❌ exit 1, `1 failed, 4 passed, 5 total` — `Expected substring: "probe: boot failed"` / `Received message: "probe: close boom"` | the new masking case |
+| **Green** | fixed | ✅ exit 0, `14 passed, 14 total` across both spec files, 2.355 s | — |
+
+Both `observed` 2026-09-14. Each probe makes the error the harness is supposed to swallow escape and mask
+the boot error, which is the exact defect the guarantee names; the four pre-existing cases in the file stay
+green in both. Sizes `observed` via the same `diff --unified=0` counts. `harness.ts` restored from a saved
+copy after each and `cmp`-verified.
+
 ## Mechanism, read rather than assumed
 
 - `SocketModule.close()` (`socket-module.js:49-63`) returns at `:50-52` without `applicationConfig`, and
@@ -129,6 +177,18 @@ branch's source head, and this file is `.claude/`-only, which no gate task reads
 
 ## Not done
 
+- **A `configure` that THROWS is the residual window, and this PR does not close it.** `configure` is
+  called on the line *above* the `try` (`harness.ts:562`), so a `configure` that opens something and then
+  throws leaks it, and never reaches the `return` that would have handed back the teardown. `observed`
+  2026-09-14 (#209 review M1): a throwaway spec whose `configure` runs
+  `adapter.connectToRedis(REDIS_TEST_URL)` and then throws leaves both clients `ready` and exits 124 —
+  this family's own signature. Reachable without a mutation: `connectToRedis` ends in
+  `Promise.all([pubClient.ping(), subClient.ping()])` (`redis-io.adapter.ts:39`), so a server that accepts
+  the connection and errors the PING rejects there. **Moving the call inside the `try` is necessary but
+  not sufficient** — a rejection between `new Redis(url)` and the two field assignments
+  (`redis-io.adapter.ts:37-41`) leaves `this.pubClient`/`this.subClient` undefined, so `dispose()` reaches
+  nothing even when it is called. Closing it needs `connectToRedis` to assign before it pings or clean up
+  its own partial state — shipped source, not the harness — so it is its own ticket: **#211**.
 - **`configure`'s teardown is opt-in, and only one caller needs it.** `installAdapter` returns one;
   `redis-io.adapter.spec.ts`'s CORS block installs an adapter that never calls `connectToRedis`, so it
   holds nothing and returns nothing. A future `configure` that opens a resource and forgets the teardown
