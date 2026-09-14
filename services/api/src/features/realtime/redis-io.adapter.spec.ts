@@ -1,5 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { rideRoom, RT, type RideStatusEvent } from '@taxi/shared';
+import type Redis from 'ioredis';
 import { request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
@@ -199,5 +201,71 @@ describe('RedisIoAdapter CORS', () => {
     });
     // One more turn, so the aborted poll's callbacks land inside the test.
     await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+});
+
+/**
+ * `dispose()`, not `close(server)`, is what quits the two clients (#205).
+ * `SocketModule.close()` calls `close()` once per io server in its container
+ * and `dispose()` unconditionally, so a graph with no gateway registers no
+ * server and reaches only the second — the case the suite above cannot show,
+ * because every app it builds has `RealtimeGateway` in it.
+ */
+describeWithRedis('RedisIoAdapter teardown', () => {
+  const ALLOWED_ORIGIN = 'http://localhost:3000';
+
+  /**
+   * Resolves with the client's final status once the connection actually ends.
+   * Not read synchronously after `close()`: `quit()` resolves on the server's
+   * `+OK` and the `ready` → `end` transition lands a tick later (`observed`,
+   * still `ready` immediately after and `end` within 100 ms). The 2 s bound
+   * makes a client nothing quit fail here rather than on jest's 20 s timeout.
+   */
+  const ended = (client: Redis): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(new Error(`client still ${client.status} 2 s after close()`)),
+        2_000,
+      );
+      client.once('end', () => {
+        clearTimeout(timer);
+        resolve(client.status);
+      });
+    });
+
+  /** A Nest app on an empty module graph: no gateway, so no io server. */
+  async function appWithAdapter(): Promise<{
+    app: INestApplication;
+    clients: Redis[];
+  }> {
+    const moduleRef = await Test.createTestingModule({}).compile();
+    const app = moduleRef.createNestApplication();
+    const adapter = new RedisIoAdapter(app, [ALLOWED_ORIGIN]);
+    await adapter.connectToRedis(REDIS_TEST_URL!);
+    app.useWebSocketAdapter(adapter);
+    await app.init();
+    // Read BEFORE the close: `dispose()` drops both references on its way out.
+    const held = adapter as unknown as { pubClient: Redis; subClient: Redis };
+    return { app, clients: [held.pubClient, held.subClient] };
+  }
+
+  it('quits both clients on close(), with no gateway to register a server (expected)', async () => {
+    const { app, clients } = await appWithAdapter();
+    const ending = clients.map(ended);
+
+    await app.close();
+
+    await expect(Promise.all(ending)).resolves.toEqual(['end', 'end']);
+  });
+
+  it('survives a second close() on the same app (edge)', async () => {
+    // The harness closes the app itself when `init()` or a self-check throws,
+    // and the spec's `afterAll` then closes it again. `quit()` on an ended
+    // connection rejects, so `dispose()` has to drop the references first.
+    const { app } = await appWithAdapter();
+    await app.close();
+
+    await expect(app.close()).resolves.toBeUndefined();
   });
 });
