@@ -115,7 +115,7 @@ session's scratchpad, not committed.
 
 `observed` — `record-gate.sh --clean` (`pnpm turbo run typecheck lint test build --force` from cleared
 `dist`/`.next`), `COMPOSE_PROJECT_NAME=taxi`, `REDIS_TEST_URL=redis://localhost:6381`, on a **clean**
-tree at `12d106d` (`.claude/last-gate.json`: `dirty: false`), 15:22:15–15:23:47 local, exit 0:
+tree at `12d106d`, 15:22:15–15:23:47 local, exit 0:
 
 ```
 Tasks:    22 successful, 22 total
@@ -150,6 +150,10 @@ the path, so "a report cannot stamp the commit that contains it" was refuted by 
 The counts themselves always held; three earlier runs of this pass reported the same 22/22 and the same
 six package totals, at `32fb6f7` dirty (`1m22.01s`), at `274dc0c` (`1m23.233s`) and on the #206-fix tree
 before it was committed (`1m33.89s`).
+
+"Clean" is reader-checkable without the gate script's own record, which `.gitignore:25` keeps out of the
+repo: `record-gate.sh` prints a `(dirty tree — this run covers uncommitted changes … does not contain.)`
+line under the stamp whenever `git status --porcelain` is non-empty, and the run above printed none.
 
 `12d106d` is pushed and resolvable, and the gate above ran on it with nothing uncommitted. The only
 commit after it on this branch is the docs commit carrying this paragraph and

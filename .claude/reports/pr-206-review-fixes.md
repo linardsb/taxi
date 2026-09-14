@@ -31,9 +31,12 @@ $ grep -rn "\.close()" services/api --include='*.ts' | grep -v node_modules \
 28 hits; 2 are a log string (`harness.ts:591`) and a docblock (`harness.ts:673`) → 26 real call sites
 ```
 
-Of the 26: 22 are `ctx.app.close()` / `nodeA|nodeB.app.close()` inside an `afterAll`, over a `let ctx`
-assigned in `beforeAll`; one is the harness's own `catch`; one is `scripts/mint-tracked-ride.ts:1409`;
-the remaining three are this spec's `:257`, `:267` and `:269`. None is optional-chained or guarded —
+`26 = 21 + 1 + 1 + 3`: **21** are `ctx.app.close()` / `nodeA|nodeB.app.close()` inside an `afterAll`, over
+a `let ctx` assigned in `beforeAll`; one is the harness's own `catch`; one is
+`scripts/mint-tracked-ride.ts:1409`; the last three are this spec's `:257`, `:267` and `:269`. The 21 is
+the review's own figure ("all 21 `app.close()` sites"), reproduced here — it counted the `afterAll`
+population the finding turns on, and this count adds the five that sit outside it. None is
+optional-chained or guarded —
 `grep -rn "ctx?\.\|if (ctx)\|ctx &&" services/api/src services/api/test` returns nothing — so a throwing
 `createTestApp` leaves `ctx` undefined and the `afterAll` throws a `TypeError` instead of closing again.
 **The only double close in the repo is the edge case itself.**
@@ -52,6 +55,12 @@ the enumeration above plus the gate — the sentence has no runtime.
 $ grep -rn "harness closes the app itself" .claude/ services/ docs/
 (no hits)
 ```
+
+**Correction to `12d106d`'s own commit message.** It says "22 of them `ctx.app.close()` in an `afterAll`".
+The figure is **21** — `grep … | grep -E "(ctx|nodeA|nodeB)\.app\.close\(\)" | wc -l` → `21`. It is left
+uncorrected in the commit rather than force-pushed over: the sha is cited by this report, by the PR body
+and by the gate stamp, and orphaning it to fix a digit is the mistake L3 is about. Nothing in the finding
+turns on it — 21 is the review's own count, and the conclusion is the same either way.
 
 ## F2 · "the `catch` above closes the app either way" was false for two statements
 
@@ -123,8 +132,12 @@ claim means retiring its **subject**, not its digits"). The gate section of `iss
 Validation section of the PR body now carry a fresh run, and a paragraph that says what the old stamp
 claimed and why it was wrong.
 
-**The new stamp is on a clean tree at a pushed commit.** `.claude/last-gate.json` records
-`"head_short": "12d106d"`, `"dirty": false`, `"exit_code": 0`:
+**The new stamp is on a clean tree at a pushed commit** — and "clean" is checkable from the stamp itself,
+not from `record-gate.sh`'s own `.claude/last-gate.json`, which `.gitignore:25` keeps out of the repo (a
+citation to it would be L3 again: evidence no reader can open). The script prints a `(dirty tree — this
+run covers uncommitted changes … does not contain.)` line under the stamp whenever `git status
+--porcelain` is non-empty. The discarded first run printed it, naming `0763bc0`; the run below printed
+no such line, and `git status --porcelain` was empty at the commit:
 
 ```
 observed — record-gate.sh --clean (pnpm turbo run typecheck lint test build --force,
@@ -202,9 +215,29 @@ No issue was logged, because none of the three was a "real but later" call: all 
 surfaces this PR already owns, and F2's one scope question was decided in-session rather than deferred.
 No manual test is owed — there is no behaviour change in this round to test.
 
+## PR #207 does not collide with this branch
+
+The review this round answers lives on `docs/pr-206-review` (PR #207), which shares this repo's `.claude/`
+directory. `observed` 2026-09-14, both against `main`:
+
+```
+$ comm -12 <(git diff --name-only main...HEAD | sort) \
+           <(git diff --name-only main...origin/docs/pr-206-review | sort)
+(empty)
+```
+
+#207 touches `.claude/code-reviews/pr-206-review.md` and nothing else; #206 does not touch that file. The
+sets are disjoint, so neither merge can conflict with the other — but a `✓` on either PR goes stale
+silently when `main` moves, so merge order is still worth minding: the docs-only PR last.
+
 ## Commits
 
 - `12d106d` — `fix(api): correct two comments the #206 review refuted (#205)` — F1, F2, F3 in the spec,
-  the harness and the report. Pushed; gated clean.
-- the docs commit on top — this report and the rewritten gate paragraph (F4). `.claude/` only, and no
-  task in the gate's graph reads `.claude/`.
+  the harness and the report. Pushed; the stamp above gated it clean.
+- `9e2ac35` — `docs(reports): PR #206 round-1 fixes — three Lows, no deferrals (#205)` — the first draft
+  of this report and the rewritten gate paragraph (F4).
+- one more `.claude/`-only commit on top — this section, the `21`/`26` breakdown, the PR #207 collision
+  check, and the removal of two citations to the gitignored `.claude/last-gate.json`.
+
+Every commit after `12d106d` touches `.claude/` and nothing else, and no task in the gate's graph reads
+`.claude/` — so the stamp at `12d106d` covers every source line on this branch.
