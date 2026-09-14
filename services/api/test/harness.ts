@@ -491,8 +491,15 @@ export interface TestApp {
 export async function createTestApp(options?: {
   controllers?: Type<unknown>[];
   /** Runs after the app is created but BEFORE init() — where a custom
-   *  WebSocket adapter has to be installed to take effect. */
-  configure?: (app: INestApplication) => Promise<void>;
+   *  WebSocket adapter has to be installed to take effect.
+   *
+   *  MAY return a teardown for whatever it opened. `app.close()` covers the
+   *  ordinary case, but it cannot reach a websocket adapter installed here
+   *  when `init()` rejects before `registerModules()`: `SocketModule.close()`
+   *  has no `applicationConfig` yet and returns at its first line
+   *  (`socket-module.js:49-52`), so `dispose()` never runs. That span is this
+   *  callback's to close (#208). Nothing calls it on the success path. */
+  configure?: (app: INestApplication) => Promise<(() => Promise<void>) | void>;
 }): Promise<TestApp> {
   const kv = new InMemoryKeyValueStore();
   const sms = new RecordingSmsProvider();
@@ -535,29 +542,33 @@ export async function createTestApp(options?: {
     .compile();
 
   const app = moduleRef.createNestApplication();
-  await options?.configure?.(app);
+  const teardownConfigured = await options?.configure?.(app);
 
-  // `init()` and both self-checks sit inside the `try`: any of the three
-  // throwing would otherwise leave `ctx` unassigned with the app still holding
-  // whatever `configure` opened — the Redis-gated adapter spec's two ioredis
-  // clients — so `afterAll`'s `ctx.app.close()` throws on top of it, nothing
-  // ever closes the app, and the clients hold jest open past its run (#199,
+  // EVERY step that can throw sits inside this `try` — `init()`, both
+  // self-checks, the listen, and the `DRIZZLE` resolution in the returned
+  // object. Any of them throwing would otherwise leave `ctx` unassigned with
+  // the app still holding whatever `configure` opened — the Redis-gated
+  // adapter spec's two ioredis clients — plus, past the listen, a bound
+  // socket. `afterAll`'s `ctx.app.close()` then throws on top of it, nothing
+  // ever closes the app, and those handles hold jest open past its run (#199,
   // `observed` both ways in `.claude/reports/issue-199-fix.md`; the `init()`
-  // half in `.claude/reports/issue-205-fix.md`). Closed here instead:
-  // `close()` releases the pool (`onModuleDestroy` → `pool.end()`) and reaches
-  // `RedisIoAdapter.dispose()`, which quits both clients whether or not a
-  // gateway registered an io server (#205).
+  // half in `.claude/reports/issue-205-fix.md`; the listen half in
+  // `.claude/reports/issue-208-fix.md`). Closed here instead: `close()`
+  // releases the pool (`onModuleDestroy` → `pool.end()`), releases the socket
+  // (`express-adapter.js` `close()`), and reaches `RedisIoAdapter.dispose()`,
+  // which quits both clients whether or not a gateway registered an io server
+  // (#205).
   //
-  // A rejecting `init()` is covered only from `registerModules()` onward:
-  // before that `SocketModule.close()` has no `applicationConfig` yet and
-  // returns without reaching `dispose()`, leaving the clients open. That
-  // window is `applyOptions()`, the http adapter's own `init()` (a no-op on
-  // Express) and the parser middleware — `nest-application.js:99-102`, nothing
-  // that touches an overridden provider — and `observed` in the #205 report.
+  // One span `close()` cannot cover, which is why `configure` may hand back a
+  // teardown: an `init()` that rejects before `registerModules()` leaves
+  // `SocketModule.close()` without an `applicationConfig`, so it returns at
+  // its first line and never reaches `dispose()` (`socket-module.js:49-52`).
+  // The span is `applyOptions()`, the http adapter's own `init()` (a no-op on
+  // Express) and the parser middleware — `nest-application.js:99-102`.
   //
-  // The self-check's error is the one that names the defect, so a `close()`
-  // that throws in the `catch` is printed and the ORIGINAL is rethrown; it is
-  // never allowed to mask it.
+  // The original error is the one that names the defect, so anything thrown by
+  // the teardown path — `close()` or the `configure` teardown — is printed and
+  // the ORIGINAL is rethrown; neither is ever allowed to mask it.
   try {
     await app.init();
 
@@ -584,40 +595,51 @@ export async function createTestApp(options?: {
         'PAYMENTS_PROVIDER override did not take: the app resolved a different instance than the harness records through. Any charge-count or decline assertion built on this app would be meaningless.',
       );
     }
+
+    // LAST, after both self-checks: nothing between `init()` and here needs a
+    // port (both checks are `app.get()` calls), and a check that throws before
+    // the listen never has a bound socket to release — with the listen in its
+    // old place that socket alone held jest open (#194 review F1, `observed`
+    // both ways). Inside the `try` since #208: the ordering is unchanged, and
+    // a rejection here or from the `DRIZZLE` resolution below now takes the
+    // same `catch` rather than escaping with the app open.
+    await app.listen(0, '127.0.0.1');
+
+    return {
+      app,
+      kv,
+      sms,
+      locations,
+      maps,
+      queue,
+      payments,
+      push,
+      db: app.get<Db>(DRIZZLE),
+    };
   } catch (err) {
     try {
       await app.close();
     } catch (closeErr) {
       console.error(
-        'createTestApp: app.close() after a failed init() or self-check threw (the original error follows)',
+        'createTestApp: app.close() after a failed boot threw (the original error follows)',
         closeErr,
+      );
+    }
+    // The backstop for the pre-`registerModules()` span above. Run on EVERY
+    // failure rather than only that one: `RedisIoAdapter.dispose()` clears
+    // both references before quitting (#205), so a second pass after a
+    // `close()` that already disposed is a no-op, and deciding which span the
+    // failure fell in would mean reading Nest's private init state.
+    try {
+      if (typeof teardownConfigured === 'function') await teardownConfigured();
+    } catch (teardownErr) {
+      console.error(
+        'createTestApp: the configure teardown after a failed boot threw (the original error follows)',
+        teardownErr,
       );
     }
     throw err;
   }
-
-  // LAST, after both self-checks: nothing between `init()` and here needs a
-  // port (both checks are `app.get()` calls), and a check that throws before
-  // the listen never has a bound socket to release — with the listen in its
-  // old place that socket alone held jest open (#194 review F1, `observed`
-  // both ways). The `catch` above covers `init()` and both self-checks; a
-  // rejection from this listen or the `DRIZZLE` resolution below still leaves
-  // `ctx` unassigned with the app open (unreachable in practice: port 0 does
-  // not collide and `DRIZZLE` resolves in every other spec). This order keeps
-  // the socket out of the failure path entirely.
-  await app.listen(0, '127.0.0.1');
-
-  return {
-    app,
-    kv,
-    sms,
-    locations,
-    maps,
-    queue,
-    payments,
-    push,
-    db: app.get<Db>(DRIZZLE),
-  };
 }
 
 /**

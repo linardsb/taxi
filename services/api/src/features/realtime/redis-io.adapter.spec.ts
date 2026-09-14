@@ -40,10 +40,18 @@ describeWithRedis('RedisIoAdapter (cross-node)', () => {
   let nodeB: TestApp;
   let portA: number;
 
-  async function installAdapter(app: INestApplication): Promise<void> {
+  async function installAdapter(
+    app: INestApplication,
+  ): Promise<() => Promise<void>> {
     const adapter = new RedisIoAdapter(app, ['http://localhost:3000']);
     await adapter.connectToRedis(REDIS_TEST_URL!);
     app.useWebSocketAdapter(adapter);
+    // The harness runs this on any failed boot, never on the success path
+    // (#208). It is needed for one span — an `init()` rejecting before
+    // `registerModules()`, where `app.close()` returns without reaching
+    // `dispose()` — and is a no-op everywhere else, since `dispose()` clears
+    // both references before quitting (#205).
+    return () => adapter.dispose();
   }
 
   beforeAll(async () => {
@@ -271,5 +279,70 @@ describeWithRedis('RedisIoAdapter teardown', () => {
     await app.close();
 
     await expect(app.close()).resolves.toBeUndefined();
+  });
+
+  /**
+   * The harness's two remaining teardown windows, closed in #208. Both are
+   * driven from a spec rather than from a mutated `harness.ts`: `configure`
+   * runs BEFORE `init()` and is handed the app, so replacing `app.init` or
+   * `app.listen` on the instance reproduces each failure exactly, with the
+   * adapter's two clients as the observable.
+   */
+  describe('createTestApp boot failures (#208)', () => {
+    const BOOM = 'probe: boot failed';
+
+    /**
+     * A `configure` that installs an adapter, starts watching both clients for
+     * `end`, then breaks one step of the boot. The watch has to start in here:
+     * the clients do not exist until `connectToRedis` resolves, which is
+     * already inside `createTestApp`.
+     */
+    function breakingConfigure(step: 'init' | 'listen'): {
+      configure: (app: INestApplication) => Promise<() => Promise<void>>;
+      ending: () => Promise<string[]>;
+    } {
+      let ending: Promise<string>[] = [];
+      return {
+        configure: async (app) => {
+          const adapter = new RedisIoAdapter(app, [ALLOWED_ORIGIN]);
+          await adapter.connectToRedis(REDIS_TEST_URL!);
+          app.useWebSocketAdapter(adapter);
+          const held = adapter as unknown as {
+            pubClient: Redis;
+            subClient: Redis;
+          };
+          ending = [held.pubClient, held.subClient].map(ended);
+          app[step] = () => Promise.reject(new Error(BOOM));
+          return () => adapter.dispose();
+        },
+        ending: () => Promise.all(ending),
+      };
+    }
+
+    it('quits the adapter when init() rejects before registerModules() (expected)', async () => {
+      // The one span `app.close()` cannot cover: with no `applicationConfig`
+      // yet, `SocketModule.close()` returns at its first line and never
+      // reaches `dispose()`. The `configure` teardown is what quits them.
+      const probe = breakingConfigure('init');
+
+      await expect(
+        createTestApp({ configure: probe.configure }),
+      ).rejects.toThrow(BOOM);
+
+      await expect(probe.ending()).resolves.toEqual(['end', 'end']);
+    });
+
+    it('quits the adapter when listen() rejects (edge)', async () => {
+      // Past the guard rather than before it: `init()` has run, so this one is
+      // `app.close()`'s own doing and the teardown that follows is the no-op
+      // second pass #205's ref-clearing makes safe.
+      const probe = breakingConfigure('listen');
+
+      await expect(
+        createTestApp({ configure: probe.configure }),
+      ).rejects.toThrow(BOOM);
+
+      await expect(probe.ending()).resolves.toEqual(['end', 'end']);
+    });
   });
 });

@@ -101,4 +101,41 @@ describe('createTestApp network invariants (#193)', () => {
     expect(binds).toBe(2);
     expect(bare.listening).toBe(false); // supertest closed it again each time
   });
+
+  it('releases the bound socket when the boot throws after listen() (failure)', async () => {
+    // The #208 window: the listen and the `DRIZZLE` resolution used to sit
+    // OUTSIDE the harness's `try`, so a throw from either escaped with `ctx`
+    // unassigned and the socket still bound — nothing left to close it, and a
+    // bound socket alone held jest open (#194 review F1). This drives that
+    // shape from a spec: `configure` lets the real listen bind, then throws in
+    // its place. The assertion is the socket's, not the adapter's — the
+    // Redis-gated cases in `redis-io.adapter.spec.ts` cover the clients.
+    let bound: Server | undefined;
+    let listeningAtThrow: boolean | undefined;
+
+    await expect(
+      createTestApp({
+        configure: (app) => {
+          const listen = app.listen.bind(app);
+          // `listen` is overloaded — (port[, host][, cb]) — and no single
+          // stand-in signature satisfies both arms, so the replacement is
+          // typed by the call the harness actually makes and cast back.
+          app.listen = (async (port: number, host: string) => {
+            await listen(port, host);
+            bound = app.getHttpServer() as Server;
+            listeningAtThrow = bound.listening;
+            throw new Error('probe: the boot threw after listen()');
+          }) as unknown as typeof app.listen;
+          return Promise.resolve();
+        },
+      }),
+    ).rejects.toThrow('probe: the boot threw after listen()');
+
+    // Recorded rather than asserted inside the callback: an expect() that
+    // throws in there is caught by the harness and re-emerges as the boot
+    // error, which would make this case fail for the wrong reason.
+    expect(listeningAtThrow).toBe(true); // the bind really happened
+    expect(bound!.listening).toBe(false); // …and the catch released it
+    expect(bound!.address()).toBeNull();
+  });
 });
