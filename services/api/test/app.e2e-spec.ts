@@ -1,35 +1,37 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import type { Server } from 'node:http';
 import request from 'supertest';
-import { App } from 'supertest/types';
-import { AppModule } from './../src/app.module';
+import { createTestApp, type TestApp } from './harness';
 
+/**
+ * Through `createTestApp`, not a raw `AppModule` boot (#200). Raw, this was
+ * the one Nest app in the repo with none of the harness's overrides, so it
+ * dialled REDIS_URL three times (6379 by default, a foreign Redis on the dev
+ * box) and every hand run ended in "Jest did not exit one second after the
+ * test run has completed". `observed` (#200, PR #201): the app lives ~10 ms
+ * after the Redis TCP connect, so `app.close()` sends QUIT mid-handshake and
+ * each client's flushed ready check leaves ioredis's ref'd 2 s disconnect
+ * timer behind — the mechanism, the runs and the instrument that was blind
+ * to it are in the PR body. The harness constructs no ioredis client and
+ * listens once on the loopback (#193).
+ *
+ * Not run by the gate (lint and typecheck do see it): jest `rootDir` is
+ * `src`; this runs only under a hand-run `test:e2e`.
+ */
 describe('AppController (e2e)', () => {
-  let app: INestApplication<App>;
+  let ctx: TestApp;
 
-  beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+  beforeAll(async () => {
+    ctx = await createTestApp();
+  });
 
-    app = moduleFixture.createNestApplication();
-    await app.init();
-    // #193: without a listen, supertest binds this server itself once per
-    // REQUEST, on the wildcard — where a foreign 127.0.0.1 listener in the
-    // ephemeral range answers instead. Listen once, on the loopback, as
-    // `test/harness.ts` does. (Not collected by the gate: jest `rootDir` is
-    // `src`; this runs only under a hand-run `test:e2e`.)
-    await app.listen(0, '127.0.0.1');
+  afterAll(async () => {
+    await ctx.app.close();
   });
 
   it('/ (GET)', () => {
-    return request(app.getHttpServer())
+    return request(ctx.app.getHttpServer() as Server)
       .get('/')
       .expect(200)
       .expect('Hello World!');
-  });
-
-  afterEach(async () => {
-    await app.close();
   });
 });
