@@ -165,13 +165,13 @@ reads identically on both trees, because the disconnects have not propagated yet
 
 ## Gate
 
-`observed` — `record-gate.sh --clean` at `b6a4e93` on a clean tree, with
+`observed` — `record-gate.sh --clean` at `2e0c756` on a clean tree, with
 `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit **0**:
 
 ```
 Tasks:    22 successful, 22 total
 Cached:   0 cached, 22 total
-Time:     1m24.28s
+Time:     1m23.883s
 
 @taxi/api        Test Suites: 77 passed, 77 total   Tests: 733 passed, 733 total
 @taxi/shared     Test Files 24 passed (24)          Tests 231 passed (231)
@@ -183,9 +183,9 @@ Time:     1m24.28s
 
 The `@taxi/api` figures are the **`REDIS_TEST_URL`-set** run, in which nothing skips. They are not
 comparable with `CLAUDE.md`'s gated line, which measures `env -u REDIS_TEST_URL` — see *Not done*.
-No re-run was needed for flakiness: the gate was green on its first pass (exit 0, 1m36.409s at
-`c03367a`) and on both stamped runs. The stamp was taken twice only because `c03367a` was amended into
-`b6a4e93`; the two commits differ by `.claude/` content alone, which no gate task reads.
+**The known api-suite flake under the full gate did not appear.** The gate ran clean four times in this
+pass — once plain (exit 0, 1m36.409s) and three times under `record-gate.sh --clean` as the branch was
+reshaped into its final two commits. No re-run was budgeted or needed.
 
 Level 1, `observed` at this head: `pnpm --filter @taxi/api typecheck` clean; `pnpm --filter @taxi/api lint`
 **0 errors, 12 warnings** — the same 12 as the pre-change baseline, so the change adds none.
