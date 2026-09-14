@@ -181,19 +181,27 @@ See *PR body* below.
 
 ## The value sweep
 
-Every retired value and noun, the exact command run, and its hits. Run from the repo root at the fixes
-commit, `observed` 2026-09-14.
+Every retired value and noun, the exact command, and its hits. Run from the repo root on the working tree
+that became this report's own commit — the branch tip, one commit past `7dd7961`. `observed` 2026-09-14.
 
-| # | Command | Hits | Disposition |
+(A sha is not named here on purpose: a commit cannot cite its own hash, and the two attempts that tried
+went stale on the next amend. The tip is `git log --oneline -1` on this branch; the PR body names it.)
+
+**Exclusion is path-only — `--exclude-dir=node_modules`, never `| grep -v node_modules`.** The first pass
+here used the pipe form and it silently ate a real hit: `pr-209-review-fixes.md:252` quotes a command
+containing the string `node_modules`, so the filter dropped the content line and the sweep read "no hits"
+on a value that was present. Every row below is the re-run under path-only exclusion.
+
+| # | Command (all prefixed `grep -rn --exclude-dir=node_modules --exclude-dir=.git`) | Hits | Disposition |
 |---|---|---|---|
-| 1 | `grep -rn "43\.7" --include='*.md' --include='*.ts' . \| grep -v /node_modules/` | none | working tree clean; the figure lives only in the PR body, fixed there |
-| 2 | `grep -rn "costs nothing measurable" . \| grep -v /node_modules/` | none | same — PR body only |
-| 3 | `grep -rn "s after close()" --include='*.md' --include='*.ts' . \| grep -v /node_modules/` | 6: `redis-io.adapter.spec.ts` (gone — the string no longer exists), `issue-208-fix.md:115,119` + my own new `:126`, `issue-205-fix.md:107`, `pr-206-review.md:106,155` | the two in `issue-208-fix.md` are quoted probe output from a run against a tree that no longer exists — **annotated, not edited**, with the new text and a fresh `observed` re-run beside them. `issue-205-fix.md` and `pr-206-review.md` are #205/#206's own records: out of this PR's scope, left alone |
-| 4 | `grep -rn "EVERY step" --include='*.ts' --include='*.md' .` | none | the false universal is gone from the tree |
-| 5 | `grep -rn "exactly" <the PR's four files>` | 8, of which **0** are the retired claim | the three L5 surfaces are narrowed; the rest are different claims (`"Charged exactly once"`, `"exactly the cases that hunk is responsible for"`, `"the window is exactly :99-102"` — a source read, which L5 explicitly leaves standing) |
-| 6 | `grep -n "three new cases\|one ungated case\|The third\|The fourth\|four new cases" .claude/reports/issue-208-fix.md` | 3 | heading re-counted to **four**; the *What changed* line re-counted to "two ungated cases" |
-| 7 | `grep -rn "13 passed, 13 total" . \| grep -v /node_modules/` | 2, both `issue-208-fix.md:88-89` | correct as written — those are the A/B probe green runs at `ed3a0dd`, where the files held 13 cases. A clause above the table now pins all four rows to that tree and points at the 14-case re-run |
-| 8 | PR body | manual — no working-tree grep reaches it | `43.7 s` sentence, "drives each failure exactly", the `+327 −49`/per-file counts, and the gate stamp all re-derived from the fixes commit (below) |
+| 1 | `"43\.7" --include='*.md' --include='*.ts' .` | 3, all in this file | the claim lived only in the PR body, and is retired there. These three are this report quoting the retired sentence in order to retire it, naming it in the sweep table, and stating the four-value spread in the gate stamp — none asserts it |
+| 2 | `"costs nothing measurable" .` | 3, all in this file | same — the quoted claim, this table's own row, and the closing-commands row |
+| 3 | `"s after close()" --include='*.md' --include='*.ts' .` | 8: `issue-208-fix.md:119,123,130`, `issue-205-fix.md:107`, `pr-206-review.md:106,155`, and 2 in this file. **`redis-io.adapter.spec.ts` is gone from the list** — the string no longer exists in source | `issue-208-fix.md:119,123` are quoted probe output from a run against a tree that no longer exists: **annotated, not edited** (the annotation sits directly under them), with the new failure text and a fresh `observed` re-run beside them. `issue-205-fix.md` and `pr-206-review.md` are #205's and #206's own records — out of this PR's scope, left alone. The two here are this report's own prose |
+| 4 | `"EVERY step" --include='*.ts' --include='*.md' .` | 3, all in this file | **0 in shipped source and 0 in `issue-208-fix.md`** — the false universal is gone from everywhere that asserts it. The three are this report quoting it to retire it |
+| 5 | `"exactly"` over the four touched files | 8, of which **0** are the retired claim | the three L5 surfaces are narrowed. The rest are different claims: `"Charged exactly once"`, `"exactly what the nine never-listening integration specs did"`, `"exactly the shape that holds jest open"`, `"exactly the cases that hunk is responsible for"`, `"the window is exactly init()'s :99-102"` — the last being the source read L5 explicitly leaves standing |
+| 6 | `"three new cases\|one ungated case\|The third\|The fourth\|four new cases" .claude/reports/issue-208-fix.md` | 3 | heading re-counted to **four**; the *What changed* line re-counted to "two ungated cases" |
+| 7 | `"13 passed, 13 total" .` | 3: `issue-208-fix.md:92,93`, plus this file's own sweep row | correct as written — those two are the A/B probe green runs at `ed3a0dd`, where the two spec files held 13 cases. A clause above that table now pins all four rows to that tree and points at the 14-case re-run |
+| 8 | PR body | manual — **no working-tree grep reaches it** | four things re-derived at the branch tip rather than inherited: the `43.7 s` attribution (retired), "drives each failure exactly" (narrowed), `+327 −49` and the per-file counts (now `+773 −66`), and the gate stamp (`729` → `730`, `1m26.428s` → `1m18.751s`, `ed3a0dd` → `7dd7961`) |
 
 ## Validation
 
@@ -204,7 +212,37 @@ commit, `observed` 2026-09-14.
 | `@taxi/api` lint | `pnpm --filter @taxi/api lint` | ✅ exit 0 · `12 problems (0 errors, 12 warnings)` — all 12 pre-existing `no-unsafe-argument` warnings on `App` in integration specs, none in a file this pass touched |
 | `@taxi/api` typecheck | `pnpm --filter @taxi/api exec tsc --noEmit -p tsconfig.json` | ✅ exit 0, no output |
 
-GATE_STAMP_PLACEHOLDER
+`observed` — `record-gate.sh --clean` at `7dd7961` on a **clean** tree (it prints a `(dirty tree — …)` line
+under the stamp whenever `git status --porcelain` is non-empty; this run printed none),
+`COMPOSE_PROJECT_NAME=taxi`, Redis on 6381, exit 0:
+
+```
+Tasks:    22 successful, 22 total
+Cached:   0 cached, 22 total
+Time:     1m18.751s
+```
+
+    @taxi/api       Test Suites: 77 passed, 77 total · Tests: 730 passed, 730 total · 44.121 s
+    @taxi/dispatch  Test Files 27 passed (27) · Tests 224 passed (224)
+    @taxi/driver    Test Suites: 41 passed, 41 total · Tests: 218 passed, 218 total
+    @taxi/rider     Test Suites: 29 passed, 29 total · Tests: 140 passed, 140 total
+    @taxi/db        Test Files 3 passed (3) · Tests 17 passed (17)
+    @taxi/shared    Test Files 24 passed (24) · Tests 231 passed (231)
+
+Not in the graph: `@taxi/config#{build,lint,test,typecheck}`, `@taxi/driver#build`, `@taxi/rider#build` —
+the same six as #199's, #203's, #206's and #208's stamps.
+
+`730 = 729 + 1`, `derived`, on the condition that #208's 729 still holds at `ed3a0dd` — it does, that being
+this PR's own re-run stamp, re-observed by the round-1 review at the same head. The one addition is L3's
+masking case. Suite count unchanged at 77 because it went into an existing file.
+
+**No test-time comparison is drawn.** `@taxi/api` ran 44.121 s here against 43.7 s at `ed3a0dd` and 45.666 s
+in the round-1 review's re-run of that same commit — three values in one spread, on a box running other
+work, with nothing held constant. That is the resolution available, not evidence about any mechanism (#209
+review L6).
+
+The stamp names `7dd7961`, the commit carrying every source change in this pass. The only commit after it is
+this report's own gate stamp — `.claude/reports/pr-209-review-fixes.md` alone, which no gate task reads.
 
 ## Closing commands, run against the fixed tree
 
@@ -218,8 +256,8 @@ predates its own fix.
 | L2 | `git show 3d4046c:services/api/test/harness.ts \| sed -n '586p;599,608p;619p'` | after the fix | all four digits exact at that sha |
 | L3 | probes C1 and C2, one hunk each | after the fix | both reproduced; see the table above |
 | L4 | — | — | JSDoc prose; no command |
-| L5 | `grep -rn "exactly" <the four files>` | after the fix | 8 hits, 0 the retired claim |
-| L6 | `grep -rn "43\.7\|costs nothing measurable" . \| grep -v /node_modules/` | after the fix | no hits in the tree; PR body re-checked by hand |
+| L5 | `grep -rn --exclude-dir=node_modules "exactly" <the four files>` | after the fix | 8 hits, 0 the retired claim |
+| L6 | `grep -rn --exclude-dir=node_modules "43\.7\|costs nothing measurable" .` | after the fix, after this report was written | 4 hits, all this file quoting the retired claim or stating the spread; none asserts it. PR body re-checked by hand and re-derived at the branch tip |
 
 ## Not fixed, and why
 
