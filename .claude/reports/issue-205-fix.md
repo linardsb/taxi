@@ -48,10 +48,20 @@ written first and failed green-tree for this reason.
 
 A rejecting `init()` is covered only from `registerModules()` onward. Before that,
 `SocketModule.close()` has no `applicationConfig` and returns at its first line, so `dispose()` is never
-reached and `configure`'s clients survive the close. The uncovered span is `applyOptions()` plus the
-parser middleware — `NestApplication.init()` lines 95–103 — none of which touches an overridden provider.
-Probe D is that case, `observed` still hanging on the fixed tree. Closing it would mean the spec owning
-its adapter's teardown rather than the harness, which is a larger change than #205 asked for.
+reached and `configure`'s clients survive the close. The uncovered span is three calls, not two:
+`applyOptions()`, `await this.httpAdapter?.init?.()` (a no-op for Express) and the parser middleware —
+`nest-application.js:99-102`, none of which touches an overridden provider. Probe D is that case,
+`observed` still hanging on the fixed tree. Closing it would mean the spec owning its adapter's teardown
+rather than the harness, which is a larger change than #205 asked for.
+
+A second window sits one statement *past* the guard rather than before it. The `try` body ends at
+`harness.ts:586`, so `await app.listen(0, '127.0.0.1')` (`:608`) and `db: app.get<Db>(DRIZZLE)` (`:619`)
+are outside it. `NestApplication.listen()` rejects on a bind error (`nest-application.js:181-185`), and a
+rejection from either statement leaves `ctx` unassigned with the app open — the same #199/#205 shape, one
+statement further on. Enumerated rather than closed: it is unreachable in practice (port 0 does not
+collide, and `DRIZZLE` resolves in every other spec), and moving the two statements inside the `try` is a
+behavioural change to a harness every integration spec shares, with no probe in this pass exercising a
+rejecting `listen()`. #206 review L2(a); the comment at `:599-607` no longer claims the `catch` covers it.
 
 Also unchanged: `close()`'s `await this.initializationPromise` (`nest-application-context.js:127`) is
 `await undefined` here, because `NestApplication.init()` overrides the base and never assigns it. That is

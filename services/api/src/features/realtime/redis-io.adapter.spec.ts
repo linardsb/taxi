@@ -260,9 +260,13 @@ describeWithRedis('RedisIoAdapter teardown', () => {
   });
 
   it('survives a second close() on the same app (edge)', async () => {
-    // The harness closes the app itself when `init()` or a self-check throws,
-    // and the spec's `afterAll` then closes it again. `quit()` on an ended
-    // connection rejects, so `dispose()` has to drop the references first.
+    // Nothing closes an app twice today: every spec assigns `ctx` in
+    // `beforeAll`, so a throwing `createTestApp` leaves it undefined and
+    // `afterAll` throws a TypeError instead (`observed`, #206 review probe C).
+    // What this guards is idempotency — `close(server)` ran for no server on a
+    // second close, because `SocketModule.close()` ends by clearing
+    // `socketsContainer`, while `dispose()` runs every time and `quit()` on an
+    // ended connection rejects, so the references have to be dropped first.
     const { app } = await appWithAdapter();
     await app.close();
 

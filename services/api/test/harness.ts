@@ -551,8 +551,9 @@ export async function createTestApp(options?: {
   // A rejecting `init()` is covered only from `registerModules()` onward:
   // before that `SocketModule.close()` has no `applicationConfig` yet and
   // returns without reaching `dispose()`, leaving the clients open. That
-  // window is `applyOptions()` plus the parser middleware — nothing that
-  // touches an overridden provider — and `observed` in the #205 report.
+  // window is `applyOptions()`, the http adapter's own `init()` (a no-op on
+  // Express) and the parser middleware — `nest-application.js:99-102`, nothing
+  // that touches an overridden provider — and `observed` in the #205 report.
   //
   // The self-check's error is the one that names the defect, so a `close()`
   // that throws in the `catch` is printed and the ORIGINAL is rethrown; it is
@@ -599,7 +600,10 @@ export async function createTestApp(options?: {
   // port (both checks are `app.get()` calls), and a check that throws before
   // the listen never has a bound socket to release — with the listen in its
   // old place that socket alone held jest open (#194 review F1, `observed`
-  // both ways). The `catch` above closes the app either way; this order keeps
+  // both ways). The `catch` above covers `init()` and both self-checks; a
+  // rejection from this listen or the `DRIZZLE` resolution below still leaves
+  // `ctx` unassigned with the app open (unreachable in practice: port 0 does
+  // not collide and `DRIZZLE` resolves in every other spec). This order keeps
   // the socket out of the failure path entirely.
   await app.listen(0, '127.0.0.1');
 
