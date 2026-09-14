@@ -538,35 +538,58 @@ export async function createTestApp(options?: {
   await options?.configure?.(app);
   await app.init();
 
-  // THE SELF-CHECK. Seeding a queue the strategy never reads would leave it
-  // empty at dispatch time, the strategy would fall back to proximity order,
-  // and the queue-fairness case would pass FOR THE AUTO-MATCH REASON — a green
-  // test asserting the opposite of what it claims. Assert the container hands
-  // back the very object this harness seeds.
-  const resolvedQueue = app.get<DispatchQueueStore>(DISPATCH_QUEUE_STORE);
-  if (resolvedQueue !== queue) {
-    throw new Error(
-      'DISPATCH_QUEUE_STORE override did not take: the app resolved a different instance than the harness seeds. Any queue-fairness assertion built on this app would be meaningless.',
-    );
+  // Either self-check throwing would otherwise leave an `init()`ed app open
+  // with `ctx` unassigned: `afterAll`'s `ctx.app.close()` throws on top of it
+  // and nothing ever closes the app. Closed here, so `close()` releases the
+  // pool (`onModuleDestroy` → `pool.end()`) and whatever `configure` opened
+  // before `init()` — the Redis-gated adapter spec's two ioredis clients,
+  // which only `RedisIoAdapter.close()` quits, and which held jest open past
+  // its run (#199, `observed` both ways in `.claude/reports/issue-199-fix.md`).
+  // The self-check's error is the one that names the defect, so a `close()`
+  // that throws in the `catch` is printed and the ORIGINAL is rethrown; it is
+  // never allowed to mask it.
+  try {
+    // THE SELF-CHECK. Seeding a queue the strategy never reads would leave it
+    // empty at dispatch time, the strategy would fall back to proximity order,
+    // and the queue-fairness case would pass FOR THE AUTO-MATCH REASON — a
+    // green test asserting the opposite of what it claims. Assert the
+    // container hands back the very object this harness seeds.
+    const resolvedQueue = app.get<DispatchQueueStore>(DISPATCH_QUEUE_STORE);
+    if (resolvedQueue !== queue) {
+      throw new Error(
+        'DISPATCH_QUEUE_STORE override did not take: the app resolved a different instance than the harness seeds. Any queue-fairness assertion built on this app would be meaningless.',
+      );
+    }
+
+    // Same reasoning, higher stakes: a PAYMENTS_PROVIDER override that did
+    // not take leaves the always-succeeding stub bound, so `payments.calls`
+    // stays empty and `failNext` does nothing. "Charged exactly once" and "a
+    // decline writes no ledger entries" would then both pass without testing
+    // anything.
+    const resolvedPayments = app.get<PaymentsProvider>(PAYMENTS_PROVIDER);
+    if (resolvedPayments !== payments) {
+      throw new Error(
+        'PAYMENTS_PROVIDER override did not take: the app resolved a different instance than the harness records through. Any charge-count or decline assertion built on this app would be meaningless.',
+      );
+    }
+  } catch (err) {
+    try {
+      await app.close();
+    } catch (closeErr) {
+      console.error(
+        'createTestApp: app.close() after a failed self-check threw (the self-check error follows)',
+        closeErr,
+      );
+    }
+    throw err;
   }
 
-  // Same reasoning, higher stakes: a PAYMENTS_PROVIDER override that did not
-  // take leaves the always-succeeding stub bound, so `payments.calls` stays
-  // empty and `failNext` does nothing. "Charged exactly once" and "a decline
-  // writes no ledger entries" would then both pass without testing anything.
-  const resolvedPayments = app.get<PaymentsProvider>(PAYMENTS_PROVIDER);
-  if (resolvedPayments !== payments) {
-    throw new Error(
-      'PAYMENTS_PROVIDER override did not take: the app resolved a different instance than the harness records through. Any charge-count or decline assertion built on this app would be meaningless.',
-    );
-  }
-
-  // LAST, and after both self-checks on purpose. Either throw above leaves
-  // `ctx` unassigned, so `afterAll`'s `ctx.app.close()` throws on top of it and
-  // the app is never closed — with the listen in its old place, that app was
-  // still LISTENING, and the open socket turned a loud 1.5 s failure into a jest
-  // that never exits (#194 review F1, `observed` both ways). Nothing between
-  // `init()` and here needs a port; both self-checks are `app.get()` calls.
+  // LAST, after both self-checks: nothing between `init()` and here needs a
+  // port (both checks are `app.get()` calls), and a check that throws before
+  // the listen never has a bound socket to release — with the listen in its
+  // old place that socket alone held jest open (#194 review F1, `observed`
+  // both ways). The `catch` above closes the app either way; this order keeps
+  // the socket out of the failure path entirely.
   await app.listen(0, '127.0.0.1');
 
   return {
