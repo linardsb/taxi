@@ -114,13 +114,13 @@ session's scratchpad, not committed.
 ## Gate
 
 `observed` — `record-gate.sh --clean` (`pnpm turbo run typecheck lint test build --force` from cleared
-`dist`/`.next`), `COMPOSE_PROJECT_NAME=taxi`, `REDIS_TEST_URL=redis://localhost:6381`, at the committed
-head `274dc0c`, 14:51:31–14:52:57 local, exit 0:
+`dist`/`.next`), `COMPOSE_PROJECT_NAME=taxi`, `REDIS_TEST_URL=redis://localhost:6381`, on a **clean**
+tree at `12d106d` (`.claude/last-gate.json`: `dirty: false`), 15:22:15–15:23:47 local, exit 0:
 
 ```
 Tasks:    22 successful, 22 total
 Cached:   0 cached, 22 total
-Time:     1m23.233s
+Time:     1m31.367s
 ```
 
     @taxi/api       Test Suites: 77 passed, 77 total · Tests: 726 passed, 726 total
@@ -140,10 +140,21 @@ test file moved, so the count carries and the two new cases are the entire delta
 unchanged at 77 because they went into an existing file. The Redis-gated block ran (it is
 `describe.skip` otherwise), so 726 is the with-Redis total, not the CI-equivalent one.
 
-An identical-count run on the dirty tree over `32fb6f7` preceded it (14:48:09–14:49:33, `1m22.01s`,
-exit 0). The branch head is one commit past `274dc0c` and adds only this report — `git diff --stat
-274dc0c..HEAD` is `.claude/reports/issue-205-fix.md` alone, and no task in the gate's graph reads
-`.claude/`. A report cannot stamp the commit that contains it; this is the nearest honest version.
+**This stamp replaces the one this report shipped with, whole rather than by the digit** (#206 review
+L3). That one named `274dc0c`, a sha amended away before the push: it resolves in no clone but the
+authoring checkout (`gh api repos/linardsb/taxi/commits/274dc0c` → 422 *No commit found*,
+`git branch -r --contains 274dc0c` empty), so its gate could not be audited by anyone. The two sentences
+around it were false as well — `274dc0c^` and `HEAD^` were both `8e56fe6`, making the head an **amend**
+of it rather than a commit on top, and `git ls-tree 274dc0c -- .claude/reports/issue-205-fix.md` prints
+the path, so "a report cannot stamp the commit that contains it" was refuted by the commit it described.
+The counts themselves always held; three earlier runs of this pass reported the same 22/22 and the same
+six package totals, at `32fb6f7` dirty (`1m22.01s`), at `274dc0c` (`1m23.233s`) and on the #206-fix tree
+before it was committed (`1m33.89s`).
+
+`12d106d` is pushed and resolvable, and the gate above ran on it with nothing uncommitted. The only
+commit after it on this branch is the docs commit carrying this paragraph and
+`.claude/reports/pr-206-review-fixes.md`: `git diff --stat 12d106d..HEAD` is those two `.claude/` files
+and nothing else, and no task in the gate's graph reads `.claude/`.
 
 The first gate of this pass (14:46:54–14:47:50, 53.683 s) was **RED**, `Failed: @taxi/api#lint`, on
 `redis-io.adapter.ts` `await-thenable`: "Unexpected iterable of non-Promise values passed to promise
