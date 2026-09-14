@@ -189,26 +189,31 @@ The review audited the throw path and found none, and says so. Recorded in the r
 
 ## Retired-claim sweep — the exact greps and their hits
 
-Two passes, both `observed`. The **first** ran after the spec comment and the report's F1 edits and before
-any plan edit, so it is a partial "before" — the sites it caught are ones the review's own list did **not**
-name. The **second** ran on the finished tree. `$P` = the plan, `$R` = `issue-211-fix.md`,
+**Three sweeps**, all `observed`, at different points in the pass — which is why the "caught stale" column
+below names its sweep rather than a single "before". `$P` = the plan, `$R` = `issue-211-fix.md`,
 `$S` = `services/api/src services/api/test`.
 
-The review named 8 sites. The sweep found **6 more**, all marked ✚ below — four copies of F2's mechanism
-and two of F1/F3 in the plan. Without the sweep every one of them would have shipped stating a claim this
-pass retired.
+- **S1, pre-edit** — ran before any file was touched. Source of G3's and G4's stale sites.
+- **S2, mid-edit** — ran after the report, spec and plan `main.ts` edits. Source of G1's and G2's, all of
+  which S1's nouns did not reach.
+- **S3, final** — the finished tree. Source of every "Now" cell.
 
-| # | Command | Sweep pass 1 (stale sites it caught) | Now |
+**The review named 10 sites** across F1-F3 (F1 seven, F2 two, F3 one; two of the seven are in the PR body).
+**The sweep found 11 more** — ten in the working tree, marked ✚ below, plus the PR body's byte-identity
+sentence, which no working-tree grep reaches and which only the 7-for-7 line-count check surfaced. Without
+the sweep, every one of the eleven would have shipped stating a claim this pass retired.
+
+| # | Command | Caught stale | Now |
 |---|---|---|---|
-| G1 | `grep -rn "pipelin" $P $R $S` | report `:64` ✚, plan `:314` ✚, `:566` ✚, `:629` ✚, `:847` ✚ | **2**, both explicit *"said X until PR #212 review F2"* retirement notes (plan `:633`, `:856`). The other hits are unrelated `redis.pipeline()` calls in the drivers/dispatch slices |
-| G2 | `grep -rn "waiting forever\|infinite retry" $P $R $S` | plan `:79` ✚, `:316`, `:849` | **1** — plan `:80`, the retirement note quoting the retired claim |
-| G3 | `grep -rn "cannot exit\|does not exit\|can exit" $P $R $S` | plan `:50` (`does not exit`) | **0** |
-| G4 | `grep -rn "main\.ts" $P $R` | report `:10`, `:79`, `:127`, `:157`; plan `:50`, `:274`, `:574`, `:576`, `:829` ✚, `:929` ✚ | **13**, all either corrected sites or two that need no change: plan `:24` (a user-story persona naming no consequence) and report `:236` (the caller **set**, unchanged and true) |
-| G5 | `grep -rn "redis-io.adapter.spec.ts:[0-9]" $P $R .claude/reports/issue-208-fix.md` | — (run as a knock-on check, nothing stale) | 3 citations, **all still pointing at the same spec lines** (`:406`, `:38`, `:246-261`). The comment rewrite was 7-for-7, so no spec line moved; the citations' own line numbers shifted (`$R:41`→`:42`, `$P:166`→`:168`, `$P:787`→`:793`) because the report and plan grew |
+| G1 | `grep -rn "pipelin" $P $R $S` | **S2**: report `:64` ✚, plan `:314` ✚, `:566` ✚, `:629` ✚, `:847` ✚ | **2**, both explicit *"said X until PR #212 review F2"* retirement notes (plan `:633`, `:856`). The other hits are unrelated `redis.pipeline()` calls in the drivers/dispatch slices |
+| G2 | `grep -rn "waiting forever\|infinite retry" $P $R $S` | **S2**: plan `:79` ✚, `:316`, `:849` | **1** — plan `:80`, the retirement note quoting the retired claim |
+| G3 | `grep -rn "cannot exit\|does not exit" $P $R $S` | **S1**: plan `:50` | **0** (re-run widened to `\|can exit`, which is how plan `:829` would have been caught by noun rather than by G4) |
+| G4 | `grep -rn "main\.ts" $P $R` | **S1**: report `:10` ✚, `:79`, `:127`, `:157`; plan `:50`, `:274` ✚, `:574`, `:576`, `:829` ✚, `:929` ✚ | **13**, all either corrected sites or two that need no change: plan `:24` (a user-story persona naming no consequence) and report `:236` (the caller **set**, unchanged and true) |
+| G5 | `grep -rn "redis-io.adapter.spec.ts:[0-9]" $P $R .claude/reports/issue-208-fix.md` | **S1**: nothing stale — run as a knock-on check on the comment rewrite | 3 citations, **all still pointing at the same spec lines** (`:406`, `:38`, `:246-261`). The rewrite was 7-for-7, so no spec line moved; the citations' own line numbers shifted (`$R:41`→`:42`, `$P:166`→`:168`, `$P:787`→`:793`) because the report and plan grew |
+| G6 | `grep -n "main\.ts\|pipelin\|waiting forever\|infinite retry\|does not exit\|cannot exit\|can exit" .claude/reports/issue-208-fix.md` | — | **0**. This file is in the PR's diff (`+13 −17`) and in **none** of `$P $R $S`, so G1-G4 never reached it. Swept separately and clean: its edit widens a *Not done* bullet and touches none of the retired claims. The gap in the sweep paths was real; the defect it could have hidden was not there |
 
-Two sites were fixed from the review's list and from reading the files, **before** pass 1 ran, so no grep
-recorded them stale: the spec comment at `:445-451` and the report's probe-table cell at `:79`. Both are
-covered by the "Now" column.
+One site was fixed from the review's list before S1 could record it stale: the spec comment at `:445-451`,
+edited during F2's probe work. It is covered by G1's and G2's "Now" cells.
 
 **The PR body is swept separately**, since no working-tree grep reaches it: re-fetched with
 `gh pr view 212 --json body`, and every F1, F2 and F4 site in it is edited in this pass (see *PR body*
@@ -251,9 +256,15 @@ separates them from decoration.
   The gate above ran at this head.
 - **`4bef54c`** — `docs(reports): stamp the PR #212 fix-pass gate at 8b9001a (#211)`. The gate stamp in
   `issue-211-fix.md` and the first version of this report.
-- **this commit** — two corrections to this report, made after the PR body was updated and swept: the
-  plain gate run was on the same tree *content*, not at a head that existed yet, and the PR-body sweep
-  below is now quoted rather than promised.
+- **`cabd2d9`** — `docs(reports): quote the PR #212 body sweep instead of promising it (#211)`. Corrected
+  the plain gate run's provenance (same tree *content*, not a head that existed yet) and replaced the
+  promised PR-body sweep with the quoted one.
+- **this commit** — four more corrections, all found by a second read of this report rather than by the
+  review: item 6's size figures were stale the moment the body was re-derived after `cabd2d9` (so they are
+  now head-independent instead of restated); the sweep table conflated three separate sweeps into "two
+  passes" and mislabelled which caught what; `8 sites` and `6 more` were bare digits in a table about bare
+  digits, re-derived to **10** and **11**; and `issue-208-fix.md`, in this PR's diff but in none of the
+  sweep paths, is now swept as G6.
 
 **PR body edits in this pass** (no working-tree grep reaches it, so they are listed rather than asserted):
 
@@ -266,10 +277,13 @@ separates them from decoration.
    no executable line moved, with `:506`/`:507`/`:556` still verbatim (F2 knock-on — the review did not
    name this site, and nothing in the working tree would have caught it).
 5. *Notes for the reviewer*, the `CLAUDE.md` bullet — now names **#214** (F4).
-6. *Size* table and the gate block — re-derived at the pushed head, not carried. `+1471 −39` at `c5cfee9`
-   becomes `+1790 −39` at `4bef54c` (`13 + 216 + 1561`); the spec's `+183 −1` is **unchanged**, because the
-   F2 rewrite replaced 7 of its own added lines with 7 others and nets to zero against `main`. The
-   inherited-figures accounting is rewritten from **27** measurements to **33**, each assigned.
+6. *Size* table and the gate block — **re-derived at the head the body's own *Size* line names**, which is
+   the last write of this pass; the body carries the current figures and this report deliberately does not
+   restate them. (Restating them here is unfixable by construction: any commit correcting the digits moves
+   the numstat and re-stales the body. The one figure worth recording is the one that did *not* move —
+   the spec's `+183 −1`, because the F2 rewrite replaced 7 of its own added lines with 7 others and nets
+   to zero against `main`.) The inherited-figures accounting is rewritten from **27** measurements to
+   **33**, each assigned to a group.
 
 **Applied and verified**: `gh pr edit 212 --body-file …`, then re-fetched with `gh pr view 212 --json body`
 and diffed against the source — identical bar a trailing newline GitHub adds. Sweep of the **live** body,
