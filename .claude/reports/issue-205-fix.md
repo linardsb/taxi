@@ -46,6 +46,15 @@ written first and failed green-tree for this reason.
 
 ## The residual window, deliberately not closed
 
+> **Superseded by #208 — both windows in this section are closed.** The section stays as the record of
+> what #205's tree did; it is no longer a description of the harness. `.claude/reports/issue-208-fix.md`
+> has the fix and the two attribution pairs that pin it.
+>
+> **Every `harness.ts` line number in this section is pinned to `3d4046c`** — the commit that landed
+> #205 — and not to the current tree, where the same digits still resolve but land on the fix that
+> refutes them (`git show 3d4046c:services/api/test/harness.ts`; `observed` there: `:586` ends the `try`
+> body, `:608` is the listen, `:619` the `DRIZZLE` resolution, `:599-607` the comment). #209 review L2.
+
 A rejecting `init()` is covered only from `registerModules()` onward. Before that,
 `SocketModule.close()` has no `applicationConfig` and returns at its first line, so `dispose()` is never
 reached and `configure`'s clients survive the close. The uncovered span is three calls, not two:
@@ -176,9 +185,10 @@ no production shutdown was run for this.
 ## Not done
 
 - No shippable test covers the *harness* half: forcing `init()` to reject needs the mutation, as in #199.
-  Probes A–D are the evidence.
+  Probes A–D are the evidence. **Retired by #208**: `configure` runs before `init()` and is handed the
+  app, so replacing `app.init` from a spec drives the same failure with no mutation at all.
 - The residual pre-`registerModules()` window stays open, `observed` in probe D and stated in the
-  harness comment.
+  harness comment. **Closed by #208**, along with the listen/`DRIZZLE` window past the `try`.
 - `CLAUDE.md`'s Redis-gated line (`33 skipped, 582 passed, 615 total`, 2 skipped suites) is still stale —
   now against **`37 skipped, 689 passed, 726 total`** and `Test Suites: 2 skipped, 75 passed, 75 of 77
   total`. `observed`, `env -u REDIS_TEST_URL COMPOSE_PROJECT_NAME=taxi npx jest` in `services/api`,

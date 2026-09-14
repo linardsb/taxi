@@ -101,4 +101,89 @@ describe('createTestApp network invariants (#193)', () => {
     expect(binds).toBe(2);
     expect(bare.listening).toBe(false); // supertest closed it again each time
   });
+
+  it('releases the bound socket when the boot throws after listen() (failure)', async () => {
+    // The #208 window: the listen and the `DRIZZLE` resolution used to sit
+    // OUTSIDE the harness's `try`, so a throw from either escaped with `ctx`
+    // unassigned and the socket still bound — nothing left to close it, and a
+    // bound socket alone held jest open (#194 review F1). This drives that
+    // shape from a spec: `configure` lets the real listen bind, then throws in
+    // its place. The assertion is the socket's, not the adapter's — the
+    // Redis-gated cases in `redis-io.adapter.spec.ts` cover the clients.
+    let bound: Server | undefined;
+    let listeningAtThrow: boolean | undefined;
+
+    await expect(
+      createTestApp({
+        configure: (app) => {
+          const listen = app.listen.bind(app);
+          // `listen` is overloaded — (port[, host][, cb]) — and no single
+          // stand-in signature satisfies both arms, so the replacement is
+          // typed by the call the harness actually makes and cast back.
+          app.listen = (async (port: number, host: string) => {
+            await listen(port, host);
+            bound = app.getHttpServer() as Server;
+            listeningAtThrow = bound.listening;
+            throw new Error('probe: the boot threw after listen()');
+          }) as unknown as typeof app.listen;
+          return Promise.resolve();
+        },
+      }),
+    ).rejects.toThrow('probe: the boot threw after listen()');
+
+    // Recorded rather than asserted inside the callback: an expect() that
+    // throws in there is caught by the harness and re-emerges as the boot
+    // error, which would make this case fail for the wrong reason.
+    expect(listeningAtThrow).toBe(true); // the bind really happened
+    expect(bound!.listening).toBe(false); // …and the catch released it
+    expect(bound!.address()).toBeNull();
+  });
+
+  it('rethrows the boot error when the teardown path throws too (failure)', async () => {
+    // The harness's masking guarantee: "anything thrown by the teardown path —
+    // `close()` or the `configure` teardown — is printed and the ORIGINAL is
+    // rethrown". Both `catch` blocks were unexecuted by the suite before this
+    // case (#209 review L3), so the guarantee was prose only. Ungated, not
+    // Redis-gated: a throwing teardown needs no adapter and no clients, and
+    // the point is that these lines run on EVERY suite run.
+    const BOOM = 'probe: boot failed';
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await expect(
+        createTestApp({
+          configure: (app) => {
+            app.init = () => Promise.reject(new Error(BOOM));
+            // Wrapped, not replaced: the real close still runs, so the app
+            // this case abandons holds nothing open. A stubbed-out close
+            // would test the guarantee by leaking the thing the guarantee
+            // exists to release.
+            const close = app.close.bind(app);
+            app.close = async () => {
+              await close();
+              throw new Error('probe: close boom');
+            };
+            return Promise.resolve(() =>
+              Promise.reject(new Error('probe: teardown boom')),
+            );
+          },
+        }),
+      ).rejects.toThrow(BOOM); // …not either teardown error
+
+      // `console.error(message?: any, ...rest: any[])`, so both columns are
+      // `any` at the call site and have to be narrowed before asserting.
+      const printed = errors.mock.calls as [string, Error][];
+      expect(printed.map(([message]) => message)).toEqual([
+        'createTestApp: app.close() after a failed boot threw (the original error follows)',
+        'createTestApp: the configure teardown after a failed boot threw (the original error follows)',
+      ]);
+      // Both printed the error they caught, not the boot error.
+      expect(printed.map(([, caught]) => caught.message)).toEqual([
+        'probe: close boom',
+        'probe: teardown boom',
+      ]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
 });
