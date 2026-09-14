@@ -14,6 +14,12 @@ describe('AppController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
+    // #193: without a listen, supertest binds this server itself once per
+    // REQUEST, on the wildcard — where a foreign 127.0.0.1 listener in the
+    // ephemeral range answers instead. Listen once, on the loopback, as
+    // `test/harness.ts` does. (Not collected by the gate: jest `rootDir` is
+    // `src`; this runs only under a hand-run `test:e2e`.)
+    await app.listen(0, '127.0.0.1');
   });
 
   it('/ (GET)', () => {

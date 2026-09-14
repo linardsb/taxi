@@ -45,7 +45,7 @@
 
 ### Run ledger
 
-All runs in `/Users/Berzins/taxi-worktrees/wt-193`, branch `investigate/api-gate-flake-193`, base `origin/main` `bd13213`. "Order X" is the 76-file sequence jest chooses with no timing cache (size-descending); `p*` runs had it pinned by a custom sequencer.
+All runs in `/Users/Berzins/taxi-worktrees/wt-193`, branch `investigate/api-gate-flake-193` (renamed `fix/api-test-harness-listen-193` before the PR), base `origin/main` `bd13213`. "Order X" is the 76-file sequence jest chooses with no timing cache (size-descending); `p*` runs had it pinned by a custom sequencer.
 
 | Run | What | Order | Verdict |
 |---|---|---|---|
@@ -156,7 +156,7 @@ WHY did it reach another process?
 
 WHY does that get hit at all?
   → supertest re-binds per request when the app is not listening, so one run
-    walks 630 ephemeral ports instead of 17.
+    walks 630 ephemeral ports instead of one per app built.
     evidence: 630 binds/run, 623 from nine never-listening specs (a03)
 
 WHY is the app not listening?
@@ -242,7 +242,7 @@ await app.listen(0, '127.0.0.1');
 
 Both halves matter, and the second is the one that addresses the mechanism rather than the odds:
 
-- **`once`** takes the run from 630 ephemeral binds to 17 — 37x fewer chances to land on a squatted port. That is a probability reduction, and on its own it would leave the fault in place.
+- **`once`** takes the run from 630 ephemeral binds to one per app built — 37x fewer chances to land on a squatted port at the tree this was measured on. That is a probability reduction, and on its own it would leave the fault in place. (The ratio moves as spec files are added; the shipped figure is under *Bind count as shipped* below.)
 - **`'127.0.0.1'`** removes the failure mode itself. A loopback-specific bind cannot silently lose the routing:
 
 | Foreign listener | wildcard bind (today) | loopback bind (proposed) |
@@ -254,7 +254,34 @@ Both halves matter, and the second is the one that addresses the mechanism rathe
 
 The nine `app.listen(0)` calls in specs then become redundant and should be deleted.
 
-`observed` (`b02`, api suite alone with the change): **630 binds → 17** — exactly one per spec file that builds an app, 17 of them — with `Tests: 35 skipped, 686 passed, 721 total`, exit 0. 630 / 17 = 37x less of the churn the root cause is made of.
+`observed` (`b02`, api suite alone with the change): **630 binds → 17** — exactly one per spec file that builds an app, 17 of them on *that* tree — with `Tests: 35 skipped, 686 passed, 721 total`, exit 0. 630 / 17 = 37x less of the churn the root cause is made of. `b02` predates `src/test-harness.spec.ts`; see *Bind count as shipped*.
+
+#### Bind count as shipped
+
+Every `17` above was `observed` on a tree that predates `src/test-harness.spec.ts`, and each of those
+run records still describes its own run correctly. The shipped tree is higher, for two reasons that are
+both the assertion spec: it builds a further app (the 18th without Redis, the 20th with), and its control
+case takes 2 **wildcard** binds on purpose (they are what stops the "0 binds" assertion passing vacuously).
+
+`observed` 2026-09-12 at the review-fix head, api suite alone, one append per `net.Server.prototype.listen`
+call — patched once per process behind a `Symbol.for` marker on `net.Server`, **not** on `globalThis`,
+which jest soft-deletes between files; storing it there re-wraps `listen` once per spec file and dies at
+`RangeError: Maximum call stack size exceeded`, the same stacked-wrapper defect recorded at the end of
+this document, reached by a different route:
+
+| Run | Ephemeral binds | Composition | Suite |
+|---|---|---|---|
+| `env -u REDIS_TEST_URL npx jest` | **20** | 18 loopback app binds + 2 wildcard control binds | `35 skipped, 689 passed, 724 total`, exit 0 |
+| `REDIS_TEST_URL=redis://localhost:6381 npx jest` | **22** | 20 loopback app binds + the same 2 | `77 suites, 724 passed, 724 total`, exit 0 |
+
+`derived`, and consistent with the records above: 20 `createTestApp` call sites across 18 spec files
+(`observed`, grep over `services/api/src`, one further hit discounted as a comment), of which exactly 2 —
+`redis-io.adapter.spec.ts:48,49` — sit inside `describeWithRedis` and skip by default. So 18 app binds
+without Redis and 20 with, in both cases plus the control's 2. That reconciles with `b02`'s 17 (+1 for the
+new spec's app = 18) and with `g02`'s 19 (17 + the 2 gated apps; +1 = 20).
+
+The two in-code figures need no edit: `test/harness.ts:481-483` and `src/test-harness.spec.ts:10-12` both
+say "630 ... where listening once costs one per app built", which stays true as spec files are added.
 
 **Validation with the change in place — 11 consecutive green full gates**, each from cleared `dist`/`.next`, `Tasks: 22 successful, 22 total` every time:
 
@@ -266,7 +293,7 @@ The nine `app.listen(0)` calls in specs then become redundant and should be dele
 
 `f07`-`f11` are the cleaner half: their probe logs are **0 bytes**, so nothing but the one-line harness change was in play, and they run 74-76 s against the instrumented 79-98 s.
 
-**The mechanical result is the one that carries this**, because it does not depend on luck: the churn the root cause is made of drops **630 binds to 17** on every instrumented run, with no test lost. That is reproduced on `b02`, `f01`-`f06` and `g02`.
+**The mechanical result is the one that carries this**, because it does not depend on luck: the churn the root cause is made of drops **630 binds to one per app built**, with no test lost. On the pre-spec tree that was **17**, reproduced on `b02`, `f01`-`f06` and `g02`; as shipped it is 20 binds, or 22 with Redis — *Bind count as shipped*, below.
 
 **The probability is weaker than a pooled figure makes it look, and the pooled figure should not be used.** The probe `appendFileSync`s on every listen and close — about 1260 writes per run, in the hot path of the very bind storm under test — and it costs 4-32% wall time (`observed`: instrumented 79-98 s, uninstrumented 74-76 s). So instrumented and uninstrumented runs are not one population, and 11-from-14 pools them:
 
@@ -302,7 +329,7 @@ Both figures measure the `once` half only — every one of those runs used the h
 
 ### Risks and considerations
 
-- A listening app holds a port for the whole file. Seventeen ports across a whole run, against 630 bind/unbind cycles today — strictly less pressure on the ephemeral range, not more.
+- A listening app holds a port for the whole file. Twenty ports across a whole run as shipped (22 with Redis on), against 630 bind/unbind cycles today — strictly less pressure on the ephemeral range, not more.
 - `createTestApp`'s `configure` hook installs custom WebSocket adapters before `init()`; listening after `init()` does not disturb that — `observed` for `realtime.gateway.spec.ts`, `driver-location.gateway.spec.ts` and `redis-io.adapter.spec.ts`'s **ungated** block (`b02`, `f01`-`f06`).
 - **The gated half of `redis-io.adapter.spec.ts` needed its own run, and got one.** Its `nodeA`/`nodeB` apps at `:50`-`:51` sit inside `describeWithRedis`, which is `describe.skip` without `REDIS_TEST_URL`, so the two `app.listen(0)` calls most likely to throw under the fix were skipped by every other run here (all of which reported `2 skipped` suites / `35 skipped` tests). `observed` (`g02`, `REDIS_TEST_URL=redis://localhost:6381`, fix applied): **`Test Suites: 76 passed, 76 total`, `Tests: 721 passed, 721 total`, exit 0**, with **19** binds — 17 plus the two extra apps that file builds. Baseline `g00`, same command on a clean tree, is also 76/76 and 721/721, so the comparison is like for like.
   - ~~One qualification on that run: the worktree's `createTestApp` also no-ops a second `listen`, so those two spec-side calls were absorbed rather than executed. The prescribed fix **deletes** them instead, which cannot throw — but the run validates the harness half, not the deletion half.~~ **Closed 2026-09-11**: re-run with the two calls actually deleted and no shim — `observed`, `REDIS_TEST_URL=redis://localhost:6381`, **77 suites / 724 tests passed, exit 0** (76 + 1 and 721 + 3: the whole delta is the new assertion spec).
