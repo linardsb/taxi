@@ -53,8 +53,24 @@ export class RedisIoAdapter extends IoAdapter {
     return server;
   }
 
-  override async close(server: Server): Promise<void> {
-    await super.close(server);
-    await Promise.all([this.pubClient?.quit(), this.subClient?.quit()]);
+  /**
+   * The two clients are quit HERE rather than in `close(server)`:
+   * `SocketModule.close()` calls the adapter's `close()` once per REGISTERED io
+   * server and then `dispose()` unconditionally, so a graph with no gateway —
+   * nothing in `socketsContainer` — would never reach a quit that lived in
+   * `close()` and would hold both connections open for the life of the process.
+   * The inherited `dispose()` is a no-op, so overriding it costs nothing else.
+   *
+   * The fields are cleared BEFORE the quit, which keeps a second `app.close()`
+   * a no-op rather than a `quit()` on an ended connection. `close(server)` got
+   * that for free — `SocketModule.close()` clears its container, so the second
+   * pass called it for no server at all — and `dispose()` runs every time.
+   */
+  override async dispose(): Promise<void> {
+    const pub = this.pubClient;
+    const sub = this.subClient;
+    this.pubClient = undefined;
+    this.subClient = undefined;
+    await Promise.all([pub?.quit(), sub?.quit()]);
   }
 }
