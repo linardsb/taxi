@@ -500,8 +500,8 @@ export async function createTestApp(options?: {
    *  (`socket-module.js:49-52`), so `dispose()` never runs. That span is this
    *  callback's to close (#208). Nothing calls it on the success path.
    *
-   *  Two constraints on that teardown, both of which the implementation below
-   *  depends on:
+   *  Three constraints on that teardown, the first two of which the
+   *  implementation below depends on:
    *
    *  - **It must be IDEMPOTENT.** It runs on every failure, after
    *    `app.close()`, which on most paths has already torn the same thing
@@ -515,7 +515,15 @@ export async function createTestApp(options?: {
    *    boot succeeds and `TestApp` exposes no hook to, so whatever it closes
    *    must also be something `app.close()` reaches once `init()` has got
    *    past `registerModules()`. A resource `close()` can never reach leaks
-   *    on every green run. */
+   *    on every green run.
+   *  - **It cannot cover a `configure` that throws BEFORE returning it.**
+   *    Whatever such a `configure` has already opened must clean itself up,
+   *    because the teardown that would have closed it was never handed back —
+   *    the same gap as a `configure` that returns no teardown at all, arrived
+   *    at from the other side. The only thing any `configure` here opens
+   *    before it returns is `RedisIoAdapter`'s two ioredis clients, and
+   *    `connectToRedis` disconnects them itself when the ping rejects (#211).
+   *    A future `configure` that opens something else owes the same. */
   configure?: (app: INestApplication) => Promise<(() => Promise<void>) | void>;
 }): Promise<TestApp> {
   const kv = new InMemoryKeyValueStore();
@@ -559,20 +567,22 @@ export async function createTestApp(options?: {
     .compile();
 
   const app = moduleRef.createNestApplication();
-  const teardownConfigured = await options?.configure?.(app);
+  // Explicitly initialised: without it the compiler cannot prove the `try`
+  // reached the assignment, and the `typeof` read in the `catch` is
+  // `error TS2454: Variable 'teardownConfigured' is used before being
+  // assigned.` (`observed`, both variants compiled under `--strict`).
+  let teardownConfigured: (() => Promise<void>) | void = undefined;
 
-  // Every step AFTER `configure` that can throw sits inside this `try` —
-  // `init()`, both self-checks, the listen, and the `DRIZZLE` resolution in
-  // the returned object. (`configure` itself is the one exception, and the
-  // residual window: it is called on the line above, so a `configure` that
-  // opens something and then throws leaks it, and never gets to return the
-  // teardown that would have closed it. Named in `issue-208-fix.md`'s *Not
-  // done* and in #209 review M1; closing it needs a change to
-  // `RedisIoAdapter.connectToRedis`, not to this file, so it is its own
-  // ticket — #211.) Any of them throwing would otherwise leave `ctx` unassigned with
-  // the app still holding whatever `configure` opened — the Redis-gated
-  // adapter spec's two ioredis clients — plus, past the listen, a bound
-  // socket. `afterAll`'s `ctx.app.close()` then throws on top of it, nothing
+  // Every step that can throw sits inside this `try` — `configure`, `init()`,
+  // both self-checks, the listen, and the `DRIZZLE` resolution in the returned
+  // object. That absolute is about where the STATEMENTS sit, and not a claim
+  // that a failing `configure` can strand nothing: one that opens something and
+  // throws before returning never registers its teardown, which is the third
+  // constraint on `configure`'s contract above.
+  //
+  // Any of them throwing would otherwise leave `ctx` unassigned with the app
+  // still holding whatever `configure` opened — the Redis-gated adapter spec's
+  // two ioredis clients — plus, past the listen, a bound socket. `afterAll`'s `ctx.app.close()` then throws on top of it, nothing
   // ever closes the app, and those handles hold jest open past its run (#199,
   // `observed` both ways in `.claude/reports/issue-199-fix.md`; the `init()`
   // half in `.claude/reports/issue-205-fix.md`; the listen half in
@@ -593,6 +603,8 @@ export async function createTestApp(options?: {
   // the teardown path — `close()` or the `configure` teardown — is printed and
   // the ORIGINAL is rethrown; neither is ever allowed to mask it.
   try {
+    teardownConfigured = await options?.configure?.(app);
+
     await app.init();
 
     // THE SELF-CHECK. Seeding a queue the strategy never reads would leave it

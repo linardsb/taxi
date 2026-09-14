@@ -407,9 +407,10 @@ async function main(): Promise<void> {
     );
 
     // Reach Redis through the app's OWN client before the adapter builds two
-    // more. `RedisIoAdapter.connectToRedis` assigns its clients only after
-    // both ping, so a failure there leaks two ioredis instances that retry
-    // forever and bury the real error under a scroll of `NOAUTH`.
+    // more. The adapter cleans up after itself on a failed ping now (#211), so
+    // this is no longer about a leak — it is about the ERROR. ioredis raises a
+    // bare `NOAUTH Authentication required.` that names neither the URL it came
+    // from nor what to do; the catch below names both.
     try {
       await kv.ttl('mint:ride:probe');
     } catch (error) {

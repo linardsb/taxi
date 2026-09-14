@@ -3,7 +3,11 @@ import { Test } from '@nestjs/testing';
 import { rideRoom, RT, type RideStatusEvent } from '@taxi/shared';
 import type Redis from 'ioredis';
 import { request } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import {
+  createServer as createNetServer,
+  type AddressInfo,
+  type Socket,
+} from 'node:net';
 import {
   closeClients,
   connectClient,
@@ -377,5 +381,183 @@ describeWithRedis('RedisIoAdapter teardown', () => {
 
       await expect(probe.ending()).resolves.toEqual(['end', 'end']);
     });
+  });
+});
+
+/**
+ * `connectToRedis` cleans up its own partial state (#211).
+ *
+ * Ungated, and deliberately so: a real Redis would ANSWER the ping, so
+ * `REDIS_TEST_URL` is the one thing these cases must not have. They run
+ * against a fake instead — see `startFakeRedis`.
+ *
+ * The defect: the two clients are constructed before the ping and assigned to
+ * the adapter's fields only after it, so a rejection left two live ioredis
+ * connections that NO code path could reach — `dispose()` saw two `undefined`
+ * fields and the caller had already thrown. First sighted in the #107 review
+ * (L2, "noted, no change required … Residual is narrow"), again in #116 H1,
+ * and finally observed as an exit-124 hang in #209 M1, which filed #211.
+ *
+ * Expect two `[ioredis] Unhandled error event: ReplyError: NOAUTH …` lines in
+ * a green run — one per client, logged by `Redis.silentEmit` because neither
+ * client has an `error` listener. That happens on the unfixed tree too and is
+ * not this suite's to silence.
+ */
+describe('RedisIoAdapter.connectToRedis failure (#211)', () => {
+  const FAKE_ORIGIN = 'http://localhost:3000';
+
+  /**
+   * How long to let a LEAKED client prove itself before sampling the count.
+   * `derived`: ioredis's default `retryStrategy` is `Math.min(times * 50,
+   * 2000)` ms, so a leaked client reconnects at cumulative 50 / 150 / 300 /
+   * 500 ms — four attempts inside this window, i.e. `2 + 2 clients × 4 = 10`
+   * on the unfixed tree against 2 on the fixed one. **Condition**: the default
+   * strategy and a fake server that accepts immediately. The first divergence
+   * is at ~50 ms, so this is ~12× the margin needed; do not shorten it below
+   * ~300 ms and do not lengthen it for safety it does not need.
+   */
+  const SETTLE_MS = 600;
+
+  /**
+   * A TCP server that speaks just enough RESP to fail: it accepts, then
+   * answers every command with `-NOAUTH`. That is the shape #211 is about — a
+   * server that completes the TCP connect and then errors the PING, which is
+   * where `connectToRedis` rejects with both clients already constructed.
+   *
+   * The observable is `accepted`, the CUMULATIVE count of connections the
+   * server took. Not the live count: ioredis closes the socket when the ready
+   * check fails and reconnects on a backoff, so a live count oscillates
+   * 2 → 0 → 2 and reads 0 on BOTH trees at a random sample.
+   */
+  function startFakeRedis(): Promise<{
+    url: string;
+    accepted: () => number;
+    close: () => Promise<void>;
+  }> {
+    let accepted = 0;
+    const live = new Set<Socket>();
+    const server = createNetServer((socket) => {
+      accepted += 1;
+      live.add(socket);
+      socket.on('close', () => live.delete(socket));
+      socket.on('error', () => {}); // the client destroys its end; ECONNRESET is expected
+      socket.on('data', (chunk: Buffer) => {
+        // ONE REPLY PER COMMAND, not per chunk. ioredis pipelines its
+        // ready-check `info` with whatever is in the offline queue, so a
+        // reply-per-chunk server answers `info` and leaves `ping` waiting
+        // forever — a HANG, not a rejection. `observed` 2026-09-14:
+        // reply-per-chunk rejected on the first run of a process and hung on
+        // runs 2-4 (4/4, both trees), because the batching only happens once
+        // the process is warm.
+        const commands = chunk.toString().match(/\*\d+\r\n/g)?.length ?? 1;
+        socket.write('-NOAUTH Authentication required.\r\n'.repeat(commands));
+      });
+    });
+    return new Promise((resolve) => {
+      // Loopback-specific, like the harness's own listen (#193): a wildcard
+      // bind over a foreign 127.0.0.1 listener wins and then loses the routing.
+      server.listen(0, '127.0.0.1', () => {
+        const { port } = server.address() as AddressInfo;
+        resolve({
+          url: `redis://127.0.0.1:${port}`,
+          accepted: () => accepted,
+          // The accepted sockets MUST be destroyed: `server.close()` waits for
+          // every connection to end before its callback fires, and a client
+          // that is still reconnecting never ends one. A leaked `net.Server`
+          // is exactly the handle class this ticket exists to stop.
+          close: () =>
+            new Promise<void>((done) => {
+              for (const socket of live) socket.destroy();
+              server.close(() => done());
+            }),
+        });
+      });
+    });
+  }
+
+  /**
+   * An adapter on a real but empty module graph, like `appWithAdapter` above.
+   * `new RedisIoAdapter({} as INestApplication, …)` would also survive these
+   * two cases — `createIOServer` is the only method that reads the app, and
+   * nothing here reaches it — but it is a spec that passes until it does not.
+   */
+  async function bareAdapter(): Promise<{
+    app: INestApplication;
+    adapter: RedisIoAdapter;
+  }> {
+    const moduleRef = await Test.createTestingModule({}).compile();
+    const app = moduleRef.createNestApplication();
+    return { app, adapter: new RedisIoAdapter(app, [FAKE_ORIGIN]) };
+  }
+
+  const settleLeak = () => new Promise((r) => setTimeout(r, SETTLE_MS));
+
+  it('closes both clients when the PING rejects (expected)', async () => {
+    const fake = await startFakeRedis();
+    const { app, adapter } = await bareAdapter();
+
+    try {
+      await expect(adapter.connectToRedis(fake.url)).rejects.toThrow('NOAUTH');
+
+      await settleLeak();
+
+      // Exact on purpose. The fix stops the reconnect loop outright rather
+      // than slowing it, so a third connection cannot appear inside the
+      // window however loaded the machine is: an unexpected 3 is a real
+      // defect, not a slow box. Do not relax this to `toBeLessThan(4)`.
+      expect(fake.accepted()).toBe(2);
+    } finally {
+      // In a `finally` so a red assertion does not leak the server on top of
+      // the clients — that would put a second handle class into the "jest did
+      // not exit" signature the revert probe reads.
+      await fake.close();
+      await app.close();
+    }
+  });
+
+  it('leaves the adapter holding nothing, so dispose() afterwards is a no-op (edge)', async () => {
+    const fake = await startFakeRedis();
+    const { app, adapter } = await bareAdapter();
+
+    try {
+      await expect(adapter.connectToRedis(fake.url)).rejects.toThrow('NOAUTH');
+
+      await expect(adapter.dispose()).resolves.toBeUndefined();
+
+      // This is WHY the fix cleans in place rather than assigning the fields
+      // before the ping: assigning first would make the clients reachable by
+      // `dispose()`, and in the case that matters nothing ever calls it.
+      const held = adapter as unknown as {
+        pubClient?: Redis;
+        subClient?: Redis;
+      };
+      expect(held.pubClient).toBeUndefined();
+      expect(held.subClient).toBeUndefined();
+    } finally {
+      await fake.close();
+      await app.close();
+    }
+  });
+
+  it('strands nothing when a configure fails at connectToRedis (failure)', async () => {
+    const fake = await startFakeRedis();
+
+    try {
+      await expect(
+        createTestApp({
+          configure: async (app) => {
+            const adapter = new RedisIoAdapter(app, [FAKE_ORIGIN]);
+            await adapter.connectToRedis(fake.url); // rejects
+            app.useWebSocketAdapter(adapter); // never reached
+          },
+        }),
+      ).rejects.toThrow('NOAUTH');
+
+      await settleLeak();
+
+      expect(fake.accepted()).toBe(2);
+    } finally {
+      await fake.close();
+    }
   });
 });
