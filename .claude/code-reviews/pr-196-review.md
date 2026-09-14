@@ -180,3 +180,12 @@ No code moves, so the `5aa4159` gate stamp stands; say in the report which commi
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 https://claude.ai/code/session_01N5PsMTVxFiNEkDxeJxcxzC
+
+---
+
+## Round 3 corrections (2026-09-14)
+
+Two sentences above were inherited from the fix report without a run of their own, and round 3 ran them. The original text stays as the record of what round 1 believed.
+
+- *Checked and clean*, "Its non-exit is the pool, pre-existing" — refuted. A handle dump appended to `app.e2e-spec.ts` at `fce06ba` shows, at the moment the last `app.close()` resolves, two ioredis sockets to Redis and the http server, and no Postgres socket; the pool is lazy and `GET /` runs no query. Round 3, F1.
+- *Validation*, "0 vs 26" — the 26 was the piped `grep -v node_modules` filter's output, which drops a content line (`issue-193.md:96`); the tree has 27. Round 2, F2.
