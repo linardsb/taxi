@@ -10,7 +10,7 @@ vi.mock('next/navigation', () => ({
 
 const session = (role: UserRole): AuthSession => ({
   accessToken: 'token-abc',
-  expiresAt: '2026-09-14T12:00:00.000Z',
+  expiresAt: '2099-01-01T00:00:00.000Z',
   user: {
     id: '99999999-8888-4777-8666-555555555555',
     phone: '+37129999001',
