@@ -196,13 +196,15 @@ unaffected** — the harness caller is `observed`, and the fix is right regardle
 
 ## Gate
 
-`observed` — `record-gate.sh --clean` at `2e0c756` on a clean tree, with
-`COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit **0**:
+`observed` — `record-gate.sh --clean` at `8b9001a` on a clean tree, with
+`COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit **0**. `8b9001a` is the PR #212
+review-fix commit; the identical run at `2e0c756` before it took `1m23.883s`, and every package total below
+is unchanged between the two — the fix pass touched one comment in a spec and the rest is markdown:
 
 ```
 Tasks:    22 successful, 22 total
 Cached:   0 cached, 22 total
-Time:     1m23.883s
+Time:     1m21.576s
 
 @taxi/api        Test Suites: 77 passed, 77 total   Tests: 733 passed, 733 total
 @taxi/shared     Test Files 24 passed (24)          Tests 231 passed (231)
@@ -214,9 +216,10 @@ Time:     1m23.883s
 
 The `@taxi/api` figures are the **`REDIS_TEST_URL`-set** run, in which nothing skips. They are not
 comparable with `CLAUDE.md`'s gated line, which measures `env -u REDIS_TEST_URL` — see *Not done*.
-**The known api-suite flake under the full gate did not appear.** The gate ran clean four times in this
-pass — once plain (exit 0, 1m36.409s) and three times under `record-gate.sh --clean` as the branch was
-reshaped into its final two commits. No re-run was budgeted or needed.
+**The known api-suite flake under the full gate did not appear.** The gate ran clean four times in the
+implementation pass — once plain (exit 0, 1m36.409s) and three times under `record-gate.sh --clean` as the
+branch was reshaped into its final two commits — and twice more in the PR #212 review-fix pass (plain, exit
+0, 1m21.603s; then the `--clean` run stamped above). Six clean runs, no re-run budgeted or needed.
 
 Level 1, `observed` at this head: `pnpm --filter @taxi/api typecheck` clean; `pnpm --filter @taxi/api lint`
 **0 errors, 12 warnings** — the same 12 as the pre-change baseline, so the change adds none.
