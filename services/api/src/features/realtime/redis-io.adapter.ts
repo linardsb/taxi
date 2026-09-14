@@ -36,7 +36,19 @@ export class RedisIoAdapter extends IoAdapter {
   async connectToRedis(url: string): Promise<void> {
     const pubClient = new Redis(url);
     const subClient = pubClient.duplicate();
-    await Promise.all([pubClient.ping(), subClient.ping()]);
+    try {
+      await Promise.all([pubClient.ping(), subClient.ping()]);
+    } catch (err) {
+      // Neither field is assigned yet, so `dispose()` cannot reach these two —
+      // a rejection here would otherwise leave both clients reconnecting on
+      // ioredis's default `retryStrategy` for the life of the process, with
+      // nothing holding a reference (#211). `disconnect()`, not `quit()`: it
+      // is synchronous, cannot reject, and stops the reconnect loop, while
+      // `quit()` waits for a `+OK` from the server we just failed against.
+      pubClient.disconnect();
+      subClient.disconnect();
+      throw err;
+    }
     this.pubClient = pubClient;
     this.subClient = subClient;
     this.adapterConstructor = createAdapter(pubClient, subClient);

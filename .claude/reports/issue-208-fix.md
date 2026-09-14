@@ -177,23 +177,19 @@ branch's source head, and this file is `.claude/`-only, which no gate task reads
 
 ## Not done
 
-- **A `configure` that THROWS is the residual window, and this PR does not close it.** `configure` is
-  called on the line *above* the `try` (`harness.ts:562`), so a `configure` that opens something and then
-  throws leaks it, and never reaches the `return` that would have handed back the teardown. `observed`
-  2026-09-14 (#209 review M1): a throwaway spec whose `configure` runs
-  `adapter.connectToRedis(REDIS_TEST_URL)` and then throws leaves both clients `ready` and exits 124 —
-  this family's own signature. Reachable without a mutation: `connectToRedis` ends in
-  `Promise.all([pubClient.ping(), subClient.ping()])` (`redis-io.adapter.ts:39`), so a server that accepts
-  the connection and errors the PING rejects there. **Moving the call inside the `try` is necessary but
-  not sufficient** — a rejection between `new Redis(url)` and the two field assignments
-  (`redis-io.adapter.ts:37-41`) leaves `this.pubClient`/`this.subClient` undefined, so `dispose()` reaches
-  nothing even when it is called. Closing it needs `connectToRedis` to assign before it pings or clean up
-  its own partial state — shipped source, not the harness — so it is its own ticket: **#211**.
-- **`configure`'s teardown is opt-in, and only one caller needs it.** `installAdapter` returns one;
-  `redis-io.adapter.spec.ts`'s CORS block installs an adapter that never calls `connectToRedis`, so it
-  holds nothing and returns nothing. A future `configure` that opens a resource and forgets the teardown
-  is back in W2 — a contract, not a guarantee. Enforcing it would mean the harness owning resources it
-  cannot name.
+- ~~**A `configure` that THROWS is the residual window, and this PR does not close it.**~~ **Closed by
+  #211** — `connectToRedis` now disconnects both clients when the ping rejects, and the `configure` call
+  moved inside the `try`. See `.claude/reports/issue-211-fix.md`. The half that stays open is the next
+  bullet.
+- **`configure`'s teardown is opt-in, and a `configure` that never returns one strands what it opened.**
+  Two ways to get there, and they are the same gap from opposite sides: a `configure` that opens a
+  resource and simply forgets the teardown, and a `configure` that opens one **successfully and then
+  throws before its `return`** — #211 closed only the case where the open itself is what throws.
+  `installAdapter` returns a teardown; `redis-io.adapter.spec.ts`'s CORS block installs an adapter that
+  never calls `connectToRedis`, so it holds nothing and returns nothing. Either way it is back in W2 — a
+  contract, not a guarantee. Enforcing it would mean the harness owning resources it cannot name, or
+  changing `configure`'s signature to register cleanups eagerly (`configure(app, onCleanup)`), which #211
+  weighed and declined for a case no caller has.
 - **No case covers a self-check throwing *after* a successful listen**, because nothing in the harness
   does that today — the two self-checks both precede the listen. The `DRIZZLE` half of W1 is covered by
   the third case only in shape (a throw after the bind), not by resolving `DRIZZLE` for real.
