@@ -2,11 +2,16 @@
 # Nightly pg_dump of the production database → off-box object storage (#13).
 #
 # Runs on the Hetzner box from the deploy user's crontab (runbook §6):
-#   0 3 * * * BACKUP_RCLONE_REMOTE=r2:sakta-backups /opt/taxi/scripts/backup-db.sh >> /var/log/taxi/backup.log 2>&1
+#   0 3 * * * BACKUP_RCLONE_REMOTE=r2crypt: /opt/taxi/scripts/backup-db.sh >> /var/log/taxi/backup.log 2>&1
 #
-# Needs: the compose stack up at /opt/taxi, and `rclone` configured with an
-# S3-compatible remote (Cloudflare R2 or Backblaze B2) named in
-# BACKUP_RCLONE_REMOTE. Both free tiers hold years of pilot-sized dumps.
+# Needs: the compose stack up at /opt/taxi, and `rclone` configured with a
+# `crypt` remote wrapping the S3-compatible bucket (Cloudflare R2), named in
+# BACKUP_RCLONE_REMOTE. A dump is every rider's and driver's name, phone number
+# and address, so it is encrypted on the box before it leaves (#149): the
+# bucket holds ciphertext under encrypted names, and only a machine with the
+# passphrase (runbook §6.1) can list or read it. Point this at the plain `r2`
+# remote and the dump goes up readable. The free tier holds years of
+# pilot-sized dumps.
 #
 # A BACKUP THAT HAS NEVER BEEN RESTORED IS NOT A BACKUP. The restore rehearsal
 # is runbook §6.2; do it once when this is first installed, and again after any
@@ -15,7 +20,7 @@ set -euo pipefail
 
 COMPOSE_DIR="${COMPOSE_DIR:-/opt/taxi}"
 LOCAL_DIR="${BACKUP_LOCAL_DIR:-/var/backups/taxi}"
-REMOTE="${BACKUP_RCLONE_REMOTE:?set BACKUP_RCLONE_REMOTE, e.g. r2:sakta-backups}"
+REMOTE="${BACKUP_RCLONE_REMOTE:?set BACKUP_RCLONE_REMOTE, e.g. r2crypt:}"
 # Local copies are a convenience for a fast restore; the remote is the backup.
 KEEP_LOCAL_DAYS=7
 KEEP_REMOTE_DAYS=30
