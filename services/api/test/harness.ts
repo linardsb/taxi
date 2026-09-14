@@ -536,23 +536,30 @@ export async function createTestApp(options?: {
 
   const app = moduleRef.createNestApplication();
   await options?.configure?.(app);
-  await app.init();
 
-  // Either self-check throwing would otherwise leave an `init()`ed app open
-  // with `ctx` unassigned: `afterAll`'s `ctx.app.close()` throws on top of it
-  // and nothing ever closes the app. Closed here, so `close()` releases the
-  // pool (`onModuleDestroy` → `pool.end()`) and whatever `configure` opened
-  // before `init()` — the Redis-gated adapter spec's two ioredis clients,
-  // which only `RedisIoAdapter.close()` quits, and which held jest open past
-  // its run (#199, `observed` both ways in `.claude/reports/issue-199-fix.md`).
-  // That quit depends on `RealtimeGateway` registering its io server during
-  // `init()`: `SocketModule.close()` calls the adapter's `close()` once per
-  // registered server and then a no-op `dispose()`, so a graph with no
-  // gateway would leave both clients open.
+  // `init()` and both self-checks sit inside the `try`: any of the three
+  // throwing would otherwise leave `ctx` unassigned with the app still holding
+  // whatever `configure` opened — the Redis-gated adapter spec's two ioredis
+  // clients — so `afterAll`'s `ctx.app.close()` throws on top of it, nothing
+  // ever closes the app, and the clients hold jest open past its run (#199,
+  // `observed` both ways in `.claude/reports/issue-199-fix.md`; the `init()`
+  // half in `.claude/reports/issue-205-fix.md`). Closed here instead:
+  // `close()` releases the pool (`onModuleDestroy` → `pool.end()`) and reaches
+  // `RedisIoAdapter.dispose()`, which quits both clients whether or not a
+  // gateway registered an io server (#205).
+  //
+  // A rejecting `init()` is covered only from `registerModules()` onward:
+  // before that `SocketModule.close()` has no `applicationConfig` yet and
+  // returns without reaching `dispose()`, leaving the clients open. That
+  // window is `applyOptions()` plus the parser middleware — nothing that
+  // touches an overridden provider — and `observed` in the #205 report.
+  //
   // The self-check's error is the one that names the defect, so a `close()`
   // that throws in the `catch` is printed and the ORIGINAL is rethrown; it is
   // never allowed to mask it.
   try {
+    await app.init();
+
     // THE SELF-CHECK. Seeding a queue the strategy never reads would leave it
     // empty at dispatch time, the strategy would fall back to proximity order,
     // and the queue-fairness case would pass FOR THE AUTO-MATCH REASON — a
@@ -581,7 +588,7 @@ export async function createTestApp(options?: {
       await app.close();
     } catch (closeErr) {
       console.error(
-        'createTestApp: app.close() after a failed self-check threw (the self-check error follows)',
+        'createTestApp: app.close() after a failed init() or self-check threw (the original error follows)',
         closeErr,
       );
     }
