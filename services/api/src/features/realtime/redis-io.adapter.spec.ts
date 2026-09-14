@@ -442,13 +442,13 @@ describe('RedisIoAdapter.connectToRedis failure (#211)', () => {
       socket.on('close', () => live.delete(socket));
       socket.on('error', () => {}); // the client destroys its end; ECONNRESET is expected
       socket.on('data', (chunk: Buffer) => {
-        // ONE REPLY PER COMMAND, not per chunk. ioredis pipelines its
-        // ready-check `info` with whatever is in the offline queue, so a
-        // reply-per-chunk server answers `info` and leaves `ping` waiting
-        // forever — a HANG, not a rejection. `observed` 2026-09-14:
-        // reply-per-chunk rejected on the first run of a process and hung on
-        // runs 2-4 (4/4, both trees), because the batching only happens once
-        // the process is warm.
+        // ONE REPLY PER COMMAND, not per chunk. `ping` never reaches the wire
+        // (the offline queue is written only in ioredis's readyHandler, which
+        // a failed ready check never reaches). What coalesces is the two
+        // `CLIENT SETINFO` writes, once the memoised getPackageMeta() is warm:
+        // one reply leaves the second unanswered, the Promise.all gating the
+        // ready check never settles, `info` is never sent — a HANG, not a
+        // rejection. `observed` 2026-09-14: cold connect rejects, warm hangs.
         const commands = chunk.toString().match(/\*\d+\r\n/g)?.length ?? 1;
         socket.write('-NOAUTH Authentication required.\r\n'.repeat(commands));
       });

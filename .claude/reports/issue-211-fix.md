@@ -6,8 +6,9 @@
 `RedisIoAdapter.connectToRedis()` constructed two ioredis clients, pinged both, and assigned them to
 `this.pubClient` / `this.subClient` only afterwards. A rejection at the ping left two live, retrying
 clients that **no code path could reach**: the fields were still `undefined`, so `dispose()` closed
-nothing, and the caller had already thrown. Three callers were exposed — `harness.ts`'s `configure`
-(jest exits 124), `main.ts:15`, and `scripts/mint-tracked-ride.ts:427`.
+nothing, and the caller had already thrown. Three callers reach it — `harness.ts`'s `configure`
+(jest exits 124), `main.ts:15`, and `scripts/mint-tracked-ride.ts:427` — though only the first is
+exposed to the leak today; see *The shipped artifact*.
 
 **Seen three times before this ticket, and closed none of them.** The first sighting is **#107 review
 L2** — "Two ioredis clients leak if `connectToRedis` throws between creation and assignment — *noted,
@@ -60,7 +61,7 @@ purpose — the fix stops the reconnect loop outright rather than slowing it, so
 defect, not a slow machine.
 
 Both fake-server traps are recorded as comments in the helper so the next person does not rediscover them:
-the per-command reply (ioredis pipelines its ready-check `info` with the offline queue, and a
+the per-command reply (ioredis coalesces its two `CLIENT SETINFO` writes once warm, and a
 reply-per-chunk server HANGS rather than rejecting) and the live-vs-cumulative count.
 
 ## Probes
@@ -76,7 +77,7 @@ with **one** hunk reverted; the specs are identical in all three runs. "did not 
 | **A** | `redis-io.adapter.ts`'s `try`/`catch` (back to the bare `await Promise.all`) | ❌ exit **124**, `2 failed, 15 passed, 17 total`, 3.517 s, **1** "did not exit" | cases 1 and 3 |
 | **B** | `harness.ts`'s `configure` move (call + `let … = undefined` hoist, reverted together) | ✅ exit **0**, `17 passed, 17 total`, 3.607 s, **0** "did not exit" | **none** |
 | **Green** | — (finished tree) | ✅ exit **0**, `17 passed, 17 total`, 4.05 s, **0** "did not exit" | — |
-| **Shipped artifact** | the same `try`/`catch`, applied to the compiled `dist` (gitignored) | unfixed → **exit 124**; fixed → **exit 0** | stands for `main.ts:15`, which no test reaches |
+| **Shipped artifact** | the same `try`/`catch`, applied to the compiled `dist` (gitignored) | unfixed → **exit 124**; fixed → **exit 0** | stands for the compiled adapter, not for a caller |
 
 Probe A's failure text, verbatim, on both flipped cases:
 
@@ -124,8 +125,8 @@ before the move a rejecting `configure` never reaches `app.close()`; after it, t
 
 ### The shipped artifact
 
-`main.ts:15` is the caller no test covers, so the jest probes say nothing about it. The dist run is this
-ticket's only evidence that the fix works on production code rather than through the harness. `observed`
+Every jest probe runs through the harness, so none of them touches the compiled output. The dist run is
+this ticket's only evidence that the fix works on production code rather than through the harness. `observed`
 2026-09-14, scratchpad `probe-dist-adapter.js` against `services/api/dist` after
 `pnpm --filter @taxi/api build`, with the fix removed from the compiled output for the unfixed arm
 (`dist` is gitignored, so the tracked tree stayed clean; restored and `cmp`-verified afterwards):
@@ -138,6 +139,28 @@ ticket's only evidence that the fix works on production code rather than through
 Both trees print the same rejection, so **the rejection is not what differs — only whether the process can
 leave**. `process.getActiveResourcesInfo()` sampled right after the rejection is NOT the observable: it
 reads identically on both trees, because the disconnects have not propagated yet. The exit code is.
+
+**What this row stands for: the compiled adapter, not a production caller.** Neither production caller
+reaches this failure path today, so the 124-vs-0 is a property of the probe harness rather than of
+`main.ts`:
+
+- `main.ts:23` is `void bootstrap();` — **no handler on the returned promise.** Under Node's default
+  `--unhandled-rejections=throw` the rejection is raised as an uncaught exception and the process dies
+  before the leaked clients can matter. `observed` 2026-09-14, a replica of `main.ts`'s exact shape
+  (`void main()`, no catch) against the same fake `-NOAUTH` server the spec uses, both arms back to back:
+  **both exit 1 at 0.014 s** with byte-identical output (`triggerUncaughtException`, `ReplyError: NOAUTH
+  Authentication required.`, `command: { name: 'info' }`). Corroboration, since the conclusion rests on a
+  runtime default: Node **v20.20.2**; `grep -rn "unhandledRejection\|uncaughtException"` finds no handler
+  in `services/api/src`, `packages/*/src`, or `@nestjs/core` · `@nestjs/common` · `@nestjs/platform-express`;
+  `Dockerfile:86` is `CMD ["node", "dist/main.js"]` with no `NODE_OPTIONS`.
+- `scripts/mint-tracked-ride.ts:427` is guarded. The `kv.ttl('mint:ride:probe')` pre-probe at `:414-424`
+  reaches Redis through the app's own client and throws its own named error *before* the adapter builds
+  two more — which is exactly what the Level 4 manual step observes (`exits 1 on its own, not 124`).
+
+The dist probe's own body `catch`es the rejection, which is why its process survives to be killed at 124;
+`main.ts` never reaches that state. The caller that **does** reach the leak is `createTestApp`'s
+`configure`, and probe A stands for it without needing a dist run. **The ticket's motivation is
+unaffected** — the harness caller is `observed`, and the fix is right regardless of which callers reach it.
 
 ## Mechanism, read rather than assumed
 
@@ -154,12 +177,20 @@ reads identically on both trees, because the disconnects have not propagated yet
 - **Why clean in place rather than assign before the ping.** Assigning first makes the clients *reachable*
   by `dispose()`, but in the case that matters nothing reaches them: `configure` has already thrown, no
   teardown was returned, and `app.close()` on a never-`init()`ed app returns at `socket-module.js:50-52`
-  without reaching `dispose()`. It would also leave `main.ts` rejecting with two live clients holding the
-  event loop. Case 2 is what pins this.
-- **The ready check is why the fake server must reply per COMMAND.** ioredis pipelines its ready-check
-  `info` with whatever is in the offline queue once the process is warm, so a reply-per-`data`-event server
-  answers `info` and leaves `ping` waiting forever — a hang, not a rejection. `observed` during planning:
-  reply-per-chunk rejected on the first run of a process and hung on runs 2-4 (4/4, both trees).
+  without reaching `dispose()`. (It makes no difference to `main.ts` either way, which dies on the
+  unhandled rejection — see *The shipped artifact*.) Case 2 is what pins this.
+- **The handshake is why the fake server must reply per COMMAND.** The `ping` never reaches the wire at
+  all: the offline queue is written only in `readyHandler` (`event_handler.js:296-308`), which a failing
+  ready check never reaches. What coalesces is the two `CLIENT SETINFO` writes in `connectHandler`
+  (`event_handler.js:60-73`) — LIB-NAME goes out synchronously, LIB-VER only once the memoised
+  `getPackageMeta()` resolves (a real `fs.readFile` on a process's first connect, a resolved microtask on
+  every later one). A reply-per-`data`-event server answers that combined chunk **once**, leaving one
+  SETINFO unanswered, so the `Promise.all(clientCommandPromises)` gating the ready check never settles and
+  `INFO` is never sent — a hang, not a rejection. `observed` 2026-09-14, a wire log of a reply-per-chunk
+  server with two connects in one process: cold connect = 6 chunks (LIB-NAME, LIB-VER, `info`, ×2 clients),
+  each answered → **rejects**; warm connect = 2 chunks, each carrying **both** SETINFOs → **hangs**, and
+  `info` is never written. `ping` appears on the wire in neither — which is the cold/warm split the
+  planning runs recorded (rejected on run 1, hung on runs 2-4) without naming the mechanism.
 - **`dispose()` is untouched.** Its clear-then-quit ordering (#205) is load-bearing for the harness's
   run-the-teardown-on-every-failure rule.
 
@@ -209,14 +240,27 @@ its own**, not 124. The pre-probe Task 8 preserved still earns its place.
   reopens the API #208 established and #209 reviewed, for a case no caller has. Raise it if it ever bites.
   **AC #1 is scoped to the case where `connectToRedis` itself is what throws** — the case #209 M1 observed
   and the only one reachable without a mutation.
-- **An UNREACHABLE Redis.** `connectToRedis` hangs inside ioredis's infinite retry rather than rejecting —
-  a different shape, already recorded against this repo's worktree `.env` gap. This ticket adds no connect
-  timeout.
+- **No connect timeout is added** for an UNREACHABLE Redis — but that path is **not** the different shape
+  an earlier draft of this bullet claimed, and the fix already covers it. `connectToRedis` does not hang
+  there: `maxRetriesPerRequest` defaults to 20 (`RedisOptions.js:52`) and `closeHandler` flushes the
+  offline queue with `MaxRetriesPerRequestError` on the 21st close (`event_handler.js:198-210`). `observed`
+  2026-09-14, the two-client shape against a closed `127.0.0.1:6398`, both arms in one run: the ping
+  **rejects at 10.5 s on both**; unfixed then never exits (killed at `timeout 30` → exit 124, both clients
+  still `reconnecting` at t+4.5 s), fixed **exits 0 at 12.5 s** — so the new `catch` covers this path too,
+  which is broader than the plan credited it. The 2 s between the catch and the exit is `derived`:
+  ioredis's `disconnectTimeout` default is 2000 ms and nothing else is pending. Bounded, not infinite:
+  ~10.5 s against a port that refuses immediately, longer where each attempt burns the 10 s
+  `connectTimeout`. (The worktree `.env` hang this bullet used to gesture at is a different code path — not
+  `connectToRedis`.) A connect timeout would shorten that 10.5 s; nothing here needs it.
 - **`CLAUDE.md`'s Redis-gated line is not re-measured here.** Three new **ungated** cases move its
   `582 passed` / `615 total`, and the gate run prints the new totals. #208 declined to re-measure and this
   ticket inherits the decision — but says so, rather than leaving it silent: that line is a documentation
   claim with its own correction history (wrong three times), and re-stating it is its own change with its
-  own re-observation owed. Silence is what let it be wrong.
+  own re-observation owed. Silence is what let it be wrong. **Now tracked as #214**, filed from the PR #212
+  review, which holds a measurement of how far it has drifted (`+112 passed`, `observed` by that review at
+  `c5cfee9`, not re-run here). The issue scopes the work as the whole claim — the gated-spec-file counts
+  and the `feed712` stamp as well as the totals — which is why it is an issue rather than a line edit in
+  this PR.
 - **Only one of the two pings rejecting** gets no separate case. `Promise.all` rejects on the first and
   `accepted() === 2` proves the in-flight one was torn down too; the fake server errors both identically,
   so forcing the asymmetry would need a second fake server and would assert nothing the count does not.

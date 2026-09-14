@@ -47,7 +47,7 @@ reconnect on ioredis's default `retryStrategy` forever. Three callers are affect
 | Caller | Consequence today |
 |---|---|
 | `services/api/test/harness.ts:562` (via `configure`) | `createTestApp` rejects; two clients retry forever; jest exits 124 |
-| `services/api/src/main.ts:15` | `bootstrap()` rejects with the real error buried under repeated ioredis error logs; process does not exit |
+| `services/api/src/main.ts:15` | `bootstrap()` rejects with the real error buried under repeated ioredis error logs — but the process still **exits 1**: `main.ts:23` is `void bootstrap()` with no handler, so Node's default `--unhandled-rejections=throw` kills it before the leak matters (corrected during the PR #212 review, F1; `observed` — see the report's *The shipped artifact*) |
 | `services/api/scripts/mint-tracked-ride.ts:426` | same — which is why `:409-412` already carries a `kv.ttl` pre-probe and a comment about the leak |
 
 ## Solution Statement
@@ -76,9 +76,11 @@ retire the three claims this work falsifies.
   return-value to eager registration (see NOTES, Option O2). **Read AC1 as scoped to the case where
   `connectToRedis` itself is what throws** — which is the case the issue observed and the only one
   reachable without a mutation.
-- **Not included: an UNREACHABLE Redis.** `connectToRedis` hangs inside ioredis's infinite retry rather
-  than rejecting; a different shape, already recorded against this repo's worktree `.env` gap
-  (`taxi-worktree-env-redis-hang`). This ticket adds no connect timeout.
+- **Not included: a connect timeout for an UNREACHABLE Redis.** This bullet claimed `connectToRedis`
+  "hangs inside ioredis's infinite retry rather than rejecting"; the PR #212 review (F3) refuted it.
+  It rejects with `MaxRetriesPerRequestError` after ~10.5 s (`maxRetriesPerRequest` defaults to 20), so
+  the fix's `catch` covers that path too — `observed`, see the report's *Not done*. The worktree `.env`
+  hang (`taxi-worktree-env-redis-hang`) is a different code path. This ticket adds no connect timeout.
 - **Not changing: `dispose()`.** Its clear-then-quit ordering (#205) is load-bearing for the harness's
   run-the-teardown-on-every-failure rule. It stays exactly as is.
 - **Not changing: `mint-tracked-ride.ts`'s `kv.ttl` pre-probe.** Only the stale half of its comment goes;
@@ -271,8 +273,8 @@ IMPORTANT: Execute every task in order, top to bottom.
 - **IMPORTS**: none added.
 - **GOTCHA**: do **not** assign the fields before the ping instead. It makes the clients *reachable* by
   `dispose()`, but in the case that matters nothing calls `dispose()` — `configure` has already thrown, and
-  `app.close()` on a never-`init()`ed app returns at `socket-module.js:50-52`. It would also leave `main.ts`
-  rejecting with two live clients holding the event loop. Clean in place.
+  `app.close()` on a never-`init()`ed app returns at `socket-module.js:50-52`. (It makes no difference to
+  `main.ts` either way — that process dies on the unhandled rejection; PR #212 review F1.) Clean in place.
 - **GOTCHA**: `Promise.all` subscribes to both inputs immediately, so the slower client's later rejection
   is already handled — `disconnect()` on a client with an in-flight command produces **no** unhandled
   rejection. Do not add a `.catch(() => {})` for it.
@@ -311,12 +313,14 @@ IMPORTANT: Execute every task in order, top to bottom.
     socket.on('close', () => live.delete(socket));
     socket.on('error', () => {}); // the client destroys its end; ECONNRESET is expected
     socket.on('data', (chunk) => {
-      // ONE REPLY PER COMMAND, not per chunk. ioredis pipelines its ready-check
-      // `info` with whatever is in the offline queue, so a reply-per-chunk
-      // server answers `info` and leaves `ping` waiting forever — a HANG, not a
-      // rejection. `observed` 2026-09-14: reply-per-chunk rejected on the first
-      // run of a process and hung on runs 2-4 (4/4, both trees), because the
-      // batching only happens once the process is warm.
+      // ONE REPLY PER COMMAND, not per chunk. `ping` never reaches the wire
+      // (the offline queue is written only in ioredis's readyHandler, which a
+      // failed ready check never reaches). What coalesces is the two
+      // `CLIENT SETINFO` writes, once the memoised getPackageMeta() is warm:
+      // one reply leaves the second unanswered, the Promise.all gating the
+      // ready check never settles, `info` is never sent — a HANG, not a
+      // rejection. `observed` 2026-09-14: cold connect rejects, warm hangs.
+      // (Mechanism corrected by the PR #212 review, F2; the code is unchanged.)
       const commands = chunk.toString().match(/\*\d+\r\n/g)?.length ?? 1;
       socket.write('-NOAUTH Authentication required.\r\n'.repeat(commands));
     });
@@ -563,18 +567,20 @@ IMPORTANT: Execute every task in order, top to bottom.
 
 - **IMPLEMENT**: mirror `issue-208-fix.md`'s shape — *What changed* · *The new cases* (a table) ·
   *Probes* (the table from Task 9, every figure `observed` with the run that produced it) · *Mechanism,
-  read rather than assumed* (the ioredis source for `disconnect()` vs `quit()`, and the pipelining that
-  forced the per-command fake server) · *Gate* · *Not done* (β, and the unreachable-Redis hang).
+  read rather than assumed* (the ioredis source for `disconnect()` vs `quit()`, and the `CLIENT SETINFO`
+  coalescing that forced the per-command fake server) · *Gate* · *Not done* (β, and the connect timeout).
 - **IMPLEMENT**: *Not done* must also state the CLAUDE.md decision explicitly. Three new **ungated** cases
   move the Redis-gated line's `582 passed` / `615 total`. #208 declined to re-measure that line and this
   ticket inherits the decision — but say so, with the reason (the gate run prints the new totals; the line
   is a documentation claim with its own correction history, and re-stating it is its own change). Silence
   is what let that line be wrong three times.
 - **IMPLEMENT**: the *Probes* table gets a row the jest probes cannot supply — **the shipped artifact**.
-  `main.ts:15` is the caller no test covers, and the dist run is the only evidence in this ticket that the
+  every jest probe runs through the harness, so the dist run is the only evidence in this ticket that the
   fix works on production code rather than through the harness: same `rejected: ReplyError | NOAUTH …`
-  on both trees, **exit 124 unfixed vs exit 0 fixed**. Give it its own row and name `main.ts` as what it
-  stands for. Re-run it yourself against your built dist rather than copying the figures.
+  on both trees, **exit 124 unfixed vs exit 0 fixed**. Give it its own row and name **the compiled adapter**
+  as what it stands for — *not* `main.ts`, which dies on the unhandled rejection before the leak matters
+  (PR #212 review F1 corrected this instruction after it was followed literally). Re-run it yourself
+  against your built dist rather than copying the figures.
 - **GOTCHA**: re-derive every number you carry from this plan. The 2-vs-10 figures for case 3 are
   `observed` under jest (Task 5) as well as at the node level, so they should reproduce — but if your run
   differs, **your run is the one that goes in the report**, with this plan's noted as the earlier
@@ -624,8 +630,8 @@ No socket/room event is involved, so this ticket does not engage the realtime co
 | `dispose()` called after a failed `connectToRedis` | Task 5 case 2 (`(edge)`) — must resolve, not throw |
 | `configure` fails at `connectToRedis`; `createTestApp` must strand nothing | Task 5 case 3 (`(failure)`) |
 | Only ONE of the two pings rejects (the other still in flight) | Covered by cases 1-3: `Promise.all` rejects on the first, and `accepted() === 2` proves the in-flight one was also torn down. No separate case — the fake server errors both identically, so a case forcing the asymmetry would need a second fake server and would assert nothing the count does not. |
-| ioredis pipelines `info` + `ping` into one write | Not an edge case of the *feature* — an edge case of the *instrument*. Guarded by the per-command reply in Task 4, with the `observed` hang recorded in its comment. |
-| Redis unreachable (connect never completes) | **Not covered — out of scope.** `connectToRedis` hangs in ioredis's retry loop rather than rejecting. Named in *Out of Scope* and owed to no ticket; raise one if it ever bites. |
+| ioredis coalesces its two `CLIENT SETINFO` writes into one chunk | Not an edge case of the *feature* — an edge case of the *instrument*. Guarded by the per-command reply in Task 4, with the `observed` hang recorded in its comment. (Row said "pipelines `info` + `ping`" until PR #212 review F2.) |
+| Redis unreachable (connect never completes) | **Not covered — no connect timeout is added.** The failure itself *is* covered: the ping rejects with `MaxRetriesPerRequestError` after ~10.5 s and the fix's `catch` disconnects both clients (PR #212 review F3; this row claimed a hang). Only the 10.5 s wait is out of scope. |
 | `configure` opens successfully then throws (β) | **Not covered — out of scope**, and disclosed in the `configure` JSDoc (Task 7) and the report's *Not done* (Task 10). |
 
 ---
@@ -826,7 +832,7 @@ case flips on this hunk" — is cheaper than the alternative of inventing a scen
 | Shape | `try { ping } catch { disconnect both; throw }` | move `this.pubClient = …` above the `await` |
 | Leaves clients | closed | open, but *reachable* by `dispose()` |
 | Closes α | yes — nothing survives the throw | **no** — nothing calls `dispose()` in α |
-| Effect on `main.ts` | the process can exit | two live clients hold the event loop |
+| Effect on `createTestApp` | the clients are closed, jest exits | two live clients hold jest open (nothing calls `dispose()` in α) |
 | Effect on `dispose()` | none | must now tolerate a half-built adapter |
 
 AC #2 offers both ("assigned-then-cleaned or cleaned in place"). O2 satisfies the letter and not the
@@ -842,10 +848,13 @@ bug fix. It is the right answer if β ever bites — raise it then, with the cas
 Two design traps, both found by prototyping before writing the tasks (`observed` 2026-09-14, scratchpad
 probes 1-7):
 
-1. **Reply-per-chunk hangs.** ioredis pipelines its ready-check `info` with the offline queue once the
-   process is warm, so a fake server that writes one error per `data` event answers `info` and leaves
-   `ping` waiting forever. Run 1 of a process rejected; runs 2-4 hung, 4/4, on both trees. A test built on
-   the naive server would have passed locally on a fresh process and hung as the second case in a suite.
+1. **Reply-per-chunk hangs.** Once the memoised `getPackageMeta()` is warm, ioredis's two `CLIENT SETINFO`
+   writes land in one chunk, so a fake server that writes one error per `data` event leaves the second
+   unanswered and the `Promise.all` gating the ready check never settles — `info` is never sent and `ping`
+   never reaches the wire at all. Run 1 of a process rejected; runs 2-4 hung, 4/4, on both trees. A test
+   built on the naive server would have passed locally on a fresh process and hung as the second case in a
+   suite. (This trap said "pipelines `info` with the offline queue" until the PR #212 review, F2, put a
+   wire log on it: the behaviour was right, the mechanism was not.)
 2. **`live.size` is not the observable.** ioredis closes the socket when the ready check fails and
    reconnects on a backoff, so the live count oscillates and reads 0 on both trees at a random sample.
    The cumulative `accepted` count is the discriminator: 2 vs 10 after 600 ms, 4/4 each.
@@ -926,7 +935,8 @@ plan, and neither changes what to write.
   `14 passed, 14 total`, exit 0, 0 "did not exit" with the adapter fixed and the harness unmoved. It
   doubles as the regression check on the six-line fix, which nothing else in the plan covered. Also:
   the shipped-artifact (dist) result promoted from a manual step to its own row in the report's probe
-  table, since `main.ts` is the caller no test reaches; an explicit note that the specs must build a real
+  table, since no jest probe touches the compiled output (this bullet said "since `main.ts` is the caller
+  no test reaches" until PR #212 review F1); an explicit note that the specs must build a real
   app rather than copy step 3b's `new RedisIoAdapter({}, …)`; and a note that `toBe(2)` is exact on
   purpose — a 3 is a defect, not a slow machine. The 10/10 table now states which three commands the
   implementer re-runs against the finished tree (totals 14 → 17) and why that is a re-run, not a gap.
