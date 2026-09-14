@@ -1,6 +1,8 @@
 # PR #212 review fixes — round 1
 
-**Review** `.claude/code-reviews/pr-212-review.md` (round 1, approve, 0 Critical / 0 High / 2 Medium / 5 Low)
+**Review** `.claude/code-reviews/pr-212-review.md` (round 1, approve, 0 Critical / 0 High / 2 Medium / 5 Low),
+landing in **PR #213** off `docs/pr-212-review` — it is not in this branch, so a reader of this PR alone
+cannot see it.
 **PR** #212, **OPEN**, base `main` @ `fcea364`, head at triage `c5cfee9` → **`8b9001a`** after this pass.
 **Ground check**: `git status --porcelain` empty; no `MERGE_HEAD` / `REBASE_HEAD` / `CHERRY_PICK_HEAD` under
 `git rev-parse --git-dir`; no other session's work in the index.
@@ -233,8 +235,9 @@ Time:     1m21.576s
 ```
 
 Every package total is **unchanged** from the run at `2e0c756` — expected, since the only non-markdown edit
-is a 7-line comment. A plain (non-`--clean`) run at the same head immediately before it also exited 0 in
-1m21.603s. The known api-suite flake did not appear in either.
+is a 7-line comment. A plain (non-`--clean`) run on the **same tree content**, immediately before that
+content was committed as `8b9001a`, also exited 0 in 1m21.603s. The known api-suite flake did not appear in
+either.
 
 No new test was added: all three fixes are prose, and a comment has no observable to assert on. The three
 probes above are the evidence, and each was **run against the unfixed claim first** — which is what
@@ -246,7 +249,11 @@ separates them from decoration.
 
 - **`8b9001a`** — `docs(reports): PR #212 review F1-F3 — three claims retired (#211)`. The three fixes.
   The gate above ran at this head.
-- **this commit** — the gate stamp in `issue-211-fix.md` and this report.
+- **`4bef54c`** — `docs(reports): stamp the PR #212 fix-pass gate at 8b9001a (#211)`. The gate stamp in
+  `issue-211-fix.md` and the first version of this report.
+- **this commit** — two corrections to this report, made after the PR body was updated and swept: the
+  plain gate run was on the same tree *content*, not at a head that existed yet, and the PR-body sweep
+  below is now quoted rather than promised.
 
 **PR body edits in this pass** (no working-tree grep reaches it, so they are listed rather than asserted):
 
@@ -259,4 +266,19 @@ separates them from decoration.
    no executable line moved, with `:506`/`:507`/`:556` still verbatim (F2 knock-on — the review did not
    name this site, and nothing in the working tree would have caught it).
 5. *Notes for the reviewer*, the `CLAUDE.md` bullet — now names **#214** (F4).
-6. *Size* table and the gate block — re-derived at the pushed head, not carried.
+6. *Size* table and the gate block — re-derived at the pushed head, not carried. `+1471 −39` at `c5cfee9`
+   becomes `+1790 −39` at `4bef54c` (`13 + 216 + 1561`); the spec's `+183 −1` is **unchanged**, because the
+   F2 rewrite replaced 7 of its own added lines with 7 others and nets to zero against `main`. The
+   inherited-figures accounting is rewritten from **27** measurements to **33**, each assigned.
+
+**Applied and verified**: `gh pr edit 212 --body-file …`, then re-fetched with `gh pr view 212 --json body`
+and diffed against the source — identical bar a trailing newline GitHub adds. Sweep of the **live** body,
+`observed` after the edit:
+
+| Grep on the live body | Result |
+|---|---|
+| `grep -n "cannot exit\|does not exit"` | **0 hits** |
+| `grep -n "main\.ts"` | 3 hits, all the corrected form (`main.ts:23` is `void bootstrap()`) |
+| `grep -n "pipelin"` | 1 hit — the F2 bullet naming the retired claim as retired |
+| `grep -n "byte-identical"` | 3 hits: two stating what *is* byte-identical, one describing probe output |
+| `grep -nEi "(close[sd]?\|fix(e[sd])?\|resolve[sd]?) *:? *#[0-9]+"` | 1 hit — `Closes #211`, intended. No keyword sits next to `#214`, so the deferred issue is referenced without being closed |
