@@ -25,11 +25,11 @@ No re-investigation needed.
 
 ### 1. `services/api/test/harness.ts` — the fix
 
-- `createTestApp` now ends `await app.listen(0, '127.0.0.1');` (line 539).
+- `createTestApp` now ends `await app.listen(0, '127.0.0.1');` (line 570).
 - A doc-comment paragraph on `createTestApp` saying why it listens, why the host
   argument is the half that matters, and that specs must not listen again.
 - `connectClient` dials `http://127.0.0.1:${port}` instead of `http://localhost:${port}`
-  (line 619). **Not in the RCA's file list** — see Deviations.
+  (line 627). **Not in the RCA's file list** — see Deviations.
 
 ### 2. Nine spec-side `listen` calls deleted (seven files)
 
@@ -61,7 +61,7 @@ Three cases against the real `createTestApp`:
 It counts binds with `server.on('listening')` on the instance, **not** by patching
 `net.Server.prototype`. Deliberate: `maxWorkers: 1` runs jest in-band, so a patched
 prototype survives into every later spec file — which is the instrument defect the
-RCA records at its line 350, where stacked wrappers manufactured a clean, plausible,
+RCA records at its line 380, where stacked wrappers manufactured a clean, plausible,
 entirely false cross-spec-contamination result.
 
 ## Validation
@@ -111,7 +111,7 @@ lines 50-51 were the two riskiest sites in the diff — two apps in one file, a 
 WebSocket adapter installed in `configure` — and they sit inside `describeWithRedis`,
 so every run in the RCA's investigation skipped them. The RCA's own `g02` ran with the
 worktree's no-op `listen` shortcut, which **absorbed** those calls rather than exercising
-their deletion (RCA line 306 says so). The run above is the first to execute that block
+their deletion (RCA line 335 says so). The run above is the first to execute that block
 with the calls actually gone.
 
 ### The review-fix head — the first gate stamped on a tree that contains F1

@@ -100,8 +100,8 @@ Closing, 14:0x local, after the edit:
 grep -c 'only what turned' .claude/reports/pr-194-review-fixes.md                       → 0
 grep -c 'nodeB still leaks\|unchanged in the same way' .claude/reports/pr-194-review-fixes.md → 0
 grep -c 'has never been run' .claude/reports/pr-194-review-fixes.md                     → 0
-grep -c 'every consumer but one' .claude/reports/pr-194-review-fixes.md                 → 1   (:85)
-grep -c '#199' .claude/reports/pr-194-review-fixes.md                                   → 2   (:98, :297)
+grep -c 'every consumer but one' .claude/reports/pr-194-review-fixes.md                 → 1   (:86)
+grep -c '#199' .claude/reports/pr-194-review-fixes.md                                   → 2   (:98, :298)
 grep -rn 'only what turned\|nodeB still leaks\|unchanged in the same way' services/api --include='*.ts' → 0
 ```
 

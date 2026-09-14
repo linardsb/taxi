@@ -208,10 +208,10 @@ work.
 not dead. It is not collected by the gate (`services/api/package.json` sets jest `rootDir: "src"`); it
 runs only under the `test:e2e` script, which exists.
 
-**One pre-existing defect found and left alone**: that run ends with `Jest did not exit one second after
-the test run has completed.` `observed` by stashing this change and re-running with zero `app.listen`
-calls in the file — the line is there too. It is a Drizzle pool, not the socket, and it predates this PR.
-Out of scope; worth an issue.
+**One pre-existing defect found and left alone**: that run ends with `Jest did not exit one second after the test run has completed.` `observed` by stashing this change and re-running with zero `app.listen` calls in the file — the line is there too, so it is not the socket.
+It is not the pool either, which an earlier version of this paragraph named by inference: a handle dump appended to the spec at `fce06ba` (#196 round 3, F1) shows, when the last `app.close()` resolves, two ioredis sockets to Redis and the http server and no Postgres socket; the pool is lazy (`db/src/client.ts:9`), `GET /` runs no query, and `db.module.ts:40-42` ends it in `onModuleDestroy`.
+The e2e app boots `AppModule` with none of this file's overrides, so it builds three real Redis stores against `REDIS_URL` — on the primary dev machine that default port is another project's container. Cause not yet pinned; it predates this PR.
+Out of scope; issue #200.
 
 ### F9 — Low · two house-style slips
 
@@ -228,7 +228,7 @@ integration specs", removing the collision with the nine deleted call sites at `
 | **FYI-4** — `CLAUDE.md`'s Redis-gated line quotes `33 skipped, 582 passed, 615 total`; at this head it is `35 skipped, 689 passed, 724 total` | `CLAUDE.md` | Editing the repo's own rules file from inside a fix PR is the wrong seam, and CLAUDE.md's own note on that line says to re-observe the **whole claim**, not swap the digit. `system-evolution-review`. |
 | **FYI-5** — `.claude/skills/piv-validate/SKILL.md:51` still prescribes `--forceExit` for a hung suite | skill | The flag this issue rules out; on #193's stall shape it produces a silent pass. A skill edit, which is the remedy kind that actually fires later. `system-evolution-review`. |
 | `TestApp` could carry `port: number` | seven spec files | The review's own "not in this PR". A clean follow-up; deletes the `address()!.port` incantation and the double cast at `driver-presence.integration.spec.ts:49`. |
-| `app.e2e-spec.ts` never exits | `services/api/test/` | Pre-existing, `observed` above. Not this PR's diff. |
+| `app.e2e-spec.ts` never exits | `services/api/test/` | Pre-existing, `observed` above. Not this PR's diff; #200. |
 
 ## The retired-value sweep
 
