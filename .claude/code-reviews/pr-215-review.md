@@ -103,9 +103,16 @@ Most of those genuinely are historical and correctly left alone — the plan hit
 inherited, the review and report hits are stamped at their own heads. **L19 is not.** It is an open action
 item with a live verification command, in an artifact whose whole purpose is to be read forward.
 
-**Fix:** move L19 into a *Closed* section citing PR #215, or leave it in `## Open` with a status line saying
-it is discharged there. Either way the *Not done* sentence needs correcting, because "all under
-`.claude/code-reviews/`" is the justification that made leaving L19 look safe.
+**Fix — and note it has two halves on two different branches**, because `REMEDY-LEDGER.md` lives on `main`
+and is not in this PR's diff:
+
+1. **On `docs/redis-gated-line-214`** — correct the *Not done* sentence. "All under
+   `.claude/code-reviews/`" is the justification that made leaving L19 look safe, and it is false.
+2. **On `main`** — move L19 into a *Closed* section citing PR #215, or leave it under `## Open` with a status
+   line saying it is discharged there. This review's own PR (#216) is already branched off `main` and has an
+   obvious slot for that line, if you would rather not open a third branch for one row.
+
+Running `piv-fix-review-findings` on this report will try to do both in one place; it cannot.
 
 **Worth noting for F4's sake:** L19 already called this the "4th occurrence of this specific line drifting",
 and carries a *fifth* version of the figure (`35 skipped, 660 passed, 695 total` at `c70572b`, 2026-09-04)
@@ -220,10 +227,11 @@ Several things here are the standard `CLAUDE.md` asks for and rarely gets:
 
 ## Recommendation
 
-**Approve.** The shipped diff is correct and independently verified; validation is green on every surface. F1
-and F2 are both worth a follow-up commit on this branch before merge — F1 leaves an open ledger row pointing
-at work that is done, and F2 leaves a command in the most-read surface that returns something other than what
-the sentence says. Neither blocks: F2's conclusion is true and F1 is bookkeeping outside this diff.
+**Approve.** The shipped diff is correct and independently verified; validation is green on every surface. F2
+and F1's first half are worth a follow-up commit **on this branch** before merge — F2 leaves a command in the
+most-read surface that returns something other than what the sentence says, and F1's *Not done* sentence is
+false as written. F1's second half (the L19 row) cannot land here at all; it is on `main`. Neither blocks:
+F2's conclusion is true and the ledger row is bookkeeping outside this diff.
 
 F3–F5 are optional polish. If only one thing lands, make it F1 — the ledger is read forward, and a stale
 *open* row is the failure mode this whole paragraph exists to prevent.
