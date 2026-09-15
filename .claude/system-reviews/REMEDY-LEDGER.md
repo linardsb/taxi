@@ -10,6 +10,10 @@ destroyed silently (the two gate scripts, see L2).
 Status verified: 2026-09-09 on `docs/remedy-ledger-apply` (`observed`). **3 open, 15 closed this loop.**
 IDs are stable and never renumbered.
 
+**Amended 2026-09-15 (PR #216):** L19 is discharged by PR #215 and moved to *Closed since the 2026-09-04
+loop* below, leaving **2 open**. The 2026-09-09 stamp above and the check-count blockquote below describe
+that run and are left as written.
+
 > **Every locator below was re-run at this head, and the check that says so names its own scope.**
 > `observed`, 2026-09-09: **22 checks in three groups** — the Closed table's 15 rows (**18 checks: 17
 > greps and one `ls`**), plus L4 in *Closed earlier* (1), plus the 3 rows in *Open*. **20 reproduce; two
@@ -44,7 +48,22 @@ IDs are stable and never renumbered.
 |----|--------|--------|-------|--------------------------|----------------|
 | L17 | `piv-validate:10` calls `pnpm check` **the gate**, but CLAUDE.md's gate and `.github/workflows/ci.yml` both run `typecheck lint test build`. `pnpm check` omits `build`, so the skill's own step 1 is not CI parity — and the TS6053 stale-`.next` row added under L6 cannot fire under the command step 1 names | this loop, 2026-09-04 (raised while applying L6; deliberately not folded into it — it changes what the skill *runs*, not how it triages) | C7 | — | present and wrong: `grep -n "pnpm check" .claude/skills/piv-validate/SKILL.md` → 10, 25, 86 |
 | L18 | The word-split argument hazard L12 fixed is not unique to one skill: `piv-fix-review-findings:5` declares `arguments: [review, scope]` and `system-execution-report:5` declares `[plan]`, both of which split a free-form sentence the same way. The fix pattern already exists in-repo — `opportunity-scan:27`, "Read `$ARGUMENTS` as **prose**, not as positional slots" | this loop, 2026-09-04 (found while verifying L12's coupling) | C7 | — | absent — `grep -n "^arguments:" .claude/skills/*/SKILL.md` → 3 files, only `system-evolution-review` now guarded |
-| L19 | CLAUDE.md's Redis-skip figure has drifted again. It states `33 skipped, 582 passed, 615 total` / `2 skipped, 64 passed, 64 of 66 total` at `feed712`. `observed` at `c70572b` (this loop's full parity run): `@taxi/api  Tests: 35 skipped, 660 passed, 695 total` / `Test Suites: 2 skipped, 71 passed, 71 of 73 total`. The digit is the fourth version of this line; CLAUDE.md's own note says to re-observe the whole claim rather than patch the digit, so this is logged rather than edited in passing | this loop, 2026-09-04 | C1 | 4th occurrence of this specific line drifting | stale — `grep -n "33 skipped" CLAUDE.md` |
+
+## Closed since the 2026-09-04 loop
+
+| ID | Landed in | Verify at HEAD |
+|----|-----------|----------------|
+| L19 | PR **#215** (issue #214), merged as `7179cc6` on 2026-09-15 — CLAUDE.md's Redis-gated paragraph re-observed as a whole rather than patched at the digit | `grep -n "39 skipped, 694 passed, 733 total" CLAUDE.md` → 43 |
+
+**L19's own figure is not the figure that landed, and that is correct.** The row `observed`
+`35 skipped, 660 passed, 695 total` at `c70572b` — a *fifth* version of the line, logged but never written
+into CLAUDE.md. PR #215 did not adopt it: it re-ran the command at its own base `0cdb59c` and stamped
+`39 skipped, 694 passed, 733 total`, which is what the verification command above now finds. What discharges
+this row is the re-observation the row asked for, not a match against the figure the row carried.
+
+The paragraph's "wrong three times" tally is deliberately left at three — it counts defects in the *fixes*
+(#120's invented cause, #121's ruled-out diagnosis), not staleness events, and a figure going stale as the
+suite grows is neither. Recorded in PR #215's body with the same reasoning.
 
 ## Closed this loop (2026-09-04, `docs/remedy-ledger-apply`)
 
