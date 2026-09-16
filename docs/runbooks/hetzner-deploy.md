@@ -390,14 +390,41 @@ backup**: nothing on Cloudflare's side can open a dump, so the passphrase must
 never live in one place only. There is no salt (`password2` left blank), so it
 is one secret to keep, not two.
 
-Both secrets in that entry date from 2026-09-16, not from the custody
-decision. The token first created on 2026-09-12 as `sakta-backups-box` had its
-Secret Access Key lost — Cloudflare shows that value once, on the creation
-screen, and never again — and no passphrase had been chosen at all. Both were
-made afresh during §6.2's rehearsal, which cost nothing because the bucket
-still held no ciphertext; after the first real dump the same mistake costs the
-backups. Delete the orphaned 2026-09-12 token in the dashboard if it is still
-listed. On the box,
+**As of 2026-09-16 the entry holds a passphrase but no working token — mint one
+before the box install.** The passphrase was generated during §6.2's rehearsal
+that day; no passphrase had existed before, because the 2026-09-12 custody
+decision decided *where* the secret would live and never produced one. It was
+free to choose then and is not free now: from the first real dump onwards, a
+passphrase change orphans every backup written under the old one.
+
+The token is missing because the one used for that rehearsal — the account API
+token `sakta-backups-box`, created 2026-09-12 — was pasted into a Slack channel
+and deleted the same day. Deleting it is the correct response and the only one
+that matters: a secret that has been posted anywhere is compromised for good,
+and removing the message does not undo it. Two things made that cheap. Nothing
+automated depended on the token yet, so there was no window to cover. And
+because the bucket holds crypt ciphertext, whoever read that channel got a
+credential that reaches one bucket containing one unreadable object — the
+passphrase never goes to Cloudflare, so it could not leak with the token. That
+is the property #149 bought.
+
+To revoke an R2 token, **do not look on the R2 pages** — they offer no delete.
+R2 tokens are account API tokens, listed at
+`dash.cloudflare.com/<account id>/api-tokens` (Account home → Manage Account →
+Account API Tokens), where the row's ⋮ menu has Roll and Delete. The R2 token
+edit screen has neither, and saving it changes nothing about the leaked pair.
+Prefer Delete over Roll for an exposed R2 token: Roll replaces the Secret
+Access Key but the Access Key ID is the token's own id and survives, so a
+rolled token is only half-rotated. Confirm the revocation rather than assuming
+it — `rclone lsf r2:sakta-backups` must answer `401 Unauthorized` (`observed`
+2026-09-16, both remotes, immediately after the delete).
+
+Do not delete the *bucket* in response to a leaked token. It is the backup
+destination this whole section is built on, recreating it needs Admin scope
+that the box's token does not have, and the token would still exist — pointed
+at a name you intend to reuse.
+
+On the box,
 `~/.config/rclone/rclone.conf` then holds the token and the passphrase
 *obscured*, not encrypted — `rclone reveal` prints them back — so the file is
 a secret too; rclone creates it 0600 (`observed` 2026-09-12, rclone v1.75.1),
@@ -485,10 +512,11 @@ does and does not cover:
   document's own instructions. Two configs were involved, and they prove
   different halves. The **first** was built on a laptop that had never held an
   `rclone.conf` — the strict form of "a machine that is not the box", since
-  there is no box to copy one from — with the token typed in from the
-  Cloudflare creation screen and the passphrase from the entry. It did the
-  upload, both `lsf` sides, and `rclone delete --min-age 30d` (exit 0; the
-  1-day-old dump correctly survived it). The **second** reused that token and
+  there is no box to copy one from — with the token pasted in from the
+  dashboard and the passphrase from the file it had just been generated into.
+  It did the upload, both `lsf` sides, and `rclone delete --min-age 30d`
+  (exit 0; the 1-day-old dump correctly survived it). The **second** reused
+  that token and
   rebuilt only the crypt layer, from the passphrase file and nothing else;
   that is the config that downloaded the dump back, `cmp` exit 0 against the
   source. So the passphrase alone is shown to open the ciphertext, and the
@@ -508,6 +536,11 @@ object there, so both `lsf` sides stay reproducible for anyone re-checking
 this section. Once the box's cron runs, the 30-day prune removes it on its
 own. It cannot shadow a real dump — §6.2 picks the newest by name and any
 later stamp sorts after it.
+
+Reproducing the run needs a new token first: the one it used was revoked the
+same day (§6.1). The result stands — the revocation says nothing about whether
+the procedure works — but nothing will list that bucket again until the entry
+has a live token in it.
 
 ```bash
 sudo apt-get install -y rclone      # laptop: brew install rclone
