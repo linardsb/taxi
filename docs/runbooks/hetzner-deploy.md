@@ -376,18 +376,28 @@ cron line and the by-hand backup (§5.2) only ever name `r2crypt:`.
 
 ```bash
 sudo apt-get install -y rclone                       # no postgresql-client: the sanity check runs pg_restore in the db container, like §6.2's restore
-rclone config                                        # new remote → s3 → provider Cloudflare (R2) → the sakta-backups-box token; name it r2
+rclone config                                        # new remote → s3 → provider Cloudflare (R2) → the R2 token from the password-manager entry; name it r2. Watch the provider prompt: it takes free text, so a typo saves silently and behaves as generic S3
+rclone config update r2 no_check_bucket true         # NOT optional — without it every upload dies 403 on CreateBucket; see below
 rclone config                                        # new remote → crypt → remote r2:sakta-backups → filename encryption standard → directory names encrypted → password: y, the passphrase → password2 (salt): n → name it r2crypt
 crontab -e
 ```
 
-Both secrets come from the **"Sakta R2 backups"** password-manager entry: the
-R2 API token `sakta-backups-box` (Object Read & Write, scoped to the
-`sakta-backups` bucket) and the crypt passphrase. The passphrase also exists as
-a printed copy at home — the custody decision on #149, 2026-09-12. **A lost
-passphrase is a lost backup**: nothing on Cloudflare's side can open a dump, so
-the passphrase must never live in one place only. There is no salt
-(`password2` left blank), so it is one secret to keep, not two. On the box,
+Both secrets come from the **"Sakta R2 backups"** password-manager entry: an
+R2 API token (Object Read & Write, scoped to the `sakta-backups` bucket) and
+the crypt passphrase. The passphrase also exists as a printed copy at home —
+the custody decision on #149, 2026-09-12. **A lost passphrase is a lost
+backup**: nothing on Cloudflare's side can open a dump, so the passphrase must
+never live in one place only. There is no salt (`password2` left blank), so it
+is one secret to keep, not two.
+
+Both secrets in that entry date from 2026-09-16, not from the custody
+decision. The token first created on 2026-09-12 as `sakta-backups-box` had its
+Secret Access Key lost — Cloudflare shows that value once, on the creation
+screen, and never again — and no passphrase had been chosen at all. Both were
+made afresh during §6.2's rehearsal, which cost nothing because the bucket
+still held no ciphertext; after the first real dump the same mistake costs the
+backups. Delete the orphaned 2026-09-12 token in the dashboard if it is still
+listed. On the box,
 `~/.config/rclone/rclone.conf` then holds the token and the passphrase
 *obscured*, not encrypted — `rclone reveal` prints them back — so the file is
 a secret too; rclone creates it 0600 (`observed` 2026-09-12, rclone v1.75.1),
@@ -395,6 +405,17 @@ leave it that way. The bucket itself already exists (`wrangler r2 bucket
 create sakta-backups --location weur`, `observed` 2026-09-12, WEUR); the old
 `rclone mkdir` line is gone because an Object Read & Write token cannot create
 buckets — if the bucket is ever deleted, recreate it with wrangler.
+
+That same token scope is why `no_check_bucket` is not optional. rclone's S3
+backend issues a `CreateBucket` before its first upload to a bucket it has not
+seen, R2 refuses it at this scope, and the copy dies without ever attempting
+the object — `observed` 2026-09-16, three identical retries of
+`api error AccessDenied: Access Denied` on `operation error S3: CreateBucket`.
+Setting the flag and repeating the same command with the same token and the
+same file put the object in the bucket, which `rclone lsf` then listed. The
+failure is worth recognising because it names the wrong operation: nothing in
+the message mentions the upload, and `rclone lsf` against the same remote
+succeeds throughout, so the token looks fine.
 
 Add:
 
@@ -410,6 +431,22 @@ rclone lsf r2crypt:            # taxi-<UTC stamp>.dump — the real name, becaus
 rclone lsf r2:sakta-backups    # the same object under a base32 name. If THIS side shows taxi-…, a dump went up readable: delete it, fix the cron line
 ```
 
+`observed` 2026-09-16 against the real bucket, rclone v1.75.1 (§6.2's
+rehearsal, a development dump — the box does not exist yet):
+
+```
+$ rclone lsf r2crypt:
+taxi-20260915T200523Z.dump
+$ rclone lsf r2:sakta-backups
+2m2sm2nua3nmol85gjcp9f5fm13tmfrgph762p4570ea858fmb20
+```
+
+That is the whole check: one object, two names. The plain side's 52 characters
+are base32 and carry nothing — not the stamp, not the extension. The object's
+first five bytes are `52 43 4c 4f 4e` (`RCLON`, rclone's crypt magic) where a
+dump would read `50 47 44 4d 50` (`PGDMP`), and `pg_restore --list` on it exits
+1 rather than printing a table of contents.
+
 What the script does: `pg_dump -Fc` inside the `db` container →
 `/var/backups/taxi/taxi-<UTC stamp>.dump` → refuses to upload a dump with no
 `geozones` table → `rclone copy` to `r2crypt:` (content and name encrypted on
@@ -417,7 +454,9 @@ the way out) → prunes remote copies older than 30 days and local ones older
 than 7. Cloudflare R2's free tier (10 GB) holds years of dumps at pilot size —
 `observed` 57 KB for a 24-ride development database (§6.2); crypt adds a
 32-byte header plus 16 bytes per 64 KiB block (rclone's documented file
-format; `observed` 64 bytes for a 16-byte file), which changes nothing here.
+format), which changes nothing here. On R2 that came to 48 bytes on a
+57 015-byte dump — `observed` 2026-09-16, 57 015 plaintext against 57 063
+stored, and `derived` 32 + 16 = 48 because 57 015 < 64 KiB is a single block.
 
 ### 6.2 Restore rehearsal — do this once, then after any Postgres upgrade
 
@@ -436,12 +475,43 @@ identical to the source (4 geozones, 24 rides, 10 applied migrations),
 2026-09-12 with rclone v1.75.1 against a crypt remote wrapping a local
 directory in place of R2 (`observed`): a second `rclone.conf` built from only
 the passphrase copied the dump back byte-identical, and the plain side listed
-one base32 name, not `taxi-…`. Against R2 itself the block below is
-`expected` until its first run — log that run in §7.
+one base32 name, not `taxi-…`.
+
+The block below then ran end to end against the real `sakta-backups` bucket —
+`observed` 2026-09-16, laptop, rclone v1.75.1, logged in §7. What that run
+does and does not cover:
+
+- **Covered.** The R2 token, the bucket, the crypt remote, and this
+  document's own instructions. Two configs were involved, and they prove
+  different halves. The **first** was built on a laptop that had never held an
+  `rclone.conf` — the strict form of "a machine that is not the box", since
+  there is no box to copy one from — with the token typed in from the
+  Cloudflare creation screen and the passphrase from the entry. It did the
+  upload, both `lsf` sides, and `rclone delete --min-age 30d` (exit 0; the
+  1-day-old dump correctly survived it). The **second** reused that token and
+  rebuilt only the crypt layer, from the passphrase file and nothing else;
+  that is the config that downloaded the dump back, `cmp` exit 0 against the
+  source. So the passphrase alone is shown to open the ciphertext, and the
+  token is shown to work from a fresh machine — but no single config here
+  was built twice from scratch end to end.
+- **Not covered.** `scripts/backup-db.sh` itself. It runs `docker compose -f
+  docker-compose.yml -f compose.prod.yml`, which does not exist on a laptop,
+  so the dump was taken by hand with the script's own flags (`pg_dump -U taxi
+  -d taxi -Fc` inside the `db` container) and the script's exact `rclone copy`
+  and `rclone delete` lines were run against the result. The script end to end
+  is covered only by PR #197's shim run, never on R2.
+- **Not covered.** Production data — there is none. The dump was the
+  development seed, so the counts in §7's log are the seed's, not a fleet's.
+
+That development dump is still in the bucket, deliberately: it is the only
+object there, so both `lsf` sides stay reproducible for anyone re-checking
+this section. Once the box's cron runs, the 30-day prune removes it on its
+own. It cannot shadow a real dump — §6.2 picks the newest by name and any
+later stamp sorts after it.
 
 ```bash
 sudo apt-get install -y rclone      # laptop: brew install rclone
-rclone config                       # r2 and r2crypt, from the password-manager entry, exactly as §6.1
+rclone config                       # r2 and r2crypt, from the password-manager entry, exactly as §6.1 — including `rclone config update r2 no_check_bucket true`
 rclone copy "r2crypt:$(rclone lsf r2crypt: | sort | tail -1)" /tmp/
 dump=$(ls -t /tmp/taxi-*.dump | head -1)
 cd <repo root>                      # laptop: the dev compose, `docker compose up -d --wait` first
@@ -511,8 +581,27 @@ prediction it was measured against.
 | — | — | — | — |
 
 Also log here: the price shown at purchase (§1.1), the restore rehearsal
-(§6.2), and the >60 s Socket.IO hold (§8.2) — three `observed` facts this
-document cannot contain until someone produces them.
+(§6.2), and the >60 s Socket.IO hold (§8.2) — `observed` facts this document
+cannot contain until someone produces them. The rehearsal is now done; the
+other two are still owed.
+
+**Restore rehearsal log (§6.2).**
+
+| Date | Machine | From | Result |
+|---|---|---|---|
+| 2026-08-25 | laptop, dev compose | a local dump, no R2 | `pg_restore` exit 0; 4 geozones, 24 rides, 10 migrations; PostGIS 3.4.3 |
+| 2026-09-12 | laptop, scratchpad | crypt remote over a local directory | second config from the passphrase alone copied back byte-identical |
+| 2026-09-16 | laptop, dev compose | **`r2crypt:` over the real `sakta-backups`** | `cmp` exit 0 against the source; restored 4 geozones, 24 rides, 1 driver, 10 migrations; PostGIS 3.4.3; `taxi_restore` dropped and the local plaintext deleted |
+
+The 2026-09-16 row is the first against R2 itself. Its counts are the
+development seed's, not production's — see §6.2 for what that run does and
+does not cover. Re-run this after any Postgres major upgrade, and once more on
+real data after the first nightly cron on the box.
+
+That run is also the only R2 usage so far: `observed` 2026-09-16, `rclone lsl
+r2:sakta-backups` → 1 object, 57 063 bytes. Against the 10 GB free tier that
+is €0, which is why the table above is still empty rather than carrying a
+line for it — the table takes invoice figures, and there is no invoice.
 
 ## 8 · Verify — the acceptance criteria
 
