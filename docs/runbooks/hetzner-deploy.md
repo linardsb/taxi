@@ -390,23 +390,29 @@ backup**: nothing on Cloudflare's side can open a dump, so the passphrase must
 never live in one place only. There is no salt (`password2` left blank), so it
 is one secret to keep, not two.
 
-**As of 2026-09-16 the entry holds a passphrase but no working token — mint one
-before the box install.** The passphrase was generated during §6.2's rehearsal
-that day; no passphrase had existed before, because the 2026-09-12 custody
-decision decided *where* the secret would live and never produced one. It was
-free to choose then and is not free now: from the first real dump onwards, a
-passphrase change orphans every backup written under the old one.
+**As of 2026-09-16 the entry holds nothing usable — mint both secrets before
+the box install.** Both were compromised on the day §6.2's rehearsal created
+them: the account API token `sakta-backups-box` and the crypt passphrase were
+pasted into a Slack channel. The token was deleted the same day (`rclone lsf`
+answering 401 on both remotes afterwards, `observed`), and the passphrase is
+retired rather than revoked, because a passphrase cannot be revoked — the only
+remedy is to stop using it and re-encrypt anything written under it.
 
-The token is missing because the one used for that rehearsal — the account API
-token `sakta-backups-box`, created 2026-09-12 — was pasted into a Slack channel
-and deleted the same day. Deleting it is the correct response and the only one
-that matters: a secret that has been posted anywhere is compromised for good,
-and removing the message does not undo it. Two things made that cheap. Nothing
-automated depended on the token yet, so there was no window to cover. And
-because the bucket holds crypt ciphertext, whoever read that channel got a
-credential that reaches one bucket containing one unreadable object — the
-passphrase never goes to Cloudflare, so it could not leak with the token. That
-is the property #149 bought.
+**That this cost a regeneration and not a breach is the whole of #149.** The
+one object ever encrypted under that passphrase was a development seed dump.
+Nothing real had been backed up, because there is no box. Had the same paste
+happened after the first nightly cron, it would have handed every reader of
+that channel every rider's and driver's name, phone number and address — the
+token alone would not have, which is the point, but the two together do.
+
+Read the asymmetry before choosing where these live. A **token** is cheap to
+lose: delete it, mint another, nothing is destroyed. A **passphrase** is cheap
+to lose only while the bucket holds nothing you need — after the first real
+dump, changing it orphans every backup written under the old one, and losing
+it orphans them just as completely. So keep the two secrets apart in practice
+as well as in the entry: never paste them into the same place, and never into
+a place that keeps history. Generate the passphrase in the password manager
+itself rather than anywhere it lands on disk first.
 
 To revoke an R2 token, **do not look on the R2 pages** — they offer no delete.
 R2 tokens are account API tokens, listed at
@@ -513,7 +519,9 @@ does and does not cover:
   different halves. The **first** was built on a laptop that had never held an
   `rclone.conf` — the strict form of "a machine that is not the box", since
   there is no box to copy one from — with the token pasted in from the
-  dashboard and the passphrase from the file it had just been generated into.
+  dashboard and the passphrase from the file it had just been generated into —
+  a file on the Desktop, which is one of the two routes that then leaked them,
+  and why §6.1 now says to generate the passphrase inside the password manager.
   It did the upload, both `lsf` sides, and `rclone delete --min-age 30d`
   (exit 0; the 1-day-old dump correctly survived it). The **second** reused
   that token and
@@ -537,10 +545,19 @@ this section. Once the box's cron runs, the 30-day prune removes it on its
 own. It cannot shadow a real dump — §6.2 picks the newest by name and any
 later stamp sorts after it.
 
-Reproducing the run needs a new token first: the one it used was revoked the
-same day (§6.1). The result stands — the revocation says nothing about whether
-the procedure works — but nothing will list that bucket again until the entry
-has a live token in it.
+Reproducing the run needs both secrets minted first: the token and the
+passphrase it used were both compromised the same day and retired (§6.1). The
+result stands — how the secrets ended is no evidence about whether the
+procedure works — but nothing will list or open that bucket until the entry
+holds live ones.
+
+**The object left in the bucket is now dead weight.** It is encrypted under the
+retired passphrase, so nothing will ever open it again; delete it with the
+first new token (`rclone delete r2:sakta-backups/<the base32 name>`, from the
+plain side, which needs no passphrase) before the first real dump lands. It is
+harmless if forgotten — the 30-day prune takes it, and §6.2 picks the newest by
+name — but an unopenable object in a backup bucket is exactly the thing that
+wastes an hour during an incident.
 
 ```bash
 sudo apt-get install -y rclone      # laptop: brew install rclone
