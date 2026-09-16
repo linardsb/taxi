@@ -390,29 +390,29 @@ backup**: nothing on Cloudflare's side can open a dump, so the passphrase must
 never live in one place only. There is no salt (`password2` left blank), so it
 is one secret to keep, not two.
 
-**As of 2026-09-16 the entry holds nothing usable — mint both secrets before
-the box install.** Both were compromised on the day §6.2's rehearsal created
-them: the account API token `sakta-backups-box` and the crypt passphrase were
-pasted into a Slack channel. The token was deleted the same day (`rclone lsf`
-answering 401 on both remotes afterwards, `observed`), and the passphrase is
-retired rather than revoked, because a passphrase cannot be revoked — the only
-remedy is to stop using it and re-encrypt anything written under it.
+**Both secrets in the entry date from 2026-09-16 and are the second pair.** The
+first — the token `sakta-backups-box` and the passphrase generated alongside it
+— were pasted into a Slack channel hours after §6.2's rehearsal created them.
+The token was deleted (`rclone lsf` then answering 401 on both remotes,
+`observed`); the passphrase was retired, because a passphrase cannot be
+revoked, only abandoned. The single object encrypted under it was deleted from
+the plain side, and the rehearsal was re-run end to end under the new pair.
 
 **That this cost a regeneration and not a breach is the whole of #149.** The
-one object ever encrypted under that passphrase was a development seed dump.
-Nothing real had been backed up, because there is no box. Had the same paste
-happened after the first nightly cron, it would have handed every reader of
-that channel every rider's and driver's name, phone number and address — the
-token alone would not have, which is the point, but the two together do.
+only thing ever encrypted under the leaked passphrase was a development seed
+dump; nothing real had been backed up, because there is no box. After the first
+nightly cron the same paste hands every reader of that channel every rider's
+and driver's name, phone number and address. The token alone would not — that
+is what the crypt layer buys — but the two together do, which is the argument
+for never putting them in the same message.
 
-Read the asymmetry before choosing where these live. A **token** is cheap to
-lose: delete it, mint another, nothing is destroyed. A **passphrase** is cheap
-to lose only while the bucket holds nothing you need — after the first real
-dump, changing it orphans every backup written under the old one, and losing
-it orphans them just as completely. So keep the two secrets apart in practice
-as well as in the entry: never paste them into the same place, and never into
-a place that keeps history. Generate the passphrase in the password manager
-itself rather than anywhere it lands on disk first.
+The two are not equally replaceable, and that should decide how carefully each
+is handled. A **token** is cheap: delete, mint another, nothing is destroyed.
+A **passphrase** is cheap only while the bucket holds nothing you need — after
+the first real dump, changing it orphans every backup written under the old
+one, and losing it orphans them just as completely. Generate it in the password
+manager itself, so it never lands somewhere that has to be cleaned up
+afterwards.
 
 To revoke an R2 token, **do not look on the R2 pages** — they offer no delete.
 R2 tokens are account API tokens, listed at
@@ -469,9 +469,9 @@ rehearsal, a development dump — the box does not exist yet):
 
 ```
 $ rclone lsf r2crypt:
-taxi-20260915T200523Z.dump
+taxi-20260916T195224Z.dump
 $ rclone lsf r2:sakta-backups
-2m2sm2nua3nmol85gjcp9f5fm13tmfrgph762p4570ea858fmb20
+co8g5ombu73aanpp6aljt8k9k94sf2e786u3l7nb31sur2b2pm6g
 ```
 
 That is the whole check: one object, two names. The plain side's 52 characters
@@ -545,19 +545,19 @@ this section. Once the box's cron runs, the 30-day prune removes it on its
 own. It cannot shadow a real dump — §6.2 picks the newest by name and any
 later stamp sorts after it.
 
-Reproducing the run needs both secrets minted first: the token and the
-passphrase it used were both compromised the same day and retired (§6.1). The
-result stands — how the secrets ended is no evidence about whether the
-procedure works — but nothing will list or open that bucket until the entry
-holds live ones.
+**The figures above are the second run.** The first, hours earlier, used the
+secrets that then leaked (§6.1); its object was deleted from the plain side —
+`rclone delete r2:sakta-backups/<base32 name>`, which needs no passphrase —
+because nothing could open it once the passphrase was retired. The whole block
+was then repeated under the new pair, which is where every number here comes
+from. The two runs agreed on everything that is not a name: same 57 015-byte
+dump, same +48 stored, same counts.
 
-**The object left in the bucket is now dead weight.** It is encrypted under the
-retired passphrase, so nothing will ever open it again; delete it with the
-first new token (`rclone delete r2:sakta-backups/<the base32 name>`, from the
-plain side, which needs no passphrase) before the first real dump lands. It is
-harmless if forgotten — the 30-day prune takes it, and §6.2 picks the newest by
-name — but an unopenable object in a backup bucket is exactly the thing that
-wastes an hour during an incident.
+That the sequence survived a full secret rotation mid-way is worth one line of
+reassurance: nothing in it depends on a particular token or passphrase, so the
+box can rotate either at any time. Only the objects already written are bound
+to the passphrase — which is the reason §6.1 asks you to treat the two secrets
+so differently.
 
 ```bash
 sudo apt-get install -y rclone      # laptop: brew install rclone
@@ -641,12 +641,15 @@ other two are still owed.
 |---|---|---|---|
 | 2026-08-25 | laptop, dev compose | a local dump, no R2 | `pg_restore` exit 0; 4 geozones, 24 rides, 10 migrations; PostGIS 3.4.3 |
 | 2026-09-12 | laptop, scratchpad | crypt remote over a local directory | second config from the passphrase alone copied back byte-identical |
-| 2026-09-16 | laptop, dev compose | **`r2crypt:` over the real `sakta-backups`** | `cmp` exit 0 against the source; restored 4 geozones, 24 rides, 1 driver, 10 migrations; PostGIS 3.4.3; `taxi_restore` dropped and the local plaintext deleted |
+| 2026-09-16 | laptop, dev compose | `r2crypt:` over the real `sakta-backups`, first secret pair | same result as the row below; superseded when that pair leaked and its object was deleted |
+| 2026-09-16 | laptop, dev compose | **`r2crypt:` over the real `sakta-backups`, second pair** | `cmp` exit 0 against the source; restored 4 geozones, 24 rides, 1 driver, 10 migrations; PostGIS 3.4.3; `taxi_restore` dropped and the local plaintext deleted |
 
-The 2026-09-16 row is the first against R2 itself. Its counts are the
-development seed's, not production's — see §6.2 for what that run does and
-does not cover. Re-run this after any Postgres major upgrade, and once more on
-real data after the first nightly cron on the box.
+The last row is the standing one — same day as the row above it, re-run under
+the replacement secrets after the first pair leaked (§6.1). Both are listed
+because a rehearsal log that quietly drops a run is not a log. The counts are
+the development seed's, not production's — see §6.2 for what the run does and
+does not cover. Re-run after any Postgres major upgrade, and once more on real
+data after the first nightly cron on the box.
 
 That run is also the only R2 usage so far: `observed` 2026-09-16, `rclone lsl
 r2:sakta-backups` → 1 object, 57 063 bytes. Against the 10 GB free tier that
