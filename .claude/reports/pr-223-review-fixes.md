@@ -144,8 +144,13 @@ makes `src/build-config.test.ts` unreachable from it.
 
 ## Validation
 
-**The gate was not run, and this says so rather than implying otherwise.** This change is one markdown
-file under `.claude/`. Here is the discharge instead:
+**The gate was not run locally. CI ran it, and it is green.** `observed` — run
+[35271817206](https://github.com/linardsb/taxi/actions/runs/35271817206) on this branch, all five
+checks pass at `052df31`: `check` **2m28s**, `codeql` 1m25s, `CodeQL` 2s, `audit-diff` 7s, `ready` 5s.
+The commit carrying this correction re-runs the same five; the figures above belong to that named run,
+not to whatever the branch head is when you read this.
+
+Locally the full gate was skipped deliberately, and here is why that costs no signal:
 
 | Check | Method | Result |
 |---|---|---|
@@ -154,8 +159,10 @@ file under `.claude/`. Here is the discharge instead:
 | Edits applied exactly once each | each replacement asserted `count(old) == 1` before substitution | **`observed`** — 5 edit blocks, 6 findings, all asserted |
 | Still merges cleanly into live `main` | `git fetch origin --prune && git merge-tree --write-tree origin/main HEAD` | **`observed`** — **exit 0** against `main` at `882dcd0` (the merge of #222). The PR reads `mergeStateStatus: BEHIND`, as it did at review time; behind is not conflicted, and updating the branch is a human call — GitHub's Update branch merges rather than rebases (memory `taxi-update-branch-merges-not-rebases`) |
 
-Running the full gate on a markdown diff buys no signal and spends a real risk of the known api-suite
-flake (memory `taxi-gate-hangs-on-red-api-suite`). Say the word if you want it run anyway.
+A **local** full-gate run on a markdown diff buys no signal beyond what CI's `check` job already
+produced, and spends a real risk of the known api-suite flake (memory
+`taxi-gate-hangs-on-red-api-suite`) plus a shared-test-DB collision with the other live sessions on
+this checkout (memory `taxi-concurrent-sessions`). CI runs it in isolation, which is the right place.
 
 ## The sweep
 
