@@ -23,6 +23,15 @@ PR checks the resolved `distribution` instead. Profile names carry no semantics 
 is a typed schema key. Treating an omitted value as `store` is likewise sourced rather than guessed:
 `eas-json/src/build/schema.ts:49` is `Joi.string().valid('store','internal').default('store')`.
 
+*Revision, pinned in the round-1 fix pass.* Every eas-cli path in this review — every `schema.ts`,
+`types.ts` and `resolver.ts` reference below, in prose and in the prescribed docblocks alike, plus the
+one just cited — is **`@expo/eas-json@24.5.0`** (`gitHead
+43068db22a079c67198fc7f7ccb5e85286ba3207`, `expo/eas-cli` → `packages/eas-json/`). That package is
+not a dependency of this repo and its published tarball ships `build/` only, so these paths resolve
+at that revision and nowhere in this tree; `schema.ts` moves between eas-cli releases, so an
+unpinned line number goes wrong silently. **`observed`** — every one re-read at that sha from
+`raw.githubusercontent.com/expo/eas-cli/43068db…/packages/eas-json/src/build/`, all exact.
+
 **F1 is that the resolution is incomplete, and it breaks in both directions.** EAS lets a build
 profile carry `distribution` inside its platform-specific `android` block, where it **wins** over the
 profile-root value. The flag being guarded is Android-only. So the resolver misses the one shape that
@@ -70,15 +79,20 @@ platform block, and that value takes precedence over the root one:
 | `preview` extends a `base` whose `android.distribution` is `"store"` | **PASS** · 6 passed | `store` | **false negative** |
 | `preview` drops the root key, keeps `"android": { "buildType": "apk", "distribution": "internal" }` | **FAIL** · 1 failed, 5 passed — flags `preview` as `store (EAS default)` | `internal` | **false positive** |
 
+**Splitting that label** (round-1 fix pass). The mutation, the jest result and the verdict are
+**`observed`**. `EAS-effective Android distribution` is **`derived`** — no EAS build was run, and
+none is claimed. It is traced by hand through the revision pinned above: `resolver.ts:63-73`
+resolves the `extends` chain child-over-parent first, `resolver.ts:90-95` deep-merges the `android`
+block across that chain, `resolver.ts:23-27` then merges the platform block over the root, and
+`schema.ts:49` supplies `store` where no value survives.
+
 Rows 1–2 are release-variant Android builds distributed through a store, inheriting `main/
 AndroidManifest.xml` with cleartext on — the exact outcome #220 exists to prevent — and the gate stays
 green. Row 3 reds the gate on a profile that is genuinely internal. A guard that fails both ways is a
 correctness defect, not missing hardening.
 
-**Why High rather than Medium.** A guard that is wrong in *both* directions is a correctness defect
-rather than missing hardening, and that is what the five mutations show: rows 1–2 let through the
-exact outcome #220 exists to prevent, row 3 reds the gate on a compliant profile. The shape is also
-not an exotic one — `eas.json:12-14` already carries an `android` block on `preview`, because
+**Why High rather than Medium.** The shape is not an exotic one — `eas.json:12-14` already carries
+an `android` block on `preview`, because
 `buildType` lives there, so anyone changing Android build behaviour is already editing inside it.
 And the PR asserts the guarantee in absolute terms on four surfaces, each false for this case:
 
@@ -309,7 +323,10 @@ On that last row: I did not re-run `expo export`. I checked the mechanism instea
 than reproducing a count. `grep -rn "build-config" apps/driver/src` returns **no importer** outside the
 file itself; the only thing that reaches it is jest's `testMatch` (`apps/driver/package.json:68-71`,
 `<rootDir>/src/**/*.test.ts`); Metro traverses from `expo-router/entry` (`package.json:4`); and
-expo-router's `require.context` is scoped to `src/app/**` (`apps/driver/CLAUDE.md:23`). A module with
+expo-router's `require.context` is rooted at the router's app root rather than the package root
+(`node_modules/expo-router/_ctx.android.js:1-6`, expo-router 57.0.17), and for this app that root
+is `src/app/**`, where route files are thin re-exports of feature screens
+(`apps/driver/CLAUDE.md:23`). A module with
 zero importers cannot enter a bundle built by graph traversal, so `eas.json`'s hardcoded LAN origin
 cannot ride in through this edge regardless of what any particular export prints. The PR was right to
 ask the question and right about the answer.
@@ -345,9 +362,11 @@ ask the question and right about the answer.
   `eas-json/src/build/schema.ts:49` exactly.
 - **The docblock's factual claims hold up — every one checked.** `transports: ['websocket']` with no
   polling fallback is at `apps/driver/src/features/location/socket.ts:30`. The missing
-  `release/AndroidManifest.xml` matches the `observed` prebuild table at plan `:628-632`. And
-  *"plain HTTP to the origin was rejected for #13 because OTP codes and JWTs would cross in the
-  clear"* is verbatim at `docs/epics/sakta-cab.architecture.md:90`, including that reasoning. On a
+  `release/AndroidManifest.xml` matches the `observed` prebuild table at plan `:628-632`. And the
+  docblock's *"plain HTTP to the origin was rejected for #13 because OTP codes and JWTs would cross
+  in the clear"* is a faithful paraphrase of `docs/epics/sakta-cab.architecture.md:90`, reasoning
+  included — that line reads *"#13 — plain HTTP to the origin was rejected because OTP codes and
+  JWTs would cross Cloudflare → Hetzner in the clear"*. On a
   repo whose own rules say claims in comments get inherited unaudited, these were worth checking and
   they survived.
 - **The mutation table is real evidence and it holds.** Three rows re-run from scratch, all exact,
