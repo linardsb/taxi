@@ -6,6 +6,7 @@
     "@taxi/shared": "workspace:*",
     "expo": "~57.0.18",
     "expo-audio": "~57.0.4",
+    "expo-build-properties": "~57.0.20",
     "expo-constants": "~57.0.16",
     "expo-dev-client": "~57.0.16",
     "expo-haptics": "~57.0.2",
@@ -47,7 +48,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "jest",
-    "make:tone": "node scripts/make-offer-tone.mjs"
+    "make:tone": "node scripts/make-offer-tone.mjs",
+    "eas-build-post-install": "cd ../.. && pnpm --filter @taxi/shared build"
   },
   "private": true,
   "expo": {
