@@ -1,0 +1,17 @@
+{
+  "cli": {
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "pnpm": "10.33.2",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://192.168.1.11:3001"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}
