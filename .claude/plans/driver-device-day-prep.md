@@ -287,11 +287,18 @@ stream and a dead one look identical.
 **The correction**: the primary signal moves to the api console, which reads the claim directly, and
 the **tracking page** — not the board — becomes the in-product corroboration.
 
-> **Signal (api console)**: `driver.location.ping_accepted` for that `driverId` continues at ~4 s
-> intervals for the whole 90 s, with no **`clientAt`** gap > 12 s. ~~no gap > 8 s~~ — **corrected
-> 2026-09-17 (PR #218 review F3/F6, see AMENDMENTS)**: the line carries two timestamps and a queue
-> replay bunches the server `at`s; and 8 s is exactly the gap one dropped OS delivery produces
-> against a 4 s throttle, so it left no tolerance. 12 s is `derived` — 3 × `MIN_FIX_INTERVAL_MS`.
+> **Signal (api console)**: **the stream does not stop** — `driver.location.ping_accepted` for that
+> `driverId` still arriving at t+90 s, with no sustained **`clientAt`** silence. One gap just over
+> the 12 s threshold is a re-read, not a ❌; the ❌ is a stream that goes quiet and stays quiet.
+> ~~no gap > 8 s~~ — **corrected 2026-09-17 (PR #218 review F3/F6, see AMENDMENTS)**: the line
+> carries two timestamps and a queue replay bunches the server `at`s; and 8 s is exactly the gap one
+> dropped OS delivery produces against a 4 s throttle, so it left no tolerance. 12 s is `derived` —
+> 3 × `MIN_FIX_INTERVAL_MS`. ~~with no `clientAt` gap > 12 s~~ — **corrected again 2026-09-17 (PR
+> #218 review round 2, L1)**: that phrasing made the threshold itself the pass condition, which the
+> runbook's own note then contradicted on a step the verdict rule makes binary. The threshold and
+> the field both stand; what they feed is a judgement about whether the stream stopped, not a
+> stopwatch. Also read the newest `clientAt` against the wall clock — a gap check alone cannot tell
+> a live stream from a backlog draining (L4).
 > **Corroboration (`t/<token>`, i.e. step 6 opened early)**: the «position updated HH:MM:SS» line
 > keeps ticking. It advances on a *fresh fix*, not on movement, so it reads correctly with the phone
 > flat on a table.
@@ -1407,8 +1414,16 @@ in `main` since `3d2e874` and that no check in this repo could see.
   **Approve**; M1, M2 and L1–L6 applied, M3 filed as
   [#220](https://github.com/linardsb/taxi/issues/220) rather than fixed (its root remedy contradicts
   the *"cleartext, **required, not conditional**"* task heading at `:607`, and `eas.json` defines only
-  `preview`, so nothing in the tree can trigger it). Again all prose; no shipped source changed. Two
-  touch this plan:
+  `preview`, so nothing in the tree can trigger it). Again all prose; no shipped source changed.
+  Three touch this plan:
+  - **L1 — C1's signal box stated the threshold as the pass condition, and the runbook's note
+    contradicted it.** Round 1's F3/F6 corrected the *number* (8 s → 12 s) and left the *shape*: "no
+    `clientAt` gap > 12 s" reads as a stopwatch, while the note beside it said to treat one gap just
+    over 12 s as a re-read. Two verdicts on a step the verdict rule makes binary, and the ✅/❌ column
+    is filled in from the cell. Both the box (`:290-301`) and runbook step 5 now lead with the
+    operative condition — the stream must not stop — and keep the 12 s arithmetic as the tolerance
+    it always was. L4's wall-clock read is folded into the same box: a `clientAt` gap check cannot
+    distinguish a live stream from a backlog draining.
   - **L6 adds a fourth command to §2's block, which the runbook-build task enumerated as three.**
     `npx eas-cli@latest config -p android -e preview --non-interactive` now sits between `init` and
     `build`. The task's VALIDATE for `eas.json` (`:604`) was `node -e "JSON.parse(…)"`, which proves the file
@@ -1423,5 +1438,5 @@ in `main` since `3d2e874` and that no check in this repo could see.
     create-or-link branch. This also retires the plan's open question of whether `pnpm` is a real
     `eas.json` profile key (`:558-560`): the committed file clears schema validation, so it is.
 
-  Fixes report: `.claude/reports/pr-218-review-fixes-round2.md`, with a 22-assertion citation
+  Fixes report: `.claude/reports/pr-218-review-fixes-round2.md`, with a 24-assertion citation
   verifier that returns 0 hits for every added claim against `bd5193a`.

@@ -71,7 +71,7 @@ $ sed -n '40p' apps/driver/app.json
         "POST_NOTIFICATIONS",
 ```
 
-Both anchors carried as assertions 1–4 of the round-2 verifier (Appendix), all PASS.
+Both anchors carried by the verifier's four `M1 …` assertions (Appendix), all PASS.
 
 ### M2 — Medium · three stale sites in the implementation report
 
@@ -108,7 +108,7 @@ $ sed -n '737,746p' .claude/plans/driver-toggle-off-mid-ride-held.md | grep -c "
 ```
 
 The pointer paragraph runs `:731-736`; `:737-746` starts one line past its end and lands on the
-api-half integration command. Both directions are assertions 18–22 of the verifier.
+api-half integration command. Both directions are carried by the verifier's five `M2 site 3 …` / `M2 pointer …` / `M2 :737-746 …` assertions.
 
 ### L1 — Low · step 5's cell and note disagreed
 
@@ -116,14 +116,21 @@ api-half integration command. Both directions are assertions 18–22 of the veri
 arriving at t+90 s, no sustained `clientAt` silence, one gap just over the 12 s threshold is a
 re-read and not a ❌. The note keeps the arithmetic behind 12 s.
 
-**Constraint check the review's pass did not cover**: `.claude/plans/driver-device-day-prep.md:290-294`
-quotes step 5's signal as an AC (`with no **clientAt** gap > 12 s`, corrected from 8 s by round 1's
-F3/F6). The rewrite keeps both the field and the threshold visible in the cell, so that AC still
-resolves; what changed is which of the two the ✅/❌ column is filled in from.
+**The plan had to move with it, and this was nearly missed.** `.claude/plans/driver-device-day-prep.md`'s
+C1 signal box specified the pass condition as *"with no `clientAt` gap > 12 s"* — round 1's F3/F6
+corrected the **number** (8 s → 12 s) and left the **shape**. Fixing only the runbook would have
+shipped the plan and the sheet stating opposite verdicts on a binary step, which is the same
+plan→artifact divergence `b2421ad` exists to close. The first check run here grepped the plan for
+freeze language and for the AC's tokens; neither asks whether the plan now states a *different
+condition*. It does not any more: the box at `:290-301` carries a second dated correction in the
+plan's own strikethrough convention, and L4's wall-clock read is folded into it. Recorded as the
+third plan-touching item in the round-2 AMENDMENTS entry.
 
 ```
 $ grep -c 'gap > 8 s' docs/runbooks/driver-device-day.md
 0
+$ sed -n '290,301p' .claude/plans/driver-device-day-prep.md | grep -c 'the stream does not stop'
+1
 ```
 
 (Round 1's `nchk` for exactly this still PASSes — see Validation.)
@@ -161,7 +168,7 @@ kept (step 2's hard gate makes it near-unreachable, so it is stated as one glanc
 ### L5 — Low · the `pnpm` pin restates `packageManager`
 
 **Fixed as a binding, not a digit.** The plan's invariant (`:560`) says pin to *whatever
-`packageManager` says*; nothing enforced it. Assertion 11 of the verifier derives the expected
+`packageManager` says*; nothing enforced it. The verifier's `L5 pnpm pin matches packageManager` assertion derives the expected
 string from `package.json` at run time rather than restating `10.33.2`.
 
 **Run, not shipped unexecuted** — the review's own M3 reasoning applies to an assertion nobody
@@ -195,6 +202,12 @@ from `apps/driver`:
 Schema validation runs **before** the project-link check — the invalid-key run never reached the
 second error. `eas.json` was restored from a scratchpad copy immediately; `git status --porcelain`
 clean afterwards.
+
+**Both runs above used `--platform`/`--profile`; the runbook prescribes the short `-p`/`-e`.** That
+gap is exactly the kind an observed table papers over, so the short spelling was run too —
+`config -p android -e preview --non-interactive`, same `EAS project not configured` error, same exit
+1 (`observed`, same session). The table describes the line the sheet actually tells someone to
+paste.
 
 **Fixed**: the `config` line sits in §2's block between `init` and `build`, with both failure shapes
 as a table and the reason it must come *after* `init`.
@@ -232,15 +245,21 @@ before starting.
 
 | What | Command | Result |
 |---|---|---|
-| Full gate | `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force` | ✅ **exit 0** — `Tasks: 22 successful, 22 total`, `Cached: 0 cached, 22 total`, `Time: 1m34.283s`. `@taxi/api` `Test Suites: 77 passed, 77 total`, `Tests: 733 passed, 733 total` — `REDIS_TEST_URL` set, so the 39 gated tests ran |
+| Full gate | `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force` | ✅ **exit 0** — `Tasks: 22 successful, 22 total`, `Cached: 0 cached, 22 total`, `Time: 1m19.868s`, at the pushed head `9eb1527`. All six packages re-observed and identical to the PR body's table: api 733/77, driver 218/41, rider 140/29, shared 231/24, dispatch 224/27, db 17/3 — `REDIS_TEST_URL` set, so the 39 gated tests ran (694 + 39 = 733, no `skipped` line) |
 | Round 1's citation verifier, re-run | the appendix script of `pr-218-review-fixes.md`, extracted verbatim | ✅ **30 PASS, exit 0** — no round-2 edit unpinned a round-1 citation, including the two `nchk`s whose paragraphs L1 and L3 rewrote |
-| Round 2's citation verifier | the Appendix below | ✅ **22 PASS, exit 0** |
+| Round 2's citation verifier | the Appendix below | ✅ **24 PASS, exit 0** |
 | That verifier is not decoration | its six added-content assertions against `git show bd5193a:docs/runbooks/driver-device-day.md`, and its two retired-claim assertions both ways | ✅ **0 hits each on the unfixed tree**; `cannot run here without Expo credentials` **1 → 0**; `CREATE, 231 lines` and `the runbook is 231 lines` **1 → 0** |
 | L5's binding fires | `package.json` temporarily desynced to `pnpm@10.99.9` | ✅ **FAIL, exit 1**, restored clean |
 
+**That run predates this report's own commit**, which adds the plan's L1 correction and these lines.
+Stated rather than papered over, with the reason it does not matter, **re-derived here rather than
+inherited from the review**: `turbo.json` declares no `inputs` and no `globalDependencies` (read at
+this head — it has `globalEnv`, `tasks` and nothing else), so every task falls back to turbo's
+default inputs, the git-tracked files **inside each package directory**. `.claude/` and `docs/` are
+at the repo root, outside all of them. No turbo task can read either.
+
 **No source changed.** The diff is prose plus one runbook command line; no `.ts`/`.tsx`, no schema,
-no migration — so the per-package test counts are unchanged by construction and are not restated
-here. `pr-218-review-fixes.md`'s own §Validation declines to restate a size figure for the same
+no migration — so the per-package test counts are unchanged by construction. `pr-218-review-fixes.md`'s own §Validation declines to restate a size figure for the same
 reason, and `taxi-report-restating-pr-body-figures` is the memory behind it.
 
 **The PR body's size table is re-derived after the push, not from this report.** Three of its
@@ -306,9 +325,12 @@ chk 'M1 POST_NOTIFICATIONS at :40'      apps/driver/app.json 40,40 'POST_NOTIFIC
 chk 'M1 step 1 names the prompt'        docs/runbooks/driver-device-day.md 182,240 'notification-permission prompt appears too'
 chk 'M1 :46 row states the :43-53 path' docs/runbooks/driver-device-day.md 44,50 ':43-53'
 
-# L1 — step 5's cell carries the operative condition, not only the threshold
+# L1 — step 5's cell carries the operative condition, not only the threshold,
+# and the plan's C1 signal box says the same thing rather than the opposite.
 chk 'L1 step 5 cell: stream does not stop' docs/runbooks/driver-device-day.md 182,240 '[Tt]he stream does not stop'
 chk 'L1 step 5 cell: re-read not a fail'   docs/runbooks/driver-device-day.md 182,240 're-read, not a'
+chk 'L1 plan C1 box agrees with the cell'  .claude/plans/driver-device-day-prep.md 290,301 '[Tt]he stream does not stop'
+chk 'L1 plan C1 box strikes the old form'  .claude/plans/driver-device-day-prep.md 290,301 '~~with no .clientAt. gap > 12 s~~'
 
 # L2 — the git checkout is ordered after the build is queued
 chk 'L2 ordering is "once the build is queued"' docs/runbooks/driver-device-day.md 128,150 'Once the build is queued'
