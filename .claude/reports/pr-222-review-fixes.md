@@ -270,4 +270,46 @@ two intended files.
 - **Nothing else.** No manual device test is implied by these fixes — the guard is static config
   analysis and never reaches a build.
 
-<!--COMMIT-->
+## Shipped
+
+| | |
+|---|---|
+| **Fixes commit** | `c7e19c2` · `test(driver): PR #222 review round 1 — apply F1-F5 (#220)` |
+| **Pushed to** | `origin/test/220-cleartext-internal-distribution-guard` (`e029183..c7e19c2`), remote head verified by `git ls-remote` |
+| **PR** | [#222](https://github.com/linardsb/taxi/pull/222) updated — body re-anchored at `c7e19c2` |
+| **Files** | `apps/driver/src/build-config.test.ts` (F1-F4) · `.claude/plans/driver-device-day-prep.md` (F5 + sweep) · this report |
+
+A follow-up commit completes this section, which `c7e19c2` carried as a placeholder. Sizes are
+deliberately not quoted here — re-derive with `git diff --numstat origin/main...HEAD`, which is true
+at whatever the head is when you read it (memory `taxi-report-restating-pr-body-figures`).
+
+### Closing commands, run against the fixed tree
+
+Every one below was run **after** the last edit it describes, not before it (PR #150 L5's failure
+mode). All `observed` 2026-09-17 in `wt-220`.
+
+| Finding | Closing command | Result |
+|---|---|---|
+| F1 | `pnpm exec jest src/build-config.test.ts` | `Tests: 11 passed, 11 total` |
+| F1 | same file with the pre-fix resolver spliced in | `4 failed, 7 passed` — the four new cases are real, not decoration |
+| F1 | same file with the per-level shortcut | `2 failed, 9 passed` — the new failure mode is pinned |
+| F2 | `git grep -n --fixed-strings 'expo config' -- apps/driver/src/build-config.test.ts` | 0 hits — the reworded comment prescribes reading the effective config, not a specific command |
+| F2 | `git grep -n --fixed-strings 'expo config --type prebuild --platform android' -- . ':!<this report>'` | 0 hits — the `expected`, never-run invocation appears nowhere in the tree |
+| F3 | `=== true` mutated to `!== undefined`, jest | `1 failed, 10 passed` |
+| F4 | `eas.json` drift + `pnpm exec tsc --noEmit` | exit 2, `TS2352`; exit 0 under the pre-fix cast |
+| F5 | `git grep -n --fixed-strings 'through \`extends\`'` | 0 hits |
+| all | `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force` | exit 0, `22 successful, 22 total` |
+
+`npx expo config --type prebuild --platform android` was **not run** — it was `expected` in the
+review and is `expected` still, and it appears nowhere in the tree outside this report.
+
+One correction worth recording, because it is the failure this skill exists to catch. The first
+draft of the F2 row above claimed `git grep -n 'expo config --type prebuild'` returned **no hits**.
+Run, it returns **seven** — the plan's own VALIDATE steps at `:665` and `:864`, an unrelated spike
+doc, and this report. That grep was the wrong one (it asks whether the repo ever mentions the
+command, not whether *this fix* prescribes an unrun one) and its result was written before it was
+run. The two scoped greps that replace it were run first and are quoted above. For the record, the
+plain `npx expo config --type prebuild` is **not** an unrun command in this repo:
+`.claude/reports/driver-device-day-prep-report.md:47` records L1 running it, `CONFIG_OK`. Only the
+`--platform android` variant the review named was never run.
+
