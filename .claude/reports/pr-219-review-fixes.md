@@ -186,7 +186,25 @@ from another one, and this head (`7926ba1`) is a merge commit no previous run co
 
 ## Commit
 
-PUSHED_COMMIT
+`075edc6` — *docs(reviews): apply PR #219's round-1 findings F1-F9, plus F10 (#141)*, three files,
+`+381 −22` against its parent `7926ba1`. Pushed to `origin/docs/pr-218-review`; PR #219 updated,
+still **OPEN** and not a draft, `closingIssuesReferences` empty (nothing closes an issue on merge).
+
+**F1's closing evidence, run after the push** — `gh pr edit 219 --body-file` applied at 2026-09-17,
+then `gh pr view 219 --json body`:
+
+- file count and size figure: now *"Three files … +1225"*, re-derived by
+  `git diff --numstat origin/main..origin/docs/pr-218-review` at the pushed head — the command, not a
+  digit copied from anywhere.
+- verdict: the Summary now leads with round 2's **approve** as the standing verdict and marks round 1
+  superseded.
+- comments: all three linked (`5715582096`, `5716087200`, `5716100986`).
+- Validation: anchored at the gate run in this worktree, not at `a71a6b1`, which covered only round 1.
+
+This paragraph is the second commit on this branch (it can only be written once the first has a sha),
+so the body's numstat was re-derived once more after it and re-applied — the order that ends the loop
+is edit → commit → push → re-derive → `gh pr edit`, with no commit after the last body edit
+(`taxi-report-restating-pr-body-figures`, #212).
 
 ## Appendix — the verifier
 
