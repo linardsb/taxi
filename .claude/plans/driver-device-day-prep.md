@@ -609,6 +609,10 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
   the app directory in a monorepo. `npx expo install --check` must be clean first (an SDK-version
   mix is the #4 kit's known startup crash, memory `taxi-gps-spike-kit`).
 - **VALIDATE**: `node -e "JSON.parse(require('fs').readFileSync('apps/driver/eas.json','utf8'))" && echo EAS_JSON_OK`
+- **Added 2026-09-17 (#220)**: `JSON.parse` was the *only* check this file got, and it cannot see a
+  semantic mismatch. `apps/driver/src/build-config.test.ts` now runs in the gate and fails if any
+  profile here resolves to a distribution other than `internal` while `app.json` still enables
+  cleartext app-wide — see Q2 below for the decision it enforces.
 - **SATISFIES**: AC #1
 
 ### UPDATE `apps/driver/app.json` — cleartext, **required, not conditional**
@@ -1027,6 +1031,13 @@ ticket may be reported as closing #141.**
   The residual risk — the Mac's DHCP lease moving, silently invalidating the baked origin — is R4,
   and it is closed by a Setup pre-flight rather than by hoping. Say if you would rather pay the
   rebuild: it is a one-line change to the `env` block and to the runbook's Setup.
+  **Amended 2026-09-17 (#220).** "Internal-distribution" was the condition the trade rests on, but
+  the cleartext flag lives in `app.json`, which has no per-profile mechanism and so applies it to
+  every Android build — the argument was narrower than the mechanism, and nothing fired when they
+  parted. `apps/driver/src/build-config.test.ts` now holds the pairing: it reads both files and
+  fails if any `eas.json` profile resolves (through `extends`) to a distribution other than
+  `internal` while cleartext is on. The flag itself is unchanged; scoping it would mean a dynamic
+  `app.config.ts`, which is the worse trade until a second profile exists.
 - **Q3 (ordering, answered with the worst case)** — *could the fixed app still be marked dark and
   nudged in a window right after the ride is released?* **No, and the worst case is the one that
   matters here:** during the ride the row is `on_ride`, so `markOfflineByServer`'s
