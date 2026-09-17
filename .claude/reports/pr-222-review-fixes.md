@@ -115,10 +115,11 @@ whole file should go with it"*, but the plan in this same PR names a dynamic `ap
 intended remedy. In exactly that future the premise goes false because the flag **moved**, not because
 it went away, and the instruction says delete the guard.
 
-**Fixed.** `:45`'s *"the config"* is now *"this `app.json`"*, scoping the claim to what the function
-actually reads. The `:88-90` comment now requires reading the *effective* config before retiring
-anything, and names the three routes the static read cannot see (`app.config.ts`, a
-`withAndroidManifest` plugin, an ejected `android/` tree).
+**Fixed.** The `cleartextEnabled` docblock (`:45` at `e029183`, **`:49`** shipped) said *"the
+config"* and now says *"this `app.json`"*, scoping the claim to what the function actually reads. The
+premise comment (`:88-90` at `e029183`, **`:125-129`** shipped) now requires reading the *effective*
+config before retiring anything, and names the three routes the static read cannot see
+(`app.config.ts`, a `withAndroidManifest` plugin, an ejected `android/` tree).
 
 Per the review's own correction, `npx expo config --type prebuild --platform android` was `expected`,
 not run — so the reworded comment prescribes the general check (read the effective config) rather than
@@ -133,8 +134,9 @@ A premise that silently reports enabled when cleartext is off would have survive
 
 **Fixed.** One negative case: `a plugin entry that turns cleartext off is not read as enabled (failure)`.
 
-**Proof it bites.** `observed` — 2026-09-17, `:52` mutated from `=== true` to `!== undefined` (the
-exact mutation the review documented as surviving), `pnpm exec jest src/build-config.test.ts`:
+**Proof it bites.** `observed` — 2026-09-17, the strict comparison (`:52` at `e029183`, **`:56`**
+shipped) mutated from `=== true` to `!== undefined` — the exact mutation the review documented as
+surviving — then `pnpm exec jest src/build-config.test.ts`:
 
 ```
 ✕ a plugin entry that turns cleartext off is not read as enabled (failure)
@@ -151,14 +153,15 @@ The review recorded this mutation surviving all six original cases. It now dies.
 `BuildProfile` against the real `eas.json`, which is what let F1's shape mismatch through and would
 hide future drift.
 
-**Fixed.** `:85` is now `const eas = easJson as EasConfig;`. `appJson`'s cast at `:84` is left alone,
-as the review advised — it is genuinely required.
+**Fixed.** The `easJson` cast (`:85` at `e029183`, **`:122`** shipped) is now
+`const eas = easJson as EasConfig;`. `appJson`'s cast (`:84` at `e029183`, **`:121`** shipped) is left
+alone, as the review advised — it is genuinely required.
 
 **Proof the check is live, both directions.** `observed` — 2026-09-17, `eas.json`'s
 `"distribution": "internal"` temporarily changed to the number `123` (simulated schema drift),
 `pnpm exec tsc --noEmit` from `apps/driver`, `eas.json` restored after:
 
-| Cast at `:85` | `tsc --noEmit` |
+| Cast at `:122` | `tsc --noEmit` |
 |---|---|
 | `easJson as EasConfig` (shipped) | **exit 2** · `TS2352 … Types of property 'distribution' are incompatible. Type 'number' is not comparable to type 'string'.` |
 | `easJson as unknown as EasConfig` (pre-fix control) | **exit 0** · drift invisible |
@@ -193,11 +196,11 @@ mention of platform precedence. Retired subject: the phrase describing the resol
 | `git grep -n --fixed-strings 'through \`extends\`'` | 1 — plan `:1038` | **0** | plan Q2 paragraph |
 | `git grep -n --fixed-strings 'following \`extends\`'` | 0 in tree — **1 in the PR body** | **0** in tree; PR body corrected | PR body "What changed" |
 | `git grep -n --fixed-strings 'resolves to a distribution'` | 2 — plan `:614`, `:1038` | 2, both now naming the `android` block | both plan paragraphs |
-| `git grep -n --fixed-strings 'as unknown as' -- apps/driver/src/build-config.test.ts` | 2 — `:84` `appJson`, `:85` `easJson` | **1** — `:120` `appJson` only | the test file (F4) |
-| `git grep -n --fixed-strings 'store (EAS default)'` | 1 — test `:98` | **1** — test `:136` | label deliberately **kept**, so the PR body's mutation row 1 stays true |
+| `git grep -n --fixed-strings 'as unknown as' -- apps/driver/src/build-config.test.ts` | 2 — `:84` `appJson`, `:85` `easJson` | **1** — `:121` `appJson` only | the test file (F4) |
+| `git grep -n --fixed-strings 'store (EAS default)'` | 1 — test `:98` | **1** — test `:137` | label deliberately **kept**, so the PR body's mutation row 1 stays true |
 
-The fourth surface — the docblock — is the resolver's own; `:25-29` and the `resolveDistribution`
-docblock now both name the platform block.
+The fourth surface — the docblock — is the resolver's own; the file header (**`:25-29`** shipped)
+and the `resolveDistribution` docblock (**`:83-99`** shipped) now both name the platform block.
 
 **The PR body is the surface no working-tree grep reaches.** Corrected there: the `extends`-only
 description of the resolution, and the four figures the fix moved. Each is re-derivable at the pushed
@@ -312,4 +315,13 @@ run. The two scoped greps that replace it were run first and are quoted above. F
 plain `npx expo config --type prebuild` is **not** an unrun command in this repo:
 `.claude/reports/driver-device-day-prep-report.md:47` records L1 running it, `CONFIG_OK`. Only the
 `--platform android` variant the review named was never run.
+
+A second correction of the same class, and the reason both are recorded rather than quietly fixed.
+Every `file:line` in the F2, F3 and F4 sections above was first written with the **pre-fix** line
+number while describing the **fixed** location — the fix moved the file from 141 to 236 lines, so
+`:45`, `:52`, `:84`, `:85` and `:88-90` all point somewhere else now. Two sweep-table refs were
+additionally off by one (`:120`, `:136`), having been derived before `eslint --fix` added a line.
+All are corrected above against the shipped file, with the `e029183` number kept beside each so the
+review's own references still resolve. A line ref is a claim like a figure, and `b2421ad` on
+`feature/driver-device-day-prep` is this repo's precedent for exactly this defect.
 
