@@ -201,3 +201,12 @@ from docs prose: `schema.ts:154` wires …"* with no revision. Updated to name
 wrong count had no copy there; and the body's `expo export` line discharges by *"zero importers,
 `testMatch`-only reachability"* without citing `apps/driver/CLAUDE.md`, so F6 had no copy either.
 `grep -n "five mutations\|verbatim\|CLAUDE.md:23"` over the fetched body → **0 hits** for all three.
+
+**A second copy, made stale by this pass itself.** The body's Validation read *"this branch adds one
+markdown file under `.claude/code-reviews/`"* — true until the commit that carried this report added a
+second, under `.claude/reports/`. Corrected in the same body edit to *"two markdown files under
+`.claude/`"*, with the no-gate-task-reads-it derivation and its condition stated there too. This is
+the `taxi-report-restating-pr-body-figures` shape: the fix commit moves the number the body quotes, so
+the body is re-derived after the push, never before it.
+
+A round-1 fixes section was added to the body at the same time, naming all six and pointing here.
