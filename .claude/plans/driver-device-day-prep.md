@@ -611,8 +611,12 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
 - **VALIDATE**: `node -e "JSON.parse(require('fs').readFileSync('apps/driver/eas.json','utf8'))" && echo EAS_JSON_OK`
 - **Added 2026-09-17 (#220)**: `JSON.parse` was the *only* check this file got, and it cannot see a
   semantic mismatch. `apps/driver/src/build-config.test.ts` now runs in the gate and fails if any
-  profile here resolves to a distribution other than `internal` while `app.json` still enables
-  cleartext app-wide — see Q2 below for the decision it enforces.
+  profile here resolves to a distribution other than `internal` — resolved the way EAS resolves it,
+  through the `extends` chain *and* the platform-specific `android` block, which outranks the profile
+  root (`@expo/eas-json@24.5.0`, `build/build/resolver.js:11-12,37,54-56`). A separate case asserts
+  that `app.json` still enables cleartext app-wide. The two halves are checked **independently by
+  design**: coupling them would let deleting the flag silently disarm the profile guard. See Q2 below
+  for the decision this enforces.
 - **SATISFIES**: AC #1
 
 ### UPDATE `apps/driver/app.json` — cleartext, **required, not conditional**
@@ -1035,8 +1039,12 @@ ticket may be reported as closing #141.**
   the cleartext flag lives in `app.json`, which has no per-profile mechanism and so applies it to
   every Android build — the argument was narrower than the mechanism, and nothing fired when they
   parted. `apps/driver/src/build-config.test.ts` now holds the pairing: it reads both files and
-  fails if any `eas.json` profile resolves (through `extends`) to a distribution other than
-  `internal` while cleartext is on. The flag itself is unchanged; scoping it would mean a dynamic
+  fails if any `eas.json` profile resolves to a distribution other than `internal` — resolved as EAS
+  resolves it, through the `extends` chain *and* the platform-specific `android` block, which
+  outranks the profile root (`@expo/eas-json@24.5.0`, `build/build/resolver.js:11-12,37,54-56`). It
+  asserts separately that cleartext is still on. The two halves are checked **independently by
+  design**, so deleting the flag cannot silently disarm the profile guard, and the offender message
+  names both remedies. The flag itself is unchanged; scoping it would mean a dynamic
   `app.config.ts`, which is the worse trade until a second profile exists.
 - **Q3 (ordering, answered with the worst case)** — *could the fixed app still be marked dark and
   nudged in a window right after the ride is released?* **No, and the worst case is the one that
