@@ -15,8 +15,8 @@ sentence.
 
 ## F1 · Low — the eas-cli citations named no revision
 
-**What was wrong.** The document carried twelve eas-cli citation sites into
-`eas-json/src/build/{schema,types,resolver}.ts` with no package version, no sha and no URL. That
+**What was wrong.** Every eas-cli citation in the document — into
+`eas-json/src/build/{schema,types,resolver}.ts` — named no package version, no sha and no URL. That
 package is not a dependency of this repo, and `@expo/eas-json`'s published tarball ships `build/`
 only — so the `src/` paths resolved against nothing a reader of this tree has. It is the document's
 decisive evidence (the whole basis of its only High), and the PR body sells it as *"established from
@@ -26,9 +26,11 @@ eas-cli's own source"* — a provenance claim with no provenance attached.
 govern every eas-cli reference in the document — prose and prescribed docblocks, bare `resolver.ts:…`
 forms included. No line numbers changed; all of them are correct at that sha.
 
-**No count is written into the document.** The review's finding said "seven"; the document's own
-citation sites number twelve across seven distinct `(file, range)` pairs. Writing either number would
-have reproduced F3 one finding later, so the clause names the revision and not a tally.
+**No count is written into the document.** The review's finding said "seven", which is the number of
+distinct `(file, range)` pairs; the number of *citation sites* is larger, because several pairs are
+cited more than once and two of them appear as bare `` `:49` `` back-references. Either number is a
+figure a later reader would have to re-derive, and writing one into a pass whose job is F3 would have
+reproduced F3 one finding later — so the clause names the revision and no tally at all.
 
 **`observed`, 7 of 7 distinct pairs re-read at the pinned sha.** `npm view @expo/eas-json@24.5.0
 gitHead` → `43068db22a079c67198fc7f7ccb5e85286ba3207`; each file fetched from
@@ -150,6 +152,7 @@ file under `.claude/`. Here is the discharge instead:
 | No gate task can read the changed file | `cat turbo.json`, `cat pnpm-workspace.yaml` | **`observed`** — `turbo.json` declares no `inputs` and no `globalDependencies` (`grep -n 'inputs\|globalDependencies\|\.claude' turbo.json` → 0 hits); `pnpm-workspace.yaml` is `apps/*`, `services/*`, `packages/*`, `db`. **`derived`** — `.claude/` is inside no workspace package, so no `typecheck`/`lint`/`test`/`build` task takes it as an input. **Condition**: holds only while `turbo.json` adds no root-level `inputs`/`globalDependencies` and no package reaches into `.claude/` |
 | Worktree ownership | `git status --porcelain` clean at `884627a` before editing; `ls "$(git rev-parse --git-dir)"/{MERGE,REBASE,CHERRY_PICK}_HEAD` → none | **`observed`** — `wt-review222` was mine for this pass, no other session's index rode in |
 | Edits applied exactly once each | each replacement asserted `count(old) == 1` before substitution | **`observed`** — 5 edit blocks, 6 findings, all asserted |
+| Still merges cleanly into live `main` | `git fetch origin --prune && git merge-tree --write-tree origin/main HEAD` | **`observed`** — **exit 0** against `main` at `882dcd0` (the merge of #222). The PR reads `mergeStateStatus: BEHIND`, as it did at review time; behind is not conflicted, and updating the branch is a human call — GitHub's Update branch merges rather than rebases (memory `taxi-update-branch-merges-not-rebases`) |
 
 Running the full gate on a markdown diff buys no signal and spends a real risk of the known api-suite
 flake (memory `taxi-gate-hangs-on-red-api-suite`). Say the word if you want it run anyway.
@@ -171,7 +174,8 @@ root — path-only exclusion, so no content line is eaten (memory `taxi-review-p
 | S4 | `A guard that is wrong in` (F4's duplicate) — **retired** | `grep -rn "A guard that is wrong in" …` | **0**, repo-wide ✅ |
 | S4b | the surviving single statement | `grep -n "A guard that fails both ways" <doc>` | 1 · `:91` ✅ |
 | S5 | the revision pin — present | `grep -n "43068db22a079c67198fc7f7ccb5e85286ba3207" <doc>` | 1 · `:29` ✅ |
-| S5b | **subject sweep** — every eas-cli path still in the document | `grep -on 'eas-json/src/build/[a-z]*\.ts:[0-9-]*\|\`\(schema\|types\|resolver\)\.ts:[0-9-]*\`' <doc>` | 12 sites · `:24 :60 :64 :67 :84 :85 :86 :87 :132 :143 :362 :378` — **all fall after the pin at `:26-33`**, which is worded to cover bare `resolver.ts:…` forms and the prescribed docblocks ✅ |
+| S5b | **subject sweep** — every eas-cli path still in the document | `grep -on 'eas-json/src/build/[a-z]*\.ts:[0-9-]*\|\`\(schema\|types\|resolver\)\.ts:[0-9-]*\`' <doc>` | 12 named sites · `:24 :60 :64 :67 :84 :85 :86 :87 :132 :143 :362 :378` — **all fall after the pin at `:26-33`**, which is worded to cover bare `resolver.ts:…` forms and the prescribed docblocks ✅ |
+| S5c | **the two sites S5b's regex cannot reach** | `grep -n '\`:49\`' <doc>` | 2 · `:62` and `:66`, the bare back-references inside the **Schema** and **Types** bullets (`schema.ts:49` and `types.ts:49`). Both fall after the pin, and the pin's wording covers them. A bare `` `:N` `` grep cannot be scoped to eas-cli mechanically — the document carries 21 such back-references into the plan, the test file and the architecture doc — so this row is read, not filtered ✅ |
 | S6 | the `derived` label — present | ``grep -n 'EAS-effective Android distribution` is \*\*`derived`\*\*' <doc>`` | 1 · `:83` ✅ |
 | S7 | **subject sweep** — `apps/driver/CLAUDE.md:23` sites | `grep -rn 'apps/driver/CLAUDE.md:23' …` | 1 · `:329`, cited now only for the file-layout convention it states ✅ |
 
