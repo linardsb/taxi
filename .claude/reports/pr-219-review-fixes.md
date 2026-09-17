@@ -150,7 +150,9 @@ from the repo root in every case.
 | `Every round-1 finding` (F8) | `grep -rn "Every round-1 finding" --include='*.md' .` | 2 — `pr-65-review-round2.md`, `pr-147-review-round2.md`, both other PRs | — |
 | `exempt per #112` (F7) | `grep -rn "exempt per #112" --include='*.md' .` | 0 after the fix | — |
 | `untracked` (F4) | `grep -rn "untracked" --include='*.md' .claude/ docs/` | 1 in this file's scope — the corrected sentence | rest are other PRs' housekeeping notes |
-| `env:create` (F3, the **subject**, not a digit) | `grep -rn "env:create" --include='*.md' .claude/ docs/` | 6 — round 1 (demoted, fixed), round 2's F5 row (fixed), and 4 on `main` already: `driver-device-day-prep.md:1409`, `pr-218-review-fixes.md:20`,`:96`, `driver-device-day.md:77` | the four on `main` are the base's, and all four already describe `env:create` as the *rejected* alternative — nothing to retire |
+| `env:create` (F3, the **subject**, not a digit) | `grep -rn "env:create" --include='*.md' .claude/ docs/` | 6 — round 1 (demoted, fixed), round 2's F5 row (fixed), and 4 already on `main` | see the row below — each of the four **opened and read**, not judged from the grep line |
+| ↳ the four on `main` | `sed -n` at each hit | `driver-device-day.md:73-84` names it *"the other place the value could live"* and says the plan kept the committed block deliberately, citing the bullet; `driver-device-day-prep.md:1409` records that the bullet's choice stands; `pr-218-review-fixes.md:20` and `:96` both say the review's `env:create` is the alternative the plan weighed and rejected | all four describe the **rejected** alternative — none prescribes it, so there is no claim to retire. The grep *line* alone reads like a prescription (it is the command, quoted); the surrounding sentence is what settles it |
+| ↳ `pr-218-review-fixes.md:20`,`:96` cite the plan at `:566-577` | `git show 7ec3bd7:.claude/plans/…` | that range is the `DECIDED` bullet at `bd5193a`, its anchor; on `main` the bullet is `:573-586` | **left alone deliberately** — a dated artifact already on `main`, correct at its own anchor and outside this PR's diff |
 | `stub_sent` (F4 subject) | `grep -rn "stub_sent" --include='*.md' .claude/ docs/` | 6, all in round 1; the three outside the fixed bullet are about `driver.push.stub_sent` only and name their file | — |
 
 ## Validation
@@ -160,7 +162,7 @@ from the repo root in every case.
 | Fix verifier, fixed tree | `bash verify-219.sh` (42 assertions, reproduced in the appendix) | ✅ **42 PASS, 0 FAIL**, `ALL FIX ASSERTIONS HOLD`, exit 0 |
 | Fix verifier, **unfixed** tree | same script after `git checkout -- <the two files>` | ✅ **13 PASS, 29 FAIL**, exit 29 — the 13 that pass are the primary-source facts (source line numbers, lockfile key counts, runbook line counts), which are true of the tree regardless of what the reports say. Every assertion about report *content* fails. |
 | Full gate | `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force`, in this worktree at the fixed tree | ✅ exit 0 · **22 successful, 22 total**, 0 cached, **1m20.694s**; `@taxi/api` 733 passed / 77 suites; zero `Failed:` lines. Run at `7926ba1` with the two fixed files and this report in the tree (`git status --porcelain` captured with the run). The first, cold run of the same command took 2m10.636s; the quoted one is the second, which is the one whose exit status was captured. |
-| CI on the PR | `gh pr checks 219` after the push | see the PR |
+| CI on the PR | `gh pr checks 219` | queued behind the previous push's run when this was written, so no result is copied here. The PR's own checks at the head you are reading are the authority; the prior two heads on this branch (`150e711`, `7926ba1`) both completed `success`. |
 
 The gate needed `pnpm install --frozen-lockfile` in this worktree first (a fresh worktree has no
 `node_modules`, and `turbo` is not on PATH without it) — `Done in 12.5s using pnpm v10.33.2`,
@@ -178,7 +180,13 @@ from another one, and this head (`7926ba1`) is a merge commit no previous run co
    exists only in the worktree `/Users/Berzins/taxi-worktrees/wt-review219`. Five reviews orphaned
    this way before (#138–#142, landed late as #143), and a round-2 reviewer cannot cross-check this
    report against a review they cannot read. It needs its own PR off `main`, the way #219 is one.
-2. **The two shipped reports were posted verbatim as comments on #218**, which is merged. Comments
+2. **This worktree now holds a copy of the main checkout's local environment file.** It was needed for
+   the gate (`@taxi/db#test` cannot reach the docker postgres without it, and turbo then kills every
+   sibling task — memory `taxi-stop-hook-checks-main-repo`). It is gitignored, so it cannot ride into
+   a commit, and it is left in place because a round-2 review of this PR would need it again. Delete
+   `/Users/Berzins/taxi-worktrees/wt-review218/` with `git worktree remove` when the PR lands and it
+   goes with it.
+3. **The two shipped reports were posted verbatim as comments on #218**, which is merged. Comments
    `5715582096` and `5716087200` now differ from the corrected files — in F4's four pointers, F6's
    withdrawn totals, F10's count. Round 2's own precedent for this is comment `5716100986`: post the
    correction as its own comment rather than editing the original. Not done here, because posting to
@@ -201,10 +209,11 @@ then `gh pr view 219 --json body`:
 - comments: all three linked (`5715582096`, `5716087200`, `5716100986`).
 - Validation: anchored at the gate run in this worktree, not at `a71a6b1`, which covered only round 1.
 
-This paragraph is the second commit on this branch (it can only be written once the first has a sha),
-so the body's numstat was re-derived once more after it and re-applied — the order that ends the loop
-is edit → commit → push → re-derive → `gh pr edit`, with no commit after the last body edit
-(`taxi-report-restating-pr-body-figures`, #212).
+This paragraph could not be written until `075edc6` had a sha, so it is a later commit — and every
+commit after a body edit re-stales the body's numstat. The loop ends only one way: the **last** thing
+done on the branch is edit → commit → push → re-derive → `gh pr edit`, with no commit after it. The
+body states the figures for this branch's final head, and the command it names re-derives them at
+whatever head the reader is on (`taxi-report-restating-pr-body-figures`, #212).
 
 ## Appendix — the verifier
 
