@@ -322,5 +322,32 @@ Both are one-line `piv-review-pr` trigger changes, outside this diff. The review
 
 ## The pushed commit
 
-*(filled in after the push — see the PR body for the re-derived diff size, which is set last because
-the fixing commit moves it)*
+**`c4d1ddb`** — `docs(reviews): PR #221 round 1 — apply F1–F5 plus F6–F7 found here`, three files,
+`399 insertions(+), 32 deletions(-)` against its parent `76469e1`. Force-pushed with
+`--force-with-lease` (the rebase rewrote history); `git fetch --prune` immediately before confirmed
+`origin/main` was still `8ebf2ba` and the PR still OPEN, so nothing was merged mid-pass.
+
+**The PR is updated.** `observed` after the push: `head=c4d1ddb`, `base=8ebf2ba`,
+`mergeStateStatus: CLEAN` — the `BEHIND` state that blocked it under `strict` protection is cleared.
+The body was rewritten last, after the commit, so the size figures it states are re-derived rather
+than inherited (`taxi-report-restating-pr-body-figures`).
+
+**CI at `c4d1ddb`** — `observed`, `gh pr checks 221`, run
+[35264297081](https://github.com/linardsb/taxi/actions/runs/35264297081):
+
+| Check | Result | Time |
+|---|---|---|
+| `check` (the full gate) | ✅ pass | 3m1s |
+| `codeql` | ✅ pass | 1m12s |
+| `CodeQL` | ✅ pass | 2s |
+| `audit-diff` | ✅ pass | 8s |
+| `ready` | ✅ pass | 4s |
+
+**5/5 green.** This is the gate for this branch — the local gate was deliberately not re-run (see
+*Validation*), and CI ran against the rebased base rather than the stale one, which is what made F2's
+fix free.
+
+> **On this section's own head-dependence.** The commit that adds these paragraphs is not `c4d1ddb`
+> and re-runs the same five checks, so no file can state its own CI result. The figures above are
+> pinned to `c4d1ddb` and to the run id, both immutable; the later commit is documentation only and
+> changes nothing a task's cache key can see. The PR body's size table is re-derived after it.
