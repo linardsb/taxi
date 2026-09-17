@@ -163,7 +163,7 @@ typecheck lint test build --force`, run on the fixed tree, **exit 0**:
 ```
 Tasks:    22 successful, 22 total
 Cached:   0 cached, 22 total
-Time:     1m28.397s
+Time:     1m24.717s
 ```
 
 Per package, all `observed` in that run — **every count identical to the PR body's**, which is the
@@ -178,9 +178,17 @@ expected result for a diff that touches no test and no compiled source:
 | `@taxi/dispatch` | 224 passed | 27 passed |
 | `@taxi/db` | 17 passed | 3 passed |
 
-Two runs, because the first piped through `tail -60` and lost five packages' counts; the first was
-also exit 0 with `22 successful, 22 total` in `1m25.48s`. The figures above are the second run's,
-captured whole.
+**Four runs, all exit 0 and all `22 successful, 22 total`** — the wall-clock is the only figure that
+moves between them (`1m25.48s`, `1m28.397s`, `1m24.187s`, `1m24.717s`). The first piped through
+`tail -60` and lost five packages' counts, which is why there is a second; the third and fourth
+followed the two fix commits so that the gate ran on exactly what was committed. The table above is
+the **fourth** run's, at `b2421ad`.
+
+That is one commit behind this paragraph, and deliberately so: the only difference is this file,
+which no turbo task reads (`.claude/**` is not in any package's build, lint, typecheck or test
+input). Re-running the gate to cover an edit to the gate's own report is the regress this section
+exists to avoid — the ordering rule is *edit → commit → push → re-derive*, and the thing that must
+be re-derived at the true final head is the PR body's numstat table, which is.
 
 No size figure is restated here on purpose. The PR body's numstat table is the one place it lives,
 and a report that quotes it is stale the moment the commit carrying the report moves it — so the
