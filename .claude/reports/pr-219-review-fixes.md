@@ -1,8 +1,9 @@
 # PR #219 — review fixes, round 1
 
 **Review**: `.claude/code-reviews/pr-219-review.md` (round 1 — request changes, one High, two Mediums,
-six Lows). That file lives on branch `docs/pr-219-review` at `f43ff80`, which is **not pushed and has
-no PR** — see *Needs a human decision* below.
+six Lows). That file lives on branch `docs/pr-219-review`, which **at the time of this pass** (at
+`f43ff80`) was not pushed and had no PR — see *Needs a human decision* below. It is now
+[#221](https://github.com/linardsb/taxi/pull/221), which lands that file and carries this correction.
 **PR**: [#219](https://github.com/linardsb/taxi/pull/219) · branch `docs/pr-218-review`, base `main`.
 **Head this pass started from**: `7926ba1` — GitHub's *Update branch* merge of `main` into the branch,
 made after the review was written at `150e711`. The review's findings were re-checked against `7926ba1`,
@@ -73,7 +74,7 @@ Two edits in round 1, one in round 2.
 
 | Was | Now | Checked by |
 |---|---|---|
-| `spikes/gps-harness/app.json:44-48` (twice — Summary `:24` and F1 `:50`) | `:42-47` | `grep -n '"extra": {'` → 42; `grep -n '"owner"'` → 47 |
+| `spikes/gps-harness/app.json:44-48` — **twice**, in the Summary and in F1. Pre-fix both sites sit at `:21` and `:50` (identical at `150e711` and `7926ba1`); post-fix the corrected range sits at `:24` and `:59`. *(An earlier draft of this row paired the post-fix `:24` with the pre-fix `:50`, which no tree carries — corrected in [#221](https://github.com/linardsb/taxi/pull/221).)* | `:42-47` at both sites | `grep -n '"extra": {'` → 42; `grep -n '"owner"'` → 47; `git show 7926ba1:"$R1" \| grep -n '44-48'` → 21, 50 |
 | `apps/driver/eas.json:11` (F5 header) | `:10`, with the `env` block as `:9-11` | `git show a71a6b1:apps/driver/eas.json \| grep -n EXPO_PUBLIC_API_URL` → 10 |
 | `auth.otp.stub_sent` (`:20`), `auth.sms.stub_sent` (`:33`) reading as `stub-push.provider.ts` | named as `auth/sms/stub-sms.provider.ts`, with a sentence saying why the bare form resolved against the wrong file | `grep -n` in `stub-sms.provider.ts` → 20, 33 |
 | *"an untracked home at `.env.example:53`"* | the **key** has a home in the committed (tracked) env template; the untracked file is `.env`, ignored at `.gitignore:14`; and `:53` carries `localhost`, not a LAN address | `git ls-files --error-unmatch` succeeds; `.gitignore:14` |
@@ -137,23 +138,41 @@ Corrected to eighteen, with the count now derived in the text from a printed com
 
 ## The copy sweep — commands and hits
 
-Each retired value and each retired **subject**, grepped across the working tree. `--include='*.md' .`
-from the repo root in every case.
+Each retired value and each retired **subject**, grepped in the file whose claim was retired.
+`R1` = `.claude/code-reviews/pr-218-review.md`, `R2` = `.claude/code-reviews/pr-218-review-round2.md`,
+the two files this pass edits and the two the executable verifier at the end of this report asserts
+against (`nchk … "$R1"`). Hits elsewhere in the repo are named in the cell and are different subjects.
+
+> **Corrected in [#221](https://github.com/linardsb/taxi/pull/221)** — found there, not in #221's
+> review. As first written, **all ten rows** stated a wide command (`grep -rn … --include='*.md' .`
+> from the repo root, or over `.claude/ docs/`) beside a count that command **does not produce**,
+> because the count omitted this report's own rows and this report is a `.md` inside the searched
+> scope. `observed` at `8ebf2ba` (the merge that landed this file) — stated → what the stated command
+> returns: `nineteen` 0 → **5**; `1087`/`1088` 1 each → **4** each; `44-48` 2 → **4**; `eas.json:11`
+> 0 → **2**; `zero hits` 3 → **6**; `Every round-1 finding` 2 → **4**; `exempt per #112` 0 → **2**;
+> `untracked` 1 → **24**; `env:create` 6 → **10**; `stub_sent` 6 → **51**.
+>
+> The *checks* were sound and all still pass — the executable verifier below asserts each retired
+> value against `"$R1"` / `"$R2"` file-scoped, `42 PASS, 0 FAIL`. What was wrong is the **printed
+> command**, which was wider than the check it summarized, so a reader who runs it gets a number the
+> row denies. That is precisely what `CLAUDE.md` means by making the sweep checkable rather than a
+> feeling. Each command below has been narrowed to the file its check is about; the counts themselves
+> did not move.
 
 | Retired thing | Command | Hits | Action |
 |---|---|---|---|
-| `nineteen` (F10) | `grep -rn "nineteen" --include='*.md' .` | 0 after the fix | — |
-| `1087` / `1088` (F6) | `grep -rn "1087" …`, `grep -rn "1088" …` | 1 each — the withdrawal sentence itself | kept deliberately: the withdrawal has to name what it withdraws |
-| `44-48` (F4) | `grep -rn "44-48" --include='*.md' .` | 2 — `pr-218-review.md:24` **(stale copy, fixed)** and `pr-147-review-round3.md:44` (a `compose.prod.yml` range, unrelated) | `:24` corrected to `:42-47` |
-| `eas.json:11` (F4) | `grep -rn "eas\.json:11" --include='*.md' .` | 0 after the fix | — |
-| `zero hits` (F2) | `grep -rn "zero hits" --include='*.md' .` | 3 — the bounded round-2 claim plus `pr-65`/`pr-99`, different subjects | — |
-| `Every round-1 finding` (F8) | `grep -rn "Every round-1 finding" --include='*.md' .` | 2 — `pr-65-review-round2.md`, `pr-147-review-round2.md`, both other PRs | — |
-| `exempt per #112` (F7) | `grep -rn "exempt per #112" --include='*.md' .` | 0 after the fix | — |
-| `untracked` (F4) | `grep -rn "untracked" --include='*.md' .claude/ docs/` | 1 in this file's scope — the corrected sentence | rest are other PRs' housekeeping notes |
-| `env:create` (F3, the **subject**, not a digit) | `grep -rn "env:create" --include='*.md' .claude/ docs/` | 6 — round 1 (demoted, fixed), round 2's F5 row (fixed), and 4 already on `main` | see the row below — each of the four **opened and read**, not judged from the grep line |
+| `nineteen` (F10) | `grep -c "nineteen" "$R1"` | **0** after the fix | — |
+| `1087` / `1088` (F6) | `grep -c "1087" "$R2"`, `grep -c "1088" "$R2"` | **1** each — the withdrawal sentence itself | kept deliberately: the withdrawal has to name what it withdraws |
+| `44-48` (F4) | `grep -n "44-48" "$R1"` | **0** after the fix; **2** before it, at `:21` (Summary) and `:50` (F1) — identical at `150e711` and `7926ba1`. One unrelated hit elsewhere in the repo, `pr-147-review-round3.md:44`, a `compose.prod.yml` range | both sites corrected to `:42-47`, now at `:24` and `:59` |
+| `eas.json:11` (F4) | `grep -c "eas\.json:11" "$R1"` | **0** after the fix | — |
+| `zero hits` (F2) | `grep -c "zero hits" "$R2"` | **1** — the bounded round-2 claim. Elsewhere: `pr-65-review.md` (1), `pr-99-review.md` (2), different subjects | — |
+| `Every round-1 finding` (F8) | `grep -c "Every round-1 finding" "$R2"` | **0** after the fix. Elsewhere: `pr-65-review-round2.md` (1), `pr-147-review-round2.md` (1), both other PRs | — |
+| `exempt per #112` (F7) | `grep -c "exempt per #112" "$R1"`, same for `"$R2"` | **0** / **0** after the fix | — |
+| `untracked` (F4) | `grep -c "untracked" "$R1"` | **1** — the corrected sentence | the word is common repo-wide (18 other `.md` at `8ebf2ba`); all are other PRs' housekeeping notes, different subjects |
+| `env:create` (F3, the **subject**, not a digit) | `grep -c "env:create" "$R1"`, same for `"$R2"` | **1** each — round 1 (demoted, fixed) and round 2's F5 row (fixed). Four more sit elsewhere on `main`: `driver-device-day-prep.md` (1), `pr-218-review-fixes.md` (2), `docs/runbooks/driver-device-day.md` (1) | see the row below — each of the four **opened and read**, not judged from the grep line |
 | ↳ the four on `main` | `sed -n` at each hit | `driver-device-day.md:73-84` names it *"the other place the value could live"* and says the plan kept the committed block deliberately, citing the bullet; `driver-device-day-prep.md:1409` records that the bullet's choice stands; `pr-218-review-fixes.md:20` and `:96` both say the review's `env:create` is the alternative the plan weighed and rejected | all four describe the **rejected** alternative — none prescribes it, so there is no claim to retire. The grep *line* alone reads like a prescription (it is the command, quoted); the surrounding sentence is what settles it |
 | ↳ `pr-218-review-fixes.md:20`,`:96` cite the plan at `:566-577` | `git show 7ec3bd7:.claude/plans/…` | that range is the `DECIDED` bullet at `bd5193a`, its anchor; on `main` the bullet is `:573-586` | **left alone deliberately** — a dated artifact already on `main`, correct at its own anchor and outside this PR's diff |
-| `stub_sent` (F4 subject) | `grep -rn "stub_sent" --include='*.md' .claude/ docs/` | 6, all in round 1; the three outside the fixed bullet are about `driver.push.stub_sent` only and name their file | — |
+| `stub_sent` (F4 subject) | `grep -c "stub_sent" "$R1"` | **6**, all in round 1; the three outside the fixed bullet are about `driver.push.stub_sent` only and name their file. The token is common across the repo's plans and reports (51 `.md` hits at `8ebf2ba`), all different subjects | — |
 
 ## Validation
 
@@ -176,10 +195,13 @@ from another one, and this head (`7926ba1`) is a merge commit no previous run co
 
 ## Needs a human decision
 
-1. **`docs/pr-219-review` is unpushed and has no PR.** `f43ff80` — the review this report answers —
-   exists only in the worktree `/Users/Berzins/taxi-worktrees/wt-review219`. Five reviews orphaned
+1. ~~**`docs/pr-219-review` is unpushed and has no PR.**~~ **Closed — it is
+   [#221](https://github.com/linardsb/taxi/pull/221).** At the time of this pass, `f43ff80` — the
+   review this report answers —
+   existed only in the worktree `/Users/Berzins/taxi-worktrees/wt-review219`. Five reviews orphaned
    this way before (#138–#142, landed late as #143), and a round-2 reviewer cannot cross-check this
-   report against a review they cannot read. It needs its own PR off `main`, the way #219 is one.
+   report against a review they cannot read. It needed its own PR off `main`, the way #219 is one;
+   #221 is that PR, and #221's own round-1 review raised this paragraph as its F2.
 2. **This worktree now holds a copy of the main checkout's local environment file.** It was needed for
    the gate (`@taxi/db#test` cannot reach the docker postgres without it, and turbo then kills every
    sibling task — memory `taxi-stop-hook-checks-main-repo`). It is gitignored, so it cannot ride into

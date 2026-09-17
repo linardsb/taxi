@@ -3,7 +3,7 @@
 **PR**: [#219](https://github.com/linardsb/taxi/pull/219) · docs(reviews): PR #218 rounds 1 and 2 — round 2 approves, three Mediums, six Lows
 **Head** `150e711` · **Base** `main` @ `b690e91` · base live tip `7ec3bd7` — **moved**, see below
 **Round**: 1 (no prior report) — the fix-mechanism pass does not apply
-**State**: OPEN, ready for review, `mergeStateStatus: BEHIND` · all five checks pass
+**State** (read 2026-09-17 at head `150e711`): OPEN, ready for review, `mergeStateStatus: BEHIND` · all five checks pass
 **Verdict**: **Request changes** — one High, two Mediums, six Lows. No Critical, no hard-rule
 violation. **The High is entirely in the PR body; the two shipped files are factually sound.**
 
@@ -14,11 +14,14 @@ their own branch off `main` so the reviewed PR's next commit cannot sweep the re
 reviews (memory `taxi-pr-review-report-location`, #148). That separation worked exactly as intended
 and is the right call.
 
-**The reports' facts hold.** I re-derived every figure and every git-dependent claim in both files
-rather than reading them, and **sixteen of sixteen reproduce exactly** — both size tables, the icon
-byte arithmetic, the four `nudge_*` line refs, M2's pointer-paragraph locator and its 3/7 straddle,
-the 231→289 runbook growth, the 30-assertion verifier, `turbo.json`'s cache neutrality, the Nest
-default log levels the whole run sheet rests on. The `code-reviewer` agent independently opened ~55
+**The reports' facts hold.** I re-derived every figure and every git-dependent claim the two files
+**assert**, rather than reading them, and **sixteen of sixteen reproduce exactly** — both size tables,
+the icon byte arithmetic, the four `nudge_*` line refs, M2's pointer-paragraph locator and its 3/7
+straddle, the 231→289 runbook growth, the 30-assertion verifier, `turbo.json`'s cache neutrality, the
+Nest default log levels the whole run sheet rests on. One figure they **quote** rather than assert —
+round 1's `GOTCHA` count, block-quoted in F3 below — I passed through unaudited, and it is wrong: the
+plan has **eighteen**, not nineteen, at every sha (corrected on `main` by #219's fix pass, its F10).
+The `code-reviewer` agent independently opened ~55
 more `file:line` claims and found the same: everything resolves but the pointers in F4 below. The
 full list is in *Claims re-derived*.
 
@@ -173,7 +176,13 @@ F5 prescribes, as its first and recommended remedy:
 > for the build to pick up a stale value invisibly.
 
 **The mechanism is visible in round 1's own text.** It runs a constraint pass once, under F2
-(`:112-114`), and scopes it to GOTCHAs — *"The plan's nineteen `GOTCHA`s were read"*. A `DECIDED`
+(`:112-114`), and scopes it to GOTCHAs — *"The plan's nineteen `GOTCHA`s were read"*. That quote is
+round 1's sentence as written; the digit in it is wrong. **The plan has eighteen** — `grep -cE
+"GOTCHA"` and `grep -c '^- \*\*GOTCHA'` both return 18 over
+`.claude/plans/driver-device-day-prep.md` at `a71a6b1`, `bd5193a`, `3998e9b` and `origin/main`, so
+there is no head at which nineteen held. #219's fix pass corrected it as its own F10 and `main` now
+reads *"eighteen"*. The scope argument below is about which *kinds* of constraint the pass reached
+and is unaffected by the count. A `DECIDED`
 bullet is structurally out of that pass's reach, and the skill's prescribed grep
 (`do not modify|do not edit|read-only|no changes to|frozen`) does not match "is rejected here"
 either. The other eight findings got no pass at all. `piv-review-pr` says the pass is per proposed
@@ -226,7 +235,10 @@ a reader chasing either lands on real code and never learns they are in the wron
 **2. F1's precedent range, `:50-56`** — in the only High. It quotes the `"extra": { "eas": {
 "projectId": … } }` block plus `"owner"` and cites `spikes/gps-harness/app.json:44-48`. `"extra":`
 opens at **`:42`**; `:44-48` runs `projectId` → `}` → `},` → `"owner"` → `}`, so the quoted opening
-two lines are outside it. The implementer landed the corrected range unprompted:
+two lines are outside it. **Round 1 cites the stale range twice, not once** — `observed`, at
+`150e711`: `git show 150e711:.claude/code-reviews/pr-218-review.md | grep -n "app.json:44-48"`
+returns `:21` (the Summary) and `:50` (this precedent range). Both are closed on `main`, which
+carries `:42-47` at `:24` and `:59`. The implementer landed the corrected range unprompted:
 `docs/runbooks/driver-device-day.md:133` cites `spikes/gps-harness/app.json:42-47`.
 
 **3. F5's header, `:165`** — cites `apps/driver/eas.json:11` for `"EXPO_PUBLIC_API_URL":
@@ -270,11 +282,17 @@ Spot-checked against main (`observed`, `sed -n 'NNNp'`):
 | R2 `:196` | step 5's Expect cell | a blank line |
 | R2 `:236-237` | the nudge-family note | F3's `clientAt`/`at` note |
 
-**Why Low.** Both headers carry their anchor sha on line 4, which is what a reader needs, and the
-repo's norm across the **65** prior `.md` files in `.claude/code-reviews/` is exactly this — a dated
-artifact anchored by sha, never re-swept after the branch moves (`pr-215-review.md` is the nearest
-recent example). Raising it higher would invent a standard the repo does not hold. Internally the
-locators are consistent: round 2's `:259`/`:260-261` map to main's `:292`/`:293-294` under a uniform
+**Why Low.** Both headers carry their anchor sha on line 4, which is what a reader needs, and that
+anchor is the leg this Low rests on. The repo's norm across the **65** prior `.md` files in
+`.claude/code-reviews/` is close to it — **61 of the 65 carry a single commit** (`observed`:
+`git log --oneline origin/main -- <file>` over each of the 67 `.md` at `origin/main`, minus #219's
+two adds). It is not *never* re-swept: **four** have more than one, and each was edited to correct a
+*claim* rather than to chase branch movement — `pr-110-review.md` (four post-landing commits, two of
+them #112 re-deriving the swept-file count), `pr-121-review.md` and `pr-121-review-round3.md`
+(`9713cb5`, retiring the Redis diagnosis), `pr-147-review-round3.md` (a round-3 addendum). Locator
+drift after the branch moves is the narrower thing this finding is about, and nothing in the log
+shows a sweep for that, so raising it higher would still invent a standard the repo does not hold.
+Internally the locators are consistent: round 2's `:259`/`:260-261` map to main's `:292`/`:293-294` under a uniform
 +33, and round 1's `:201` maps to the same `:292` under its +91.
 
 It earns a line because round 2 *itself* raised a materially identical case as M2 site 3 — a dated
@@ -505,6 +523,7 @@ F2 and F3 are each a clause and a citation, and neither changes a verdict — F3
 caught by the implementer and never reached the tree. F4–F9 are one line each.
 
 Fix the body with `gh pr edit 219 --body-file`, add F2's scope clause and F3's citation, and this is
-an approve.
+an approve. **That is the round-1 call at `150e711`, not a standing direction** — #219's fix pass
+applied all nine findings and #219 merged at `8ebf2ba`.
 
 Next: `piv-fix-review-findings` on this report, then re-validate.
