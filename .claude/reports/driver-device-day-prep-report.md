@@ -19,7 +19,10 @@ stays owed.
 - Notification-icon signature repair (B3) → `apps/driver/assets/notification-icon.png` (UPDATE, 9 bytes)
 - The `preview` build profile → `apps/driver/eas.json` (CREATE)
 - `expo-build-properties` + `android.usesCleartextTraffic` → `apps/driver/app.json`, `apps/driver/package.json`, `pnpm-lock.yaml` (UPDATE)
-- The corrected run sheet → `docs/runbooks/driver-device-day.md` (CREATE, 231 lines)
+- The corrected run sheet → `docs/runbooks/driver-device-day.md` (CREATE — **322 lines at this
+  branch's round-2 fix head**, `observed`; 231 as first implemented, +58 from the round-1 F1–F9
+  fixes, +33 from round 2's. Re-derive with `wc -l` rather than trusting this digit: it moves
+  every time the sheet is corrected, which is twice so far)
 - §Level 4 run sheet retired to a pointer + AMENDMENTS entry → `.claude/plans/driver-toggle-off-mid-ride-held.md` (UPDATE)
 - §C.14 repointed at the runbook, stale pass-condition clause dropped → `.claude/plans/driver-app-auth-online-location.md` (UPDATE)
 - On-demand-context row → `CLAUDE.md` (UPDATE)
@@ -159,10 +162,21 @@ build blocker (the hazard is a cross-SDK-major mix, not patch drift within 57), 
 conclusion is unaffected — there is still **no `release/` manifest**, so the release variant
 inherits `main`.
 
-**D8 — the runbook is 231 lines against the plan's "aim for a similar size" to
-`rider-a11y-walkthrough.md`'s 168.** The excess is the four Setup subsections the plan itself
-mandates (R4's pre-flight, R3's discriminator, the different-origins trap, the build invocation)
-plus D5's correction. Not trimmed: each was a named control.
+**D8 — the runbook overshoots the plan's "aim for a similar size" to `rider-a11y-walkthrough.md`'s
+168** (`observed`, `wc -l`). As first implemented it was 231; at this branch's round-2 fix head it
+is **322**, so the excess is now 154 lines, not 63. Three causes, and the second and third are the
+PR's own review rounds rather than the implementation:
+
+- **63** — the four Setup subsections the plan itself mandates (R4's pre-flight, R3's discriminator,
+  the different-origins trap, the build invocation) plus D5's correction. Not trimmed: each was a
+  named control.
+- **+58** — round 1's F1–F9 fixes (231 → 289).
+- **+33** — round 2's M1, L1–L4 and L6 fixes (289 → 322), the largest single item being L6's
+  `eas config` resolving step and its two observed failure shapes.
+
+Each addition was a review finding this sheet had to answer, so none is trimmable either; what the
+comparison to 168 measures at this point is that a device run sheet with a build route in it is a
+different kind of document from an a11y walkthrough, not that this one is padded.
 
 **Not a deviation, recorded for the reviewer**: I initially renumbered the steps (opening the
 tracking page as a new step 4), which the plan explicitly forbids because issue comments and PR
@@ -183,8 +197,12 @@ and folds the early-open instruction into step 3.
   is in #14's plan** at `.claude/plans/driver-app-auth-online-location.md:816` (`npx eas init`) —
   left alone as another ticket's file, and flagged here so it is fixed when A2 is attempted.
 - `pr-142-review-round2.md:302` cites `driver-toggle-off-mid-ride-held.md:737-746` for the run
-  sheet. That line range is now the pointer paragraph. Left as-is — it is a dated review, and the
-  pointer it lands on leads to the runbook.
+  sheet. **That citation is simply stale** — corrected 2026-09-17 (PR #218 review round 2, M2). It
+  does *not* land on the pointer paragraph, which is at `:731-736`; `:737-746` starts one line past
+  that paragraph's end and covers the "still blocked on hardware" sentence and the api-half command
+  block. A reader following it finds an integration-test invocation, not a signpost. Left as-is
+  anyway, on the correct reason rather than the one first given here: it is a dated review artifact,
+  and the replacement it would point at is one paragraph above the range in the same file.
 - No migrations in this ticket; `ls db/migrations/*.sql | tail -1` unchanged.
 - No open PRs at implementation time (`observed`), so the `pnpm-lock.yaml` move is uncontested.
   Exactly one package was added to the lockfile (`expo-build-properties@57.0.20`, 0 removed) —

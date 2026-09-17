@@ -1380,8 +1380,11 @@ in `main` since `3d2e874` and that no check in this repo could see.
     build to a linked project, so `eas-cli init` runs on the day and writes `extra.eas.projectId`
     into a tracked `app.json`. The precedent the CONTEXT REFERENCES already cited
     (`spikes/gps-harness/app.json:42-47`) commits both that key and `owner: "linards"`; this config
-    committed neither. Narrowed at three sites here plus the runbook's row and §2. `expected`, not
-    `observed` — `eas-cli` cannot run without Expo credentials.
+    committed neither. Narrowed at three sites here plus the runbook's row and §2. The prompt stays
+    `expected`, not `observed`, but ~~`eas-cli` cannot run without Expo credentials~~ — **corrected
+    2026-09-17 (PR #218 review round 2, L6's verification)**: `eas-cli` *does* run here and reaches
+    Expo (`config` reported account `linards`). What is unexercised is the interactive branch, since
+    every run passed `--non-interactive`.
   - **F2 — C2's chain stopped one guard short.** Point 5 named `sendDueNudges` by signature and did
     not reach the `no_token` guard fifteen lines inside it (`drivers.service.ts:353-360`), which
     `continue`s before the only caller of `StubPushProvider.send`. So the signal box's
@@ -1399,3 +1402,26 @@ in `main` since `3d2e874` and that no check in this repo could see.
     bullet's choice stands (the reviewer's `eas env:create` alternative is the one it already
     weighed and rejected, with reasons). What was missing is that the operator's edit carries this
     machine's DHCP lease and must stay uncommitted; the runbook's §0 now says so.
+
+- 2026-09-17 — PR #218 review round 2 (`.claude/code-reviews/pr-218-review-round2.md`), verdict
+  **Approve**; M1, M2 and L1–L6 applied, M3 filed as
+  [#220](https://github.com/linardsb/taxi/issues/220) rather than fixed (its root remedy contradicts
+  the *"cleartext, **required, not conditional**"* task heading at `:607`, and `eas.json` defines only
+  `preview`, so nothing in the tree can trigger it). Again all prose; no shipped source changed. Two
+  touch this plan:
+  - **L6 adds a fourth command to §2's block, which the runbook-build task enumerated as three.**
+    `npx eas-cli@latest config -p android -e preview --non-interactive` now sits between `init` and
+    `build`. The task's VALIDATE for `eas.json` (`:604`) was `node -e "JSON.parse(…)"`, which proves the file
+    is JSON and nothing about its schema — `eas-cli` is not a repo dependency, so neither the gate
+    nor the tree could reject a bad profile key, and one would have surfaced at the `eas build` line
+    on the day. The command was verified before it went in (`observed` 2026-09-17, `eas-cli@24.7.0`):
+    an undefined key gives `eas.json is not valid.` / `"build.preview.<key>" is not allowed`, exit 1,
+    and schema validation runs *before* the project-link check. **Supersedes** the task's three-line
+    block; the VALIDATE line stands as the in-tree half.
+  - **F1's `expected` label survives its own justification** — see the correction struck into the
+    round-1 entry above. `eas-cli` runs here and reaches Expo; what is unexercised is the interactive
+    create-or-link branch. This also retires the plan's open question of whether `pnpm` is a real
+    `eas.json` profile key (`:558-560`): the committed file clears schema validation, so it is.
+
+  Fixes report: `.claude/reports/pr-218-review-fixes-round2.md`, with a 22-assertion citation
+  verifier that returns 0 hits for every added claim against `bd5193a`.

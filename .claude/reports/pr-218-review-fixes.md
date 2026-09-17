@@ -35,9 +35,11 @@ precedent (`spikes/gps-harness/app.json:42-47`, which commits both that key and 
 and the instruction to commit both keys or `git checkout` the file afterwards. The *does NOT need*
 row is narrowed from "`eas init` / an EAS project id" to "an EAS project id **for a push token**".
 
-Kept `expected`, not upgraded to `observed`: `eas-cli` cannot run here without Expo credentials, so
-the prompt's exact behaviour is inferred from the asymmetry with the precedent, not seen. The
-reviewer labelled it the same way.
+Kept `expected`, not upgraded to `observed`: the prompt's exact behaviour is inferred from the
+asymmetry with the precedent, not seen. The reviewer labelled it the same way. **The stated reason
+was wrong and is corrected in round 2** — this said `eas-cli` cannot run here without Expo
+credentials; L6's verification ran it, and a signed-in session exists. The label survives its own
+justification: what is unexercised is the interactive branch, not the CLI.
 
 **The fix's own new failure mode** (the mechanism pass): `init` dirties a **tracked** file in a
 checkout several sessions share — F5's hazard, re-introduced by F1's fix. Addressed in the same
