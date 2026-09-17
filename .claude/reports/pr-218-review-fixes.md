@@ -17,7 +17,7 @@ All nine fixed. Nothing deferred that belongs to this PR; two items outside it a
 | F2 | Medium | **Fix now** | Step 7's second absence was unreachable — the exact defect shape this ticket exists to retire. |
 | F3 | Medium | **Fix now** | A healthy stream could read as ❌ on a binary step. |
 | F4 | Medium | **Fix now** | PR body figure attribution. |
-| F5 | Medium | **Fix now** — fallback, not the prescribed fix | The reviewer's `eas env:create` is the alternative the plan already weighed and rejected with reasons (`driver-device-day-prep.md:563-573`); the gap was the missing instruction, not the decision. |
+| F5 | Medium | **Fix now** — fallback, not the prescribed fix | The reviewer's `eas env:create` is the alternative the plan already weighed and rejected with reasons (`driver-device-day-prep.md:566-577`); the gap was the missing instruction, not the decision. |
 | F6 | Medium | **Fix now** | Threshold sat exactly on the boundary its own throttle produces. |
 | F7–F9 | Low | **Fix now** | One-line citation and locale corrections. |
 
@@ -57,7 +57,7 @@ unreachable — `sendDueNudges` `continue`s at `drivers.service.ts:353-360`, **b
 or `nudge_failed`. That is the superset of the nudge path's outputs: a due nudge prints exactly one
 of them, so the absence stays a live discriminator today (the `no_token` skip) **and** after the
 push prerequisites are ever met. Mirrored in the *does NOT need* row, in a new note under the steps
-table explaining the chain, and in the plan's C2 signal box (`driver-device-day-prep.md:322-329`)
+table explaining the chain, and in the plan's C2 signal box (`driver-device-day-prep.md:327-333`)
 plus C2's point 5, which named `sendDueNudges` by signature and stopped fifteen lines short of the
 guard.
 
@@ -72,7 +72,7 @@ the durable queue as a burst: the server `at`s bunch after a hole, the `clientAt
 
 **Fixed**: both steps say to time it by `clientAt`; a new note gives the mechanism and cites #14's
 sheet, which states the field for the same reason (`driver-app-auth-online-location.md:828`).
-Mirrored in the plan's C1 signal box (`:290-295`).
+Mirrored in the plan's C1 signal box (`:290-294`).
 
 ### F4 — Medium · PR body figure attribution
 
@@ -92,7 +92,7 @@ fate — a dirty tracked file in a checkout several sessions share.
 build is queued, so the next `piv-commit` cannot sweep a home LAN address into an unrelated PR.
 
 **Not fixed the way the review prescribed, deliberately.** The reviewer's `eas env:create` is the
-alternative the plan explicitly weighed and rejected (`driver-device-day-prep.md:563-573`: one place
+alternative the plan explicitly weighed and rejected (`driver-device-day-prep.md:566-577`: one place
 to look, reviewable in a diff, no invisible stale value) — and dropping the `env` block before that
 EAS-side variable exists yields a dead APK, since `apiUrl()` throws in a non-`__DEV__` build
 (`apps/driver/src/config.ts:16-18`). The runbook now names the alternative and points at the
@@ -250,7 +250,7 @@ nchk apps/driver/app.json '"extra"|"owner"' 'F1 driver app.json has neither key'
 # F5
 chk 'F5 eas.json env block'       apps/driver/eas.json 9,11 'EXPO_PUBLIC_API_URL'
 chk 'F5 config.ts throws'         apps/driver/src/config.ts 16,18 'throw new Error'
-chk 'F5 plan DECIDED bullet'      .claude/plans/driver-device-day-prep.md 563,573 'DECIDED — the value lives in the committed'
+chk 'F5 plan DECIDED bullet'      .claude/plans/driver-device-day-prep.md 566,577 'DECIDED — the value lives in the committed'
 
 # F8
 chk 'F8 stub-sms send range'      services/api/src/features/auth/sms/stub-sms.provider.ts 28,37 'auth.sms.stub_sent'

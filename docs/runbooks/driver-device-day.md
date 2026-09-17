@@ -77,7 +77,7 @@ unrelated PR. An EAS-side project variable
 (`npx eas-cli@latest env:create --environment preview --name EXPO_PUBLIC_API_URL --value http://<ip>:3001`,
 then drop the `env` block) is the other place the value could live; the plan weighed it and kept the
 committed block deliberately — one place to look, reviewable in a diff, no way to pick up a stale
-value invisibly (`.claude/plans/driver-device-day-prep.md:563-573`). Revisit that if the lease starts
+value invisibly (`.claude/plans/driver-device-day-prep.md:566-577`). Revisit that if the lease starts
 moving often, not on the day. A shell variable
 is **not** a substitute: the build runs in EAS's cloud and is not handed the invoking shell's
 environment, and `apiUrl()` throws in a non-`__DEV__` build when the origin is absent
