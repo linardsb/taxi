@@ -196,6 +196,12 @@ is never called; only a phone proves the task is still emitting fixes afterwards
 The self-contained 8-step run sheet is in the plan (§Level 4 Step 1) — **any ❌ on steps 4, 5 or 7
 means the fix did not land.**
 
+> **Superseded 2026-09-17.** Both halves of that sentence are stale. The sheet moved to
+> `docs/runbooks/driver-device-day.md`, which is now its only copy, and the owed set is **4, 5, 7,
+> 8** — the footer quoted above predated review F1, which is what made step 8 passable at all.
+> Re-derived per step in `.claude/plans/driver-device-day-prep.md`. Left in place rather than
+> rewritten: this report is a dated record of what was true when #142 shipped.
+
 **Level 4 §2 — the api half still refuses** (`observed`, runnable): the three `driver_on_ride`
 assertions in `drivers.integration.spec.ts` (399, 499, 655) and `dispatch.integration.spec.ts:1052`
 are green and unmodified inside the full gate. The api's control flow was not touched.

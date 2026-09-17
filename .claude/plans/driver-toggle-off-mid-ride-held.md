@@ -728,26 +728,15 @@ because `jest.setup.ts` fakes every native module by design (`apps/driver/CLAUDE
 decision, the effect list, the predicate and the uploader are all covered above. This step is one
 claim wide.
 
-**Run sheet — self-contained, ~10 minutes, no agent needed.** Two devices or two browser tabs:
-the driver phone, and `/dispatch` on a laptop.
+**The run sheet has moved to `docs/runbooks/driver-device-day.md`** and that is now its only copy.
+Three copies is how its owed-step set came to be stated three inconsistent ways; the runbook also
+corrects two steps that read signals which do not exist (the board renders no freshness, and
+`PUSH_PROVIDER=stub` can deliver no push), and carries the build route that makes an APK
+installable at all. See `.claude/plans/driver-device-day-prep.md` for the re-derivation and the
+corrections.
 
-| # | Do | Expect | ✅/❌ |
-|---|---|---|---|
-| 1 | Sign in on the driver phone; tap the toggle ON | Status reads «Tiešsaistē», pill «Tiešraide» | |
-| 2 | Open `/dispatch`, find that driver on the board | The pin moves, at least every ~4 s | |
-| 3 | Create/pick a pending ride; open its row → **Assign** → pick that driver | The board row goes to an assigned/accepted state | |
-| 4 | On the phone, note the time. **Tap the availability toggle OFF** | The toggle **springs back to ON**; a blue info banner «Jūs pašlaik izpildāt braucienu.» appears | |
-| 5 | Watch `/dispatch` for **90 s** without touching the phone | The pin **keeps moving** the whole time. 90 s is chosen to clear the 60 s `findNearby` freshness window — a pin that only survives 30 s proves nothing | |
-| 6 | Open the rider's tracking page `t/<token>` for that ride | The car keeps moving there too | |
-| 7 | Complete the ride from `/dispatch` | No offline push nudge arrives on the phone in the following 2 min | |
-| 8 | Now tap the toggle OFF again | It goes OFF normally, no banner — the hold was ride-scoped, not sticky | |
-
-**Any ❌ on 4, 5 or 7 means the fix did not land — do not close #141 on the automated cover alone.**
-Step 8 catches the opposite failure: a held state that outlives the ride.
-
-Blocked on hardware, not on this ticket: no Android phone, no paid Apple account, and the agent
-cannot drive the Simulator. File this sheet with #14's outstanding Level 4 §C/§D and note it in the
-PR body as **owed**, not as passed.
+Still blocked on hardware, not on this ticket: no Android phone, no paid Apple account, and the
+agent cannot drive the Simulator. Note it in the PR body as **owed**, not as passed.
 
 **Step 2 — the api half still refuses (runnable now).** Automated, no device:
 
@@ -964,3 +953,17 @@ so will `git log -p` in six months.
 ## AMENDMENTS
 
 <!-- newest at the bottom; append after this plan is first executed -->
+
+- 2026-09-17 — §Level 4 Step 1's run-sheet table retired in favour of
+  `docs/runbooks/driver-device-day.md`, its only copy from here on. The table's footer
+  ("Any ❌ on 4, 5 or 7") went with it: it predated review F1, which is what made step 8 passable at
+  all, so it was stale by construction. The re-derived owed set is **4, 5, 7, 8 load-bearing, 6
+  corroborating, 1–3 setup**, derived per step in `.claude/plans/driver-device-day-prep.md`. Two of
+  the sheet's steps also read signals that do not exist and are corrected in the runbook: step 5's
+  "the pin keeps moving" (the dispatch board stores `lastSeenAt` and renders no freshness, so a
+  stationary phone is indistinguishable from a frozen one — the api console is now the primary
+  signal and `t/<token>` the in-product one) and step 7's "no push arrives" (with
+  `PUSH_PROVIDER=stub` no push can ever arrive, so the step passed vacuously — it is now read as the
+  absence of two api-console events). The "Exactly what the device adds" paragraph above stays here:
+  it is this plan's framing, and it is why the sheet is one claim wide. Step 2, the runnable api
+  check, is unchanged.

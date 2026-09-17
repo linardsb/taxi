@@ -65,7 +65,15 @@
       "expo-secure-store",
       "expo-localization",
       "expo-status-bar",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "scheme": "saktacabdriver",
     "locales": {

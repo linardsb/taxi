@@ -82,6 +82,7 @@ All PIV artifacts live under `.claude/`, **never `.agent/`** — `plans/` · `re
 | Committing / opening a PR | `.claude/references/conventions.md` (piv-commit & piv-create-pr read it at run time) |
 | Deploying / the Hetzner box / production env vars | `docs/runbooks/hetzner-deploy.md` (#13) — `services/api/Dockerfile`, `compose.prod.yml`, `Caddyfile`, `.github/workflows/deploy.yml` |
 | CI / the PR gate / a PR stuck in draft / branch protection | `docs/runbooks/pr-gate.md` (#165) — `.github/workflows/ci.yml`, `.github/scripts/audit-diff.sh`, `.github/scripts/codeql-gate.sh`, `.claude/hooks/pre_tool_use.py` |
+| Running the driver device day / #141's proof | `docs/runbooks/driver-device-day.md` (#141) — the only copy of the run sheet; `apps/driver/eas.json` builds the APK |
 | Product intent | `docs/epics/sakta-cab.prd.md` (supersedes `docs/prd/00-lean-prd.md`) |
 | Anketa evidence / feature signals | `docs/prd/anketa-findings.md` (EN translation + synthesis of the answers) |
 | Architecture & decisions | `docs/epics/sakta-cab.architecture.md` (supersedes `docs/skeleton-proposal.md` where they disagree) |
