@@ -144,8 +144,8 @@ pointers**:
 > the pointer it lands on leads to the runbook.
 
 It is not. `observed` at head — the pointer paragraph (*"**The run sheet has moved to
-`docs/runbooks/driver-device-day.md`**…"*) is at **`:731-736`**. `:737-746` is one line past its end
-and reads:
+`docs/runbooks/driver-device-day.md`**…"*) is at **`:731-736`**. `:737-746` starts one line past that
+paragraph's end and reads:
 
 ```
 (blank)
@@ -158,9 +158,13 @@ COMPOSE_PROJECT_NAME=taxi pnpm --filter @taxi/api test -- drivers.integration
 ```
 
 The arithmetic is visible in the diff: `git diff --unified=0` shows one hunk `@@ -731,20 +731,9 @@`
-— the twenty-line run-sheet block became a nine-line pointer — so the range that held the sheet now
-holds the pointer *plus eleven lines of whatever followed*. A reader chasing that citation gets the
-api integration command, not a signpost to the runbook.
+— a twenty-line run-sheet block became a nine-line replacement at `:731-739`, of which the pointer
+prose is `:731-736` and the remaining `:737-739` is a blank line plus the *"Still blocked on
+hardware"* sentence. **Stated precisely, since the finding is itself about locators**: `:737-746`
+straddles the replacement's tail rather than sitting wholly outside it — three of its ten lines are
+inside the block, seven are past it. What it does not contain is the pointer, which is the whole of
+what the report claims for it. A reader chasing that citation lands on the api integration command,
+not a signpost to the runbook.
 
 And the decision rests on the wrong fact: *"the pointer it lands on leads to the runbook"* is the
 stated reason for leaving it, and the range does not land on the pointer.
