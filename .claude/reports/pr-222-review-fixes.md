@@ -202,11 +202,25 @@ mention of platform precedence. Retired subject: the phrase describing the resol
 The fourth surface — the docblock — is the resolver's own; the file header (**`:25-29`** shipped)
 and the `resolveDistribution` docblock (**`:83-99`** shipped) now both name the platform block.
 
-**The PR body is the surface no working-tree grep reaches.** Corrected there: the `extends`-only
-description of the resolution, and the four figures the fix moved. Each is re-derivable at the pushed
-head with the command named beside it in the body; they are not restated here, deliberately — a report
-that quotes the PR body's size table is stale by construction (memory
-`taxi-report-restating-pr-body-figures`).
+**The PR body is the surface no working-tree grep reaches.** Corrected there, enumerated so the
+reviewer diffs a list rather than trusting a sentence:
+
+| PR body claim | Was | Now | Why it moved |
+|---|---|---|---|
+| the resolution's description | *"following `extends`"* | `extends` **and** the platform block, with the `@expo/eas-json` citation | the retired subject |
+| `build-config.test.ts` size | 141 lines | **236** | five cases and two docblocks added |
+| plan added lines | +11 | **+19** | F5 and the sweep |
+| `@taxi/driver` tests | 224 | **229** | the five new cases |
+| mutation rows 1, 2, 4 | 1 failed, 5 passed | **1 failed, 10 passed** | denominator 6 → 11 |
+| mutation row 3 | 6 passed | **11 passed** | same |
+| gate wall time | `1m26.323s` | **`1m29.057s`** | re-anchored to this round's run, not comparable across machines either way |
+| the report reference | — | added, size deliberately unquoted | it moves with its own commits |
+| the gate anchor | `e029183` | **`c7e19c2`**, with the proof that later commits are report-only | the head moved past the gated commit |
+
+Eight figures and one description. Sizes are not restated in this report — a fixes report that
+quotes the PR body's size table is stale by construction (memory
+`taxi-report-restating-pr-body-figures`); re-derive each with the command named beside it in the
+body.
 
 ---
 
