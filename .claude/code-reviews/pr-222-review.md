@@ -75,10 +75,12 @@ AndroidManifest.xml` with cleartext on — the exact outcome #220 exists to prev
 green. Row 3 reds the gate on a profile that is genuinely internal. A guard that fails both ways is a
 correctness defect, not missing hardening.
 
-**Why High rather than Medium.** `eas.json:12-14` *already has* an `android` block on `preview` —
-`buildType` lives there. Someone adding a store profile reaches for that block, not the profile root,
-so the bypass is the ergonomic shape rather than an exotic one. And the PR asserts the guarantee in
-absolute terms on four surfaces, each false for this case:
+**Why High rather than Medium.** A guard that is wrong in *both* directions is a correctness defect
+rather than missing hardening, and that is what the five mutations show: rows 1–2 let through the
+exact outcome #220 exists to prevent, row 3 reds the gate on a compliant profile. The shape is also
+not an exotic one — `eas.json:12-14` already carries an `android` block on `preview`, because
+`buildType` lives there, so anyone changing Android build behaviour is already editing inside it.
+And the PR asserts the guarantee in absolute terms on four surfaces, each false for this case:
 
 - `apps/driver/src/build-config.test.ts:26-27` — *"`distribution` is the condition the plan's sentence actually rests on"*
 - `.claude/plans/driver-device-day-prep.md:613-614` — *"fails if any profile here resolves to a distribution other than `internal`"*
@@ -192,9 +194,11 @@ prefers over `app.json`; **`observed`** — neither exists in `apps/driver` toda
 `withAndroidManifest` plugin, and an ejected `android/` tree.
 
 Two one-line fixes. Reword `:88-90` to require checking the *effective* config before retiring the
-guard — *"confirm the flag is gone from `npx expo config --type prebuild --platform android`, not
-merely moved to `app.config.ts`"*. And soften `:45`'s *"True when the config enables Android cleartext
-for every build it produces"* to say **this `app.json`**, not *the config*.
+guard, rather than `app.json` alone — *"confirm the flag is gone, not merely moved to
+`app.config.ts`"*. (`npx expo config --type prebuild --platform android` is the obvious way to read
+the effective config, but that invocation is **`expected`** — I did not run it, and any check of the
+resolved config rather than the static file does the job.) And soften `:45`'s *"True when the config
+enables Android cleartext for every build it produces"* to say **this `app.json`**, not *the config*.
 
 ### F3 · Low — `cleartextEnabled`'s strict `=== true` is unpinned; a silently-true premise survives every case
 
