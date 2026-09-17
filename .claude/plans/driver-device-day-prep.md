@@ -145,7 +145,9 @@ via parent [#14](https://github.com/linardsb/taxi/issues/14)
 - `apps/driver/app.json` (whole file) — Why: where a cleartext config-plugin entry would go, and
   the file that has **no** `extra.eas.projectId` today.
 - `apps/driver/src/features/push/register-push-token.ts:26-31` — Why: without that projectId the app
-  warns and no-ops. Confirms #141's run needs neither A1 nor A2.
+  warns and no-ops. Confirms #141's *signal* needs neither A1 nor A2 — **corrected 2026-09-17
+  (PR #218 review F1, see AMENDMENTS)**: the cloud **build** still links an EAS project
+  (`eas-cli init`, which writes that key), which is a separate concern from A2's push credentials.
 - `services/api/src/main.ts:21` — Why: `await app.listen(env.API_PORT)` with no host argument, so
   the dev API is already reachable from the LAN. No change needed.
 - `services/api/src/features/drivers/location/driver-location.service.ts:76-83` — Why:
@@ -286,7 +288,10 @@ stream and a dead one look identical.
 the **tracking page** — not the board — becomes the in-product corroboration.
 
 > **Signal (api console)**: `driver.location.ping_accepted` for that `driverId` continues at ~4 s
-> intervals for the whole 90 s, with no gap > 8 s.
+> intervals for the whole 90 s, with no **`clientAt`** gap > 12 s. ~~no gap > 8 s~~ — **corrected
+> 2026-09-17 (PR #218 review F3/F6, see AMENDMENTS)**: the line carries two timestamps and a queue
+> replay bunches the server `at`s; and 8 s is exactly the gap one dropped OS delivery produces
+> against a 4 s throttle, so it left no tolerance. 12 s is `derived` — 3 × `MIN_FIX_INTERVAL_MS`.
 > **Corroboration (`t/<token>`, i.e. step 6 opened early)**: the «position updated HH:MM:SS» line
 > keeps ticking. It advances on a *fresh fix*, not on movement, so it reads correctly with the phone
 > flat on a table.
@@ -320,9 +325,13 @@ nothing. Making it real would need A2 (`eas init`) *and* A1 (Firebase/FCM creden
 as an **absence**.
 
 > **Signal (api console)**: for 2 minutes after the ride completes, for that `driverId`, there is
-> **no** `driver.presence.status_changed … reason=dark` and **no** `driver.push.stub_sent`.
-> `driver.location.ping_accepted` continues throughout — the stream survived the release too, which
-> is the precondition that makes a nudge impossible.
+> **no** `driver.presence.status_changed … reason=dark` and **no** `driver.push.nudge_*` line —
+> `nudge_skipped`, `nudge_sent` or `nudge_failed`. ~~`driver.push.stub_sent`~~ — **corrected
+> 2026-09-17 (PR #218 review F2, see AMENDMENTS)**: `stub_sent` is unreachable on this day's setup,
+> because without A1/A2 there is no push token and `sendDueNudges` `continue`s at
+> `drivers.service.ts:353-360` before the send at `:362`. `driver.location.ping_accepted` continues
+> throughout — the stream survived the release too, which is the precondition that makes a nudge
+> impossible.
 
 **Why that absence is the whole claim** (`observed`, one path, five files):
 
@@ -338,7 +347,9 @@ as an **absence**.
 5. `offline_nudge_due_at` has exactly **one** writer that sets it non-null
    (`driver-presence.repository.ts:39`) and **one** reader that sends
    (`sendDueNudges`, `drivers.service.ts:338`, via `findDueNudges`'s
-   `status='offline' AND offline_nudge_due_at <= now`).
+   `status='offline' AND offline_nudge_due_at <= now`). That reader's first act after claiming is
+   the `no_token` guard at `:353-360`, fifteen lines inside the method — so on a day without A1/A2
+   what a due nudge prints is `driver.push.nudge_skipped`, never `stub_sent` (PR #218 review F2).
 
 So after completion the only question is whether the driver's Redis score is fresh. With the fix it
 is (the stream never stopped) → `continue` at `drivers.service.ts:324` → never marked → never
@@ -562,7 +573,10 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
   `192.168.x.x` sham: a real value is one the Setup pre-flight can actually compare against (R4),
   where a sham forces an edit every single time and can never be checked. The runbook's Setup says
   in one line: *compare, edit only if it moved; a wrong value fails at the first request, not at
-  build time.*
+  build time.* **Added 2026-09-17 (PR #218 review F5)**: that Setup line must also say the edit
+  stays **uncommitted** — the committed value is this machine's DHCP lease, and a dirty
+  `apps/driver/eas.json` in a checkout several sessions share is one `piv-commit` away from riding
+  into an unrelated PR. The decision above is unchanged; only its day-0 instruction is completed.
 - **PATTERN**: `spikes/gps-harness/eas.json` — the only in-repo EAS config, and the one that
   produced a working APK (PR #115). Do not invent a `production` or `development` profile.
 - **IMPORTS**: none.
@@ -676,8 +690,10 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
   2. **Result** table — `Run by: **not yet run**`, `Platform: —`, `App / OS version: —`, `Date: —`,
      `Outcome: **BLOCKED — no Android phone; no paid Apple account**`. Under it, the two closed
      substitute paths with their `observed` dates, as `rider-a11y-walkthrough.md:27-32` does.
-  3. **What this day does NOT need** — no Firebase/FCM (A1), no `eas init` (A2), no Android SDK
-     (A3). One line each, with the reason (C2 for A1/A2; the cloud build for A3).
+  3. **What this day does NOT need** — no Firebase/FCM (A1), no push *token* (A2's credential half),
+     no Android SDK (A3). One line each, with the reason (C2 for A1/A2; the cloud build for A3).
+     **Corrected 2026-09-17 (PR #218 review F1)**: this row must not read as "no `eas init`" — the
+     cloud build links a project and §2 runs `eas-cli init`.
   4. **Setup** — cite `.claude/plans/driver-app-auth-online-location.md` §Level 4 §B for the boot
      recipe rather than restating it, then the three things that differ here: the APK build
      invocation, the origin the build must carry, and `pnpm --filter @taxi/api provision:dispatcher
@@ -1063,6 +1079,13 @@ where they belong — #14's, for the day someone wants to prove real delivery.
 This is worth stating loudly in the runbook, because the next person to read the old step 7 will
 reach for `eas credentials` within about a minute.
 
+**Scope of the saving, corrected 2026-09-17 (PR #218 review F1).** What comes off #141's critical
+path is the push *credential* stack — Firebase/FCM and a push token. An **EAS project link** is not
+part of that saving: EAS attaches every build to a linked project, so `eas-cli init` runs on the day
+regardless and writes `extra.eas.projectId` into `app.json`. The runbook's *does NOT need* row was
+written as "no `eas init`" and has been narrowed; §2 now carries the `init` line and says it mutates
+a tracked file.
+
 ### The B1 reproduction — how a cloud-only failure was closed without a cloud build
 
 The point of this section is that B1 stopped being a prediction. Everything below is `observed`
@@ -1347,3 +1370,32 @@ in `main` since `3d2e874` and that no check in this repo could see.
     so the release variant inherits `main`.
   - Q6 is confirmed rather than suspected: prebuild prints the `expo-system-ui` warning, so
     `app.json`'s `"userInterfaceStyle": "light"` is inert on Android. Still not this ticket's.
+
+- 2026-09-17 — PR #218 review round 1 (`.claude/code-reviews/pr-218-review.md`), findings F1–F9
+  applied. Nine findings, all in prose; no shipped source changed, no acceptance criterion moved.
+  Five touch this plan, not only the runbook:
+  - **F1 — the A1/A2 saving was stated too wide.** The plan's *What this day does NOT need* outline
+    (task 3 of the runbook build) said "no `eas init`", and the runbook's row then denied the project
+    link outright. Only the push **credential** half is off #141's critical path: EAS attaches every
+    build to a linked project, so `eas-cli init` runs on the day and writes `extra.eas.projectId`
+    into a tracked `app.json`. The precedent the CONTEXT REFERENCES already cited
+    (`spikes/gps-harness/app.json:42-47`) commits both that key and `owner: "linards"`; this config
+    committed neither. Narrowed at three sites here plus the runbook's row and §2. `expected`, not
+    `observed` — `eas-cli` cannot run without Expo credentials.
+  - **F2 — C2's chain stopped one guard short.** Point 5 named `sendDueNudges` by signature and did
+    not reach the `no_token` guard fifteen lines inside it (`drivers.service.ts:353-360`), which
+    `continue`s before the only caller of `StubPushProvider.send`. So the signal box's
+    `driver.push.stub_sent` was unreachable on the very setup the runbook prescribes — the same
+    vacuous-signal defect C2 exists to retire, one layer deeper. The absence now reads
+    `driver.push.nudge_*`, which is what a broken app actually prints and stays true if the push
+    prerequisites are ever met.
+  - **F3 / F6 — C1's signal box was unreadable in two ways.** It never said which of the log line's
+    two timestamps to time (`clientAt`, the phone's, survives a queue replay; `at`, the server's,
+    bunches after one), and its "no gap > 8 s" sat exactly on the boundary the 4 s throttle produces
+    when one OS delivery is dropped. Both corrected in the box and in runbook step 5; the threshold
+    is now 12 s, `derived` as 3 × `MIN_FIX_INTERVAL_MS`, and labelled as arithmetic rather than a
+    measurement — Android delivery jitter has not been measured and cannot be without the phone.
+  - **F5 — the committed `env` block's day-0 instruction was incomplete, not wrong.** The DECIDED
+    bullet's choice stands (the reviewer's `eas env:create` alternative is the one it already
+    weighed and rejected, with reasons). What was missing is that the operator's edit carries this
+    machine's DHCP lease and must stay uncommitted; the runbook's §0 now says so.

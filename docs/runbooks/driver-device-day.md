@@ -43,7 +43,7 @@ signal is an absence in the api console, not a notification on the phone (see st
 | Not needed | Why |
 |---|---|
 | Firebase / FCM credentials (#14's A1) | No push has to be *delivered*. The dev default is `PUSH_PROVIDER=stub`, and `StubPushProvider` logs what it would have sent and delivers nothing — so a "no notification arrived" pass would be vacuous either way. The signal is the **absence of the api-side events** that precede any send. |
-| `eas init` / an EAS project id (#14's A2) | Only needed for a push *token*. `register-push-token.ts:26-31` warns and no-ops without it, which is fine here. |
+| An EAS project id *for a push token* (#14's A2) | No token has to be minted. `register-push-token.ts:26-31` warns and no-ops without `extra.eas.projectId`, which is fine here — step 7 reads an absence in the api console, not a notification. **The cloud build links a project regardless** — `eas-cli init` is in §2. What is off #141's path is the *token*, which needs A1 as well. |
 | An Android SDK (#14's A3) | The APK is built in EAS Build's cloud. Nothing is compiled on this machine. |
 
 The prerequisites are not retired — they belong to
@@ -70,6 +70,19 @@ Compare the answer with the `env` block in `apps/driver/eas.json`. **Edit it onl
 wrong value fails at the first request on the phone, not at build time. A DHCP reservation on the
 router stops it moving at all.
 
+**That edit stays uncommitted.** `eas.json:9-11` carries this machine's current lease, which is a
+build convenience and not a repo fact: `git checkout apps/driver/eas.json` once the build is
+queued, so the next `piv-commit` in this shared checkout cannot sweep a home LAN address into an
+unrelated PR. An EAS-side project variable
+(`npx eas-cli@latest env:create --environment preview --name EXPO_PUBLIC_API_URL --value http://<ip>:3001`,
+then drop the `env` block) is the other place the value could live; the plan weighed it and kept the
+committed block deliberately — one place to look, reviewable in a diff, no way to pick up a stale
+value invisibly (`.claude/plans/driver-device-day-prep.md:563-573`). Revisit that if the lease starts
+moving often, not on the day. A shell variable
+is **not** a substitute: the build runs in EAS's cloud and is not handed the invoking shell's
+environment, and `apiUrl()` throws in a non-`__DEV__` build when the origin is absent
+(`apps/driver/src/config.ts:16-18`).
+
 ### 1 — Boot the stack
 
 Use #14's recipe: `.claude/plans/driver-app-auth-online-location.md` §Level 4 §B. Do not restate it
@@ -92,8 +105,19 @@ cannot claim the role and the seed creates no users.
 ```bash
 cd apps/driver
 npx expo install --check
+npx eas-cli@latest init    # links the project — WRITES extra.eas.projectId into app.json
 npx eas-cli@latest build -p android --profile preview
 ```
+
+**`init` mutates a tracked file, and the build needs it.** `apps/driver/app.json` carries no
+`extra.eas` and no `owner` today (`observed` 2026-09-17). EAS attaches every build to a linked
+project, so without `init` the `build` line stops on an interactive create-or-link prompt instead of
+running as copy-paste. The in-repo precedent is `spikes/gps-harness/app.json:42-47` — the config
+behind PR #115's APK, the only one this repo has built — which commits **both**
+`extra.eas.projectId` and `owner: "linards"`. Afterwards either commit those two keys or
+`git checkout apps/driver/app.json`; do not leave them dirty in a checkout several sessions share.
+`expected`, not `observed`: `eas-cli` cannot run here without Expo credentials, so the prompt's exact
+behaviour is inferred from that asymmetry rather than seen.
 
 **It is `eas-cli`, not `eas`.** `npx eas` fetches an unrelated npm package that happens to hold
 that name at version `0.1.0` — the Expo CLI is `eas-cli` (`24.7.0` at the time of writing), and it
@@ -165,13 +189,13 @@ it includes `debug`).
 
 | # | Do | Signal | Expect | ✅/❌ |
 |---|---|---|---|---|
-| 1 | Sign in on the driver phone (`+371…`, role driver; read the code from `auth.otp.stub_sent`). Tap the availability toggle ON | phone | Status reads «Tiešsaistē», pill «Tiešraide». Grant background location when asked | |
-| 2 | **HARD GATE.** Open `/dispatch`, find that driver on the board | api console + `/dispatch` | `driver.location.ping_accepted` for that `driverId` every ~4 s, and the driver visible on the board. **If the driver is not visible and pinging before any ride exists, STOP** — see the verdict rule | |
-| 3 | Create a ride for that driver: a dispatcher phone order (`/dispatch` → new booking), then **accept the offer card if it appears**; if it does not, open the ride's row → **Assign** → pick that driver. **Then open `t/<token>` in a tab and leave it open** — you need it on screen before step 5 starts | phone + `/dispatch` + api console | A phone order goes through `RidesService.request()` and lands at `requested`, so `DispatchSweeper` offers it to the best candidate on its next tick (`dispatch.sweeper.ts:112`). With this phone as the only online driver an offer card will very likely arrive first. Force-assign (`POST /dispatch/rides/:rideId/assign`, `dispatch.controller.ts:95`) is the fallback, not the only path. Board row reaches an accepted state. The token is in the api console: `auth.sms.stub_sent` logs the SMS **body in full**, deliberately, and the tracking link is in it (`stub-sms.provider.ts:28-33`) — tokens are minted inside the booking flow, never by the seed | |
-| 4 | On the phone, note the time. **Tap the availability toggle OFF** | phone | The toggle **springs back to ON**; a blue info banner «Jūs pašlaik izpildāt braucienu.» appears | |
-| 5 | Watch for **90 s** without touching the phone | **api console (primary)** | `driver.location.ping_accepted` for that `driverId` continues at ~4 s intervals for the whole 90 s, **with no gap > 8 s**. 90 s clears the 60 s `findNearby` freshness window — a stream that only survives 30 s proves nothing. **`/dispatch` is NOT the signal here**: the board renders position and no freshness, so a still pin is **not** a failure — see the note below | |
+| 1 | Sign in on the driver phone (`+371…`, role driver; read the code from `auth.otp.stub_sent`). Tap the availability toggle ON | phone | Status reads «Tiešsaistē», pill «Tiešraide» — `Online` / `Live` on an EN phone, the app follows the **device** locale (`deviceLanguage()`, `expo-localization`). Grant background location when asked | |
+| 2 | **HARD GATE.** Open `/dispatch`, find that driver on the board | api console + `/dispatch` | `driver.location.ping_accepted` for that `driverId` every ~4 s — **time it by the line's `clientAt`, not its `at`** (see the note below) — and the driver visible on the board. **If the driver is not visible and pinging before any ride exists, STOP** — see the verdict rule | |
+| 3 | Create a ride for that driver: a dispatcher phone order (`/dispatch` → new booking), then **accept the offer card if it appears**; if it does not, open the ride's row → **Assign** → pick that driver. **Then open `t/<token>` in a tab and leave it open** — you need it on screen before step 5 starts | phone + `/dispatch` + api console | A phone order goes through `RidesService.request()` and lands at `requested`, so `DispatchSweeper` offers it to the best candidate on its next tick (`dispatch.sweeper.ts:112`). With this phone as the only online driver an offer card will very likely arrive first. Force-assign (`POST /dispatch/rides/:rideId/assign`, `dispatch.controller.ts:95`) is the fallback, not the only path. Board row reaches an accepted state. The token is in the api console: `auth.sms.stub_sent` logs the SMS **body in full**, deliberately, and the tracking link is in it (`stub-sms.provider.ts:28-37`, `body` at `:35`) — tokens are minted inside the booking flow, never by the seed | |
+| 4 | On the phone, note the time. **Tap the availability toggle OFF** | phone | The toggle **springs back to ON**; a blue info banner «Jūs pašlaik izpildāt braucienu.» appears (`You are on a ride right now.` on an EN phone) | |
+| 5 | Watch for **90 s** without touching the phone | **api console (primary)** | `driver.location.ping_accepted` for that `driverId` continues at ~4 s intervals for the whole 90 s, **with no `clientAt` gap > 12 s** (see the two notes below — both the field and the threshold matter). 90 s clears the 60 s `findNearby` freshness window — a stream that only survives 30 s proves nothing. **`/dispatch` is NOT the signal here**: the board renders position and no freshness, so a still pin is **not** a failure — see the note below | |
 | 6 | During that same 90 s, watch the `t/<token>` tab you opened at step 3. Record what it showed | `t/<token>` (corroboration) | The «position updated HH:MM:SS» line keeps ticking (`tracking-map.tsx:334-335`). It advances on a **fresh fix**, not on movement, so it reads correctly with the phone flat on a table. This is the only in-product surface that renders freshness, and it is what a person can watch without a terminal | |
-| 7 | Complete the ride from `/dispatch` | **api console**, read as an **absence** | For 2 minutes after completion, for that `driverId`: **no** `driver.presence.status_changed` with `reason: 'dark'`, and **no** `driver.push.stub_sent`. `driver.location.ping_accepted` continues throughout — the stream survived the release too, which is what makes a nudge impossible | |
+| 7 | Complete the ride from `/dispatch` | **api console**, read as an **absence** | For 2 minutes after completion, for that `driverId`: **no** `driver.presence.status_changed` with `reason: 'dark'`, and **no** `driver.push.nudge_*` line at all — `nudge_skipped`, `nudge_sent` or `nudge_failed` (see the note below; **not** `driver.push.stub_sent`, which cannot appear on this setup). `driver.location.ping_accepted` continues throughout — the stream survived the release too, which is what makes a nudge impossible | |
 | 8 | Now tap the toggle OFF again | phone + api console | It goes OFF normally, **no banner** — the hold was ride-scoped, not sticky. `status_changed to=offline` with no reason; pings stop | |
 
 **Numbering is deliberately unchanged** from the retired sheet
@@ -180,11 +204,45 @@ that cite step numbers still resolve. The one instruction the old sheet lacked i
 rather than renumbered in: open `t/<token>` **before** the 90-second watch, so step 6 records what
 was already on screen instead of sending the operator off to find a token mid-watch.
 
+**Which timestamp, and why 12 s.** `driver.location.ping_accepted` carries two
+(`driver-location.service.ts:76-82`): `clientAt` is the fix's own time from the phone, `at` is the
+server clock at ingest (`:54`). Fixes are queued durably (`fix-queue.ts`) and drained in batches
+(`uploader.ts:70`), so one socket blip inside the unattended 90 s replays the queue as a burst — the
+server `at`s bunch up after a visible hole while the `clientAt`s stay ~4 s apart throughout. Reading
+`at` marks ❌ on a healthy stream, and step 5 is one of the four the verdict rule makes binary. #14's
+sheet states the field for the same reason
+(`.claude/plans/driver-app-auth-online-location.md:828`).
+
+The 12 s is `derived`, **not** a measurement: 3 × `MIN_FIX_INTERVAL_MS` (4 s), which tolerates one
+dropped OS delivery. `selectFixes` measures `delta` from the last **kept** fix
+(`fix-throttle.ts:64-79`, `last = raw.timestamp` is assigned only on a keep) and drops anything under
+4000 ms, while `timeInterval: 4000` is an Android *floor* (`location-options.ts:19`) — so a delivery
+arriving at 3999 ms is dropped and the next kept fix lands ~8 s out. A threshold of exactly 8 s
+therefore sits on the boundary the throttle itself produces, with a binary verdict behind it. Real
+Android delivery jitter has not been measured here and cannot be without the phone; what the step is
+actually about is that the stream must not **stop**, so treat one gap just over 12 s as a re-read;
+the ❌ is a stream that goes quiet and stays quiet.
+
+**Why `driver.push.stub_sent` is not the event to watch.** It is unreachable on the setup this sheet
+prescribes, whether or not the fix landed. A push token needs **both** halves — `extra.eas.projectId`
+(§2's `init` supplies it) *and* FCM credentials, which this day does not set up. So
+`getExpoPushTokenAsync` throws, `registerPushToken` returns `'unavailable'`
+(`register-push-token.ts:43-53`), and `drivers.push_token` stays null; skip `init` and it is
+`'no_project'` at `:26-31` instead — either way the column is null. `findDueNudges` selects that
+column
+(`driver-presence.repository.ts:52-56`) and `sendDueNudges` `continue`s on it at
+`drivers.service.ts:353-360` — **before** the `push.send` at `:362`, which is the only caller of
+`StubPushProvider.send` and so the only writer of `stub_sent` (`stub-push.provider.ts:25`). The
+nudge family is what a broken app actually prints: the `no_token` skip in that guard today, and
+`nudge_sent`/`nudge_failed` if the push prerequisites are ever met. Watching `nudge_*` reads the same
+absence and stays true either way.
+
 **Why `/dispatch` is not the freshness signal.** `apps/dispatch/src/features/board/board-state.ts:127`
 folds `lastSeenAt` into each driver on every `driver:location` event and **nothing in the board
 slice reads it back** (`observed` 2026-09-17). So the board shows position and no freshness. The
-phone streams a fix every 4 s whether or not it moves — the throttle is time-based with
-`distanceInterval: 0` by design (`fix-throttle.ts:9`, `MIN_FIX_INTERVAL_MS = 4_000`) — so a
+phone streams a fix every 4 s whether or not it moves — the throttle is time-based
+(`fix-throttle.ts:9`, `MIN_FIX_INTERVAL_MS = 4_000`) and `distanceInterval` is `0`
+(`location-options.ts:20`), both by design — so a
 stationary phone's pin does not move, and a live stream and a dead one look identical there.
 Rendering board freshness is the clean fix and is deliberately a separate ticket.
 
