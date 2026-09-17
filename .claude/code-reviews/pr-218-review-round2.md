@@ -3,11 +3,15 @@
 **PR**: [#218](https://github.com/linardsb/taxi/pull/218) · feat(driver): build route and corrected run sheet for #141's device day
 **Head** `bd5193a` · **Base** `main` @ `b690e91` · base live tip `b690e91` — **unmoved**, so the
 guarantees pass does not apply
+**Locators**: every `docs/runbooks/driver-device-day.md:NNN` below points into that file's **289**-line
+version at `bd5193a` (`git show bd5193a:docs/runbooks/driver-device-day.md`). It is longer on `main`
+since; the locators are not re-swept.
 **Round**: 2 — round 1 at `.claude/code-reviews/pr-218-review.md` (PR #219, still open), fixes report
 at `.claude/reports/pr-218-review-fixes.md`. **The fix-mechanism pass is this round's centre.**
 **State**: OPEN, ready for review, `mergeStateStatus: CLEAN`, `MERGEABLE` · all five checks pass
 **Verdict**: **Approve** — three Mediums, six Lows. No Critical, no High, no hard-rule violation.
-Every round-1 finding is closed, and two of them are closed better than prescribed. One Medium (M3)
+Eight of round 1's nine findings are closed outright, two of them better than prescribed; F1's second
+half — the `:46` row — is not, and carries into M1 below. One Medium (M3)
 is filed as [#220](https://github.com/linardsb/taxi/issues/220) rather than fixed here: its root
 remedy contradicts this PR's own acceptance criterion, and nothing in the current tree can trigger
 it.
@@ -236,6 +240,16 @@ describe the same condition. The cell does say *"see the two notes below"*, and 
 unambiguous about which wins — that is why this is Low and not Medium. But the ✅/❌ column is filled
 in from the cell.
 
+**Why Low, when round 1 graded the same failure mode — a false ❌ on step 5 — Medium twice (F3, F6),
+and when M1 above rejects the "a correct note sits elsewhere" defence.** The distinction is the
+pointer, and it is the only one. F3's and F6's cells, and M1's `:46` row, carry nothing referring the
+reader onward, so someone working from the cell has no signal that other text bears on it. L1's cell
+carries *"see the two notes below"* inside the text being read. That makes it a weaker instance of
+the same defect, not a different one — and if the distinction does not persuade, the grade that
+should move is this one upward, not round 1's downward. Stated rather than re-rated: #218 shipped
+L1's fix in `9eb1527` either way, so the verdict is unaffected. PR #219's review raised the
+inconsistency as its F9, rating it Low against the `code-reviewer` agent's Major.
+
 Worth stating plainly, since it is the fix-mechanism question for F6: **what 12 s newly permits is a
 degraded-but-running stream that 8 s would have flagged** — and that is correct, because #141's claim
 is that the task *still emits*, which a 10 s cadence proves as well as a 4 s one. The widening does
@@ -376,13 +390,15 @@ Noise worth naming so the next reviewer does not chase it: the `@taxi/api` log c
 
 ## Round 1's findings — closed, and how each fix was probed
 
+`◑` = one of the finding's two named sites closed, the other carried into a round-2 finding.
+
 | # | Sev | Closed? | What I checked beyond the repro |
 |---|---|---|---|
-| F1 | High | ✅ | §2 runs `init` and states the tracked-file mutation. **What it newly permits → M1** (a notification prompt at step 1) and **L2** (the `git checkout` ordering). The `:46` row half is incomplete → M1. |
+| F1 | High | ◑ | §2 runs `init` and states the tracked-file mutation. **What it newly permits → M1** (a notification prompt at step 1) and **L2** (the `git checkout` ordering). The `:46` row half is incomplete → M1. |
 | F2 | Medium | ✅ **better than prescribed** | All four `nudge_*` strings exist verbatim (`:346`, `:355`, `:369`, `:380`). The superset holds if a token ever exists, which `reason: 'no_token'` would not — and it is what absorbs M1. Enumeration is one short → **L3**. |
 | F3 | Medium | ✅ | `clientAt`/`at` both present at `driver-location.service.ts:76-82`, `at` from the server clock at `:54`. What the field newly permits → **L4**. |
 | F4 | Medium | ✅ | PR body now prints the env prefix, and I reproduced all six packages' counts at head under it. |
-| F5 | Medium | ✅ **departure argued and correct** | The `eas env:create` alternative is the one the plan weighed and rejected at `:566-577` (verified, and the range is the corrected one). Dropping the `env` block before the EAS-side variable exists does yield a dead APK — `apiUrl()` throws at `config.ts:16-18`. The missing instruction was the gap, and it landed at `:73-84`. |
+| F5 | Medium | ✅ **departure argued and correct** | The `eas env:create` alternative is the one the plan weighed and rejected at `:566-577` (verified, and the range is the corrected one) — and it was round 1's own **lead** prescription, the §0 sentence only its fallback, so what the implementer departed from is the half of the review that pointed contra-plan (round 1's F5 now carries the constraint pass it lacked). Dropping the `env` block before the EAS-side variable exists does yield a dead APK — `apiUrl()` throws at `config.ts:16-18`. The missing instruction was the gap, and it landed at `:73-84`. |
 | F6 | Medium | ✅ | 12 s is labelled `derived` with the arithmetic and the condition. Cell/note mismatch → **L1**. |
 | F7 | Low | ✅ | `fix-throttle.ts:9` and `location-options.ts:20` now cited separately; both resolve. |
 | F8 | Low | ✅ | `:28-37` with `body` at `:35`; both resolve. |
@@ -390,9 +406,14 @@ Noise worth naming so the next reviewer does not chase it: the `@taxi/api` log c
 
 `b2421ad`'s three plan-ref corrections all resolve (`:566-577` DECIDED bullet, `:327-333` C2 box,
 `:290-294` C1 box — read, not just verifier-asserted). The mirror sweep round 2 owns —
-refs *into* the runbook by line number, whose line count moved +58 in the same commit — is clean:
-`grep -rn "driver-device-day\.md:[0-9]" --include='*.md' .` returns **zero hits**. Nothing cites it
-by line.
+refs *into* the runbook by line number, whose line count moved +58 in the same commit — is clean
+**in #218's own tree at `bd5193a`**, which is where it ran:
+`grep -rn "driver-device-day\.md:[0-9]" --include='*.md' .` returns **zero hits** there.
+
+Scoped to that tree and no wider. Round 1 and this file both cite the runbook by line, and #219
+puts them on `main` — so the sweep's result is true of what #218 ships and stops being true of the
+repo the moment #218's own review lands. Those locators are anchored at the shas on the header line
+above and are not re-swept.
 
 The **sibling** files are where that sweep pays: `grep -rn
 "driver-toggle-off-mid-ride-held\(-report\)\?\.md:[0-9]"` returns nine hits, and the sibling plan is
@@ -437,8 +458,14 @@ sight. Its proposed `eas-cli config` command is carried as `expected` and flagge
   `+49 −11` and visibly re-keys `eslint-import-resolver-typescript`, `eslint-plugin-import` and
   `eslint-module-utils` peer chains, which reads as several packages moving. It is not: diffing the
   distinct `name@version` key sets between the two blobs gives **added `expo-build-properties@57.0.20`,
-  removed nothing, 1087 → 1088** (`observed`). The rest is pnpm rewriting peer-dependency keys on the
-  same install. The claim is exact at the level it is made.
+  removed nothing** (`observed`). **Corrected after posting**: the absolute totals first printed here,
+  1087 → 1088, reproduce under no extraction I can name, so they are withdrawn rather than re-guessed.
+  The extraction behind the delta, printed so the next reader can re-run it rather than infer it —
+  `git show <sha>:pnpm-lock.yaml | awk '/^packages:/{f=1;next} /^snapshots:/{f=0} f && /^  [^ ]/' |
+  wc -l` over the two blobs this bullet compares, `b690e91` and `a71a6b1` (the lockfile is byte-identical
+  at this round's head: `git diff a71a6b1 bd5193a -- pnpm-lock.yaml` is empty) — gives **1649 → 1650**
+  (`observed`), one key added and none removed. The rest of the `+49 −11` is pnpm rewriting
+  peer-dependency keys on the same install. The claim is exact at the level it is made.
 - **Round 1's one self-declared unverified item can be retired without `eas-cli`.** It flagged that
   whether `pnpm` is a real `eas.json` profile key *"was not verified"*. It does not matter which way
   it goes: `package.json:4` declares `"packageManager": "pnpm@10.33.2"`, which is what actually fixed

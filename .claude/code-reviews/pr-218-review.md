@@ -2,6 +2,9 @@
 
 **PR**: [#218](https://github.com/linardsb/taxi/pull/218) · feat(driver): build route and corrected run sheet for #141's device day
 **Head** `a71a6b1` · **Base** `main` @ `b690e91` · base live tip `b690e91` — **unmoved**, so the guarantees pass does not apply
+**Locators**: every `docs/runbooks/driver-device-day.md:NNN` below points into that file's **231**-line
+version at `a71a6b1` (`git show a71a6b1:docs/runbooks/driver-device-day.md`). It is **289** lines at
+`bd5193a` and longer on `main` since; the locators are not re-swept.
 **Round**: 1 (no prior report) — the fix-mechanism pass does not apply either
 **State**: OPEN, ready for review, `mergeStateStatus: CLEAN` · all five checks pass
 **Verdict**: **Request changes** — one High, five Mediums, three Lows. No Critical, no hard-rule
@@ -18,7 +21,7 @@ Two themes in the findings.
 
 **F1** is the gap that matters: this PR exists to make the device day performable, and §2's build block
 will not run as written. `apps/driver/app.json` has no EAS project link, and the repo's own precedent —
-`spikes/gps-harness/app.json:44-48`, the config behind the only APK this repo has ever built — commits
+`spikes/gps-harness/app.json:42-47`, the config behind the only APK this repo has ever built — commits
 both `extra.eas.projectId` and `owner`. The plan read that file (`driver-device-day-prep.md:137-138`
 cites it for exactly this) and the runbook then denies the link is needed.
 
@@ -30,6 +33,12 @@ Against that: the citation work here is unusually good. Between this pass and th
 agent's, roughly thirty `file:line` claims were opened and checked against source, and all but two
 (F7, F8) land exactly. That matters more than usual, because the defect this ticket exists to retire
 *is* a run sheet that cites signals which do not exist.
+
+**Corrected after posting**: that count covers the claims *this PR* makes, and this report's own
+pointers were not held to the same standard — four of them missed, opened by PR #219's review (F4)
+and fixed in place above: the `app.json` precedent range, F5's `eas.json` line, F5's env-template
+premise, and the two `auth.*` events that sit in a different file from the `push` one printed beside
+them.
 
 ## Findings
 
@@ -47,7 +56,7 @@ push concern — EAS attaches every build to a linked project, so §2's block, p
 copy-paste lines, stops on an interactive create-or-link prompt and then writes `extra.eas.projectId`
 into a **tracked** file before uploading.
 
-The evidence is inside the repo, not recall about `eas-cli`. `spikes/gps-harness/app.json:44-48` — the
+The evidence is inside the repo, not recall about `eas-cli`. `spikes/gps-harness/app.json:42-47` — the
 config that produced PR #115's APK, the only one this repo has built — carries both:
 
 ```json
@@ -109,9 +118,21 @@ it in `:46`'s row and in the plan's C2 signal box at `:322-326` so the claim is 
 same wrong event sits at `.claude/plans/driver-app-auth-online-location.md:828,830` — #14's file,
 pre-existing, out of scope here but worth the grep when A2 is attempted.
 
-**Constraint pass**: clean. The plan's nineteen `GOTCHA`s were read; none freezes step 7's wording or
+**Constraint pass**: clean. The plan's eighteen `GOTCHA`s were read; none freezes step 7's wording or
 the runbook's signal set. The nearest, `:738` ("the table's own footer line goes with the table"), is
 about the *retired* sheet. This fix breaks no acceptance criterion.
+
+**Scope of this pass, corrected after posting.** As first written this was the report's only
+constraint pass — one finding of nine — and it read `GOTCHA` bullets alone. Both are too narrow:
+`piv-review-pr` asks for a pass *per proposed fix*, and a plan constrains a fix through `DECIDED` and
+`PATTERN` bullets as much as through `GOTCHA`s, none of which the skill's prescribed grep
+(`do not modify|do not edit|read-only|no changes to|frozen`) matches. Re-run at this report's anchor
+over all three bullet kinds — `observed`, `git show a71a6b1:.claude/plans/driver-device-day-prep.md |
+grep -c '^- \*\*GOTCHA'` → **18**, same for `DECIDED` → **3** (`:497` repair-not-regenerate, `:555`
+the committed `env` block, `:623` the app-wide cleartext boolean) and `PATTERN` → **9** — exactly one
+finding is hit: **F5**, whose lead prescription was contra-plan against `:555`. F5 now carries that
+pass in full. The other seven fixes touch nothing any of the twelve `DECIDED`/`PATTERN` bullets
+decides.
 
 ### F3 — Medium · `docs/runbooks/driver-device-day.md:169`, `:172`
 
@@ -162,14 +183,17 @@ tree. It is also the exact figure `CLAUDE.md` records as having been got wrong t
 
 **Fix**: print the command actually run, env prefix included.
 
-### F5 — Medium · `apps/driver/eas.json:11` + `docs/runbooks/driver-device-day.md:69`
+### F5 — Medium · `apps/driver/eas.json:10` (the `env` block, `:9-11`) + `docs/runbooks/driver-device-day.md:69`
 
 **A DHCP-assigned LAN address is committed, and editing that tracked file is the prescribed day-0 step.**
 
 `"EXPO_PUBLIC_API_URL": "http://192.168.1.11:3001"` is this machine's current lease (`observed` — §0's
 command prints `192.168.1.11` on `en1` right now, and `en0` answers nothing, exactly as `:65-67` says).
-The value already has an untracked home at `.env.example:53`, with a comment explaining the same
-bundle-time inlining §0 re-explains. §0 then tells the operator to "**Edit it only if it moved**" — and
+The **key** already has a home in the committed env template at `.env.example:53` — which is
+**tracked**; the untracked file is `.env`, ignored at `.gitignore:14` — with a comment explaining the
+same bundle-time inlining §0 re-explains. That line carries `http://localhost:3001`, not a LAN
+address, so the template is precedent for the key and not a home for the value this finding objects
+to. §0 then tells the operator to "**Edit it only if it moved**" — and
 stops there, saying nothing about the edit's fate.
 
 Both outcomes are bad in a small way. Commit it and a home LAN address is in git history and is the
@@ -177,12 +201,23 @@ default for every later build; leave it and the run carries a dirty working tree
 sessions share, that the next `piv-commit` can sweep into an unrelated PR. The precedent config
 (`spikes/gps-harness/eas.json`) has no `env` block at all.
 
-**Fix**: move it to an EAS-side project variable —
-`npx eas-cli env:create --environment preview --name EXPO_PUBLIC_API_URL --value http://<ip>:3001` —
-and drop the `env` block, so §0 becomes "check the address, `env:update` if it moved" with no tracked
-file touched. A local shell variable is not an option: the build runs in EAS's cloud and is not given
-the invoking shell's environment. Failing that, one sentence in §0 saying the edit stays uncommitted
-closes it.
+**Fix**: one sentence in §0 saying the edit stays **uncommitted**. That closes it, and it is the only
+remedy the plan leaves open.
+
+**Constraint pass** (run for this finding after round 1 was first posted — see the note under F2):
+the committed `env` block is a **DECIDED** bullet, not an oversight —
+`.claude/plans/driver-device-day-prep.md:555-565` at this report's anchor `a71a6b1` (`:566-…` at
+`bd5193a`, `:573-586` on `main`), the bullet opening *"the value lives in the committed `env` block
+and the operator edits it before each build"*. The alternative it weighs and **rejects by name** is
+EAS environment variables: *"it adds a second place to look, an account-scoped step nobody can review
+in a diff, and a way for the build to pick up a stale value invisibly."*
+
+So the EAS-side project variable —
+`npx eas-cli env:create --environment preview --name EXPO_PUBLIC_API_URL --value http://<ip>:3001`,
+dropping the `env` block — is **contra-plan**, and is recorded here as the rejected alternative
+rather than prescribed. Per `piv-review-pr`, a fix that breaks the PR's own decisions belongs in an
+issue against the decision, not in an inline recommendation. A local shell variable is not an option
+either: the build runs in EAS's cloud and is not given the invoking shell's environment.
 
 ### F6 — Medium · `docs/runbooks/driver-device-day.md:172`
 
@@ -274,7 +309,10 @@ Nothing below is a finding. These are the load-bearing claims re-derived rather 
   `['log','error','warn','debug','verbose','fatal']`.
 - **Every log-event string exists verbatim**: `driver.location.ping_accepted` (`:77`),
   `driver.presence.status_changed` (`drivers.service.ts:222`, `:303`), `driver.push.stub_sent`
-  (`stub-push.provider.ts:25`), `auth.otp.stub_sent` (`:20`), `auth.sms.stub_sent` (`:33`).
+  (`push/stub-push.provider.ts:25`), and — in a **different** file — `auth.otp.stub_sent`
+  (`auth/sms/stub-sms.provider.ts:20`) and `auth.sms.stub_sent` (same file, `:33`). The two line
+  numbers coincide with lines that exist in `stub-push.provider.ts` as well, so a bare `:20`/`:33`
+  here would resolve against the wrong file without looking wrong.
 - **`board-state.ts:127` is exact**, and the freshness claim holds: the only non-test reference to
   `lastSeenAt` anywhere in `apps/dispatch` outside the tracking page's own unrelated local state is
   that write. The board renders position and no freshness. This correction is the sheet's best call —
@@ -348,7 +386,10 @@ decode stands on its own and was not re-litigated.
   steps 1–3 all REST).
 - No hard-rule violation anywhere in the diff: no money handling, no ride-status writes, no contract
   duplication, no seam bypass, `packages/shared` untouched, no `eslint-disable`, and the 500-line cap
-  does not bind (`eas.json` is 17 lines; PIV artifacts are exempt per #112).
+  does not bind — it binds shipped source a package build compiles (`CLAUDE.md:60`), which markdown
+  under `.claude/` is not, and `eas.json` is 17 lines regardless. #112's named exemptions are
+  `.spec`/`.test` files, `test/`/`tests/` and `scripts/`; a PIV artifact is in none of them and needs
+  none, so it is not the reason to cite here.
 
 ## Recommendation
 
