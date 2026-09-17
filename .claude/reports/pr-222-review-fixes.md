@@ -282,9 +282,15 @@ two intended files.
 | **PR** | [#222](https://github.com/linardsb/taxi/pull/222) updated — body re-anchored at `c7e19c2` |
 | **Files** | `apps/driver/src/build-config.test.ts` (F1-F4) · `.claude/plans/driver-device-day-prep.md` (F5 + sweep) · this report |
 
-A follow-up commit completes this section, which `c7e19c2` carried as a placeholder. Sizes are
-deliberately not quoted here — re-derive with `git diff --numstat origin/main...HEAD`, which is true
-at whatever the head is when you read it (memory `taxi-report-restating-pr-body-figures`).
+`c7e19c2` is the only commit in this round that touches shipped source or the plan. It carried this
+section as a placeholder, because a commit cannot state its own sha; **every commit after it on this
+branch changes nothing but this report**, so the gate figures recorded at `c7e19c2` describe the
+head's source whatever the head has become. Verify with `git diff --name-only c7e19c2..HEAD` — it
+should name this file and nothing else.
+
+Sizes are deliberately not quoted here — re-derive with `git diff --numstat origin/main...HEAD`,
+which is true at whatever the head is when you read it (memory
+`taxi-report-restating-pr-body-figures`).
 
 ### Closing commands, run against the fixed tree
 
