@@ -35,10 +35,16 @@ import { Range, satisfies } from 'semver';
  *    red this on a non-regression; that is a one-line review, not a hole.
  * 2. The version actually installed equals its pin, so the override is checked
  *    as a mechanism and not merely as a line of JSON.
- * 3. Every *installed* version satisfies every peer range declared against it
- *    in the repo-root `node_modules`. This is the invariant #225 broke. It
- *    reads installed versions rather than the pins so that a pin replaced by a
- *    direct dependency is still checked; and it reads ranges from the published
+ * 3. Every peer range on *either* side of a pinned package is satisfied by the
+ *    version installed in the repo-root `node_modules` — both the ranges other
+ *    packages declare **on** a pinned package (the invariant #225 broke) and
+ *    the ranges a pinned package declares **on something else** (#228). The
+ *    second direction exists because a pin freezes the declaring manifest too:
+ *    `react-native-reanimated@4.5.1` declares `react-native: "0.83 - 0.86"`, so
+ *    a `react-native` bump past 0.86 breaks the same invariant from the other
+ *    end while both pins stay exactly where this file put them. It reads
+ *    installed versions rather than the pins so that a pin replaced by a direct
+ *    dependency is still checked; and it reads ranges from the published
  *    manifests rather than from `pnpm-lock.yaml`, because pnpm rewrites the
  *    lock's recorded peer ranges to match an override — after the fix the lock
  *    says `react-native-worklets: 0.10.1` where `expo-modules-core` really
@@ -46,16 +52,27 @@ import { Range, satisfies } from 'semver';
  *    vacuous.
  *
  * Assertion 3 is an `expect(…).toEqual([])`, and an empty result is ambiguous
- * on its own, so two structural guards sit under it: one asserts the walk found
- * `expo-modules-core` at all, so "no violations" cannot be "the walk saw
- * nothing"; the other names any peer range semver cannot parse, because
+ * on its own, so three structural guards sit under it. The first asserts the
+ * walk found both directions — `expo-modules-core` declaring a peer *on* a
+ * pinned package, and `react-native-reanimated` declaring one *on*
+ * `react-native` — so "no violations" cannot be "the walk saw nothing" on
+ * either side. The second names any peer range semver cannot parse, because
  * `satisfies` swallows an invalid range and returns `false`, which would
  * otherwise surface a `workspace:` or `patch:` spec as a version conflict it is
- * not.
+ * not. The third names any collected range whose dependency has no installed
+ * version: `peerViolations` drops those, and outside `PINNED` nothing else is
+ * watching — assertion 2 covers the two pinned packages and nothing more.
  *
  * Consumers are discovered rather than listed. #225 happened because nobody was
  * looking at a package no file named; enumerating three known names here would
- * rebuild that blind spot for the fourth. The walk reads the repo-root
+ * rebuild that blind spot for the fourth. The other direction needs no
+ * discovery: the declaring packages are `PINNED` by construction, and what the
+ * walk finds there is whichever peers those two manifests happen to declare.
+ * Together they collect 6 consumers and 6 distinct dependency names, of which
+ * 2 consumers (the pinned pair itself) and 4 names (`react`, `react-native`,
+ * `@babel/core`, `@react-native/metro-config`) come only from the second
+ * direction — `observed` 2026-09-18 on the pinned tree, against 4 and 2 before
+ * this widening. The walk reads the repo-root
  * `node_modules` one level deep, scoped packages included, and does not
  * descend. It rests on the hoisted layout `.npmrc` mandates ("Expo requires
  * hoisted node_modules in pnpm monorepos"), under which every third-party
@@ -104,10 +121,13 @@ interface RootManifest {
 /** The packages this file pins, and whose peer ranges it therefore checks. */
 const PINNED = ['react-native-reanimated', 'react-native-worklets'] as const;
 
-/** Peer ranges declared against `PINNED` packages, keyed by the package declaring them. */
+/**
+ * Peer ranges with a `PINNED` package on one side or the other, keyed by the
+ * package declaring them.
+ */
 type PeerRangesByPackage = Record<string, Record<string, string>>;
 
-/** One peer range declared by one package against one of `PINNED`. */
+/** One peer range declared by one package, with a `PINNED` package at one end. */
 interface DeclaredRange {
   consumer: string;
   dependency: string;
@@ -148,9 +168,15 @@ const installedPackageDirs = (): string[] => {
   );
 };
 
+/** Whether one directory name is a `PINNED` package. */
+const isPinned = (name: string): boolean =>
+  (PINNED as readonly string[]).includes(name);
+
 /**
- * Peer ranges declared on any `PINNED` package across the installed tree.
- * A directory with no readable manifest is skipped: pnpm leaves stray entries
+ * Every peer range across the installed tree with a `PINNED` package at one
+ * end: the ranges other packages declare **on** a pinned package, and every
+ * range the pinned packages themselves declare **on anything** (#228). A
+ * directory with no readable manifest is skipped: pnpm leaves stray entries
  * (a partially removed package, a bare scope dir), and a missing file there is
  * not a peer-range statement either way.
  */
@@ -165,28 +191,48 @@ const declaredPeerRanges = (): PeerRangesByPackage => {
     }
     const peers = manifest.peerDependencies ?? {};
     const relevant = Object.fromEntries(
-      PINNED.filter((name) => peers[name] !== undefined).map((name) => [
-        name,
-        peers[name],
-      ]),
+      Object.entries(peers).filter(
+        ([dependency]) => isPinned(dependency) || isPinned(dir),
+      ),
     );
     if (Object.keys(relevant).length > 0) found[dir] = relevant;
   }
   return found;
 };
 
+/** Every package a collected range names as the dependency, deduplicated. */
+const peerDependencyNames = (peerRanges: PeerRangesByPackage): string[] =>
+  [
+    ...new Set(
+      Object.values(peerRanges).flatMap((peers) => Object.keys(peers)),
+    ),
+  ].sort();
+
 /**
- * The version of each `PINNED` package present in the root `node_modules`.
- * `PackageManifest.version` is optional, so this is `string | undefined` and
- * says so: casting the absence away would let `peerViolations` drop every range
- * declared on that package and pass vacuously.
+ * The version of each named package present in the root `node_modules`.
+ * `PackageManifest.version` is optional and a package need not be installed at
+ * all, so this is `string | undefined` and says so: casting the absence away
+ * would let `peerViolations` drop every range declared against that package and
+ * pass vacuously. A missing manifest yields `undefined` rather than throwing,
+ * because the widened walk reaches packages nothing in this workspace pins —
+ * `uninstalledPeers` is what names that case, and assertion 2 still fails
+ * cleanly when a *pinned* package is the one missing.
  */
-const installedVersions = (): Record<string, string | undefined> =>
+const installedVersions = (
+  names: readonly string[],
+): Record<string, string | undefined> =>
   Object.fromEntries(
-    PINNED.map((name) => [
-      name,
-      readJson<PackageManifest>('node_modules', name, 'package.json').version,
-    ]),
+    names.map((name) => {
+      try {
+        return [
+          name,
+          readJson<PackageManifest>('node_modules', name, 'package.json')
+            .version,
+        ];
+      } catch {
+        return [name, undefined];
+      }
+    }),
   );
 
 /** Stable ordering, so either report can be compared against a literal. */
@@ -236,9 +282,8 @@ const unparseableRanges = (peerRanges: PeerRangesByPackage): DeclaredRange[] =>
  * optional and still builds C++ against it, which is #225 in one sentence.
  *
  * Two kinds of range are passed over, each covered by its own assertion rather
- * than by this one: a package with no installed version (nothing to compare,
- * and assertion 3 reds on that tree first) and a range `unparseableRanges`
- * reports.
+ * than by this one: a dependency with no installed version, which
+ * `uninstalledPeers` names, and a range `unparseableRanges` reports.
  */
 const peerViolations = (
   versions: Record<string, string | undefined>,
@@ -252,6 +297,33 @@ const peerViolations = (
         if (satisfies(installed, range)) return [];
         return [{ consumer, dependency, range, installed }];
       }),
+    )
+    .sort(byConsumer);
+
+/**
+ * Collected ranges whose dependency is not installed at the root at all.
+ * `peerViolations` has nothing to compare for these and drops them, and before
+ * #228 that was safe to leave unnamed: every dependency it could see was
+ * `PINNED`, and assertion 2 reds first on a tree missing one. The widened walk
+ * collects ranges against packages this file does not pin — a drop there is
+ * silent, so it gets its own name, the same treatment `unparseableRanges` gets.
+ *
+ * `peerDependenciesMeta.optional` is not consulted, matching `peerViolations`.
+ * Neither pinned package declares an optional peer today (`observed`
+ * 2026-09-18: both `peerDependenciesMeta` objects are empty), so this reports
+ * nothing on the current tree; a published manifest adding an optional peer
+ * pnpm then declines to install would red it on a non-regression, and that is a
+ * one-line review, not a hole.
+ */
+const uninstalledPeers = (
+  versions: Record<string, string | undefined>,
+  peerRanges: PeerRangesByPackage,
+): DeclaredRange[] =>
+  Object.entries(peerRanges)
+    .flatMap(([consumer, peers]) =>
+      Object.entries(peers)
+        .filter(([dependency]) => versions[dependency] === undefined)
+        .map(([dependency, range]) => ({ consumer, dependency, range })),
     )
     .sort(byConsumer);
 
@@ -279,24 +351,47 @@ describe('native module pins track the installed Expo SDK and satisfy every peer
   });
 
   it('the installed tree carries the pinned versions (expected)', () => {
-    expect(installedVersions()).toEqual(
+    expect(installedVersions(PINNED)).toEqual(
       Object.fromEntries(PINNED.map((name) => [name, overrides[name]])),
     );
   });
 
-  it('no installed package declares a peer range the tree violates (expected)', () => {
-    expect(peerViolations(installedVersions(), declaredPeerRanges())).toEqual(
-      [],
+  it('no peer range with a pinned package at either end is violated (expected)', () => {
+    const peerRanges = declaredPeerRanges();
+    expect(
+      peerViolations(
+        installedVersions(peerDependencyNames(peerRanges)),
+        peerRanges,
+      ),
+    ).toEqual([]);
+  });
+
+  it('the peer-range walk sees both directions of the tree (edge)', () => {
+    // The assertion above is `toEqual([])`, so a walk that found *no* consumers
+    // passes it exactly as a clean tree does — and a walk that found only one
+    // direction passes it too. `expo-modules-core` is a hard dependency of
+    // `expo` and #225's own consumer; `react-native-reanimated`'s own
+    // `react-native` peer is #228's case. Each names a package to prove the
+    // mechanism, not to enumerate the consumer set the walk exists to discover.
+    const peerRanges = declaredPeerRanges();
+    expect(Object.keys(peerRanges)).toContain('expo-modules-core');
+    expect(Object.keys(peerRanges['react-native-reanimated'] ?? {})).toContain(
+      'react-native',
     );
   });
 
-  it('the peer-range walk sees the tree at all (edge)', () => {
-    // The assertion above is `toEqual([])`, so a walk that found *no* consumers
-    // passes it exactly as a clean tree does. `expo-modules-core` is a hard
-    // dependency of `expo` and #225's own consumer, which makes it the right
-    // canary: it names a package to prove the mechanism, not to enumerate the
-    // consumer set the walk exists to discover.
-    expect(Object.keys(declaredPeerRanges())).toContain('expo-modules-core');
+  it('every collected range names an installed package (edge)', () => {
+    // `peerViolations` drops a range whose dependency is not installed. For a
+    // `PINNED` dependency assertion 2 reds on that tree first; for the packages
+    // the widened walk reaches (`react-native`, `react`, …) nothing else is
+    // watching, so the drop is named here instead of being silent.
+    const peerRanges = declaredPeerRanges();
+    expect(
+      uninstalledPeers(
+        installedVersions(peerDependencyNames(peerRanges)),
+        peerRanges,
+      ),
+    ).toEqual([]);
   });
 
   it('no declared peer range is unreadable by semver (edge)', () => {
@@ -328,19 +423,35 @@ describe('native module pins track the installed Expo SDK and satisfy every peer
     ).toEqual([]);
   });
 
-  it('a pinned package with no installed version is passed over (edge)', () => {
-    // Characterization, not a regression guard: this returned `[]` before the
-    // type change too. The point is that `Record<string, string | undefined>`
-    // now says out loud that the range is dropped, where the old cast hid it
-    // behind a type that could not be `undefined`. The tree is still covered —
-    // assertion 3 (installed equals pin) reds first on any tree that reaches
-    // this state.
+  it('a dependency with no installed version is passed over here (edge)', () => {
+    // `peerViolations` reports version conflicts, and an absent package is not
+    // one, so it drops the range — deliberately, and `Record<string, string |
+    // undefined>` says so in the type rather than hiding it behind a cast that
+    // could not be `undefined`. What covers the drop depends on which side is
+    // missing: assertion 2 (installed equals pin) reds first when it is a
+    // `PINNED` package, and `uninstalledPeers` names it when it is not.
     expect(
       peerViolations(
         { 'react-native-worklets': undefined },
         { 'expo-modules-core': { 'react-native-worklets': '^0.10.0' } },
       ),
     ).toEqual([]);
+  });
+
+  it('a dependency with no installed version is named by uninstalledPeers (failure)', () => {
+    // The other half of the pair above, and the reason the drop is not silent.
+    expect(
+      uninstalledPeers(
+        { 'react-native': undefined },
+        { 'react-native-reanimated': { 'react-native': '0.83 - 0.86' } },
+      ),
+    ).toEqual([
+      {
+        consumer: 'react-native-reanimated',
+        dependency: 'react-native',
+        range: '0.83 - 0.86',
+      },
+    ]);
   });
 
   it("the tree #225 shipped is reported against expo-modules-core's real range (failure)", () => {
@@ -392,7 +503,34 @@ describe('native module pins track the installed Expo SDK and satisfy every peer
     ]);
   });
 
+  it("a react-native bump past a pinned package's own range is reported (failure)", () => {
+    // #228's shape: the range is declared *by* a pinned package, on a package
+    // this file does not pin. Before the widening `declaredPeerRanges` dropped
+    // it and every case here stayed green while the peer was violated. The
+    // range is a literal rather than a reading of reanimated's manifest — it
+    // states what the machinery does with a range of this shape, and must not
+    // move when reanimated widens its own; the real manifest is what the
+    // walk-sees-both-directions case above binds to.
+    expect(
+      peerViolations(
+        { 'react-native': '0.87.0' },
+        { 'react-native-reanimated': { 'react-native': '0.83 - 0.86' } },
+      ),
+    ).toEqual([
+      {
+        consumer: 'react-native-reanimated',
+        dependency: 'react-native',
+        range: '0.83 - 0.86',
+        installed: '0.87.0',
+      },
+    ]);
+  });
+
   it('a peer on a package this file does not track is left to pnpm (edge)', () => {
+    // Neither end is `PINNED`, so `declaredPeerRanges` never collects this
+    // range — which is why `peerViolations` does not filter by `PINNED` itself
+    // and, handed the range directly with no installed version for its
+    // dependency, simply has nothing to compare.
     expect(
       peerViolations(
         { 'react-native-worklets': '0.10.1' },
