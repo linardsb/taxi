@@ -15,17 +15,17 @@ Everything else about the held branch is already pinned by a test. Do not widen 
 | Field | Value |
 |---|---|
 | Run by | **not yet run** |
-| Platform | — |
+| Platform | Android emulator (API 36 `google_apis` x86_64, AVD `sakta141`) — **partial**; no phone |
 | App / OS version | — |
-| Date | — |
-| Outcome | **BLOCKED — no Android phone; no paid Apple account** |
+| Date | 2026-09-18 (emulator Gate 1 only) |
+| Outcome | **BLOCKED — Gate 1 ✅; Gates 2–3 not run, `main` cannot build the APK (§Emulator route)** |
 
-Both substitute paths are closed, and were re-checked rather than assumed:
+Neither substitute path can finish this day today, and both were re-checked rather than assumed:
 
-- **Android emulator: no SDK on this machine.** `emulator` and `sdkmanager` are not on `PATH`,
-  `~/Library/Android/sdk` and `~/.android/avd` do not exist, and Android Studio is not installed —
-  `observed` 2026-09-17. Only a bare `adb` is present (`/usr/local/bin/adb`, from the
-  `android-platform-tools` cask), which has nothing to talk to.
+- **Android emulator: installed 2026-09-18, and partly tested.** The earlier "no SDK on this machine"
+  reading is retired — the SDK, an API 36 `google_apis` image and the `sakta141` AVD now exist here,
+  and a synthetic fix reaches the fused provider (Gate 1 ✅, #224). Gates 2 and 3 are **not run**:
+  `main` cannot build the APK today. See §Emulator route at the end of this file.
 - **iOS Simulator: this Mac cannot build it.** iMac19,1 cannot run Tahoe, so Xcode 26.3 is the
   ceiling, and Expo SDK 57 needs 26.4 to compile `expo-modules-jsi` for iOS — `observed`
   2026-08-25. An installable iOS build also needs the paid Apple Developer Program, which does not
@@ -320,3 +320,210 @@ check is not expressible as #141 failing, and the day can legitimately stop at t
 | Three ear-checks: #161's two earnings-label states, F4's offer-card label, and N3 — whether `earnings-card.tsx:17`'s `polite` live region is still announced inside a collapsed `Pressable` | `.claude/references/ui-decisions.md:17`; N3 from `.claude/code-reviews/pr-163-review.md:183` |
 | The offers / active-ride device pass | #16 — `.claude/plans/driver-offers-active-ride.md:506` §Level 4 |
 | The GPS field drive (#4, deferred 2026-08-26) | `docs/spikes/04-gps-field-test.md` §Field protocol |
+
+---
+
+## Emulator route
+
+An Android emulator was tested as a substitute runtime for this day ([#224](https://github.com/linardsb/taxi/issues/224)).
+It is **not a second run sheet**: the steps stay in §Steps above and this section cites them by number.
+What it adds is the setup, the three gates that decide whether the route is usable at all, and the
+evidence grade the route carries.
+
+**Status, `observed` 2026-09-18**: Gate 1 **passed**. Gates 2 and 3 are **not run** — the driver APK
+cannot be built from `main` today (see *The build blocker* below). The route is therefore **untested
+past the OS boundary**, which is not the same as failed.
+
+### What an emulator can and cannot prove here
+
+It runs the real Android framework, the real Play-services fused location provider, a real foreground
+service and the real `expo-location` task consumer. The only synthetic part is the GPS source, and
+#141's claim is about **task lifecycle**, not GPS quality — so the axis this day tests is one an
+emulator can reach in principle.
+
+It reproduces **no Doze, no OEM process killer, no real radio and no real GPS**. Those bear on
+background *reliability*, which is [#4](https://github.com/linardsb/taxi/issues/4)'s and
+[#14](https://github.com/linardsb/taxi/issues/14)'s question. Emulator evidence does not retire
+either, and whether it closes #141 is Linards' call, not this runbook's.
+
+### Setup, once
+
+`observed` 2026-09-18 on this iMac19,1 (macOS 15.7, Intel).
+
+1. **JDK 17 from the Adoptium tarball**, into `$HOME`. Not `brew install openjdk@17`: Homebrew has
+   dropped bottles for macOS Intel x86_64, so a **formula** install silently falls back to building
+   from source and never finishes. Not the `temurin@17` cask either — it installs a `.pkg` and prompts
+   for sudo, which hangs an unattended run. System Java here is 14, which `sdkmanager` rejects without
+   naming the JDK, so `JAVA_HOME` must be exported explicitly in every shell.
+2. **`brew install --cask android-commandlinetools`.** Casks download prebuilt binaries, so the bottle
+   drop above does not touch them. SDK root lands at `/usr/local/share/android-commandlinetools`
+   (Intel Homebrew).
+3. `yes | sdkmanager --licenses`, then install `emulator`, `platform-tools`, `platforms;android-36`
+   and `system-images;android-36;google_apis;x86_64`.
+   - **`google_apis`, never `default`.** `expo-location`'s background consumer reaches for
+     `LocationServices.getFusedLocationProviderClient`
+     (`node_modules/expo-location/.../taskConsumers/LocationTaskConsumer.kt:48`, and the hard dependency
+     at `node_modules/expo-location/android/build.gradle:19`). An AOSP image has no Play services and
+     the gate below fails for a reason that has nothing to do with #141.
+   - **API 36** because `expo-modules-core` defaults `targetSdkVersion` to 36. Take plain `android-36`,
+     not the `36.1` / `-ext18` / `-ext19` variants.
+   - **`platform-tools` is required inside the SDK root** even though the `android-platform-tools` cask
+     already supplies `adb`. Without it the emulator dies at `FATAL | Cannot find AVD system path`.
+     Export `ANDROID_SDK_ROOT` as well as `ANDROID_HOME` — the emulator reads the former.
+   - **Cost: 5.9 GiB on disk** at the SDK root, `observed` via `du -sh` after the install, plus 172 MB
+     for the JDK tarball. Free space needed before starting: ≥6 GiB.
+4. `echo no | avdmanager create avd -n sakta141 -k "system-images;android-36;google_apis;x86_64"`.
+   The `echo no` answers the custom-hardware-profile prompt, which otherwise blocks with no output.
+   No `-d` device profile: the default is sufficient and a wrong id fails the create.
+5. Boot it, then **poll `sys.boot_completed`** — `adb wait-for-device` returns at `adbd`, not at boot,
+   and everything after it races the boot otherwise.
+
+Hardware acceleration works on this Intel host (`emulator -accel-check` → `accel: 0`,
+Hypervisor.Framework). Do not accept a software-CPU fallback: it is too slow to judge a 4-second
+ping cadence.
+
+### Injecting a position
+
+**`adb emu geo fix` alone does nothing, and it fails silently with `OK`.** With no app requesting
+location the emulator's GPS HAL sits at `ProviderRequest[OFF]`, `mStarted=false`, so the fix is
+accepted and dropped. Use a test provider, which needs no client:
+
+```bash
+adb shell appops set com.android.shell android:mock_location allow
+adb shell cmd location providers add-test-provider gps
+adb shell cmd location providers set-test-provider-enabled gps true
+adb shell cmd location providers set-test-provider-location gps --location 56.9496,24.1052
+```
+
+- **The two mechanisms take coordinates in opposite orders.** `adb emu geo fix` is
+  `<longitude> <latitude>`; `set-test-provider-location` is `--location <LATITUDE>,<LONGITUDE>`.
+  Rīga is `geo fix 24.1052 56.9496` **and** `--location 56.9496,24.1052`. Swapping either puts the
+  driver in open ocean, which looks exactly like "injection does not work".
+- **The fix must land inside a seeded zone** or `findNearby` matches nothing. `56.9496,24.1052` is
+  inside «Rīgas centrs» (`db/src/seed/riga.ts:36-43`, 56.936–56.966 lat, 24.075–24.135 lng).
+- **Run the injection as a repeating loop, not once.** `observed` 2026-09-18: one
+  `set-test-provider-location` on a freshly booted emulator left the **fused** provider at
+  `last location=null` / `ProviderRequest[OFF]` while the `gps` provider already carried the fix; the
+  fused provider only populated after a repeating injection (8 calls over 16 s). A single-shot read
+  of the fused provider on a cold boot is a false negative.
+- A 2 s loop is `derived` as half of `timeInterval: 4000`
+  (`apps/driver/src/features/location/location-options.ts:19`), so the OS floor stays the binding
+  constraint. **It does not predict 2 s pings**: the client throttle drops anything under
+  `MIN_FIX_INTERVAL_MS = 4_000` (`fix-throttle.ts:9`), so the wire cadence stays ~4 s however fast you
+  inject. Reading 2 s and marking a healthy stream ❌ is the mistake this sentence prevents.
+- Grep the injected **coordinate**, never a `dumpsys` heading — headings move between API levels.
+- Mock fixes carry a `mock` flag. Nothing in shipped driver source reads it (`observed` 2026-09-18),
+  so the route is not blocked there today. Re-check if a fix-validation guard is ever added.
+
+### The three gates
+
+Cheapest first, and each ❌ names what it kills.
+
+| Gate | What it asks | Costs | Status |
+|---|---|---|---|
+| 1 | Does a synthetic fix reach the **fused** provider, and keep arriving? | the 5.9 GiB SDK; no account, no build | ✅ `observed` 2026-09-18 |
+| 2 | Does the driver APK receive it, foregrounded — `driver.location.ping_accepted` at ~4 s? | one EAS build + the local stack | **not run** (build blocker) |
+| 3 | Do those pings continue with the app **backgrounded**? | nothing further | **not run** |
+
+**Gate 1, as run.** After the repeating injection, `adb shell dumpsys location` reported
+
+```
+fused provider:
+  service: ProviderRequest[OFF]
+  last location=Location[fused 56.949600,24.105200 hAcc=100.0 et=+1m12s716ms mock]
+```
+
+and, on a second capture 14 s later, `et=+1m27s295ms` — the elapsed-time field advanced, so this is a
+stream and not one stale fix. A `diff` of two captures ≥10 s apart that reports no change is Gate 1's
+❌ even when the first read passed.
+
+**`ProviderRequest[OFF]` in that block is expected, and is not the failure signature above.** That one
+is the **`gps`** provider with nothing requesting updates, which is why `adb emu geo fix` is dropped;
+this is the **`fused`** provider, and `observed` 2026-09-18 it carried an advancing `last location=`
+while `service:` read `[OFF]` — so on this line a test provider's writes do not depend on anything
+requesting. **The pass criterion is the advancing `et=`, never the `service:` line.**
+
+**Read Gate 1's limit precisely.** What is `observed` is `dumpsys` reporting a fused last-location.
+It is **not** observed that `FusedLocationProviderClient.requestLocationUpdates` delivers to a
+registered consumer — same provider, different code path, and that difference is exactly what Gate 2
+exists to test. Gate 1 must never be quoted as "delivery works".
+
+**Gate 3 is the premise proper**, and its ❌ splits two ways that look identical from the api console.
+`LocationTaskConsumer.handleLocationUpdate` branches on `mIsHostPaused`: foregrounded it reports
+immediately, backgrounded it goes through `deferLocations` + `maybeReportDeferredLocations`.
+`location-options.ts:21-22` sets both deferral knobs to `0`, so deferral *should* be a pass-through —
+but that branch is code Gate 2 never executes. Separate the two failures with
+`adb logcat -s ExpoLocation:* TaskManager:*`:
+
+- **deliveries appear, reports do not** → deferral swallowed it. This does **not** kill the route and
+  does not bear on #141; it is a finding about the deferral path and a separate ticket.
+- **no delivery lines at all** → the mock provider does not feed background FLP. **That kills the route.**
+
+"Gate 3 failed" on its own is not a usable result.
+
+### Running the steps on an emulator
+
+Past Gate 3, run §Steps rows **2 through 8** exactly as written above — including step 3's "open
+`t/<token>` before the watch starts", and step 2's board-visibility half, which a ping-only gate does
+not cover. §Verdict applies unchanged.
+
+Two setup differences, and only two:
+
+- **§0's pre-flight is skipped, and only for an emulator run.** Build the `preview` profile with
+  `EXPO_PUBLIC_API_URL=http://10.0.2.2:3001` — `10.0.2.2` is the emulator's fixed NAT alias for the
+  host's loopback, so it is a property of the emulator rather than of any network and cannot go stale
+  the way a DHCP lease can. Keep the port from the committed value (`API_PORT`, 3001 today) and change
+  only the host. The edit stays uncommitted exactly as §0 requires, and **`10.0.2.2` must never reach a
+  phone build**, where it means nothing.
+- **Taps are `adb`, not a finger.** Steps 4 and 8 are taps: dump the hierarchy with
+  `adb shell uiautomator dump`, read the toggle's `bounds`, `adb shell input tap` its centre, and
+  capture `adb exec-out screencap -p` as evidence. Record it as a divergence — an `input tap` at exact
+  centre coordinates proves nothing about the 44 px touch-target rule a real finger tests.
+  All four mechanisms are `observed` working on this image (2026-09-18, against the stock Settings
+  app, so no APK was needed): the dump returned a 20 KB hierarchy with `text=` and `bounds=`
+  attributes, a tap at a parsed centre actually changed screen, `screencap -p` produced a valid PNG,
+  and `input keyevent KEYCODE_HOME` moved focus to the launcher — which is Gate 3's backgrounding
+  action. An agent can therefore drive this runbook's taps end to end. **One caveat**: the default AVD
+  profile's screen is 320 × 640, small enough that a real app screen may need
+  `avdmanager create avd -d <id>` with a larger profile — check `avdmanager list device` rather than
+  guessing an id.
+
+### The build blocker
+
+**`main` cannot produce an Android native build today**, and that is independent of #141 and of the
+emulator. `observed` 2026-09-18, EAS build `a47b0b19-e9d1-4c44-b2ea-e473246fb50c` on commit
+`1c87592` (= `origin/main`), errored after 468 s:
+
+```
+expo-modules-core/android/src/main/cpp/worklets/WorkletJSCallInvoker.cpp:27:21:
+  error: no member named 'executeSync' in 'worklets::WorkletRuntime'
+> Task :expo-modules-core:buildCMakeRelWithDebInfo[arm64-v8a] FAILED
+```
+
+`expo-router` declares `react-native-reanimated` as an **optional** peer at `"*"`; pnpm's
+auto-install-peers resolved it to `4.6.0`, whose own peer is `react-native-worklets 0.12.x`, so the
+tree carries `0.12.1`. `expo-modules-core@57.0.14` declares
+`react-native-worklets: ^0.7.4 || ^0.8.0 || ^0.9.0 || ^0.10.0` and its C++ compiles against ≤0.10.
+Expo SDK 57's own `bundledNativeModules.json` pins `4.5.1` / `0.10.1`. Bumping `expo` does not help:
+`expo-modules-core@57.0.18` carries the same peer range.
+
+**§2's `expo install --check` cannot catch this.** Neither package is a declared dependency of
+`apps/driver`, and `--check` only inspects declared ones — so the 14-package patch drift that check
+does report is a separate matter and is not the cause here.
+
+This blocks any device or emulator day that needs a fresh build, so it is tracked as
+[#225](https://github.com/linardsb/taxi/issues/225) rather than inside #141.
+
+**One unrelated thing the same build surfaced, recorded here because it has no other owner.** §2's
+`eas init` writes more than `extra.eas.projectId`: `observed` 2026-09-18, it also wrote
+`owner: "linards"`, `extra.router: {}`, and expanded `android.permissions` with eight
+fully-qualified entries — three of them new to the app: `android.permission.RECORD_AUDIO`,
+`MODIFY_AUDIO_SETTINGS` and `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, resolved from the declared
+`expo-audio` dependency. That expansion will land in **every** future build the moment §2 runs,
+phone or emulator. A driver app declaring `RECORD_AUDIO` deserves a decision rather than a side
+effect — take it before the first build that reaches a real user, not on the day.
+
+### Evidence recorded
+
+`.claude/reports/emulator-oracle-141-report.md` carries this pass's full command-level evidence and
+its deviations.
