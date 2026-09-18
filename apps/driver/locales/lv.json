@@ -1,4 +1,6 @@
 {
-  "NSLocationWhenInUseUsageDescription": "Sakta Cab sūta jūsu atrašanās vietu dispečeram, kamēr esat tiešsaistē.",
-  "NSLocationAlwaysAndWhenInUseUsageDescription": "Sakta Cab turpina sūtīt jūsu atrašanās vietu dispečeram, kamēr esat tiešsaistē — arī ar bloķētu ekrānu."
+  "ios": {
+    "NSLocationWhenInUseUsageDescription": "Sakta Cab sūta jūsu atrašanās vietu dispečeram, kamēr esat tiešsaistē.",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Sakta Cab turpina sūtīt jūsu atrašanās vietu dispečeram, kamēr esat tiešsaistē — arī ar bloķētu ekrānu."
+  }
 }
