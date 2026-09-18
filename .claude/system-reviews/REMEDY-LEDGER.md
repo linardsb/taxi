@@ -14,6 +14,13 @@ IDs are stable and never renumbered.
 loop* below, leaving **2 open**. The 2026-09-09 stamp above and the check-count blockquote below describe
 that run and are left as written.
 
+**Amended 2026-09-18 (issue #229, the #225 → #227 loop):** **L17 and L18 applied and closed**; **A1 and
+A2 appended** as new open rows. Net **2 open**, and the two are not the two that were open before. L18's
+recurrence column reads **1**: its class fired during this very loop, inside the skill the row names —
+`system-execution-report` invoked with a free-form sentence rendered `Plan file: the` (`observed`
+2026-09-18). The 2026-09-09 stamp and both blockquotes above describe that earlier run and are left as
+written; the four rows amended here carry their own greps, re-run at this head.
+
 > **Every locator below was re-run at this head, and the check that says so names its own scope.**
 > `observed`, 2026-09-09: **22 checks in three groups** — the Closed table's 15 rows (**18 checks: 17
 > greps and one `ls`**), plus L4 in *Closed earlier* (1), plus the 3 rows in *Open*. **20 reproduce; two
@@ -46,14 +53,32 @@ that run and are left as written.
 
 | ID | Remedy | Origin | Class | Recurrences since logged | Status at HEAD |
 |----|--------|--------|-------|--------------------------|----------------|
-| L17 | `piv-validate:10` calls `pnpm check` **the gate**, but CLAUDE.md's gate and `.github/workflows/ci.yml` both run `typecheck lint test build`. `pnpm check` omits `build`, so the skill's own step 1 is not CI parity — and the TS6053 stale-`.next` row added under L6 cannot fire under the command step 1 names | this loop, 2026-09-04 (raised while applying L6; deliberately not folded into it — it changes what the skill *runs*, not how it triages) | C7 | — | present and wrong: `grep -n "pnpm check" .claude/skills/piv-validate/SKILL.md` → 10, 25, 86 |
-| L18 | The word-split argument hazard L12 fixed is not unique to one skill: `piv-fix-review-findings:5` declares `arguments: [review, scope]` and `system-execution-report:5` declares `[plan]`, both of which split a free-form sentence the same way. The fix pattern already exists in-repo — `opportunity-scan:27`, "Read `$ARGUMENTS` as **prose**, not as positional slots" | this loop, 2026-09-04 (found while verifying L12's coupling) | C7 | — | absent — `grep -n "^arguments:" .claude/skills/*/SKILL.md` → 3 files, only `system-evolution-review` now guarded |
+| A2 | A finding deferred into a **GitHub issue** carries the review's claim, and nothing re-runs it. #229's premise — "`ls .claude/plans .claude/reports \| grep -i '225\|227'` — no match, `observed` 2026-09-18" — returns `pr-227-review-fixes.md` at `cde27af`: true of the review's head `6226549`, false at `main` once `9ad789e` landed. Same class as #87/#107, new **surface** — an issue is not in the working tree, so `inherited-figures.sh` cannot reach it, and CLAUDE.md's plan → report → PR-body list does not name it. Remedy: one step in `piv-review-pr`'s deferral path — re-run any command a finding quotes, at the head the issue will be read against, before pasting it into a tracker issue | this loop, 2026-09-18 (#229's own premise) | C1 | — | absent — `grep -in "tracker issue" .claude/skills/piv-review-pr/SKILL.md` → no match |
+| A1 | `piv-plan-implementation` states **no entry condition**: nothing says when a ticket is too small to need a plan, so skipping it is an undocumented judgment call that leaves no record either way. #227 skipped it and no artifact states that as a decision. Remedy shape, once Linards decides: one line in `piv-plan-implementation` naming the class that may skip, plus a required sentence in the PR body saying so — **not** a CLAUDE.md paragraph (see *Accepted risks*) | this loop, 2026-09-18 (#229's stated question) | C7 | — | **blocked on a decision, not on effort** — writing the rule before Linards answers makes a preference into a standard nobody chose. `grep -inE "too small\|skip the plan\|no plan needed" .claude/skills/piv-plan-implementation/SKILL.md` → no match |
 
 ## Closed since the 2026-09-04 loop
 
 | ID | Landed in | Verify at HEAD |
 |----|-----------|----------------|
+| L17 | **issue #229**, 2026-09-18 — `piv-validate` step 1 now runs the CI-parity command, and the opening paragraph says outright that `pnpm check` is not the gate and what it omits | `grep -n "pnpm turbo run typecheck lint test build --force" .claude/skills/piv-validate/SKILL.md` → 32; `grep -n "pnpm check" …` → 14, 17, 100, **all three the correction itself**, none an instruction to run it |
+| L18 | **issue #229**, 2026-09-18 — shape tests added to both remaining `arguments:`-declaring skills, following `opportunity-scan:27` | `grep -n "^arguments:" .claude/skills/*/SKILL.md` → the same 3 files; `grep -c "word-split" .claude/skills/piv-fix-review-findings/SKILL.md .claude/skills/system-execution-report/SKILL.md .claude/skills/system-evolution-review/SKILL.md` → 1, 2, 1 — **all three guarded** |
 | L19 | PR **#215** (issue #214), merged as `7179cc6` on 2026-09-15 — CLAUDE.md's Redis-gated paragraph re-observed as a whole rather than patched at the digit | `grep -n "39 skipped, 694 passed, 733 total" CLAUDE.md` → 43 |
+
+**L18 was closed by a loop in which it fired.** The recurrence is `observed`, not inferred:
+`system-execution-report` invoked with `the #225 → #227 worklets pin loop, reconstructed from …` rendered
+**`Plan file: the`** and discarded the rest of the sentence (2026-09-18, #229). That is worse than a
+silent drop — the skill's very next instruction is to stop when `$plan` is empty, and `the` is not empty,
+so a session that missed it would have gone looking for a plan at a path made of one English article.
+
+A **third** case was folded into the same edit, because this loop is what found it:
+`system-execution-report` had no behaviour for *a well-formed plan path to a file that never existed*.
+It now reports `Plan file: none`, names the de-facto plan the implementation worked from (usually the
+issue body), and measures divergences against that rather than inventing a file to fill the slot.
+Verify: `grep -in "do not invent a plan file" .claude/skills/system-execution-report/SKILL.md`.
+
+**L17's row was itself an instance of the ledger's own C1 warning, and the 2026-09-09 sweep caught it.**
+The row's locator listed 2 of 3 `pnpm check` hits; the blockquote above records the correction. The fix
+applied here addresses all three.
 
 **L19's own figure is not the figure that landed, and that is correct.** The row `observed`
 `35 skipped, 660 passed, 695 total` at `c70572b` — a *fifth* version of the line, logged but never written

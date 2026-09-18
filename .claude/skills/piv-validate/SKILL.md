@@ -7,8 +7,15 @@ description: Runs this project's full validation suite — tests, type checks, a
 
 Run every check this project has and report a single PASS/FAIL verdict.
 
-This is a pnpm/turbo monorepo. **One command is the gate** — `pnpm check` at the repo root fans out
-`typecheck`, `lint`, and `test` to every workspace package via turbo. Run it from the repo root.
+This is a pnpm/turbo monorepo. **One command is the gate** — `pnpm turbo run typecheck lint test build
+--force` at the repo root, which is what `.github/workflows/ci.yml` runs and what CLAUDE.md calls the
+validation gate. Run it from the repo root.
+
+**`pnpm check` is NOT the gate, and this skill said it was until #229.** `pnpm check` is
+`typecheck lint test` — it omits `build`, and without `--force` it can ride a warm `dist`. Two of the
+signatures in step 3 cannot fire under it at all: the TS6053 stale-`.next` race needs `next build` to be
+running, and a package whose `build` is broken while its tests pass is invisible. Use `pnpm check` for
+the quick inner loop; run the gate before a commit, a PR, or any PASS verdict this skill reports.
 
 **Prerequisite:** integration tests (e.g. `@taxi/db` against Postgres/PostGIS) need the docker services up:
 
@@ -22,12 +29,20 @@ output of any command that fails.
 ## 1. The gate — full monorepo check
 
 ```bash
-pnpm check                    # turbo run typecheck lint test — all packages
+pnpm turbo run typecheck lint test build --force   # CI parity — all packages, cold
 ```
 
-**Expected:** every task green. Turbo's summary names any failing package/task.
+**Expected:** every task green. Turbo's summary names any failing package/task, and the task count is
+the check on the run itself: `Tasks: 22 successful, 22 total` at 2026-09-18's head. Fewer tasks than the
+graph is a *short* gate, not a pass — `.claude/skills/piv-create-pr/scripts/record-gate.sh` derives the
+expected count from `turbo --dry=json` and prints the holes, so prefer it when the number will be
+quoted anywhere.
 
-Redirect to a scratchpad log; cap the Bash timeout at ~5 min. A quiet gate is read from the log (step 3).
+In a worktree, prefix `COMPOSE_PROJECT_NAME=taxi` — compose names its project after the directory and
+otherwise starts a second Postgres against the occupied 5432.
+
+Redirect to a scratchpad log; cap the Bash timeout at ~10 min (the gate is 60–90 s of test time but
+`--force` rebuilds every package). A quiet gate is read from the log (step 3).
 
 ## 2. Narrow a failure (only if step 1 failed)
 
@@ -82,9 +97,11 @@ this skill reports; fixing is a separate step.
 ## Notes
 
 - Keep this skill fast. It runs before every commit; if a step gets slow, that is a signal to fix the
-  slow step, not to drop it from the checker.
-- A checker that cannot fail is worthless. If `pnpm check` passes suspiciously fast, confirm turbo
-  actually ran the tasks (cache hits are fine; missing tasks are not).
+  slow step, not to drop it from the checker. Fast does not mean `pnpm check`: dropping `build` to save
+  a minute is dropping a check, which is the previous bullet's trade in the other direction.
+- A checker that cannot fail is worthless. If the gate passes suspiciously fast, confirm turbo actually
+  ran the tasks — with `--force` there are no cache hits to explain it, so a short run means missing
+  tasks, and `Tasks: N successful, N total` is where you read that.
 - **A green gate is not a green CI.** On a PR that touches `compose.yml`, `.github/workflows/*.yml` or a
   healthcheck, run `gh run list --branch $(git branch --show-current) --limit 1` and report CI's verdict
   beside your own: on a cold volume a container healthcheck can report healthy before the real server is
