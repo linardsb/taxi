@@ -52,7 +52,7 @@ Stage the work behind three gates, each producing a recorded verdict:
 - **Gate 3** — the same pings continue with the app backgrounded. This is the premise proper: the
   `mIsHostPaused` branch of `LocationTaskConsumer.handleLocationUpdate`.
 
-Past Gate 3, run `docs/runbooks/driver-device-day.md` steps 3–8 **verbatim** on the emulator, fill
+Past Gate 3, run `docs/runbooks/driver-device-day.md` steps 2–8 **verbatim** on the emulator, fill
 its existing Result table with `Platform: Android emulator …`, and append one `## Emulator route`
 section to that runbook which *cites* the steps and restates none of them.
 
@@ -60,7 +60,7 @@ section to that runbook which *cites* the steps and restates none of them.
 
 - **Not included: a second copy of the run sheet.** `docs/runbooks/driver-device-day.md` is the only
   copy, deliberately — PR #218 exists because three copies produced three different owed-step sets.
-  This plan adds a setup section to that file and cites steps 3–8 by number. **If you find yourself
+  This plan adds a setup section to that file and cites steps 2–8 by number. **If you find yourself
   writing an Expect cell, stop.**
 - **Not included: retiring [#4](https://github.com/linardsb/taxi/issues/4) or
   [#14](https://github.com/linardsb/taxi/issues/14)'s device day.** An emulator runs the real Android
@@ -241,7 +241,7 @@ The premise proper, and the only phase whose result is genuinely unknown.
 
 **Tasks:**
 
-- Run `docs/runbooks/driver-device-day.md` steps 3–8 verbatim
+- Run `docs/runbooks/driver-device-day.md` steps 2–8 verbatim
 - Record each step pass or fail; a failure is a finding, never "mostly worked"
 
 ### Phase F: Record
@@ -762,7 +762,7 @@ warning, because it would have produced a false ❌.
 
 ---
 
-### T10 — RUN the runbook's steps 3–8 on the emulator
+### T10 — RUN the runbook's steps 2–8 on the emulator
 
 - **IMPLEMENT**: Open `docs/runbooks/driver-device-day.md` §Steps and run rows **2 through 8** exactly
   as written, including step 3's "open `t/<token>` before the watch starts". Record each row pass or
@@ -803,7 +803,7 @@ warning, because it would have produced a false ❌.
   setup (T2–T4) with the actual measured size; the injection loop; the `google_apis` and
   longitude-first gotchas; and the evidence-grade caveat — what an emulator run does and does not
   prove. Update the Result table's `Platform` row rather than adding a second table.
-- **PATTERN**: `:86-88` — cite, do not restate. The section refers to steps 3–8 **by number**.
+- **PATTERN**: `:86-88` — cite, do not restate. The section refers to steps 2–8 **by number**.
 - **IMPORTS**: none.
 - **GOTCHA**: **if you write an Expect cell, you have created the fourth copy of the run sheet.** This
   is the exact defect PR #218 shipped to close. The section describes *setup and gates*; the steps
@@ -943,7 +943,7 @@ and 2 suites short of the full count.
 2. **Gate 2** — T8. Needs the EAS login and a build credit (BLOCKING PREREQUISITE), plus the local
    stack booted per the runbook §1 and a dispatcher provisioned per its §1 tail.
 3. **Gate 3** — T9. Same prerequisites as Gate 2.
-4. **Steps 3–8** — T10, against `docs/runbooks/driver-device-day.md` §Steps. The state each step needs
+4. **Steps 2–8** — T10, against `docs/runbooks/driver-device-day.md` §Steps. The state each step needs
    — an accepted ride, a tracking token — is produced by the run itself, per the runbook's step 3;
    the seed produces none of it, which is why step 3 books a ride rather than assuming one.
 
@@ -963,12 +963,12 @@ is worth capturing on a pass too, as the positive control for the next person.
       on this machine, with the **measured** install size recorded (T2–T4)
 - [ ] **AC3** — Gates 1, 2 and 3 each have a recorded verdict with the evidence line that produced it;
       a ❌ names which route it kills, and Gate 3's ❌ names which of its two modes occurred (T6, T8, T9)
-- [ ] **AC4** — *Conditional on Gate 3 green*: `docs/runbooks/driver-device-day.md` steps 3–8 are run
+- [ ] **AC4** — *Conditional on Gate 3 green*: `docs/runbooks/driver-device-day.md` steps 2–8 are run
       on the emulator and its Result table is filled (T10)
 - [ ] **AC5** — The evidence-grade caveat is stated explicitly wherever the result is recorded: what an
       emulator run proves about #141's teardown claim, and what it does not prove about Doze, OEM
       process killers or real radios (T9, T11, T13)
-- [ ] **AC6** — The runbook gains exactly one `## Emulator route` section, which cites steps 3–8 by
+- [ ] **AC6** — The runbook gains exactly one `## Emulator route` section, which cites steps 2–8 by
       number and restates none of them; its `Expect` count does not grow (T11)
 - [ ] **AC7** — `COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force` exits 0 (T12)
 - [ ] **AC8** — #224 and #141 each carry the verdict, on every path including a Gate 1 ❌ (T13)
@@ -1202,5 +1202,19 @@ Gate 1 and Gate 1 had passed. A resuming pass should do the same.
 **T8, T9 and T10 did not run at all.** T10's Result-table fill and its row-2 board half are still
 entirely owed.
 
-Full evidence, deviations D1–D12 and the acceptance-criteria state:
+Full evidence, deviations D1–D14 and the acceptance-criteria state:
 `.claude/reports/emulator-oracle-141-report.md`.
+
+### A2 — 2026-09-18, PR #226 review round 1 (M1, M2, L1–L3)
+
+**The step range is 2–8, not 3–8, everywhere in this plan.** T10's IMPLEMENT (`:766`) always said
+"rows 2 through 8"; its own title and seven other places in this plan said 3–8, and the shipped
+runbook section followed the IMPLEMENT. Row 2 is a **HARD GATE** whose second half is "the driver
+visible on the board", and nothing in Gates 1–3 covers the board — Gate 2 asks only
+`driver.location.ping_accepted`. The widening closes a real hole, so the plan is reconciled to the
+wider set rather than the section narrowed to the plan. Eight lines changed: `:55`, `:63`, `:244`,
+T10's title, T11's PATTERN, the Level-4 validation list, AC4 and AC6. Recorded as D14 in the report.
+
+**A1's deviation range above was `D1–D12` and is corrected in place to `D1–D14`.** D13 already
+existed when A1 was written and the PR body discussed it by number in the same breath; D14 is this
+amendment's own entry. Correcting a stale count is not a rewrite of A1's substance.

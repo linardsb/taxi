@@ -437,6 +437,12 @@ and, on a second capture 14 s later, `et=+1m27s295ms` — the elapsed-time field
 stream and not one stale fix. A `diff` of two captures ≥10 s apart that reports no change is Gate 1's
 ❌ even when the first read passed.
 
+**`ProviderRequest[OFF]` in that block is expected, and is not the failure signature above.** That one
+is the **`gps`** provider with nothing requesting updates, which is why `adb emu geo fix` is dropped;
+this is the **`fused`** provider, and `observed` 2026-09-18 it carried an advancing `last location=`
+while `service:` read `[OFF]` — so on this line a test provider's writes do not depend on anything
+requesting. **The pass criterion is the advancing `et=`, never the `service:` line.**
+
 **Read Gate 1's limit precisely.** What is `observed` is `dumpsys` reporting a fused last-location.
 It is **not** observed that `FusedLocationProviderClient.requestLocationUpdates` delivers to a
 registered consumer — same provider, different code path, and that difference is exactly what Gate 2
@@ -459,8 +465,7 @@ but that branch is code Gate 2 never executes. Separate the two failures with
 
 Past Gate 3, run §Steps rows **2 through 8** exactly as written above — including step 3's "open
 `t/<token>` before the watch starts", and step 2's board-visibility half, which a ping-only gate does
-not cover. §Verdict applies unchanged: 4, 5, 7 and 8 are load-bearing and binary, 6 corroborates,
-1–3 are setup.
+not cover. §Verdict applies unchanged.
 
 Two setup differences, and only two:
 

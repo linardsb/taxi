@@ -67,11 +67,11 @@ Ship the three things that stand between a phone and a verdict:
 
 ## Out of Scope / Non-Goals
 
-- **Not included: a phone, or any attempt to substitute for one.** Both substitute paths are
-  closed and were re-checked at planning time, not assumed:
-  - Android emulator — no SDK on this machine (`observed` above); installing Android Studio + SDK +
-    an AVD + the SDK 57 prebuild toolchain on an Intel iMac is a multi-GB detour with an uncertain
-    end, and the evidence it would produce is weaker than a device's.
+- **Not included: a phone, or any attempt to substitute for one.** Both substitute paths were
+  re-checked at planning time, not assumed; the emulator half has since been partly reopened:
+  - Android emulator — **the "no SDK on this machine" reading is RETIRED (2026-09-18, #224); see
+    `## AMENDMENTS`.** The SDK now exists here, measured at 5.9 GiB, and Gate 1 passed. What still
+    stands is only that "the evidence it would produce is weaker than a device's".
   - iOS Simulator — this iMac19,1 cannot run Tahoe, so Xcode 26.3 is the ceiling, and Expo SDK 57
     does not compile for iOS below 26.4 (`observed` 2026-08-25). An installable iOS build also
     needs the paid Apple Developer Program, which does not exist yet.
@@ -1476,3 +1476,11 @@ in `main` since `3d2e874` and that no check in this repo could see.
   real radio. Run sheet: `docs/runbooks/driver-device-day.md` §Emulator route. Plan and evidence:
   `.claude/plans/emulator-oracle-141.md`, `.claude/reports/emulator-oracle-141-report.md`.
   **The iOS Simulator half of `:72-74` is unchanged and still closed.**
+
+  2026-09-18, PR #226 review round 1 (L3) — `:70-74` now carries an **in-place marker** pointing
+  here, because a reader reaching it by citation (as `emulator-oracle-141.md:29` and `:1008` do)
+  otherwise got the falsified version with nothing to signal it, 1389 lines from its retirement.
+  Both edits are **line-count neutral** — two lines replaced by two, three by three, checked by
+  `diff` before this amendment was appended — so `:72-74`, `:558-560`, `:604`, `:613-615`, `:1019`,
+  `:1037-1040` and `:1409` all still resolve. The "evidence weaker than a device's" clause is kept
+  verbatim, since `emulator-oracle-141.md:1008` quotes it.

@@ -191,16 +191,18 @@ OS boundary. What did change is that everything up to that boundary is now prove
 
 **D9 — T10 not run.** Runbook steps 2–8 depend on Gate 3.
 
+**D10 — the runbook edits went slightly beyond "append after `:322`".** T11's GOTCHA allows editing
+the Result table in place. Two further in-place edits were made above `:290`, both **line-count
+neutral** so every cited reference still resolves: the stale "Android emulator: no SDK on this
+machine" bullet (`:25-28`, 4 lines → 4 lines), which this pass falsified, and the one-line
+"Both substitute paths are closed" claim at `:23`, which is no longer true of the emulator path.
+Verified after the edits: `:35`, `:37`, `:86`, `:222`, `:246`, `:282`, `:290`, `:311` all resolve to
+their original content, and the `Expect` count is unchanged at 2.
+
 **D11 — `RECORD_AUDIO` given an owner.** D2's parenthetical had none: #225 owns the build, #224 the
 gates, #141 the claim. One paragraph was added to the runbook's `## Emulator route` saying the
 `eas init` permission expansion lands in every future build and deserves a decision before the first
 build that reaches a real user. No third issue was opened.
-
-**D13 — the prep plan's rejection retired at its own source.** `.claude/plans/driver-device-day-prep.md`
-still asserted "Android emulator — no SDK on this machine" at `:72-74`, which this pass falsified. A
-dated entry was appended to its `## AMENDMENTS` (a pure append, so `:72-74` and `:558-560` — both cited
-elsewhere — do not move), stating what is now measured, what narrowed, and what still stands. Retiring
-the digits without retiring the subject is the failure mode the root `CLAUDE.md` names.
 
 **D12 — the plan was brought up to date, in two places.** It is committed on this branch and is what
 a future pass reads to resume, so a stale plan is a live defect rather than a historical note.
@@ -212,13 +214,23 @@ executes rather than what it concludes: T7 now carries the unattended command se
 `eas init` really mutates, the `build:view` re-link, and the brotli log encoding; T11 now permits a
 line-count-neutral rewrite above `:290` of a claim this ticket falsified.
 
-**D10 — the runbook edits went slightly beyond "append after `:322`".** T11's GOTCHA allows editing
-the Result table in place. Two further in-place edits were made above `:290`, both **line-count
-neutral** so every cited reference still resolves: the stale "Android emulator: no SDK on this
-machine" bullet (`:25-28`, 4 lines → 4 lines), which this pass falsified, and the one-line
-"Both substitute paths are closed" claim at `:23`, which is no longer true of the emulator path.
-Verified after the edits: `:35`, `:37`, `:86`, `:222`, `:246`, `:282`, `:290`, `:311` all resolve to
-their original content, and the `Expect` count is unchanged at 2.
+**D13 — the prep plan's rejection retired at its own source.** `.claude/plans/driver-device-day-prep.md`
+still asserted "Android emulator — no SDK on this machine" at `:72-74`, which this pass falsified. A
+dated entry was appended to its `## AMENDMENTS`, stating what is now measured, what narrowed, and what
+still stands. Retiring the digits without retiring the subject is the failure mode the root `CLAUDE.md`
+names. **Amended by the PR #226 review (L3):** the append alone left `:72-74` asserting the falsified
+version with no marker, 1389 lines from its retirement, so `:70-74` now carries an in-place pointer to
+that entry — **line-count neutral**, so `:72-74`, `:558-560` and every other cited line still resolve.
+
+**D14 — the shipped section widened §Steps' range from 3–8 to 2–8.** The plan said 3–8 in eight
+places, including AC4, AC6 and T10's own title — but T10's IMPLEMENT (`:766`) said "rows **2 through
+8**", and the shipped `## Emulator route` section followed the IMPLEMENT. The widening is
+deliberate and correct: §Steps row 2 is a **HARD GATE** whose second half is "the driver visible on
+the board", and nothing in Gates 1–3 covers the board — Gate 2 asks only
+`driver.location.ping_accepted` at ~4 s. Including row 2 closes a hole the gates leave open. What
+was wrong is that nothing recorded it, so AC6's ✅ was ticked against a criterion the section
+deliberately exceeds. Found by the PR #226 review (M2). The plan is reconciled to 2–8 at all eight
+places (plan `## AMENDMENTS` A2); this report's AC4 and AC6 rows now read 2–8.
 
 ## Acceptance criteria
 
@@ -227,9 +239,9 @@ their original content, and the `Expect` count is unchanged at 2.
 | AC1 — P1–P4 re-derived at the implementing sha | ✅ | table above, each with its command |
 | AC2 — SDK, image, AVD exist, measured size recorded | ✅ | 5.9 GiB, `du -sh`, re-measured this pass |
 | AC3 — Gates 1/2/3 each have a recorded verdict | **partial** | Gate 1 ✅ with evidence; Gates 2 and 3 have no verdict because they did not run |
-| AC4 — steps 3–8 run, Result table filled | ❌ unmet | conditional on Gate 3 green |
+| AC4 — steps 2–8 run, Result table filled | ❌ unmet | conditional on Gate 3 green |
 | AC5 — evidence-grade caveat stated wherever recorded | **partial** | stated in the runbook section and in both issue comments; the part that depends on a Gate 3 result cannot be stated |
-| AC6 — exactly one `## Emulator route` section, cites steps by number, `Expect` count does not grow | ✅ | one section; `grep -c Expect` = 2, unchanged |
+| AC6 — exactly one `## Emulator route` section, cites steps by number, `Expect` count does not grow | ✅, **widened to 2–8** — see D14 | one section; `grep -c Expect` = 2, unchanged. The plan's AC6 worded the range as 3–8; the section cites **2–8** and the plan is reconciled to it |
 | AC7 — full gate exits 0 | ✅ | 22/22 tasks, 733/733 tests |
 | AC8 — #224 and #141 carry the verdict | ✅ | T13 |
 | AC9 — owed by Linards (Q1) | open | untouched by this pass, and now moot until the build is fixed |
