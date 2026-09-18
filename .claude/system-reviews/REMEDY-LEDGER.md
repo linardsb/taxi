@@ -15,7 +15,9 @@ loop* below, leaving **2 open**. The 2026-09-09 stamp above and the check-count 
 that run and are left as written.
 
 **Amended 2026-09-18 (issue #229, the #225 → #227 loop):** **L17 and L18 applied and closed**; **A1 and
-A2 appended** as new open rows. Net **2 open**, and the two are not the two that were open before. L18's
+A2 appended** as new open rows. Net **2 open — this is the current count; the `3 open` on line 10 and
+the `2 open` in the 2026-09-15 amendment are historical stamps of their own runs and must not be read as
+today's.** The two open rows are not the two that were open before. L18's
 recurrence column reads **1**: its class fired during this very loop, inside the skill the row names —
 `system-execution-report` invoked with a free-form sentence rendered `Plan file: the` (`observed`
 2026-09-18). The 2026-09-09 stamp and both blockquotes above describe that earlier run and are left as

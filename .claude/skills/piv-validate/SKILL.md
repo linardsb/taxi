@@ -100,8 +100,10 @@ this skill reports; fixing is a separate step.
   slow step, not to drop it from the checker. Fast does not mean `pnpm check`: dropping `build` to save
   a minute is dropping a check, which is the previous bullet's trade in the other direction.
 - A checker that cannot fail is worthless. If the gate passes suspiciously fast, confirm turbo actually
-  ran the tasks — with `--force` there are no cache hits to explain it, so a short run means missing
-  tasks, and `Tasks: N successful, N total` is where you read that.
+  ran the tasks: `Tasks: N successful, N total` is where you read that, and `Cached: 0 cached, N total`
+  beside it is what says the run was cold (`observed` — both `record-gate.sh` runs on 2026-09-18, at
+  `b392188` and `900dd19`, printed `0 cached, 22 total`). A count short of the graph is a *short* gate,
+  not a pass.
 - **A green gate is not a green CI.** On a PR that touches `compose.yml`, `.github/workflows/*.yml` or a
   healthcheck, run `gh run list --branch $(git branch --show-current) --limit 1` and report CI's verdict
   beside your own: on a cold volume a container healthcheck can report healthy before the real server is
