@@ -1,4 +1,6 @@
 {
-  "NSLocationWhenInUseUsageDescription": "Sakta Cab sends your position to dispatch while you are online.",
-  "NSLocationAlwaysAndWhenInUseUsageDescription": "Sakta Cab keeps sending your position to dispatch while you are online, even with the screen locked."
+  "ios": {
+    "NSLocationWhenInUseUsageDescription": "Sakta Cab sends your position to dispatch while you are online.",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Sakta Cab keeps sending your position to dispatch while you are online, even with the screen locked."
+  }
 }
