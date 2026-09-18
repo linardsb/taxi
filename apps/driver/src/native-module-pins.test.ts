@@ -1,4 +1,4 @@
-import { satisfies } from 'semver';
+import { Range, satisfies } from 'semver';
 
 /**
  * #225 — the peer-range violation no other check can see.
@@ -23,27 +23,49 @@ import { satisfies } from 'semver';
  * Three assertions over a precondition that both pins exist, each with its
  * own failure meaning:
  *
- * 1. Each pin equals Expo SDK 57's own `bundledNativeModules.json` entry — the
- *    set of versions Expo tested together. Bumping `expo` past a version that
- *    moves either entry reds this deliberately: the pin tracks the SDK rather
- *    than freezing at today's digits, and the review is one line of work.
+ * 1. Each pin equals the installed Expo SDK's own `bundledNativeModules.json`
+ *    entry — the set of versions Expo tested together. Bumping `expo` past a
+ *    version that moves either entry reds this deliberately: the pin tracks the
+ *    SDK rather than freezing at today's digits, and the review is one line of
+ *    work. The comparison is strict equality, which assumes Expo writes an
+ *    exact version for these two. It does today, but that is not the file's
+ *    habit: 22 of its 123 entries start with a digit and the other 101 are
+ *    ranges (`~57.0.16`, `^15.0.2`, …) — `observed` 2026-09-18 at
+ *    `expo@57.0.18`. Expo writing `~4.5.1` for the same effective version would
+ *    red this on a non-regression; that is a one-line review, not a hole.
  * 2. The version actually installed equals its pin, so the override is checked
  *    as a mechanism and not merely as a line of JSON.
  * 3. Every *installed* version satisfies every peer range declared against it
- *    anywhere in the tree. This is the invariant #225 broke. It reads installed
- *    versions rather than the pins so that it stays the real check if the pins
- *    are ever removed or replaced by direct dependencies; and it reads ranges
- *    from the published manifests rather than from `pnpm-lock.yaml`, because
- *    pnpm rewrites the lock's recorded peer ranges to match an override — after
- *    the fix the lock says `react-native-worklets: 0.10.1` where
- *    `expo-modules-core` really declares the four-clause range above, so a
- *    lock-sourced check would be vacuous.
+ *    in the repo-root `node_modules`. This is the invariant #225 broke. It
+ *    reads installed versions rather than the pins so that a pin replaced by a
+ *    direct dependency is still checked; and it reads ranges from the published
+ *    manifests rather than from `pnpm-lock.yaml`, because pnpm rewrites the
+ *    lock's recorded peer ranges to match an override — after the fix the lock
+ *    says `react-native-worklets: 0.10.1` where `expo-modules-core` really
+ *    declares the four-clause range above, so a lock-sourced check would be
+ *    vacuous.
+ *
+ * Assertion 3 is an `expect(…).toEqual([])`, and an empty result is ambiguous
+ * on its own, so two structural guards sit under it: one asserts the walk found
+ * `expo-modules-core` at all, so "no violations" cannot be "the walk saw
+ * nothing"; the other names any peer range semver cannot parse, because
+ * `satisfies` swallows an invalid range and returns `false`, which would
+ * otherwise surface a `workspace:` or `patch:` spec as a version conflict it is
+ * not.
  *
  * Consumers are discovered rather than listed. #225 happened because nobody was
  * looking at a package no file named; enumerating three known names here would
- * rebuild that blind spot for the fourth. The walk assumes the hoisted layout
- * `.npmrc` mandates ("Expo requires hoisted node_modules in pnpm monorepos"), so
- * every third-party package sits in the repo-root `node_modules`.
+ * rebuild that blind spot for the fourth. The walk reads the repo-root
+ * `node_modules` one level deep, scoped packages included, and does not
+ * descend. It rests on the hoisted layout `.npmrc` mandates ("Expo requires
+ * hoisted node_modules in pnpm monorepos"), under which every third-party
+ * package sits at the root — `observed` 2026-09-18: `node_modules/.pnpm` holds
+ * exactly one entry, `lock.yaml`, so there are no store directories for a
+ * second copy to hide in. What that leaves uncovered, stated rather than
+ * implied: a *consumer* nested under another package's `node_modules` would be
+ * missed, as would `spikes/gps-harness/node_modules`, which sits outside
+ * `pnpm-workspace.yaml` and nothing EAS builds reads. A nested *copy* of either
+ * pinned package cannot exist while the overrides collapse each to one version.
  *
  * It lives in `apps/driver` because that is the app with an `eas.json` and the
  * surface that breaks first, next to #220's `build-config.test.ts`. The pins
@@ -85,10 +107,14 @@ const PINNED = ['react-native-reanimated', 'react-native-worklets'] as const;
 /** Peer ranges declared against `PINNED` packages, keyed by the package declaring them. */
 type PeerRangesByPackage = Record<string, Record<string, string>>;
 
-interface PeerViolation {
+/** One peer range declared by one package against one of `PINNED`. */
+interface DeclaredRange {
   consumer: string;
   dependency: string;
   range: string;
+}
+
+interface PeerViolation extends DeclaredRange {
   installed: string;
 }
 
@@ -149,14 +175,58 @@ const declaredPeerRanges = (): PeerRangesByPackage => {
   return found;
 };
 
-/** The version of each `PINNED` package present in the root `node_modules`. */
-const installedVersions = (): Record<string, string> =>
+/**
+ * The version of each `PINNED` package present in the root `node_modules`.
+ * `PackageManifest.version` is optional, so this is `string | undefined` and
+ * says so: casting the absence away would let `peerViolations` drop every range
+ * declared on that package and pass vacuously.
+ */
+const installedVersions = (): Record<string, string | undefined> =>
   Object.fromEntries(
     PINNED.map((name) => [
       name,
       readJson<PackageManifest>('node_modules', name, 'package.json').version,
     ]),
-  ) as Record<string, string>;
+  );
+
+/** Stable ordering, so either report can be compared against a literal. */
+const byConsumer = (a: DeclaredRange, b: DeclaredRange): number =>
+  `${a.consumer}/${a.dependency}`.localeCompare(
+    `${b.consumer}/${b.dependency}`,
+  );
+
+/** Whether semver can read this range at all. */
+const isSemverRange = (range: string): boolean => {
+  try {
+    new Range(range);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Declared ranges semver cannot parse. pnpm's `workspace:`, `catalog:`, `npm:`
+ * alias and `patch:` specs all throw in `Range` (`observed` 2026-09-18), and
+ * `satisfies` catches that internally and returns `false` — so leaving them to
+ * `peerViolations` would red the gate naming a version conflict that does not
+ * exist. They get their own name here rather than being skipped: a range
+ * nothing can read is a fact about the tree, not a clean result.
+ *
+ * Not hypothetical. `react-native-gesture-handler@3.2.1` already declares
+ * `react-native-worklets` as
+ * `patch:react-native-worklets@npm%3A0.12.0-nightly-…` — in `devDependencies`,
+ * which this walk does not read (`observed` 2026-09-18). One published package
+ * moving a spec of that shape into `peerDependencies` is all it takes.
+ */
+const unparseableRanges = (peerRanges: PeerRangesByPackage): DeclaredRange[] =>
+  Object.entries(peerRanges)
+    .flatMap(([consumer, peers]) =>
+      Object.entries(peers)
+        .filter(([, range]) => !isSemverRange(range))
+        .map(([dependency, range]) => ({ consumer, dependency, range })),
+    )
+    .sort(byConsumer);
 
 /**
  * Every declared range the installed versions do not satisfy. Optionality is
@@ -164,36 +234,32 @@ const installedVersions = (): Record<string, string> =>
  * pnpm must *install* the package, not whether the version present is one the
  * consumer compiles against — `expo-modules-core` marks `react-native-worklets`
  * optional and still builds C++ against it, which is #225 in one sentence.
+ *
+ * Two kinds of range are passed over, each covered by its own assertion rather
+ * than by this one: a package with no installed version (nothing to compare,
+ * and assertion 3 reds on that tree first) and a range `unparseableRanges`
+ * reports.
  */
 const peerViolations = (
-  versions: Record<string, string>,
+  versions: Record<string, string | undefined>,
   peerRanges: PeerRangesByPackage,
 ): PeerViolation[] =>
   Object.entries(peerRanges)
     .flatMap(([consumer, peers]) =>
-      Object.entries(peers)
-        .filter(([dependency]) => versions[dependency] !== undefined)
-        .filter(
-          ([dependency, range]) => !satisfies(versions[dependency], range),
-        )
-        .map(([dependency, range]) => ({
-          consumer,
-          dependency,
-          range,
-          installed: versions[dependency],
-        })),
+      Object.entries(peers).flatMap(([dependency, range]) => {
+        const installed = versions[dependency];
+        if (installed === undefined || !isSemverRange(range)) return [];
+        if (satisfies(installed, range)) return [];
+        return [{ consumer, dependency, range, installed }];
+      }),
     )
-    .sort((a, b) =>
-      `${a.consumer}/${a.dependency}`.localeCompare(
-        `${b.consumer}/${b.dependency}`,
-      ),
-    );
+    .sort(byConsumer);
 
 /** `PINNED` packages with no entry in root `pnpm.overrides`. */
 const missingPins = (overrides: Record<string, string>): string[] =>
   PINNED.filter((name) => overrides[name] === undefined);
 
-describe('native module pins track Expo SDK 57 and satisfy every peer (#225)', () => {
+describe('native module pins track the installed Expo SDK and satisfy every peer (#225)', () => {
   const overrides =
     readJson<RootManifest>('package.json').pnpm?.overrides ?? {};
   const bundled = readJson<Record<string, string>>(
@@ -206,7 +272,7 @@ describe('native module pins track Expo SDK 57 and satisfy every peer (#225)', (
     expect(missingPins(overrides)).toEqual([]);
   });
 
-  it("each pin equals Expo SDK 57's bundled version (expected)", () => {
+  it("each pin equals the installed SDK's bundled version (expected)", () => {
     expect(
       Object.fromEntries(PINNED.map((name) => [name, overrides[name]])),
     ).toEqual(Object.fromEntries(PINNED.map((name) => [name, bundled[name]])));
@@ -224,6 +290,59 @@ describe('native module pins track Expo SDK 57 and satisfy every peer (#225)', (
     );
   });
 
+  it('the peer-range walk sees the tree at all (edge)', () => {
+    // The assertion above is `toEqual([])`, so a walk that found *no* consumers
+    // passes it exactly as a clean tree does. `expo-modules-core` is a hard
+    // dependency of `expo` and #225's own consumer, which makes it the right
+    // canary: it names a package to prove the mechanism, not to enumerate the
+    // consumer set the walk exists to discover.
+    expect(Object.keys(declaredPeerRanges())).toContain('expo-modules-core');
+  });
+
+  it('no declared peer range is unreadable by semver (edge)', () => {
+    // `peerViolations` passes over these, so without this they would leave the
+    // tree unchecked silently. Red here means a range needs a human, not that a
+    // version is wrong.
+    expect(unparseableRanges(declaredPeerRanges())).toEqual([]);
+  });
+
+  it('a pnpm patch: spec is named as unreadable, not as a version conflict (failure)', () => {
+    // The shape `react-native-gesture-handler` already carries in
+    // devDependencies. `satisfies` returns `false` for it, so the pre-L2
+    // machinery reported it as a version mismatch that does not exist.
+    const patched = {
+      'react-native-gesture-handler': {
+        'react-native-worklets':
+          'patch:react-native-worklets@npm%3A0.12.0-nightly#~/.yarn/patches/x.patch',
+      },
+    };
+    expect(unparseableRanges(patched)).toEqual([
+      {
+        consumer: 'react-native-gesture-handler',
+        dependency: 'react-native-worklets',
+        range: patched['react-native-gesture-handler']['react-native-worklets'],
+      },
+    ]);
+    expect(
+      peerViolations({ 'react-native-worklets': '0.10.1' }, patched),
+    ).toEqual([]);
+  });
+
+  it('a pinned package with no installed version is passed over (edge)', () => {
+    // Characterization, not a regression guard: this returned `[]` before the
+    // type change too. The point is that `Record<string, string | undefined>`
+    // now says out loud that the range is dropped, where the old cast hid it
+    // behind a type that could not be `undefined`. The tree is still covered —
+    // assertion 3 (installed equals pin) reds first on any tree that reaches
+    // this state.
+    expect(
+      peerViolations(
+        { 'react-native-worklets': undefined },
+        { 'expo-modules-core': { 'react-native-worklets': '^0.10.0' } },
+      ),
+    ).toEqual([]);
+  });
+
   it("the tree #225 shipped is reported against expo-modules-core's real range (failure)", () => {
     // Not a synthetic range: read from the installed manifest, so this case
     // follows expo-modules-core rather than restating a range that can move.
@@ -232,11 +351,15 @@ describe('native module pins track Expo SDK 57 and satisfy every peer (#225)', (
       'expo-modules-core',
       'package.json',
     ).peerDependencies?.['react-native-worklets'];
-    expect(range).toBeDefined();
+    if (range === undefined) {
+      throw new Error(
+        'expo-modules-core no longer declares a react-native-worklets peer — the #225 case needs rewriting',
+      );
+    }
     expect(
       peerViolations(
         { 'react-native-worklets': '0.12.1' },
-        { 'expo-modules-core': { 'react-native-worklets': range as string } },
+        { 'expo-modules-core': { 'react-native-worklets': range } },
       ),
     ).toEqual([
       {
