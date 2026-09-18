@@ -13,6 +13,19 @@ Code-review (file or description of issues): $review
 
 Direction / scope (what to fix now vs defer): $scope
 
+**Check the shape of both before you read anything.** `arguments: [review, scope]` binds by position, so
+each slot takes **one whitespace-delimited word** and everything past the second is dropped. `$scope` is
+free-form by design — "fix F1 and F3, defer the rest" is five words — so an unquoted steer arrives as
+`$review`="fix", `$scope`="F1". Ledger row L18; the same split is `observed` 2026-09-18 in
+`system-execution-report` (#229), and the fix pattern is `opportunity-scan:27`: read the invocation as
+**prose**, not as slots.
+
+- **`$review` looks like a path** (ends in `.md`, or names a directory that exists) → use it, and read
+  `$scope` as everything the user typed after it, not as one word.
+- **`$review` does not look like a path** → the invocation was word-split. Recover the whole sentence
+  you were invoked with, take the review from it (a path, a PR number, or the findings inline) and the
+  scope from the rest. Ask only if the sentence names neither.
+
 If the Code-review is a file, **read the entire file first** so you understand every finding before triaging.
 
 ## 0. Check the ground before you start
