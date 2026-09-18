@@ -179,20 +179,38 @@ check above is `;`-separated and prints its own `exit=`.
 ## Validation
 
 `observed` — `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run
-typecheck lint test build --force`, run 2026-09-18 against the fixed tree, exit 0:
+typecheck lint test build --force`, run 2026-09-18 **at `6ca0d56`**, this round's fix commit, clean
+tree, exit 0:
 
 ```
 Tasks:    22 successful, 22 total
 Cached:   0 cached, 22 total
-Time:     1m25.042s
+Time:     1m18.802s
 ```
 
-`@taxi/api`: **Test Suites 77 passed / 77 total, Tests 733 passed / 733 total** — the full count with
-`REDIS_TEST_URL` set, so the 39 Redis-gated tests ran rather than skipping.
+    @taxi/dispatch  Test Files  27 passed (27)
+    @taxi/dispatch  Tests  224 passed (224)
+    @taxi/driver    Test Suites: 42 passed, 42 total
+    @taxi/driver    Tests:       229 passed, 229 total
+    @taxi/rider     Test Suites: 29 passed, 29 total
+    @taxi/rider     Tests:       140 passed, 140 total
+    @taxi/db        Test Files  3 passed (3)
+    @taxi/db        Tests  17 passed (17)
+    @taxi/shared    Test Files  24 passed (24)
+    @taxi/shared    Tests  231 passed (231)
+    @taxi/api       Test Suites: 77 passed, 77 total
+    @taxi/api       Tests:       733 passed, 733 total
 
-No shipped source changed: the diff is four `.md` files plus this report. The gate is unchanged from
-the reviewed head's 22/22 in task and test counts, and differs only in wall time, which is a property
-of the machine rather than of the tree.
+Run with `REDIS_TEST_URL` set, so the 39 Redis-gated tests ran rather than skipping — `@taxi/api`'s
+733 is the full count, not the 694 a gate without it reports.
+
+**The only change to this branch after that run is this Validation block**, which is why it sits in
+its own commit: a gate figure written into the tree it measures re-stales itself the moment it is
+committed (#212). An earlier run on the same content before commit reported `1m25.042s` — identical
+in every task and test count, differing only in wall time, which is a property of the machine.
+
+Every task and test count above is **identical to the reviewed head's**, as it should be: the diff
+is five `.md` files and no shipped source.
 
 **No regression test is possible or appropriate here.** Every finding is a prose-accuracy defect;
 typecheck, lint and test cannot read prose, which is why `CLAUDE.md` makes it the reviewer's job. The
