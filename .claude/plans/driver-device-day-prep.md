@@ -1459,3 +1459,20 @@ in `main` since `3d2e874` and that no check in this repo could see.
 
   Fixes report: `.claude/reports/pr-218-review-fixes-round2.md`, with a 24-assertion citation
   verifier that returns 0 hits for every added claim against `bd5193a`.
+
+- 2026-09-18 — **The emulator half of the Out of Scope rejection at `:72-74` is retired**, by #224,
+  which tested the premise the rejection turned on rather than re-arguing its cost. Both halves of
+  that bullet had been stated as fact and neither had been tested. What is now `observed`: the SDK,
+  an API 36 `google_apis` x86_64 image and a bootable AVD install on this Intel iMac for **5.9 GiB**
+  on disk (`du -sh`, the "multi-GB detour" quantified — and the planning estimate of ~3 GiB was low),
+  and a synthetic fix **does** reach the fused location provider the `expo-location` background
+  consumer reads from. The "uncertain end" therefore narrowed by one gate but is **not** resolved:
+  whether that fix reaches the *background* task consumer is still untested, because the driver APK
+  could not be built at all — `main` carries a native-build failure
+  ([#225](https://github.com/linardsb/taxi/issues/225)) that blocks any device day, emulator or phone.
+  The second half of the rejection — "the evidence it would produce is weaker than a device's" —
+  stands, and #224 narrows rather than disputes it: an emulator runs the real framework, the real
+  fused provider and a real foreground service, and reproduces no Doze, no OEM process killer and no
+  real radio. Run sheet: `docs/runbooks/driver-device-day.md` §Emulator route. Plan and evidence:
+  `.claude/plans/emulator-oracle-141.md`, `.claude/reports/emulator-oracle-141-report.md`.
+  **The iOS Simulator half of `:72-74` is unchanged and still closed.**
