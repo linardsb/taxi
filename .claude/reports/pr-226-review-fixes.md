@@ -200,44 +200,41 @@ check above is `;`-separated and prints its own `exit=`.
 
 ## Validation
 
-`observed` — `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run
-typecheck lint test build --force`, run 2026-09-18 **at `6ca0d56`**, this round's fix commit, clean
-tree, exit 0:
+**The authoritative green is CI's `check` job on PR #226.** It runs on whatever head is pushed, so
+unlike a figure written into the tree it measures it cannot go stale — which is the failure this
+section would otherwise repeat (#212: a report quoting its own commit re-stales itself, and the
+correction re-stales it again).
 
-```
-Tasks:    22 successful, 22 total
-Cached:   0 cached, 22 total
-Time:     1m18.802s
-```
+`observed` locally — `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run
+typecheck lint test build --force`, exit 0 at **every head this round produced**:
 
-    @taxi/dispatch  Test Files  27 passed (27)
-    @taxi/dispatch  Tests  224 passed (224)
-    @taxi/driver    Test Suites: 42 passed, 42 total
-    @taxi/driver    Tests:       229 passed, 229 total
-    @taxi/rider     Test Suites: 29 passed, 29 total
-    @taxi/rider     Tests:       140 passed, 140 total
-    @taxi/db        Test Files  3 passed (3)
-    @taxi/db        Tests  17 passed (17)
-    @taxi/shared    Test Files  24 passed (24)
-    @taxi/shared    Tests  231 passed (231)
-    @taxi/api       Test Suites: 77 passed, 77 total
-    @taxi/api       Tests:       733 passed, 733 total
+| Head | What it carries | Tasks | Wall |
+|---|---|---|---|
+| `6ca0d56` | M1, M2, L1–L3 | 22/22 | 1m18.802s |
+| `008470e` | + this report's first re-anchor | 22/22 | 1m17.587s |
+| `947f02a` | + the whole-diff M1 sweep; recorded by `record-gate.sh` into `.claude/last-gate.json` | 22/22 | 1m19.195s |
+
+Every run reports the same counts — only wall time moves, and that is a property of the machine:
+
+    @taxi/dispatch  Test Files 27 passed (27)      @taxi/dispatch  Tests 224 passed (224)
+    @taxi/driver    Test Suites: 42 passed, 42     @taxi/driver    Tests: 229 passed, 229
+    @taxi/rider     Test Suites: 29 passed, 29     @taxi/rider     Tests: 140 passed, 140
+    @taxi/db        Test Files 3 passed (3)        @taxi/db        Tests 17 passed (17)
+    @taxi/shared    Test Files 24 passed (24)      @taxi/shared    Tests 231 passed (231)
+    @taxi/api       Test Suites: 77 passed, 77     @taxi/api       Tests: 733 passed, 733
 
 Run with `REDIS_TEST_URL` set, so the 39 Redis-gated tests ran rather than skipping — `@taxi/api`'s
 733 is the full count, not the 694 a gate without it reports.
 
-**The only change to this branch after that run is this Validation block**, which is why it sits in
-its own commit: a gate figure written into the tree it measures re-stales itself the moment it is
-committed (#212). An earlier run on the same content before commit reported `1m25.042s` — identical
-in every task and test count, differing only in wall time, which is a property of the machine.
-
-Every task and test count above is **identical to the reviewed head's**, as it should be: the diff
-is five `.md` files and no shipped source.
+Identical to the reviewed head `6ccab9e`'s counts, as it should be: the diff is five `.md` files and
+no shipped source. **Only this Validation block changes after `947f02a`**, and CI gates whatever
+head carries it.
 
 **No regression test is possible or appropriate here.** Every finding is a prose-accuracy defect;
 typecheck, lint and test cannot read prose, which is why `CLAUDE.md` makes it the reviewer's job. The
 `grep`/`diff` checks above are the substitute, and each was chosen so that it **discriminates** —
-V5 returns two hits against the unfixed tree and none against the fixed one.
+V5 returns two hits against the unfixed tree and none against the fixed one; V5b returns four
+enumerations against `008470e` and none against this head.
 
 ## Nothing deferred
 
