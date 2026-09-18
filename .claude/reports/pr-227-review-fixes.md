@@ -353,6 +353,13 @@ Per-package, from that same run (`observed`):
 694 passed + 39 skipped out of the same 733 total, the split CLAUDE.md records `observed`
 at `0cdb59c`. That split is inherited here, not re-run.
 
+**Independently confirmed on CI**, which is a different machine and a clean install:
+run [`35350954602`](https://github.com/linardsb/taxi/actions/runs/35350954602) on
+`9ad789e` logs `Tasks: 22 successful, 22 total`, `Tests: 733 passed` / `77` suites (api),
+`242 passed` / `43` suites (driver), `140 passed` / `29` suites (rider) — every figure
+matching the local run above. All five checks green: `check`, `audit-diff`, `codeql`,
+`CodeQL`, `ready`.
+
 **`@taxi/driver` moved 238 → 242**, +4, which is exactly the four cases this pass adds:
 the walk canary (M1), the unreadable-range assertion and the `patch:` case (L2), and the
 missing-version characterization (M3). Suite count is unchanged at 43 — every new case
