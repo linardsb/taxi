@@ -93,19 +93,33 @@ interface PeerViolation {
 }
 
 /**
- * Every directory in the root `node_modules` that holds a manifest, scoped
- * packages included. `.bin`, `.pnpm` and any other dot-entry are pnpm's own
- * bookkeeping, not packages.
+ * Directory entries that are not pnpm's own bookkeeping. `.bin`, `.pnpm` and
+ * any other dot-entry are skipped, and an unreadable path yields nothing rather
+ * than throwing: a scope that is a file, or a directory removed mid-run, would
+ * otherwise red the whole gate on something that is not a peer-range statement.
+ * Neither case is present in this tree (`observed` 2026-09-18: no non-directory
+ * `node_modules/@*` entry, no dot-entry inside a scope) — this is the safe
+ * default, not a fix for a live failure.
+ */
+const packageEntries = (path: string): string[] => {
+  try {
+    return readdirSync(path).filter((entry) => !entry.startsWith('.'));
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Every directory in the root `node_modules` that may hold a manifest, scoped
+ * packages included.
  */
 const installedPackageDirs = (): string[] => {
   const root = `${repoRoot}/node_modules`;
-  return readdirSync(root)
-    .filter((entry) => !entry.startsWith('.'))
-    .flatMap((entry) =>
-      entry.startsWith('@')
-        ? readdirSync(`${root}/${entry}`).map((scoped) => `${entry}/${scoped}`)
-        : [entry],
-    );
+  return packageEntries(root).flatMap((entry) =>
+    entry.startsWith('@')
+      ? packageEntries(`${root}/${entry}`).map((scoped) => `${entry}/${scoped}`)
+      : [entry],
+  );
 };
 
 /**
