@@ -50,10 +50,26 @@ unchanged."* Nothing else in the section changed, and nothing at or below `:322`
 tempting adjacent cleanup (§Verdict calls steps 1–3 "setup" while step 2 is a HARD GATE) is
 pre-existing, out of scope, and would have falsified the PR's byte-identity invariant.
 
+**The rule is not scoped to the runbook, and a runbook-only sweep missed four more.** `:296-299`
+says "anywhere new", and this PR adds 1220 lines of new plan prose. Swept across the whole diff
+rather than the one file the review named:
+`grep -n 'load-bearing\|corroborat\|are setup\|4, 5, 7'` over all five changed files. Four hits in
+`.claude/plans/emulator-oracle-141.md`, every one new in this PR — T10's **PATTERN** `:773-775`
+(the full set, in the very line telling the implementer not to re-derive it), T10's **VALIDATE**
+`:794` and T13's **IMPLEMENT** `:851` (the load-bearing subset), and the **Assumptions** section
+`:998` (the subset inside a closure claim). All four now cite §Verdict. Every edit is line-count
+neutral, so no anchor moved. Hits in `driver-device-day-prep.md` are all pre-existing #218 content —
+`git diff origin/main..HEAD` on that file shows only the two L3 hunks — and `:253-259` is the
+canonical § *The step-set re-derivation* the rule points **to**.
+
 **Proof.** V5 — `sed -n '323,$p' … | grep 'load-bearing\|corroborat\|are setup'` returns **no hits**
 in the appended region (`exit=1`). Run 2026-09-18 against the fixed tree. The same command piped from
 `git show 6ccab9e:…` returns two hits — offsets `140:` and `141:` in the region, absolute `:462-463`,
-`exit=0` — so the check discriminates rather than passing vacuously.
+`exit=0` — so the check discriminates rather than passing vacuously. V5b — the whole-diff sweep
+returns, in the plan's task bodies, `:794`, `:851` and `:998`, each the phrase "§Verdict's
+load-bearing steps": a citation, not an enumeration. Against `008470e` the same command returns
+**five lines carrying four enumerations** (`:773-774`, `:794`, `:851`, `:998`), so it discriminates.
+It also matches three lines inside `AMENDMENTS A2`, which is A2 describing this sweep.
 
 ---
 
@@ -65,10 +81,12 @@ in the appended region (`exit=1`). Run 2026-09-18 against the fixed tree. The sa
 eight places and the PR body claimed *"cites §Steps 3–8 by number"*. The runbook is right: §Steps row
 2 is a **HARD GATE** whose second half is "the driver visible on the board", and nothing in Gates 1–3
 covers the board — Gate 2 asks only `driver.location.ping_accepted` at ~4 s. So the widening closes a
-real hole and the plan is reconciled to the section, not the reverse.
+real hole — a **setup** hole in §Verdict's terms, since step 2 is setup and a row-2 failure is a
+setup fault rather than #141 evidence, but the runbook's hard-gate rule is that "nothing after that
+point means anything" — and the plan is reconciled to the section, not the reverse.
 
-**Where it came from.** T10's IMPLEMENT (`:766`) always said "rows **2 through 8**"; T10's own title
-one line above said 3–8. The implementer followed the body. Nothing recorded the divergence, so AC6's
+**Where it came from.** T10's IMPLEMENT (`:767`) always said "rows **2 through 8**"; T10's own title
+two lines above said 3–8. The implementer followed the body. Nothing recorded the divergence, so AC6's
 ✅ was ticked against a criterion the section deliberately exceeds.
 
 **Fix**, four surfaces:
@@ -81,16 +99,18 @@ one line above said 3–8. The implementer followed the body. Nothing recorded t
    but *"✅, **widened to 2–8** — see D14"* with the wording mismatch spelled out.
 4. **PR body** — `3–8` → `2–8` with the row-2 reason. Applied after push; see *PR body* below.
 
-**Proof.** V1 — `grep -rn $'3–8'` over the runbook, plan, report and prep plan returns **4 hits, all
-historical**: report `:225` and `:244` (D14 and the AC6 row, both describing the widening) and plan
-`:1210-1211` (A2, same). No prescriptive `3–8` survives. Run 2026-09-18 against the fixed tree.
+**Proof.** V1 — `grep -rn $'3–8'` over the runbook, plan, report and prep plan returns **4 lines, all
+historical**: two in the report (`D14` and the `AC6` row, both describing the widening) and two in the
+plan (`AMENDMENTS A2`, same). No prescriptive `3–8` survives. Run 2026-09-18 against the fixed tree.
+Cited by section rather than line, since the same commit moves those lines.
 
 ---
 
 ## L1 — "D1–D12" while the report carried D13, and an out-of-order block ✅ fixed
 
-**What was wrong.** Plan `:1205` and the PR body both named `D1–D12`, excluding D13 — which existed
-at report `:199` and which the PR body itself then discussed by number a paragraph later. And the
+**What was wrong.** Plan `:1205` (reviewed head) and the PR body both named `D1–D12`, excluding D13 — which existed
+at report `:199` (reviewed head; `:217` after the reorder) and which the PR body itself then
+discussed by number a paragraph later. And the
 report's deviation block ran D1–D9, D11, **D13**, D12, D10.
 
 **Fix.** Plan `:1205` → `D1–D14` (the corrected range, per above), with A2 recording that A1's count
@@ -99,8 +119,9 @@ was corrected in place and why that is not a rewrite of A1's substance. The repo
 renumbering would break all seven. Nothing in the tree cites report line numbers, so the reorder
 moves no anchor.
 
-**Proof.** V3 — `grep -rn $'D1–D12' --include='*.md' .` returns **one hit**: plan `:1218`, A2's own
-sentence recording the correction. V4 — the block reads `D1 D2 D3 D4 D5 D6 D7 D8 D9 D10 D11 D12 D13
+**Proof.** V3 — `grep -rn $'D1–D12' --include='*.md' .` returns **five lines**: one in the plan, in
+`AMENDMENTS A2` — A2's own sentence recording the correction — and four in this report, the other
+record of it. No surface still **asserts** the range. V4 — the block reads `D1 D2 D3 D4 D5 D6 D7 D8 D9 D10 D11 D12 D13
 D14`, monotonic. All seven PR-body-cited D-numbers still resolve to exactly one heading each
 (`grep -c '^\*\*Dn — '` = 1 for each). Run 2026-09-18 against the fixed tree.
 
@@ -165,9 +186,10 @@ working-tree grep and is handled separately under *PR body*.
 
 | Retired | Command | Hits | Verdict |
 |---|---|---|---|
-| value `3–8` (step range) | `grep -rn $'3–8'` over runbook, plan, report, prep plan | report `:225`, `:244`; plan `:1210`, `:1211` | ✅ all four are D14/A2 **describing** the widening. No prescriptive copy left. |
-| value `D1–D12` | `grep -rn $'D1–D12' --include='*.md' .` | plan `:1218` | ✅ the one hit is A2's own record of the correction. |
-| subject — the §Verdict step-set restatement | `sed -n '323,$p' runbook \| grep 'load-bearing\|corroborat\|are setup'` | none (exit 1) | ✅ retired as a subject, not just as digits. |
+| value `3–8` (step range) | `grep -rn $'3–8'` over runbook, plan, report, prep plan | 4 lines: report `D14` and its `AC6` row; plan `AMENDMENTS A2` | ✅ all four **describe** the widening. No prescriptive copy left. |
+| value `D1–D12` | `grep -rn $'D1–D12' --include='*.md' .` | 5 lines: 1 in plan `AMENDMENTS A2`, 4 in this report | ✅ both are records **of** the correction; nothing still asserts the range. |
+| subject — the §Verdict step-set restatement, **in the runbook** | `sed -n '323,$p' runbook \| grep 'load-bearing\|corroborat\|are setup'` | none (exit 1) | ✅ |
+| subject — the same restatement **anywhere in the diff** (the rule says "anywhere new") | `grep -n 'load-bearing\|corroborat\|are setup\|4, 5, 7'` over all five changed files | plan task bodies `:794`, `:851`, `:998`; plus 3 lines in `AMENDMENTS A2` and 2 in this report | ✅ the three task-body hits read "§Verdict's **load-bearing** steps" — a citation. The four enumerations this sweep found at `008470e` (`:773-774`, `:794`, `:851`, `:998`) are replaced. The A2 and report hits are the two records **of** this sweep. Prep-plan hits are pre-existing #218 content, outside this diff. |
 | subject — "pure append" describing the prep plan's retirement | `grep -n 'pure append' report` | none | ✅ D13 amended; the phrase no longer stands. |
 | replacement `2–8` present | `grep -rc $'2–8'` | report 7, plan 9, runbook **0** | ✅ expected: the runbook phrases it "rows **2 through 8**", which is the shipped wording the other two were reconciled *to*. |
 

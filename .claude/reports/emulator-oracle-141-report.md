@@ -227,7 +227,9 @@ places, including AC4, AC6 and T10's own title — but T10's IMPLEMENT (`:766`) 
 8**", and the shipped `## Emulator route` section followed the IMPLEMENT. The widening is
 deliberate and correct: §Steps row 2 is a **HARD GATE** whose second half is "the driver visible on
 the board", and nothing in Gates 1–3 covers the board — Gate 2 asks only
-`driver.location.ping_accepted` at ~4 s. Including row 2 closes a hole the gates leave open. What
+`driver.location.ping_accepted` at ~4 s. Including row 2 closes that hole — a **setup** hole in
+§Verdict's terms, since step 2 is setup and a row-2 failure is a setup fault rather than #141
+evidence, but the runbook's own hard-gate rule is that "nothing after that point means anything". What
 was wrong is that nothing recorded it, so AC6's ✅ was ticked against a criterion the section
 deliberately exceeds. Found by the PR #226 review (M2). The plan is reconciled to 2–8 at all eight
 places (plan `## AMENDMENTS` A2); this report's AC4 and AC6 rows now read 2–8.

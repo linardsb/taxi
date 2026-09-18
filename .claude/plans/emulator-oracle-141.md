@@ -770,9 +770,9 @@ warning, because it would have produced a false ❌.
   - **Row 2 is entered here for its board-visibility half only** — T8 covered its ping half and
     deliberately narrowed away the board. Without this sub-step step 2's hard gate is never fully
     judged, because rows "3 through 8" do not contain it. Judge it, and say which half T8 supplied.
-- **PATTERN**: the runbook's §Verdict rule: steps 4, 5, 7, 8 are load-bearing and binary; 6 is
-  corroborating; 1–3 are setup. **Do not re-derive that set — it was re-derived once, deliberately,
-  and the issue comment history turns on it.**
+- **PATTERN**: the runbook's §Verdict rule. **Cite it; do not restate the set and do not re-derive
+  it** — it was re-derived once, deliberately, in `driver-device-day-prep.md` § *The step-set
+  re-derivation*, and the issue comment history turns on it.
 - **IMPORTS**: none.
 - **GOTCHA**: steps 1 and 2 are already covered by T8 with one deliberate narrowing (pings only).
   Step 2's board-visibility half is still owed — judge it here, and say so, rather than marking step 2
@@ -791,8 +791,8 @@ warning, because it would have produced a false ❌.
 - **GOTCHA**: record that the taps were `adb input` and not a finger. It is a real divergence from
   what a phone run proves about the touch target — the 44px minimum is a UX rule elsewhere in this
   repo, and an `input tap` at exact centre coordinates proves nothing about it.
-- **VALIDATE**: every row of the Result table filled; steps 4, 5, 7, 8 each ✅ or ❌ with the signal
-  that produced it
+- **VALIDATE**: every row of the Result table filled; each of §Verdict's load-bearing steps ✅ or ❌
+  with the signal that produced it
 - **SATISFIES**: AC #4
 
 ---
@@ -848,8 +848,8 @@ warning, because it would have produced a false ❌.
 ### T13 — RECORD the verdict on #224 and #141
 
 - **IMPLEMENT**: Comment the outcome on both issues. On #224: which gate terminated the run, the
-  evidence line, and the measured SDK cost. On #141: whether its four load-bearing steps now have a
-  verdict, and on what grade of evidence — **do not close #141 without Linards' answer to Q1.**
+  evidence line, and the measured SDK cost. On #141: whether §Verdict's load-bearing steps now have
+  a verdict, and on what grade of evidence — **do not close #141 without Linards' answer to Q1.**
 - **PATTERN**: #141's existing comments — each states what is done, what is not, and what unblocks it.
 - **IMPORTS**: none.
 - **GOTCHA**: keep closing keywords away from `#N` unless you mean them. A backticked `Closes #N` has
@@ -995,8 +995,8 @@ is worth capturing on a pass too, as the positive control for the next person.
 **Q1 — Does emulator evidence close #141, or only de-risk the phone day?** *(owed to Linards; this
 plan states its assumption and does not act on it)*
 
-**Assumed**: Gates 1–3 green plus steps 4, 5, 7 and 8 green on the emulator **closes #141**, while #4
-and #14's device day stand unchanged.
+**Assumed**: Gates 1–3 green plus §Verdict's load-bearing steps green on the emulator
+**closes #141**, while #4 and #14's device day stand unchanged.
 
 The reasoning, stated so it can be rejected: #141's claim is about **task lifecycle** — was the
 background task torn down before the api answered? An emulator runs the real Android framework, the
@@ -1207,13 +1207,26 @@ Full evidence, deviations D1–D14 and the acceptance-criteria state:
 
 ### A2 — 2026-09-18, PR #226 review round 1 (M1, M2, L1–L3)
 
-**The step range is 2–8, not 3–8, everywhere in this plan.** T10's IMPLEMENT (`:766`) always said
+**The step range is 2–8, not 3–8, everywhere in this plan.** T10's IMPLEMENT (`:767`) always said
 "rows 2 through 8"; its own title and seven other places in this plan said 3–8, and the shipped
 runbook section followed the IMPLEMENT. Row 2 is a **HARD GATE** whose second half is "the driver
 visible on the board", and nothing in Gates 1–3 covers the board — Gate 2 asks only
-`driver.location.ping_accepted`. The widening closes a real hole, so the plan is reconciled to the
-wider set rather than the section narrowed to the plan. Eight lines changed: `:55`, `:63`, `:244`,
-T10's title, T11's PATTERN, the Level-4 validation list, AC4 and AC6. Recorded as D14 in the report.
+`driver.location.ping_accepted`. The hole it closes is a **setup** hole, in §Verdict's own terms —
+step 2 is setup, so a row-2 failure is a setup fault and not #141 evidence, but "nothing after that
+point means anything", which is why running it still matters. The plan is therefore reconciled to
+the wider set rather than the section narrowed to the plan. Eight lines changed: `:55`, `:63`,
+`:244`, T10's title, T11's PATTERN, the Level-4 validation list, AC4 and AC6. Report entry: D14.
+
+**M1's rule — cite §Verdict's step set, never restate it — applies to this file too, and this file
+broke it four times.** The review raised it only against the runbook; the rule at
+`driver-device-day.md:296-299` says "anywhere new", and this plan is 1220 new lines. T10's PATTERN
+restated the set in full, T10's VALIDATE and T13's IMPLEMENT named the load-bearing subset, and the
+Assumptions section restated it inside a closure claim — five lines carrying four enumerations. All
+four now cite §Verdict instead. Sweep: `grep -n 'load-bearing\|corroborat\|4, 5, 7'` over this file
+returns six lines — `:794`, `:851` and `:998`, each the phrase "§Verdict's load-bearing steps", which
+is a citation and not an enumeration, plus three inside this amendment, which is this sentence
+describing the sweep. Every edit is line-count neutral, so `:55`, `:63`, `:244`, `:765`, `:767`,
+`:806`, `:946`, `:966` and `:971` all still resolve.
 
 **A1's deviation range above was `D1–D12` and is corrected in place to `D1–D14`.** D13 already
 existed when A1 was written and the PR body discussed it by number in the same breath; D14 is this
