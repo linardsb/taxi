@@ -49,14 +49,31 @@ const frame = () => ({
 });
 
 function boardWith(over: Partial<BoardState> = {}): BoardState {
-  return { frame: frame(), lastFrameAtMs: NOW, alerts: [], ...over };
+  return {
+    frame: frame(),
+    lastFrameAtMs: NOW,
+    serverOffsetMs: 0,
+    alerts: [],
+    ...over,
+  };
 }
 
-function mount(pill: PillState, board: BoardState, nowMs = NOW) {
+/**
+ * `serverNowMs` defaults to `nowMs`, which is a correctly-set machine and so
+ * the state every pre-#238 case here was already asserting. Pass them apart
+ * to test that the page hands each consumer the clock it asked for.
+ */
+function mount(
+  pill: PillState,
+  board: BoardState,
+  nowMs = NOW,
+  serverNowMs = nowMs,
+) {
   useBoardMock.mockReturnValue({
     board,
     pill,
     nowMs,
+    serverNowMs,
     retry: vi.fn(),
     ack: vi.fn(),
   });
@@ -276,8 +293,10 @@ describe('DispatchPage — a deaf console does not accuse the drivers', () => {
     // Websocket blocked, HTTP fine — a proxy or a corporate network, which is
     // the exact state `use-board.ts:211-222`'s poll fallback exists for. The
     // pill is «Bezsaistē» because the socket gave up, and every successful
-    // poll runs `applyFrame(s, frame, Date.now())` (`:117`), so the frame is
-    // at most one poll old and the board is demonstrably current. Reading the
+    // poll runs `applyFrame(s, frame, Date.now(), 'snapshot')`, so the frame
+    // is at most one poll old and the board is demonstrably current (the
+    // 'snapshot' source is #238's: the poll refreshes the board but is not a
+    // clock sample). Reading the
     // PILL here would blank the panel in the one state it was built to
     // survive; reading the FRAME AGE keeps the signal on.
     mount(
@@ -296,5 +315,49 @@ describe('DispatchPage — a deaf console does not accuse the drivers', () => {
     expect(
       screen.queryByText(formatMessage('lv', 'console.driver_no_signal')),
     ).toBeNull();
+  });
+});
+
+
+/**
+ * THE CLOCK ROUTING, and this page is where it can go wrong (#238). `nowMs`
+ * and `serverNowMs` are both `number` and both in scope in one JSX block, so
+ * nothing but the names stops an edit from pairing the wrong two. These two
+ * cases drive them apart in opposite directions, so passing the same value to
+ * both consumers fails one of them whichever value is chosen.
+ */
+describe('DispatchPage — the browser clock and the api clock are not swapped', () => {
+  it('reads the driver rows on the api clock, not the browser one (expected)', () => {
+    // #238's own example, at the smallest skew that changes the answer.
+    // SILENT_DRIVER last reported TTL + 30 s = 90 s before `NOW`, so on the
+    // api's clock the row is «Klusē 01:30». A browser 31 s slow measures that
+    // same silence as 59 s — inside the 60 s TTL — and would render green
+    // «Raida» for a driver dispatch has already stopped offering to.
+    mount(
+      'live',
+      boardWith({ frame: { ...frame(), drivers: [SILENT_DRIVER] } }),
+      NOW - 31_000, // browser
+      NOW, // api
+    );
+
+    expect(screen.getByText(silenceLabel())).toBeInTheDocument();
+    expect(
+      screen.queryByText(formatMessage('lv', 'console.driver_streaming')),
+    ).toBeNull();
+  });
+
+  it('measures frame staleness on the browser clock (edge)', () => {
+    // `lastFrameAtMs` is a `Date.now()` THIS machine recorded, so the banner
+    // must compare it against the browser's now. Correcting either side would
+    // cancel out at best; here the api clock alone would call a 6 s gap fresh
+    // and hide the banner.
+    mount(
+      'reconnecting',
+      boardWith({ lastFrameAtMs: NOW - 6_000 }),
+      NOW, // browser: the frame is 6 s old
+      NOW - 6_000, // api reading that would make it look current
+    );
+
+    expect(bannerFor('console.stale_banner_silent')).toBeInTheDocument();
   });
 });

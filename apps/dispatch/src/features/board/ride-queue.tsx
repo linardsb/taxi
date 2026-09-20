@@ -63,13 +63,13 @@ const CASCADE_STATUSES = new Set<RideStatus>(['offered', 'queued']);
 
 function RideRow({
   ride,
-  nowMs,
+  serverNowMs,
   flash,
   onAssign,
   onCancel,
 }: Readonly<{
   ride: BoardRide;
-  nowMs: number;
+  serverNowMs: number;
   flash: boolean;
   onAssign: (ride: BoardRide) => void;
   onCancel: (ride: BoardRide) => void;
@@ -105,14 +105,14 @@ function RideRow({
         </span>
         {ride.driverName !== null && <span>{ride.driverName}</span>}
         <span style={{ color: 'var(--color-fg-muted)' }}>
-          {ageOf(nowMs, ride.requestedAt)}
+          {ageOf(serverNowMs, ride.requestedAt)}
         </span>
       </span>
       {/* The zones slice owns WHY this driver and how long they have; this
           slice owns what the row says. Drawn only where a cascade is running
           — an accepted ride's history is not live state. */}
       {ride.cascade !== null && CASCADE_STATUSES.has(ride.status) && (
-        <CascadeStrip cascade={ride.cascade} nowMs={nowMs} />
+        <CascadeStrip cascade={ride.cascade} serverNowMs={serverNowMs} />
       )}
       {/* The override slice owns what Dina can DO to a row; this slice owns
           what the row says. See override/row-actions.tsx. */}
@@ -129,14 +129,14 @@ function RideRow({
 function Bucket({
   title,
   rides,
-  nowMs,
+  serverNowMs,
   flashRideIds,
   onAssign,
   onCancel,
 }: Readonly<{
   title: string;
   rides: BoardRide[];
-  nowMs: number;
+  serverNowMs: number;
   flashRideIds: ReadonlySet<string>;
   onAssign: (ride: BoardRide) => void;
   onCancel: (ride: BoardRide) => void;
@@ -177,7 +177,7 @@ function Bucket({
             <RideRow
               key={ride.rideId}
               ride={ride}
-              nowMs={nowMs}
+              serverNowMs={serverNowMs}
               flash={flashRideIds.has(ride.rideId)}
               onAssign={onAssign}
               onCancel={onCancel}
@@ -197,13 +197,13 @@ function Bucket({
  */
 export function RideQueue({
   rides,
-  nowMs,
+  serverNowMs,
   flashRideIds,
   onAssign,
   onCancel,
 }: Readonly<{
   rides: BoardRide[];
-  nowMs: number;
+  serverNowMs: number;
   flashRideIds: ReadonlySet<string>;
   onAssign: (ride: BoardRide) => void;
   onCancel: (ride: BoardRide) => void;
@@ -218,7 +218,7 @@ export function RideQueue({
     <Bucket
       title={formatMessage(LANG, title)}
       rides={bucketRides}
-      nowMs={nowMs}
+      serverNowMs={serverNowMs}
       flashRideIds={flashRideIds}
       onAssign={onAssign}
       onCancel={onCancel}

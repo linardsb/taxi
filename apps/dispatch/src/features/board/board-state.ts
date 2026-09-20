@@ -71,6 +71,38 @@ export const OFFLINE_AFTER_FAILURES = 5;
 /** Alert list cap — old alerts fall off the end, newest stay. */
 export const ALERTS_CAP = 50;
 
+/**
+ * The smallest server-clock correction the board will actually apply (#238).
+ *
+ * WHY A STEP RATHER THAN CONTINUOUS TRACKING. The candidate offset carries
+ * network jitter, so re-deriving it from every frame would make ages
+ * non-monotonic at 0.5 Hz — a `mm:ss` that walks backwards while a dispatcher
+ * is reading it. Moving only on a change of at least this much keeps ages
+ * monotonic between corrections, and makes the whole mechanism a NO-OP on a
+ * correctly-set machine: the offset starts at 0, and while every candidate is
+ * inside ±1 000 ms of 0 it stays 0, so nothing about today's rendering moves.
+ * What it does not do is hide a real correction — when the step is taken,
+ * every age jumps by it once. That is the intended behaviour and the price of
+ * being right afterwards.
+ *
+ * WHY 1 000 SPECIFICALLY. Every consumer renders at second granularity
+ * (`ageOf`'s `mm:ss`, re-derived on `use-board.ts`'s 1 Hz tick), so a residual
+ * under one second cannot appear on screen at all. That makes 1 000 ms the
+ * smallest step that buys a visible improvement; below it the offset would
+ * chase jitter for nothing a dispatcher could see.
+ *
+ * WHAT IT COSTS, against the true offset `O`. Once settled,
+ * `|stored − O| < 1 000 + L` (`derived`: `|stored − candidate| < 1 000` is
+ * the step test itself, and `|candidate − O| = L` is the sampling bias
+ * derived in `applyFrame`'s docblock below). Against
+ * `DRIVER_LOCATION_TTL_SECONDS` (60 s) that is under 1.7% plus L. Both terms
+ * point the SAME way — ages read small — so a driver who has gone quiet can
+ * still read «Raida» for that long past the boundary. The error it replaces
+ * was unbounded in exactly that direction; bounded beats unbounded, which is
+ * the whole claim being made here.
+ */
+export const SERVER_OFFSET_STEP_MS = 1_000;
+
 export type PillState = 'live' | 'reconnecting' | 'offline';
 
 export type BoardAlert =
@@ -94,12 +126,21 @@ export interface BoardState {
   frame: DispatchBoardEvent | null;
   /** null = the current frame (if any) was hydrated from storage — stale. */
   lastFrameAtMs: number | null;
+  /**
+   * api clock minus browser clock, in ms (#238). Add it to a browser `now`
+   * to get a server `now`, which is the only kind that may be subtracted from
+   * a wire timestamp. 0 until a socket frame says otherwise — see
+   * `applyFrame` for why only a SOCKET frame may say so, and
+   * `SERVER_OFFSET_STEP_MS` for why it moves in steps.
+   */
+  serverOffsetMs: number;
   alerts: BoardAlert[];
 }
 
 export const emptyBoard = (): BoardState => ({
   frame: null,
   lastFrameAtMs: null,
+  serverOffsetMs: 0,
   alerts: [],
 });
 
@@ -127,11 +168,35 @@ export const emptyBoard = (): BoardState => ({
  * profile, a clock step, the same origin pointed at another environment — and
  * treating it as one would reject every subsequent frame forever, leaving the
  * pill stuck at «Atjaunojas…». Unlike the bug above, that would not self-heal.
+ *
+ * `source` IS WHERE THE FRAME CAME FROM, AND IT IS NOT DECORATION (#238).
+ * `frame.at` is the only api clock reading the console ever gets, so it is
+ * what the server-client offset is sampled from — but only a SOCKET frame is
+ * a usable sample, and the parameter is required so no future call site can
+ * quietly become one.
+ *
+ * The sampling bias, stated rather than assumed. `frame.at` is stamped at
+ * `T` on the api and reaches the browser one-way delay `L` later, so the
+ * candidate `Date.parse(frame.at) − atMs` estimates the true offset `O` as
+ * `O − L` — low by exactly the transport delay, which makes every corrected
+ * age read `L` SMALL. On a socket push `L` is that frame's own trip on an
+ * already-open connection. On the HTTP snapshot it is a REST round trip
+ * against a possibly cold api, the ~3 s case the paragraph above is entirely
+ * about: sampling there would write a −3 000 ms offset onto a perfectly
+ * synchronised browser and clear any sane step threshold while doing it. So
+ * `'snapshot'` samples nothing and carries the offset through untouched.
+ *
+ * The consequence of that, also stated: while the pill is «Bezsaistē» only
+ * the read-only poll is feeding the board, so the offset FREEZES at its last
+ * socket-derived value until the socket returns. That is the right answer —
+ * there is no uncontaminated sample to take, and the quantity being held is a
+ * clock DIFFERENCE, which does not drift meaningfully across one outage.
  */
 export function applyFrame(
   state: BoardState,
   frame: DispatchBoardEvent,
   atMs: number,
+  source: FrameSource,
 ): BoardState {
   if (
     state.frame !== null &&
@@ -140,7 +205,39 @@ export function applyFrame(
   ) {
     return state;
   }
-  return { ...state, frame, lastFrameAtMs: atMs };
+  return {
+    ...state,
+    frame,
+    lastFrameAtMs: atMs,
+    serverOffsetMs:
+      source === 'socket'
+        ? steppedOffset(state.serverOffsetMs, frame.at, atMs)
+        : state.serverOffsetMs,
+  };
+}
+
+/** Which transport delivered a frame — only one of them carries a clock. */
+export type FrameSource = 'socket' | 'snapshot';
+
+/**
+ * The stored offset, moved to the candidate only if the two differ by at
+ * least `SERVER_OFFSET_STEP_MS`.
+ *
+ * A malformed `at` makes the candidate `NaN`, and `Math.abs(NaN) >= x` is
+ * `false`, so the stored offset survives untouched — the fail-safe direction,
+ * and the same posture `driverFreshness` takes below. Since #237 nothing
+ * malformed reaches here from either transport anyway; this is the function
+ * answering for itself, as a pure one should.
+ */
+function steppedOffset(
+  current: number,
+  frameAt: string,
+  atMs: number,
+): number {
+  const candidate = Date.parse(frameAt) - atMs;
+  return Math.abs(candidate - current) >= SERVER_OFFSET_STEP_MS
+    ? candidate
+    : current;
 }
 
 /**
@@ -259,16 +356,16 @@ export function isPanelStale(
  * rather than to green «Raida».
  *
  * The caller owns the clock (module header), so nothing here ticks. The page's
- * 1 Hz `nowMs` from `useBoard` is what re-derives this.
+ * 1 Hz `serverNowMs` from `useBoard` is what re-derives this.
  *
- * KNOWN LIMITATION — CLIENT CLOCK SKEW. `lastSeenAt` is the api's clock and
- * `nowMs` is the browser's. A browser two minutes slow reports every driver
- * `live`; two minutes fast, every driver `stale`. The board already carries
- * this exposure for every ride age (`ride-queue.tsx`'s `ageOf`), and
- * `applyFrame` avoids it for ORDERING by comparing two server timestamps —
- * a precedent for ordering, not for ages. Correcting it means carrying a
- * server-client offset from `frame.at`, which would change ride ages too —
- * tracked as #238.
+ * IT IS THE SERVER'S CLOCK ON BOTH SIDES, and the parameter name is the
+ * contract (#238). `lastSeenAt` is the api's; a raw browser `Date.now()` here
+ * meant a machine two minutes slow reported every driver `live` and two
+ * minutes fast reported every driver `stale`, with no bound on either. The
+ * caller passes `nowMs + serverOffsetMs`; what that is worth, and what it
+ * still costs, is derived at `SERVER_OFFSET_STEP_MS`. Do NOT pass a browser
+ * `now` — the compiler cannot tell the two apart, so the name is the only
+ * guard this function has.
  *
  * WHAT THIS DERIVATION CANNOT SEE, and so does not decide alone: whether a
  * position was ever recorded (`location`, not `lastSeenAt` — see
@@ -278,11 +375,11 @@ export function isPanelStale(
 export type DriverFreshness = 'live' | 'stale' | 'unknown';
 
 export function driverFreshness(
-  nowMs: number,
+  serverNowMs: number,
   lastSeenAt: string | null,
 ): DriverFreshness {
   if (lastSeenAt === null) return 'unknown';
-  const ageMs = nowMs - Date.parse(lastSeenAt);
+  const ageMs = serverNowMs - Date.parse(lastSeenAt);
   if (Number.isNaN(ageMs)) return 'unknown';
   return ageMs >= DRIVER_LOCATION_TTL_SECONDS * 1000 ? 'stale' : 'live';
 }

@@ -377,6 +377,53 @@ describe('useBoard', () => {
     expect(result.current.board.alerts).toHaveLength(0);
   });
 
+  it('corrects serverNowMs from a socket frame, leaving nowMs alone (expected, #238)', async () => {
+    // A browser 30 s slow. `NOW` is the api's clock in this file, so setting
+    // the system time back by 30 s is exactly that machine.
+    vi.setSystemTime(new Date(NOW.getTime() - 30_000));
+    const { result } = renderHook(() => useBoard());
+    await connectSocket(); // REST snapshot — deliberately samples nothing
+
+    expect(result.current.serverNowMs).toBe(result.current.nowMs);
+
+    await act(async () => {
+      fakeSocket.fire('dispatch:board', frame());
+    });
+
+    expect(result.current.board.serverOffsetMs).toBe(30_000);
+    expect(result.current.serverNowMs).toBe(result.current.nowMs + 30_000);
+    expect(result.current.serverNowMs).toBe(NOW.getTime());
+  });
+
+  it('keeps the two clocks equal on a correctly-set machine (edge, #238)', async () => {
+    // The no-op property. Nothing about today's rendering may move for the
+    // machine that was already right, or this fix costs more than it buys.
+    const { result } = renderHook(() => useBoard());
+    await connectSocket();
+    await act(async () => {
+      fakeSocket.fire('dispatch:board', frame());
+    });
+
+    expect(result.current.board.serverOffsetMs).toBe(0);
+    expect(result.current.serverNowMs).toBe(result.current.nowMs);
+  });
+
+  it('never samples the clock from the hydrated cold start (failure, #238)', async () => {
+    // A stored frame's `at` can sit arbitrarily far ahead — the same reason
+    // `applyFrame` refuses it as an ORDERING baseline. Sampling it would put
+    // every age 73 years out on the first paint.
+    window.localStorage.setItem(
+      BOARD_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify(frame({ at: '2099-01-01T00:00:00.000Z' })),
+    );
+
+    const { result } = renderHook(() => useBoard());
+
+    expect(result.current.board.frame).not.toBeNull();
+    expect(result.current.board.serverOffsetMs).toBe(0);
+    expect(result.current.serverNowMs).toBe(result.current.nowMs);
+  });
+
   it('an unauthorized handshake clears the session and redirects (failure)', async () => {
     renderHook(() => useBoard());
 

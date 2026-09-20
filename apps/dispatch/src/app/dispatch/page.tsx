@@ -48,7 +48,14 @@ const timeOf = (ms: number) =>
  * toggle, alert acknowledge/mute, and the offline retry — each one click.
  */
 export default function DispatchPage() {
-  const { board, pill, nowMs, retry, ack } = useBoard();
+  // TWO CLOCKS, BOTH IN SCOPE HERE, AND THEY ARE NOT INTERCHANGEABLE (#238).
+  // `nowMs` is the browser's and belongs with `lastFrameAtMs`, which is a
+  // `Date.now()` this machine recorded — `isStale` and `isPanelStale` below.
+  // `serverNowMs` is the api's and belongs with every timestamp off the wire:
+  // `requestedAt`, `lastSeenAt`, `cascade.expiresAt`, so `RideQueue` and
+  // `DriverList`. Both are `number`, so nothing but these names stops a
+  // future edit from pairing the wrong two.
+  const { board, pill, nowMs, serverNowMs, retry, ack } = useBoard();
   const [view, setView] = useState<'zones' | 'map'>('zones');
   const [target, setTarget] = useState<OverrideTarget | null>(null);
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -99,8 +106,8 @@ export default function DispatchPage() {
    * the worst case uncovered — handshake fine, emitter broken (a board build
    * throwing every beat), so `connected` is true, no frame ever arrives, and
    * the pill sits at «Atjaunojas…» indefinitely with no age shown and nothing
-   * to click, while ride ages keep ticking off `nowMs` and make the panel look
-   * alive.
+   * to click, while ride ages keep ticking off the 1 Hz clock and make the
+   * panel look alive.
    *
    * Shown while offline (unchanged), or once a frame we HAVE has gone stale.
    * `frame !== null` keeps it off the cold first paint, where the loading
@@ -256,7 +263,7 @@ export default function DispatchPage() {
         >
           <RideQueue
             rides={frame.rides}
-            nowMs={nowMs}
+            serverNowMs={serverNowMs}
             flashRideIds={flashRideIds}
             onAssign={openAssign}
             onCancel={openCancel}
@@ -273,10 +280,12 @@ export default function DispatchPage() {
                 signal inside either branch is invisible in the other.
 
                 `boardStale` is FRAME AGE, not the banner's condition, and the
-                two deliberately differ. Per-driver freshness is a browser
+                two deliberately differ. Per-driver freshness is a ticking
                 clock against a frozen field, so a console that has stopped
                 receiving would otherwise report every driver as silent —
-                that is what this prop is for. But the banner also fires on
+                that is what this prop is for, and #238's offset does not
+                touch it (that fixes WHICH clock ticks, not whether frames
+                arrive). But the banner also fires on
                 `pill === 'offline'`, and while the pill is «Bezsaistē» the
                 read-only poll is refreshing `lastFrameAtMs` every cycle, so
                 passing `showStaleBanner` blanked the panel with a
@@ -287,7 +296,7 @@ export default function DispatchPage() {
                 told the socket is down and the rows are still true. */}
             <DriverList
               drivers={frame.drivers}
-              nowMs={nowMs}
+              serverNowMs={serverNowMs}
               boardStale={isPanelStale(nowMs, board.lastFrameAtMs)}
             />
             <AlertsPanel alerts={board.alerts} ack={ack} />

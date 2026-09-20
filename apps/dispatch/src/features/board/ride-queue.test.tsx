@@ -56,7 +56,7 @@ describe('RideQueue', () => {
             unclaimedSeconds: 0,
           }),
         ]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
@@ -84,7 +84,7 @@ describe('RideQueue', () => {
     render(
       <RideQueue
         rides={[]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
@@ -108,7 +108,7 @@ describe('RideQueue', () => {
             },
           }),
         ]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         flashRideIds={new Set(['3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c'])}
         onAssign={noop}
         onCancel={noop}
@@ -140,7 +140,7 @@ describe('RideQueue', () => {
             unclaimedSeconds: 0,
           }),
         ]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         flashRideIds={none}
         onAssign={onAssign}
         onCancel={onCancel}
@@ -192,7 +192,7 @@ describe('RideQueue', () => {
             unclaimedSeconds: 0,
           }),
         ]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
@@ -226,7 +226,7 @@ describe('RideQueue', () => {
             },
           }),
         ]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
@@ -263,7 +263,7 @@ describe('RideQueue', () => {
             },
           }),
         ]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
@@ -308,7 +308,7 @@ describe('RideQueue', () => {
             },
           }),
         )}
-        nowMs={NOW}
+        serverNowMs={NOW}
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}

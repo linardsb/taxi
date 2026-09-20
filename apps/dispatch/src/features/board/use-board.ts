@@ -85,7 +85,19 @@ function hydratedBoard(): BoardState {
 export function useBoard(): {
   board: BoardState;
   pill: PillState;
+  /**
+   * The BROWSER's now. Pairs only with browser-recorded instants —
+   * `lastFrameAtMs`, and so `pillFrom` / `isStale` / `isPanelStale`, where
+   * both operands are `Date.now()` readings from this same machine and
+   * correcting either would cancel out and prove nothing.
+   */
   nowMs: number;
+  /**
+   * The API's now (#238). Pairs with every timestamp that came off the wire —
+   * `requestedAt`, `lastSeenAt`, `cascade.expiresAt`. Anything that subtracts
+   * this from `lastFrameAtMs`, or `nowMs` from a wire field, is a bug.
+   */
+  serverNowMs: number;
   retry: () => void;
   ack: (alertId: string) => void;
 } {
@@ -115,7 +127,9 @@ export function useBoard(): {
       }
       if (!res.ok) return; // pill/staleness carry the bad news truthfully
       const frame = dispatchBoardEventSchema.parse(await res.json());
-      setBoard((s) => applyFrame(s, frame, Date.now()));
+      // 'snapshot': a REST round trip against a possibly cold api is not a
+      // clock sample (#238). See applyFrame.
+      setBoard((s) => applyFrame(s, frame, Date.now(), 'snapshot'));
       persistFrame(frame);
     } catch {
       /* unreachable API: the pill is already not claiming live */
@@ -175,7 +189,7 @@ export function useBoard(): {
       const parsed = RT_EVENT_SCHEMAS[RT.dispatchBoard].safeParse(payload);
       if (!parsed.success) return;
       const frame = parsed.data;
-      setBoard((s) => applyFrame(s, frame, Date.now()));
+      setBoard((s) => applyFrame(s, frame, Date.now(), 'socket'));
       persistFrame(frame);
     });
     socket.on(RT.driverLocation, (payload: unknown) => {
@@ -262,5 +276,16 @@ export function useBoard(): {
     [],
   );
 
-  return { board, pill, nowMs, retry, ack };
+  return {
+    board,
+    pill,
+    nowMs,
+    // One clock difference, applied in one place, so the two panels cannot
+    // disagree about what time it is on the api (#238). The offset is 0 until
+    // a socket frame moves it, which makes this exactly `nowMs` on a
+    // correctly-set machine. See board-state.ts's SERVER_OFFSET_STEP_MS.
+    serverNowMs: nowMs + board.serverOffsetMs,
+    retry,
+    ack,
+  };
 }

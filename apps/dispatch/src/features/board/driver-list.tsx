@@ -79,9 +79,11 @@ const row: React.CSSProperties = {
  * three-states docblock describes, and it is the one the wire carries.
  *
  * `boardStale` — THE CONSOLE IS THE ONE THAT WENT QUIET. `driverFreshness`
- * compares a ticking `nowMs` against a frozen `lastSeenAt`, so a console that
- * has stopped RECEIVING freezes the numerator exactly as a driver who has
- * stopped SENDING does. Attributing the console's own deafness to the drivers
+ * compares a ticking `serverNowMs` against a frozen `lastSeenAt`, so a
+ * console that has stopped RECEIVING freezes `lastSeenAt` exactly as a driver
+ * who has stopped SENDING does. #238's offset changes nothing here: it
+ * corrects WHICH clock the ticking side reads, not whether the frozen side is
+ * still arriving. Attributing the console's own deafness to the drivers
  * is the same over-claim pointing the other way, and `pillFrom` already
  * refuses to call the board `live` without a fresh frame for this reason. The
  * worst case is a cold refresh with the api unreachable: `hydratedBoard()`
@@ -109,20 +111,20 @@ const row: React.CSSProperties = {
  */
 function rowFreshness(
   driver: BoardDriver,
-  nowMs: number,
+  serverNowMs: number,
   boardStale: boolean,
 ): DriverFreshness {
   if (boardStale || driver.location === null) return 'unknown';
-  return driverFreshness(nowMs, driver.lastSeenAt);
+  return driverFreshness(serverNowMs, driver.lastSeenAt);
 }
 
 /** A driver the board can see, and whether their app is still reporting. */
 function DriverRow({
   driver,
-  nowMs,
+  serverNowMs,
   boardStale,
-}: Readonly<{ driver: BoardDriver; nowMs: number; boardStale: boolean }>) {
-  const freshness = rowFreshness(driver, nowMs, boardStale);
+}: Readonly<{ driver: BoardDriver; serverNowMs: number; boardStale: boolean }>) {
+  const freshness = rowFreshness(driver, serverNowMs, boardStale);
   return (
     <li style={row}>
       {/* role="img" takes a name; a bare span maps to `generic`, which ARIA
@@ -173,7 +175,7 @@ function DriverRow({
           // Only `console.driver_silent` carries {age}; the other two ignore
           // the extra param, so one call site serves all three states.
           age:
-            driver.lastSeenAt === null ? '' : ageOf(nowMs, driver.lastSeenAt),
+            driver.lastSeenAt === null ? '' : ageOf(serverNowMs, driver.lastSeenAt),
         })}
       </span>
     </li>
@@ -216,13 +218,13 @@ function DriverRow({
  */
 export function DriverList({
   drivers,
-  nowMs,
+  serverNowMs,
   boardStale,
 }: Readonly<{
   drivers: BoardDriver[];
-  nowMs: number;
+  serverNowMs: number;
   /**
-   * The board has no fresh frame — `isPanelStale(nowMs, lastFrameAtMs)` at
+   * The board has no fresh frame — `isPanelStale(serverNowMs, lastFrameAtMs)` at
    * the mount site, NOT `showStaleBanner`. Frame age only: the banner's
    * condition is wider (it also fires on «Bezsaistē»), and passing it blanked
    * this panel while the read-only poll was keeping the board current. So the
@@ -234,7 +236,7 @@ export function DriverList({
   boardStale: boolean;
 }>) {
   const silent = drivers.filter(
-    (d) => rowFreshness(d, nowMs, boardStale) !== 'live',
+    (d) => rowFreshness(d, serverNowMs, boardStale) !== 'live',
   );
 
   return (
@@ -304,7 +306,7 @@ export function DriverList({
             <DriverRow
               key={driver.driverId}
               driver={driver}
-              nowMs={nowMs}
+              serverNowMs={serverNowMs}
               boardStale={boardStale}
             />
           ))}
