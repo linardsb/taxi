@@ -1,7 +1,7 @@
 # PR #236 — round-2 review fixes
 
 **Review** [round 2](https://github.com/linardsb/taxi/pull/236#issuecomment-5750803078) (`.claude/code-reviews/pr-236-review-round-2.md`) ·
-**Base at fix time** `b8d62c58` · **Head at fix time** `0de221f` · **Applied** 2026-09-20 ·
+**Base** `b8d62c58` · **Head reviewed** `0de221f` · **Fixes** `da13602`, `b707e0a` · **Applied** 2026-09-20 ·
 Round 1's report: `.claude/reports/pr-236-review-fixes.md`
 
 **All seven applied. Nothing deferred, nothing disputed.** Two corrections beyond the review's list,
@@ -299,16 +299,19 @@ npx vitest run --root apps/dispatch \
 45 = 22 + 12 + 11, against round 1's 19 + 12 + 10 = 41. **+4**: three `isPanelStale` cases and one M2
 page-level regression.
 
-**Full gate**, `observed` 2026-09-20, same worktree, containers `taxi-db-1` / `taxi-redis-1` up:
+**Full gate**, `observed` 2026-09-20, same worktree, containers `taxi-db-1` / `taxi-redis-1` up.
+**Run twice** — once at `da13602` and again at `b707e0a` after the `floor`/`ceil` correction, rather
+than asserting a comment-only commit could not move it:
 
 ```
 env -u REDIS_TEST_URL COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force
 
- Tasks:    22 successful, 22 total
-Cached:    0 cached, 22 total
-  Time:    1m24.914s
-EXIT=0
+at da13602:   Tasks: 22 successful, 22 total   Time: 1m24.914s   EXIT=0
+at b707e0a:   Tasks: 22 successful, 22 total   Time: 1m17.326s   EXIT=0
 ```
+
+Every per-package total below is byte-identical across the two runs. Wall time differs by 7.6 s —
+machine load, not a signal.
 
 | check | result | vs round 1 |
 |---|---|---|
