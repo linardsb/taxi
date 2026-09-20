@@ -63,12 +63,59 @@ const row: React.CSSProperties = {
   fontSize: 'var(--font-size-sm)',
 };
 
+/**
+ * THE row's freshness — one derivation for the label and the summary, because
+ * two would diverge. It is deliberately NOT `driverFreshness` alone: that
+ * function reads `lastSeenAt` and two conditions it cannot see would otherwise
+ * render «Raida» with no evidence that anyone is reporting.
+ *
+ * `location === null` — NEVER GOT A FIX. `lastSeenAt` is the `seen` ZSET
+ * score, and `markOnline` seeds it at go-online time in the same MULTI as the
+ * SADD with no GEOADD (`redis-driver-location.store.ts:75-79`); only the
+ * RECORD script writes a position. So a driver who taps the toggle in an
+ * underground car park and never gets a lock arrives with a fresh
+ * `lastSeenAt` and no fix at all, and `driverFreshness` calls that `live`.
+ * `location === null` is precisely the condition `board-state.ts`'s
+ * three-states docblock describes, and it is the one the wire carries.
+ *
+ * `boardStale` — THE CONSOLE IS THE ONE THAT WENT QUIET. `driverFreshness`
+ * compares a ticking `nowMs` against a frozen `lastSeenAt`, so a console that
+ * has stopped RECEIVING freezes the numerator exactly as a driver who has
+ * stopped SENDING does. Attributing the console's own deafness to the drivers
+ * is the same over-claim pointing the other way, and `pillFrom` already
+ * refuses to call the board `live` without a fresh frame for this reason. The
+ * worst case is a cold refresh with the api unreachable: `hydratedBoard()`
+ * restores an arbitrarily old frame deliberately, so without this every row
+ * would read «Klusē MM:SS» while every phone streams normally.
+ *
+ * ONE CONSEQUENCE, ACCEPTED RATHER THAN PAPERED OVER. A driver is `unknown`
+ * from the instant they go online until their first fix lands — a GPS cold
+ * start is tens of seconds outdoors and does not finish indoors — so the live
+ * region names them at login. That is true rather than noisy: `findNearby`
+ * filters candidates on the position, so a driver the console cannot place is
+ * one the engine will not offer to either, and phoning them is the correct
+ * response. A malformed coordinate also yields `location: null`
+ * (`redis-driver-location.store.ts:251-254` validates rather than casts), so a
+ * driver who IS reporting a bad fix reads «Nav signāla» — the cautious
+ * direction, and the right trade for a signal whose whole purpose is to refuse
+ * to say more than it can prove.
+ */
+function rowFreshness(
+  driver: BoardDriver,
+  nowMs: number,
+  boardStale: boolean,
+): DriverFreshness {
+  if (boardStale || driver.location === null) return 'unknown';
+  return driverFreshness(nowMs, driver.lastSeenAt);
+}
+
 /** A driver the board can see, and whether their app is still reporting. */
 function DriverRow({
   driver,
   nowMs,
-}: Readonly<{ driver: BoardDriver; nowMs: number }>) {
-  const freshness = driverFreshness(nowMs, driver.lastSeenAt);
+  boardStale,
+}: Readonly<{ driver: BoardDriver; nowMs: number; boardStale: boolean }>) {
+  const freshness = rowFreshness(driver, nowMs, boardStale);
   return (
     <li style={row}>
       {/* role="img" takes a name; a bare span maps to `generic`, which ARIA
@@ -85,7 +132,24 @@ function DriverRow({
         }}
       />
       <span style={{ fontWeight: 600 }}>{driver.name}</span>
-      <span style={{ color: 'var(--color-fg-muted)' }}>{driver.phone}</span>
+      {/* Dialable, exactly as `zone-grid.tsx:130-141` — and here it matters
+          MORE, not less: this panel is the one carrying EVERY online driver,
+          so for a driver in no zone queue it is the console's only rendering
+          of the number. That driver is the case the feature exists for (an
+          `on_ride` driver going dark is never swept), and calling them is the
+          single action it leads to. 44px target, as the rule requires. */}
+      <a
+        href={`tel:${driver.phone}`}
+        style={{
+          color: 'var(--color-fg-muted)',
+          textDecoration: 'none',
+          minHeight: 44,
+          display: 'inline-flex',
+          alignItems: 'center',
+        }}
+      >
+        {driver.phone}
+      </a>
       {driver.zoneName !== null && (
         <span style={{ color: 'var(--color-fg-muted)' }}>
           {driver.zoneName}
@@ -101,7 +165,8 @@ function DriverRow({
         {formatMessage(LANG, FRESHNESS_KEY[freshness], {
           // Only `console.driver_silent` carries {age}; the other two ignore
           // the extra param, so one call site serves all three states.
-          age: driver.lastSeenAt === null ? '' : ageOf(nowMs, driver.lastSeenAt),
+          age:
+            driver.lastSeenAt === null ? '' : ageOf(nowMs, driver.lastSeenAt),
         })}
       </span>
     </li>
@@ -124,18 +189,38 @@ function DriverRow({
  * ONE LIVE REGION, NAMING THE SILENT DRIVERS. It is rendered at all times with
  * changing text rather than mounted when something goes wrong: a region
  * inserted at the same moment its content appears is unreliably announced.
- * Its text changes only when the SET changes, so the announcement is the
- * fresh→silent transition and never the per-second tick — the `mm:ss` stays
- * out of it deliberately (`tracking-map.tsx` states the same rule). Polite and
+ * The names are SORTED before joining, so the text is a function of the SET
+ * and not of `frame.drivers`' order — which is `listOnline`'s, which is
+ * `SMEMBERS`', documented as not guaranteed (`driver-location.store.ts:88`).
+ * `sort()` is code-unit order, taken for STABILITY rather than for Latvian
+ * collation; what it buys is that the same set always produces the same
+ * string, not that the list reads alphabetically. With the `mm:ss` kept out
+ * deliberately (`tracking-map.tsx` states the same rule), the announcement is
+ * then the fresh→silent transition and never the per-second tick. Polite and
  * silent: `AlertsPanel` owns the audible budget, and a quiet driver is a
  * condition to read, not an alarm to buzz.
+ *
+ * SILENT WHILE THE BOARD ITSELF IS STALE. `boardStale` empties the region
+ * rather than unmounting it — the region must stay in the DOM (#234's plan),
+ * and naming drivers as silent on the strength of the console's own dead
+ * socket would announce a fault the drivers do not have.
  */
 export function DriverList({
   drivers,
   nowMs,
-}: Readonly<{ drivers: BoardDriver[]; nowMs: number }>) {
+  boardStale,
+}: Readonly<{
+  drivers: BoardDriver[];
+  nowMs: number;
+  /**
+   * The board has no fresh frame — `page.tsx`'s `showStaleBanner`. REQUIRED,
+   * not defaulted: an optional `false` would let a future mount site drop the
+   * discriminator and silently restore the defect with every test still green.
+   */
+  boardStale: boolean;
+}>) {
   const silent = drivers.filter(
-    (d) => driverFreshness(nowMs, d.lastSeenAt) !== 'live',
+    (d) => rowFreshness(d, nowMs, boardStale) !== 'live',
   );
 
   return (
@@ -160,10 +245,13 @@ export function DriverList({
           fontWeight: 600,
         }}
       >
-        {silent.length === 0
+        {boardStale || silent.length === 0
           ? ''
           : formatMessage(LANG, 'console.drivers_silent_summary', {
-              names: silent.map((d) => d.name).join(', '),
+              names: silent
+                .map((d) => d.name)
+                .sort()
+                .join(', '),
             })}
       </p>
 
@@ -188,7 +276,12 @@ export function DriverList({
           }}
         >
           {drivers.map((driver) => (
-            <DriverRow key={driver.driverId} driver={driver} nowMs={nowMs} />
+            <DriverRow
+              key={driver.driverId}
+              driver={driver}
+              nowMs={nowMs}
+              boardStale={boardStale}
+            />
           ))}
         </ul>
       )}

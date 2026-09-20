@@ -188,6 +188,13 @@ export type RideAssignedEvent = z.infer<typeof rideAssignedEventSchema>;
  * number `findNearby` filters on, so the console cannot call a driver live
  * while dispatch has already stopped offering to them.
  *
+ * TWO THINGS A CONSUMER OF `lastSeenAt` MUST SUPPLY ITSELF, because the wire
+ * cannot: whether a position was ever recorded — that is `location`, not this
+ * field, which `markOnline` seeds at go-online time with no GEOADD — and
+ * whether its own feed is still arriving, since a subtraction from a local
+ * clock freezes the same way whether the sender stopped or the receiver did.
+ * `apps/dispatch`'s `driver-list.tsx` shows the shape (PR #236 review).
+ *
  * A ride's `status` is `BOARD_LIVE_RIDE_STATUSES`, NOT the full `RIDE_STATUSES`
  * — the same tuple the board query selects on. The wide enum let the console
  * type its status→label map as a `Partial` and hand-restate the set in three

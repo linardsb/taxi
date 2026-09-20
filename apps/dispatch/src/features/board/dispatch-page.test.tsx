@@ -179,3 +179,76 @@ describe('DispatchPage — driver freshness survives the view toggle', () => {
     });
   });
 });
+
+/**
+ * The panel reads the SAME staleness the banner does, and this is the test
+ * that pins the wiring (PR #236 review, F2).
+ *
+ * `boardStale` is a required prop, so dropping it entirely is a typecheck
+ * failure — but passing a WRONG value, or a literal `false`, compiles. The
+ * cases above cannot catch that: both supply `lastFrameAtMs: NOW` and
+ * `pill: 'live'`, so `showStaleBanner` is `false` in each and the prop's value
+ * is never exercised. This is the case that goes red if the thread from
+ * `showStaleBanner` is cut.
+ */
+describe('DispatchPage — a deaf console does not accuse the drivers', () => {
+  const FRESH_DRIVER = {
+    ...SILENT_DRIVER,
+    driverId: 'd0000000-0000-4000-8000-000000000001',
+    name: 'Jānis',
+    phone: '+37129999001',
+    lastSeenAt: new Date(NOW - 4_000).toISOString(),
+  };
+
+  it('reads the drivers as silent while the board itself is fresh (expected)', () => {
+    // The control: same fixture, banner absent, so the label below is the
+    // panel's own derivation and not a side effect of the fixture.
+    mount('live', boardWith({ frame: { ...frame(), drivers: [SILENT_DRIVER] } }));
+
+    expect(bannerFor('console.stale_banner_silent')).toBeNull();
+    expect(screen.getByText(silenceLabel())).toBeInTheDocument();
+  });
+
+  it('shows «Nav signāla» instead of «Klusē» once the board is stale (failure)', () => {
+    // Handshake fine, frames stopped: the banner is up, and every row's age is
+    // now the console's silence rather than the driver's. A fresh-streaming
+    // driver would read «Klusē MM:SS» without the thread.
+    mount(
+      'reconnecting',
+      boardWith({
+        frame: { ...frame(), drivers: [SILENT_DRIVER, FRESH_DRIVER] },
+        lastFrameAtMs: NOW - 6_000,
+      }),
+    );
+
+    expect(bannerFor('console.stale_banner_silent')).toBeInTheDocument();
+    expect(screen.queryByText(silenceLabel())).toBeNull();
+    expect(
+      screen.queryByText(formatMessage('lv', 'console.driver_streaming')),
+    ).toBeNull();
+    expect(
+      screen.getAllByText(formatMessage('lv', 'console.driver_no_signal')),
+    ).toHaveLength(2);
+  });
+
+  it('announces nobody on a hydrated cold refresh (failure)', () => {
+    // `hydratedBoard()` restores an arbitrarily old frame with
+    // `lastFrameAtMs: null` deliberately. Without the thread, EVERY driver is
+    // named in the live region on the first paint with every phone streaming.
+    const { container } = mount(
+      'reconnecting',
+      boardWith({
+        frame: { ...frame(), drivers: [SILENT_DRIVER, FRESH_DRIVER] },
+        lastFrameAtMs: null,
+      }),
+    );
+
+    const regions = container.querySelectorAll('[aria-live="polite"]');
+    // Two: the alerts panel keeps its own always-mounted one.
+    expect(regions.length).toBeGreaterThanOrEqual(1);
+    for (const region of regions) {
+      expect(region).not.toHaveTextContent(SILENT_DRIVER.name);
+      expect(region).not.toHaveTextContent(FRESH_DRIVER.name);
+    }
+  });
+});

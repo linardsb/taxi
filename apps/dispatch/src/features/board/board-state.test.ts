@@ -260,4 +260,14 @@ describe('driverFreshness', () => {
   it('never reports a driver with no recorded position as live (failure)', () => {
     expect(driverFreshness(NOW, null)).toBe('unknown');
   });
+
+  it('fails an unparseable timestamp to unknown, never to live (failure)', () => {
+    // `Date.parse` → NaN, and `NaN >= x` is `false`, so the unguarded
+    // derivation returned 'live' — green «Raida» off a malformed field. What
+    // rules this out in production is the api's own emit-side validation
+    // (`realtime.service.ts:81`), not this client: `use-board.ts` parses only
+    // the two cold-start paths, never the two live socket handlers (#237).
+    expect(driverFreshness(NOW, 'not-a-date')).toBe('unknown');
+    expect(driverFreshness(NOW, '')).toBe('unknown');
+  });
 });

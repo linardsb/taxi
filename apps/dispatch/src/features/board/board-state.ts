@@ -201,9 +201,16 @@ export function isStale(nowMs: number, lastFrameAtMs: number | null): boolean {
  * already stale, which makes the boundary case deterministic in tests.
  *
  * `Date.parse` returns `NaN` on a malformed string, and `NaN >= x` is `false`
- * — which would silently report `live`. Unreachable: every frame arrives
- * through `dispatchBoardEventSchema.parse` (`use-board.ts:61,116`) and the
- * field is `z.string().datetime()`, so no guard is added for it.
+ * — which would silently report `live`. What rules that out today is the
+ * SERVER's validation, not this client's: `realtime.service.ts:81` runs
+ * `RT_EVENT_SCHEMAS[event].parse(payload)` on every emit and the field is
+ * `z.string().datetime()`. The two client-side `.parse()` calls
+ * (`use-board.ts:61,116`) are the `localStorage` restore and the HTTP
+ * snapshot — the COLD-START paths only. The two live paths validate nothing:
+ * `:154` (`applyFrame`) and `:158` (`applyDriverLocation`, the
+ * highest-frequency writer of this field). #237 closes that gap app-wide;
+ * until it does, the guard below is what keeps this derivation honest
+ * standalone, and it fails to `unknown` rather than to green «Raida».
  *
  * The caller owns the clock (module header), so nothing here ticks. The page's
  * 1 Hz `nowMs` from `useBoard` is what re-derives this.
@@ -214,8 +221,13 @@ export function isStale(nowMs: number, lastFrameAtMs: number | null): boolean {
  * this exposure for every ride age (`ride-queue.tsx`'s `ageOf`), and
  * `applyFrame` avoids it for ORDERING by comparing two server timestamps —
  * a precedent for ordering, not for ages. Correcting it means carrying a
- * server-client offset from `frame.at`, which would change ride ages too and
- * is its own ticket.
+ * server-client offset from `frame.at`, which would change ride ages too —
+ * tracked as #238.
+ *
+ * WHAT THIS DERIVATION CANNOT SEE, and so does not decide alone: whether a
+ * position was ever recorded (`location`, not `lastSeenAt` — see
+ * `driver-list.tsx`'s `rowFreshness`), and whether the CONSOLE has stopped
+ * receiving. Both would otherwise read as a driver who is reporting.
  */
 export type DriverFreshness = 'live' | 'stale' | 'unknown';
 
@@ -225,6 +237,7 @@ export function driverFreshness(
 ): DriverFreshness {
   if (lastSeenAt === null) return 'unknown';
   const ageMs = nowMs - Date.parse(lastSeenAt);
+  if (Number.isNaN(ageMs)) return 'unknown';
   return ageMs >= DRIVER_LOCATION_TTL_SECONDS * 1000 ? 'stale' : 'live';
 }
 

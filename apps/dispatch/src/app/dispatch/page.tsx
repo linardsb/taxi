@@ -269,8 +269,19 @@ export default function DispatchPage() {
             {/* OUTSIDE the toggle on purpose (#234). The map is the only other
                 place `frame.drivers` reaches the DOM, it is aria-hidden, and
                 it is unmounted in the default zones view — so a freshness
-                signal inside either branch is invisible in the other. */}
-            <DriverList drivers={frame.drivers} nowMs={nowMs} />
+                signal inside either branch is invisible in the other.
+
+                `boardStale` is the SAME condition the banner renders on, one
+                derivation for both: per-driver freshness is a browser clock
+                against a frozen field, so a console that has stopped
+                receiving would otherwise report every driver as silent. In
+                this branch `frame !== null` holds, so `showStaleBanner`
+                reduces to `pill === 'offline' || isStale(…)` exactly. */}
+            <DriverList
+              drivers={frame.drivers}
+              nowMs={nowMs}
+              boardStale={showStaleBanner}
+            />
             <AlertsPanel alerts={board.alerts} ack={ack} />
           </div>
         </div>
