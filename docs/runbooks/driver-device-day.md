@@ -16,15 +16,15 @@ Everything else about the held branch is already pinned by a test. Do not widen 
 |---|---|
 | Run by | Claude (agent-driven, `adb`), #224 |
 | Platform | **Android emulator** (API 36 `google_apis` x86_64, AVD `sakta224`, Pixel 7 profile 1080×2400) — **no phone** |
-| App / OS version | `preview` APK from EAS build `bcd04c21-d199-43d6-98f0-a3966036cf02` on commit `f4d37e4`; Android 16 (API 36) |
+| App / OS version | `preview` APK from EAS build `bcd04c21-d199-43d6-98f0-a3966036cf02` on commit `4e6ffb68`; Android 16 (API 36) |
 | Date | 2026-09-18 |
-| Outcome | **All eight steps ✅ on an emulator.** Steps 4, 5, 7 and 8 — the four the §Verdict rule makes binary — all pass. See §Emulator route for what that grade does and does not carry |
+| Outcome | **All eight steps ✅ on an emulator**, step 1 with its prompts pre-granted (see the divergence below). Steps 4, 5, 7 and 8 — the four the §Verdict rule makes binary — all pass. See §Emulator route for what that grade does and does not carry |
 
 | # | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|---|---|
-| | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| | ✅* | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-**One divergence, on step 1.** Location and notification permissions were pre-granted with
+**\* One divergence, on step 1.** Location and notification permissions were pre-granted with
 `pm grant` + `appops set` before the app was first launched, rather than granted through the dialogs
 when asked — deliberately, so that a Gate 3 ❌ could not be an Android 11+ background-location denial
 wearing the same signature (§Emulator route § *Gates 2 and 3, as run*). Step 1 therefore says nothing
@@ -499,8 +499,8 @@ but that branch is code Gate 2 never executes. Separate the two failures with
 
 Past Gate 3, run §Steps rows **2 through 8** exactly as written above — including step 3's "open
 `t/<token>` before the watch starts", and step 2's board-visibility half, which a ping-only gate does
-not cover. §Verdict applies unchanged. All eight ran this way on 2026-09-18 and all eight passed;
-the per-step evidence is in `.claude/reports/emulator-gates-224-report.md`.
+not cover. §Verdict applies unchanged. All eight steps passed on 2026-09-18 — step 1 by the emulator
+setup above, 2 through 8 this way; the evidence is in `.claude/reports/emulator-gates-224-report.md`.
 
 Two setup differences, and only two:
 
@@ -529,15 +529,15 @@ Four things an agent-driven run needs that a human one does not:
   brand-new row (`auth.repository.ts:47-50`), so reusing the provisioned dispatcher's number signs
   in as a dispatcher and the driver app never leaves onboarding. #224's run used `+37120000001` for
   Dina and `+37120000002` for the driver.
-- **The app follows the device locale**, and a stock AVD is `en-US`. Every §Steps Expect cell that
-  quotes LV («Tiešsaistē», «Jūs pašlaik izpildāt braucienu.») reads as the EN catalog instead
+- **The app follows the device locale**, and a stock AVD is `en-US`. Every §Steps expectation cell
+  that quotes LV («Tiešsaistē», «Jūs pašlaik izpildāt braucienu.») reads as the EN catalog instead
   (`Online`, `You are on a ride right now.`). Set `adb shell settings put system system_locales lv-LV`
   first if you want the LV strings the cells name.
 
 ### Gates 2 and 3, as run
 
 Both on AVD `sakta224`, with the `preview` APK from EAS build
-`bcd04c21-d199-43d6-98f0-a3966036cf02` (commit `f4d37e4`).
+`bcd04c21-d199-43d6-98f0-a3966036cf02` (commit `4e6ffb68`; see §The build blocker for why not `f4d37e4`).
 
 **Gate 2 — foregrounded.** 60 s watch: **14 `driver.location.ping_accepted`, `clientAt` gaps
 4.2 s–4.5 s**. The cadence is ~4.2 s and not the 2 s injection rate, because the client throttle
@@ -601,8 +601,9 @@ builds to find both causes:
 - **[#232](https://github.com/linardsb/taxi/issues/232)** — `expo.locales` writing iOS-only
   `NSLocation*` strings into Android `values-b+<lang>/strings.xml` with no default entry, so
   `:app:lintVitalRelease` failed with 6 fatal `ExtraTranslation` errors (2 keys × 3 locales). Fixed
-  by scoping both keys under `"ios"` in `apps/driver/locales/*.json`; `locales-config.test.ts`
-  guards it.
+  by scoping the keys under `"ios"` in `apps/driver/locales/*.json` **and** in
+  `apps/rider/locales/*.json`, which carried the same unscoped shape (1 key × 3 locales) and would
+  have failed the same way on its first release build; `locales-config.test.ts` guards each app.
 
 Neither is reachable from `pnpm turbo run typecheck lint test build --force` — nothing in the
 workspace compiles Android C++ or merges Android resources — and neither is reachable from
@@ -611,8 +612,20 @@ before re-queueing: a second lint failure is a different lint id and is diagnosa
 without another credit.
 
 `observed` 2026-09-18: the first green build is `bcd04c21-d199-43d6-98f0-a3966036cf02`, **1199 s**
-(20:49:41Z → 21:09:40Z), against the control `edcc579b-…` which died at `lintVitalRelease` after
-1182 s on the same tree minus #232's fix. The APK is 110 069 070 bytes and carries
+(20:49:41Z → 21:09:40Z), against `edcc579b-…` which died at `lintVitalRelease` after 1182 s. Both
+wall times are `completedAt − createdAt` from EAS's own record, not the build-phase `buildDuration`
+(1189 s and 1077 s). The two are **not** the same tree: `edcc579b` was built from `ade96c7c`, the
+head of PR #227's branch, and `bcd04c21` from `4e6ffb68` off `f7446c3`. What makes the pairing worth
+stating anyway is that `git diff ade96c7c 4e6ffb68` touches 12 paths of which **only the three
+`apps/driver/locales/*.json` files are build inputs** — the other nine are `.claude/` documents and
+two jest tests nothing in the app imports. So the builds differ by #232's fix in everything Gradle
+reads, which is the comparison being made; "same tree" was the wrong word for it.
+
+`4e6ffb68` rather than `f4d37e4` is not a typo: they are sibling commits off the same parent, seven
+minutes apart, and `git diff 4e6ffb68 f4d37e4` is `apps/driver/src/locales-config.test.ts` and
+nothing else. The APK's inputs are identical either way; `4e6ffb68` is the sha EAS recorded.
+
+The APK is 110 069 070 bytes and carries
 `lib/x86_64/`, `lib/x86/`, `lib/arm64-v8a/`, `lib/armeabi-v7a/` — universal, so it installs on an
 Intel-Mac emulator (this retires the `derived` reading of that in #224's issue body).
 

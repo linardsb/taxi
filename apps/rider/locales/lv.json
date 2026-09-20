@@ -1,3 +1,5 @@
 {
-  "NSLocationWhenInUseUsageDescription": "Sakta Cab izmanto jūsu atrašanās vietu, lai ieteiktu iekāpšanas vietu."
+  "ios": {
+    "NSLocationWhenInUseUsageDescription": "Sakta Cab izmanto jūsu atrašanās vietu, lai ieteiktu iekāpšanas vietu."
+  }
 }

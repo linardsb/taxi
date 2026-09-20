@@ -56,10 +56,30 @@ next to them: `apps/driver/src/locales-config.test.ts`, 4 cases, proven in both 
 | Field | Value |
 |---|---|
 | id | `bcd04c21-d199-43d6-98f0-a3966036cf02` |
-| profile | `preview`, commit `f4d37e4` |
+| profile | `preview`, commit `4e6ffb68` |
 | wall | **1199 s** (2026-09-18T20:49:41Z → 21:09:40Z) |
-| control | `edcc579b-…`, same tree minus #232's fix, died at `lintVitalRelease` after 1182 s |
+| control | `edcc579b-…` (commit `ade96c7c`), died at `lintVitalRelease` after 1182 s |
 | APK | 110 069 070 bytes |
+
+**Both commits and both wall times, `observed` from EAS's own record** (`builds.byId` over the
+GraphQL API, read 2026-09-20 while fixing PR #233's L5). Each wall is `completedAt − createdAt`,
+which is what a person waiting on a build experiences; EAS's `buildDuration` field excludes the
+queue and reads 1189 s and 1077 s respectively. Two things this record corrects in the sentences
+that used to stand here:
+
+- **`4e6ffb68`, not `f4d37e4`.** They are sibling commits off the same parent `f7446c3`, seven
+  minutes apart, and `git diff 4e6ffb68 f4d37e4` is `apps/driver/src/locales-config.test.ts` and
+  nothing else — so every input Gradle reads is identical and no conclusion moves, but `4e6ffb68`
+  is the sha EAS actually built.
+- **`edcc579b` was not "the same tree minus #232's fix".** It was built from `ade96c7c`, the head
+  of PR #227's branch (parent `fa6277d`), which is a different line of history — so `:24`'s "PR
+  #227's verification build" was the accurate description and this row's was not. The pairing is
+  still worth making, and here is the reason, which is checkable: `git diff ade96c7c 4e6ffb68`
+  touches 12 paths, of which **only the three `apps/driver/locales/*.json` files are build
+  inputs**. The other nine are eight `.claude/` documents and two jest tests nothing in the app
+  imports; no `package.json`, `pnpm-lock.yaml`, `app.json` or `eas.json` differs. The two builds
+  therefore differ by #232's fix in everything Gradle reads — which is the comparison being drawn.
+  "Same tree" was simply the wrong word for it.
 
 `unzip -l` lists `lib/x86_64/`, `lib/x86/`, `lib/arm64-v8a/` and `lib/armeabi-v7a/`. That retires
 the issue body's P2, which was `derived` from `expo-template-bare-minimum`'s
@@ -194,7 +214,7 @@ kind is `presence-state.ts:377`, inside a branch guarded by
 
 **That branch does not tear down.** Its effects are `persist_intent online` and `kick_uploader` — no
 `stop_uploader`, no `TEAR_DOWN`. So the order #141 is about (refusal first, stream intact) is what
-ran, and step 5's 22 gaps of 4.2 s are the stream that proves it.
+ran, and step 5's 21 gaps of 4.2 s are the stream that proves it.
 
 Note that `driver_on_ride` appears **0 times** in the api log. A handled `ConflictException` is not
 logged by Nest, so its absence there is not evidence either way — the 409 above is.
@@ -245,11 +265,39 @@ mid-animation all trigger it. `adb exec-out screencap -p` always works.
 - A stock AVD is `en-US`, so every LV Expect cell reads as the EN catalog unless
   `settings put system system_locales lv-LV` is set first.
 
+## Deviations
+
+**T11's constant-line-count constraint was exceeded, deliberately, and the plan's anchors moved with
+it.** The plan required any falsified §Result claim to be rewritten at a constant line count so the
+line numbers other artifacts cite would survive. §Result's replacement instead grew the
+`@@ -14,25 +14,45 @@` hunk by **+20 lines**: the filled field table, the eight-step grid and the
+step-1 divergence note carry more than the four-line "not yet run / no SDK on this machine" text they
+replaced, and compressing them back to 25 lines would have cost the divergence note, which is the one
+part a reader most needs. The deviation is the right call and stands; what was missing was saying so.
+
+Its consequence is mechanical: everything below §Result shifted by exactly +20, so nine of the ten
+runbook anchors `.claude/plans/emulator-oracle-141.md` cites stopped resolving. Both halves are now
+discharged — the plan's live citations and its T11 checklist are re-pointed, with the full
+old → new mapping recorded in T11's GOTCHA so the next pass re-derives it rather than adding another
++20. `observed` by text match on the final tree: `:37`→`:57`, `:86`→`:106`, `:222`→`:242`,
+`:233`→`:253`, `:246`→`:266`, `:282`→`:302`, `:290`→`:310`, `:311`→`:331`, `:296`→`:316` all exact;
+`:13` unmoved; `:35` alone reflowed, its sentence now beginning at `:53`.
+
+**#232 was fixed in one app and the same defect left live in the other.** `apps/rider/locales/*.json`
+carried `NSLocationWhenInUseUsageDescription` at the top level — the identical shape, 1 key × 3
+locales — with `apps/rider/app.json` declaring the matching `expo.locales` map. `apps/rider` has no
+`eas.json`, so it has never reached a release-variant Android build and nothing would have caught it
+until the first one failed at `:app:lintVitalRelease` with 3 fatal `ExtraTranslation` errors. Both
+the fix and a guard (`apps/rider/src/locales-config.test.ts`) landed in PR #233's review round 1;
+`apps/driver` and `apps/rider` were the only two `app.json` files in the tree declaring an
+`expo.locales` map, `observed`, so the sweep is complete rather than open-ended.
+
 ## Validation
 
 `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force`
-at commit `f4d37e4` — the commit that carries every source change on this branch; everything after it
-is documentation.
+at commit `f4d37e4`, which carried every source change on this branch **as it stood at the reviewed
+head `a25fa49`**. PR #233's review round 1 added source changes after it; the re-run that covers those
+is recorded in `.claude/reports/pr-233-review-fixes.md`, not here.
 
 ```
 Tasks:    22 successful, 22 total       Time: 2m3.161s      exit 0

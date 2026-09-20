@@ -171,12 +171,12 @@ section to that runbook which *cites* the steps and restates none of them.
 Use #14's recipe: `.claude/plans/driver-app-auth-online-location.md` §Level 4 §B. Do not restate it
 here — two copies of a procedure is the failure this runbook exists to clean up.
 ```
-— `docs/runbooks/driver-device-day.md:86-88`. The new section follows the same rule against §Steps.
+— `docs/runbooks/driver-device-day.md:106-108`. The new section follows the same rule against §Steps.
 
 **Every figure carries its provenance.** `observed` (name the run), `derived` (show the arithmetic
 *and* the condition), or `expected`. The runbook models it at
-`docs/runbooks/driver-device-day.md:246` (*"The 12 s is `derived`, **not** a measurement: 3 ×
-`MIN_FIX_INTERVAL_MS`…"*) and `:282` (*"Why step 7's window is 2 minutes"*). A download size nobody
+`docs/runbooks/driver-device-day.md:266` (*"The 12 s is `derived`, **not** a measurement: 3 ×
+`MIN_FIX_INTERVAL_MS`…"*) and `:302` (*"Why step 7's window is 2 minutes"*). A download size nobody
 has measured is `expected`, not a fact.
 
 **A ❌ names which route it kills.** The runbook's verdict rule makes four steps binary; this plan's
@@ -356,7 +356,7 @@ Use information-dense keywords for clarity:
   background consumer uses the fused provider, so the image must be `google_apis`. P2: the template's
   ABI list contains `x86_64`. P3: host still has ≥5 GiB free and `adb` on `PATH`. P4: the fix you will
   inject lies inside the seeded centre zone.
-- **PATTERN**: `docs/runbooks/driver-device-day.md:37-52`'s "re-checked rather than assumed" table.
+- **PATTERN**: `docs/runbooks/driver-device-day.md:57-72`'s "re-checked rather than assumed" table.
 - **IMPORTS**: none.
 - **GOTCHA**: `apps/driver/android/` is gitignored and absent, so `gradle.properties` cannot be read
   from the tree — read the template from npm, and record which template version answered.
@@ -568,7 +568,7 @@ warning, because it would have produced a false ❌.
   ```
   For 6b, the stream, loop the `set-test-provider-location` line every 2 s and confirm the `et=`
   (elapsed time) field on the fused `last location` keeps advancing.
-- **PATTERN**: `docs/runbooks/driver-device-day.md:246` — state the arithmetic behind an interval
+- **PATTERN**: `docs/runbooks/driver-device-day.md:266` — state the arithmetic behind an interval
   and the condition it assumes. Here: 2 s is half of `timeInterval: 4000`
   (`location-options.ts:19`), `derived`, so the OS floor stays the binding constraint rather than the
   injection cadence. **A 2 s injection loop does not predict 2 s pings**: the client throttle drops
@@ -822,11 +822,28 @@ warning, because it would have produced a false ❌.
   constant line count** — 4 lines stay 4 lines — then re-read `:35`, `:37`, `:86`, `:222`, `:233`,
   `:246`, `:282`, `:290`, `:311` and confirm each still resolves to its original text. Leaving a
   falsified claim standing because "the plan said append only" is the worse defect.
+  **DEVIATION, and the anchors above are pre-#224 (`observed`, PR #233 review round 1 M2).** The
+  constant-line-count rule was exceeded, not met: §Result's replacement grew the `@@ -14,25 +14,45 @@`
+  hunk by **+20 lines**, because the filled table, the per-step grid and the step-1 divergence note
+  had more to say than the "not yet run" text they replaced. That was the right call and is not being
+  undone — but it shifted everything below §Result by exactly +20, so **every anchor in this GOTCHA
+  and in the paragraph above it reads against `origin/main`'s copy, not today's.** Today: `:13`→`:13`
+  (unmoved), `:37`→`:57`, `:86`→`:106`, `:222`→`:242`, `:233`→`:253`, `:246`→`:266`, `:282`→`:302`,
+  `:290`→`:310`, `:311`→`:331`, all `observed` exact by text match. `:35` is the exception — its
+  sentence reflowed into the "When a phone exists" paragraph and now begins at `:53`. This plan's own
+  live citations (`:174`, `:178`, `:179`, `:359`, `:571`, `:1222`) were re-pointed in the same pass;
+  `:186`'s `:13-22` still spans the Result heading and field table and needed none. **The next pass
+  that edits §Result re-derives this mapping rather than adding another +20 to it.**
 - **VALIDATE**:
   ```bash
-  grep -c "Expect" docs/runbooks/driver-device-day.md    # must not grow
+  grep -c "Expect" docs/runbooks/driver-device-day.md      # must not grow; baseline 2
+  grep -c '| Expect |' docs/runbooks/driver-device-day.md  # the run-sheet header itself; must stay 1
   grep -rn "driver-device-day.md:" .claude/ docs/ | wc -l  # then spot-check the refs still resolve
   ```
+  The first line counts the bare word, so **prose about an Expect cell trips it as loudly as a fourth
+  copy of the run sheet would** — write "expectation cell" in prose and keep the guard meaningful.
+  #233's review round 1 caught exactly that false positive (main 2, head 3, the third at `:532`);
+  rewording restored the baseline. The second line is the one that cannot be tripped by prose.
 - **SATISFIES**: AC #6
 
 ---
@@ -1219,7 +1236,7 @@ the wider set rather than the section narrowed to the plan. Eight lines changed:
 
 **M1's rule — cite §Verdict's step set, never restate it — applies to this file too, and this file
 broke it four times.** The review raised it only against the runbook; the rule at
-`driver-device-day.md:296-299` says "anywhere new", and this plan is 1220 new lines. T10's PATTERN
+`driver-device-day.md:316-319` says "anywhere new", and this plan is 1220 new lines. T10's PATTERN
 restated the set in full, T10's VALIDATE and T13's IMPLEMENT named the load-bearing subset, and the
 Assumptions section restated it inside a closure claim — five lines carrying four enumerations. All
 four now cite §Verdict instead. Sweep: `grep -n 'load-bearing\|corroborat\|4, 5, 7'` over this file
