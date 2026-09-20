@@ -12,7 +12,9 @@ Both edited files are **line-count neutral** — `docs/runbooks/driver-device-da
 and `.claude/plans/emulator-oracle-141.md` stays 1250, exactly as at `96c51f3`. That is deliberate:
 the runbook's own rule (`.claude/plans/emulator-oracle-141.md:821-822`, *"Rewrite such a claim at a
 constant line count"*) exists so a fix for stale anchors does not shift the anchors it just fixed.
-`git diff --stat` reads **26 insertions, 26 deletions** across three files.
+The three edited files carry **26 insertions, 26 deletions** between them — equal by
+construction, not by coincidence. (Deliberately stated as the edited files' own figure rather
+than this commit's `--stat`, which its own addition of this report moves: #212's lesson.)
 
 ## Verdict
 
@@ -230,11 +232,15 @@ fixed tree, with the PR body fetched to a file via `gh pr view 235 --json body`.
 | 1 | `Today:\|translation layer\|re-derives this mapping\|another +20` | **0 / 0 / 0** | the register's subject, gone from all three |
 | 2 | `` `:(53\|57\|106\|242\|253\|266\|302\|310\|331)` `` | **0** | none of the register's retired `Today:` values survives as a live citation |
 | 3 | `` `:(35\|222\|233)`\|`:86-88` `` | **4 in the plan, 1 in the runbook** | all four plan hits are inside the T11 GOTCHA (`:814`, `:815`, `:822`, `:826`) — now explicitly marked HISTORICAL, which is the intended disposition. The runbook hit (`:245`) is `` `body` at `:35` `` citing **`stub-sms.provider.ts`**, a different file |
-| 4 | `has never run\|cloud build is .expected\|needs Linards.s Expo` | **0 / 0 / 0** | M2's subject retired everywhere |
-| 5 | `ten (shifted )?anchors\|all ten\|ten line numbers` | **0 / 0 / 0** after the body edit (3 in the body before it) | L2's digit, gone from the one surface that carried it |
+| 4 | `has never run\|cloud build is .expected\|needs Linards.s Expo` | **0 plan / 0 runbook / 1 body** | retired where it was a claim. The body hit is §5 *naming* it in quotes as the thing rewritten — a retirement record, not a live claim |
+| 5 | `ten (shifted )?anchors\|all ten\|ten line numbers` | **0 plan / 0 runbook / 1 body** (3 in the body before the edit) | the surviving hit is §Notes for the reviewer quoting *"ten anchors"* to correct it — same shape as row 4 |
 
-Sweep 3 is the one worth a reviewer's eye: those values are deliberately *kept*, not fixed, and the
-marker is what makes keeping them correct.
+Rows 3, 4 and 5 each keep a hit **on purpose**, and that is the point of grepping the value rather
+than trusting a sentence: row 3's four plan hits are the anchors the HISTORICAL marker now covers,
+and rows 4 and 5 are the retired claims quoted in the act of retiring them. A sweep that returned
+0 everywhere would mean the retirements went unrecorded. The first draft of this table claimed
+`0 / 0 / 0` for rows 4 and 5 and was wrong on both — caught by re-running the greps against the
+**live** PR body after `gh pr edit`, not against the draft that was about to be posted.
 
 ## Validation
 
@@ -376,8 +382,9 @@ next round's H1:
 ```
 $ wc -l docs/runbooks/driver-device-day.md .claude/plans/emulator-oracle-141.md
 660 · 1250          # identical to 96c51f3
-$ git diff --stat
-26 insertions(+), 26 deletions(-)
+$ git diff --stat 96c51f3 -- docs/runbooks/driver-device-day.md \
+      .claude/plans/emulator-oracle-141.md .claude/code-reviews/pr-227-review.md
+26 insertions(+), 26 deletions(-)      # the three EDITED files, head-independent
 ```
 
 Every plan self-citation below the edited span was diffed line-for-line against `96c51f3` (`:55`,
