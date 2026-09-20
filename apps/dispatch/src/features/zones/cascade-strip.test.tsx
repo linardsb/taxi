@@ -22,7 +22,7 @@ const cascade = (over: Partial<Cascade> = {}): Cascade => ({
 
 describe('CascadeStrip', () => {
   it('names the holder, the countdown, who is next and why (expected)', () => {
-    render(<CascadeStrip cascade={cascade()} nowMs={NOW_MS} />);
+    render(<CascadeStrip cascade={cascade()} serverNowMs={NOW_MS} />);
 
     expect(
       screen.getByText(
@@ -45,18 +45,18 @@ describe('CascadeStrip', () => {
 
   it('re-derives the countdown from the board’s clock, with no timer of its own (expected)', () => {
     const { rerender } = render(
-      <CascadeStrip cascade={cascade()} nowMs={NOW_MS} />,
+      <CascadeStrip cascade={cascade()} serverNowMs={NOW_MS} />,
     );
     expect(screen.getByText('12')).toBeInTheDocument();
 
-    // `use-board` already ticks nowMs at 1 Hz; a second timer here would drift
+    // `use-board` already ticks serverNowMs at 1 Hz; a second timer here would drift
     // against it and the wrong one is the one Dina reads.
-    rerender(<CascadeStrip cascade={cascade()} nowMs={NOW_MS + 9_000} />);
+    rerender(<CascadeStrip cascade={cascade()} serverNowMs={NOW_MS + 9_000} />);
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   it('floors a lapsed offer at 0 rather than counting past it (edge)', () => {
-    render(<CascadeStrip cascade={cascade()} nowMs={NOW_MS + 15_000} />);
+    render(<CascadeStrip cascade={cascade()} serverNowMs={NOW_MS + 15_000} />);
 
     // The frame is up to 2 s behind the deadline it carries, so this is an
     // ordinary moment in the cascade — and «-3» reads as a broken board.
@@ -75,7 +75,7 @@ describe('CascadeStrip', () => {
           attempts: 3,
           explanation: null,
         })}
-        nowMs={NOW_MS}
+        serverNowMs={NOW_MS}
       />,
     );
 
@@ -96,7 +96,7 @@ describe('CascadeStrip', () => {
           nextDriverName: null,
           explanation: { key: 'explain.auto_match', params: { eta: 4 } },
         })}
-        nowMs={NOW_MS}
+        serverNowMs={NOW_MS}
       />,
     );
 
@@ -112,7 +112,7 @@ describe('CascadeStrip', () => {
         cascade={cascade({
           explanation: { key: 'explain.something_newer', params: {} },
         })}
-        nowMs={NOW_MS}
+        serverNowMs={NOW_MS}
       />,
     );
 

@@ -52,7 +52,7 @@ const live = () => screen.getByText(FRESH.name).closest('section')!;
 describe('DriverList', () => {
   it('labels a reporting driver and a silent one differently (expected)', () => {
     render(
-      <DriverList drivers={[FRESH, SILENT]} nowMs={NOW} boardStale={false} />,
+      <DriverList drivers={[FRESH, SILENT]} serverNowMs={NOW} boardStale={false} />,
     );
 
     const rows = screen.getAllByRole('listitem');
@@ -68,7 +68,7 @@ describe('DriverList', () => {
 
   it('counts minutes past the hour rather than capping them (edge)', () => {
     render(
-      <DriverList drivers={[SILENT_ON_RIDE]} nowMs={NOW} boardStale={false} />,
+      <DriverList drivers={[SILENT_ON_RIDE]} serverNowMs={NOW} boardStale={false} />,
     );
 
     // 3 h = 180 min. `ageOf` has no hours field on purpose — the minute count
@@ -82,7 +82,7 @@ describe('DriverList', () => {
     const { container } = render(
       <DriverList
         drivers={[FRESH, SILENT, SILENT_ON_RIDE]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         boardStale={false}
       />,
     );
@@ -101,7 +101,7 @@ describe('DriverList', () => {
     // Mounted-but-empty, never conditionally rendered: a region inserted at
     // the same moment its content appears is unreliably announced.
     const { container } = render(
-      <DriverList drivers={[FRESH]} nowMs={NOW} boardStale={false} />,
+      <DriverList drivers={[FRESH]} serverNowMs={NOW} boardStale={false} />,
     );
 
     const region = container.querySelector('[aria-live="polite"]');
@@ -112,7 +112,7 @@ describe('DriverList', () => {
   it('treats a driver with no recorded position as silent (edge)', () => {
     const never = driver({ lastSeenAt: null, location: null });
     const { container } = render(
-      <DriverList drivers={[never]} nowMs={NOW} boardStale={false} />,
+      <DriverList drivers={[never]} serverNowMs={NOW} boardStale={false} />,
     );
 
     expect(screen.getByRole('listitem')).toHaveTextContent(
@@ -126,7 +126,7 @@ describe('DriverList', () => {
   });
 
   it('says so when nobody is online rather than drawing an empty list (edge)', () => {
-    render(<DriverList drivers={[]} nowMs={NOW} boardStale={false} />);
+    render(<DriverList drivers={[]} serverNowMs={NOW} boardStale={false} />);
 
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
     expect(
@@ -139,7 +139,7 @@ describe('DriverList', () => {
     // none reads a style value, so a later refactor cannot satisfy this suite
     // by recolouring a swatch and dropping the words.
     render(
-      <DriverList drivers={[FRESH, SILENT]} nowMs={NOW} boardStale={false} />,
+      <DriverList drivers={[FRESH, SILENT]} serverNowMs={NOW} boardStale={false} />,
     );
 
     const text = live().textContent ?? '';
@@ -162,7 +162,7 @@ describe('DriverList', () => {
     // A driver can be `on_ride` (blue dot, «Izpilda braucienu») AND silent.
     // Reading either one alone hides the other.
     render(
-      <DriverList drivers={[SILENT_ON_RIDE]} nowMs={NOW} boardStale={false} />,
+      <DriverList drivers={[SILENT_ON_RIDE]} serverNowMs={NOW} boardStale={false} />,
     );
 
     expect(
@@ -184,7 +184,7 @@ describe('DriverList', () => {
     // `on_ride`, which `markOfflineByServer` never sweeps.
     const noLock = driver({ location: null, lastSeenAt: seenAgo(2_000) });
     const { container } = render(
-      <DriverList drivers={[noLock]} nowMs={NOW} boardStale={false} />,
+      <DriverList drivers={[noLock]} serverNowMs={NOW} boardStale={false} />,
     );
 
     expect(screen.getByRole('listitem')).toHaveTextContent(
@@ -203,14 +203,14 @@ describe('DriverList', () => {
   });
 
   it('blames nobody while the BOARD is the thing that went quiet (failure)', () => {
-    // `nowMs` ticks, `lastSeenAt` freezes when frames stop — so a dead socket
+    // `serverNowMs` ticks, `lastSeenAt` freezes when frames stop — so a dead socket
     // looks identical to every phone dying at once. The worst case is a cold
     // refresh off localStorage, where an arbitrarily old frame would report
     // «Klusē MM:SS» for drivers streaming normally.
     const { container } = render(
       <DriverList
         drivers={[FRESH, SILENT, SILENT_ON_RIDE]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         boardStale
       />,
     );
@@ -237,7 +237,7 @@ describe('DriverList', () => {
     const { container } = render(
       <DriverList
         drivers={[SILENT_ON_RIDE, FRESH, SILENT]}
-        nowMs={NOW}
+        serverNowMs={NOW}
         boardStale={false}
       />,
     );
@@ -255,7 +255,7 @@ describe('DriverList', () => {
     // it is the console's only rendering of the number — and phoning them is
     // the one action the whole feature leads to.
     render(
-      <DriverList drivers={[SILENT_ON_RIDE]} nowMs={NOW} boardStale={false} />,
+      <DriverList drivers={[SILENT_ON_RIDE]} serverNowMs={NOW} boardStale={false} />,
     );
 
     const link = screen.getByRole('link', { name: SILENT_ON_RIDE.phone });

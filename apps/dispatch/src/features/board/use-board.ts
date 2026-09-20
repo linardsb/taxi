@@ -3,6 +3,7 @@
 import {
   dispatchBoardEventSchema,
   RT,
+  RT_EVENT_SCHEMAS,
   type ClientToServerEmitEvents,
   type DispatchBoardEvent,
   type ServerToClientEvents,
@@ -84,7 +85,19 @@ function hydratedBoard(): BoardState {
 export function useBoard(): {
   board: BoardState;
   pill: PillState;
+  /**
+   * The BROWSER's now. Pairs only with browser-recorded instants —
+   * `lastFrameAtMs`, and so `pillFrom` / `isStale` / `isPanelStale`, where
+   * both operands are `Date.now()` readings from this same machine and
+   * correcting either would cancel out and prove nothing.
+   */
   nowMs: number;
+  /**
+   * The API's now (#238). Pairs with every timestamp that came off the wire —
+   * `requestedAt`, `lastSeenAt`, `cascade.expiresAt`. Anything that subtracts
+   * this from `lastFrameAtMs`, or `nowMs` from a wire field, is a bug.
+   */
+  serverNowMs: number;
   retry: () => void;
   ack: (alertId: string) => void;
 } {
@@ -114,7 +127,9 @@ export function useBoard(): {
       }
       if (!res.ok) return; // pill/staleness carry the bad news truthfully
       const frame = dispatchBoardEventSchema.parse(await res.json());
-      setBoard((s) => applyFrame(s, frame, Date.now()));
+      // 'snapshot': a REST round trip against a possibly cold api is not a
+      // clock sample (#238). See applyFrame.
+      setBoard((s) => applyFrame(s, frame, Date.now(), 'snapshot'));
       persistFrame(frame);
     } catch {
       /* unreachable API: the pill is already not claiming live */
@@ -151,19 +166,47 @@ export function useBoard(): {
       setFailedAttempts((n) => n + 1);
     });
 
-    socket.on(RT.dispatchBoard, (frame) => {
-      setBoard((s) => applyFrame(s, frame, Date.now()));
+    // EVERY INBOUND PAYLOAD IS PARSED BEFORE IT REACHES STATE (#237), which
+    // is a defence rather than a fix for a live exposure: this api parses
+    // every emit server-side (`realtime.service.ts:81` runs
+    // `RT_EVENT_SCHEMAS[event].parse`), so nothing unvalidated arrives from
+    // it today. The two `.parse()` calls above are the COLD-START paths —
+    // the storage restore and the HTTP snapshot — and these are the live
+    // ones, `applyDriverLocation` being the highest-frequency writer of
+    // `lastSeenAt` in the app. `apps/driver` and `apps/rider` already do this
+    // on their sockets; the console was the only surface that did not.
+    //
+    // A FAILED PARSE DROPS THE PAYLOAD SILENTLY, as `apps/rider` does
+    // (`use-ride-status.tsx:200`) rather than with the driver app's
+    // `console.warn`: `apps/dispatch/src` has no `console` call in it and a
+    // console Dina never opens is not a report. The drop is not invisible
+    // where it matters — a dropped FRAME leaves `lastFrameAtMs` where it was,
+    // so `STALE_MS` later the pill stops saying «Tiešraide» and the board
+    // reports its own blindness. That is the "zero silent staleness" rule
+    // doing the work, and it is why throwing into the handler (which
+    // Socket.IO would swallow, leaving the pill green) is the wrong shape.
+    socket.on(RT.dispatchBoard, (payload: unknown) => {
+      const parsed = RT_EVENT_SCHEMAS[RT.dispatchBoard].safeParse(payload);
+      if (!parsed.success) return;
+      const frame = parsed.data;
+      setBoard((s) => applyFrame(s, frame, Date.now(), 'socket'));
       persistFrame(frame);
     });
-    socket.on(RT.driverLocation, (event) =>
-      setBoard((s) => applyDriverLocation(s, event)),
-    );
-    socket.on(RT.dispatchUnclaimed, (event) =>
-      setBoard((s) => pushUnclaimedAlert(s, event)),
-    );
-    socket.on(RT.dispatchSmsFailed, (event) =>
-      setBoard((s) => pushSmsFailedAlert(s, event)),
-    );
+    socket.on(RT.driverLocation, (payload: unknown) => {
+      const parsed = RT_EVENT_SCHEMAS[RT.driverLocation].safeParse(payload);
+      if (!parsed.success) return;
+      setBoard((s) => applyDriverLocation(s, parsed.data));
+    });
+    socket.on(RT.dispatchUnclaimed, (payload: unknown) => {
+      const parsed = RT_EVENT_SCHEMAS[RT.dispatchUnclaimed].safeParse(payload);
+      if (!parsed.success) return;
+      setBoard((s) => pushUnclaimedAlert(s, parsed.data));
+    });
+    socket.on(RT.dispatchSmsFailed, (payload: unknown) => {
+      const parsed = RT_EVENT_SCHEMAS[RT.dispatchSmsFailed].safeParse(payload);
+      if (!parsed.success) return;
+      setBoard((s) => pushSmsFailedAlert(s, parsed.data));
+    });
 
     return () => {
       socketRef.current = null;
@@ -233,5 +276,16 @@ export function useBoard(): {
     [],
   );
 
-  return { board, pill, nowMs, retry, ack };
+  return {
+    board,
+    pill,
+    nowMs,
+    // One clock difference, applied in one place, so the two panels cannot
+    // disagree about what time it is on the api (#238). The offset is 0 until
+    // a socket frame moves it, which makes this exactly `nowMs` on a
+    // correctly-set machine. See board-state.ts's SERVER_OFFSET_STEP_MS.
+    serverNowMs: nowMs + board.serverOffsetMs,
+    retry,
+    ack,
+  };
 }

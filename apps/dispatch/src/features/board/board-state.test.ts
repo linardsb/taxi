@@ -20,6 +20,7 @@ import {
   pushOfflineAlert,
   pushSmsFailedAlert,
   pushUnclaimedAlert,
+  SERVER_OFFSET_STEP_MS,
   STALE_MS,
 } from './board-state';
 
@@ -61,8 +62,8 @@ const unclaimed = (
 
 describe('applyFrame / applyDriverLocation', () => {
   it('replaces the frame wholesale and stamps receipt time (expected)', () => {
-    const withOld = applyFrame(emptyBoard(), frame(), NOW - 10_000);
-    const next = applyFrame(withOld, frame({ drivers: [] }), NOW);
+    const withOld = applyFrame(emptyBoard(), frame(), NOW - 10_000, 'socket');
+    const next = applyFrame(withOld, frame({ drivers: [] }), NOW, 'socket');
     expect(next.frame?.drivers).toEqual([]); // nothing merged, nothing kept
     expect(next.lastFrameAtMs).toBe(NOW);
   });
@@ -76,11 +77,13 @@ describe('applyFrame / applyDriverLocation', () => {
       emptyBoard(),
       frame({ at: '2026-08-15T12:00:02.000Z', rides: [] }),
       NOW + 2_000,
+      'socket',
     );
     const late = applyFrame(
       fresh,
       frame({ at: AT, drivers: [] }), // built at t+0, arrives at t+3
       NOW + 3_000,
+      'snapshot', // it IS the REST body this race is about
     );
     expect(late).toBe(fresh); // untouched, and receipt time NOT re-stamped
     expect(late.lastFrameAtMs).toBe(NOW + 2_000);
@@ -89,8 +92,8 @@ describe('applyFrame / applyDriverLocation', () => {
   it('still refreshes receipt time for a re-delivered identical frame (edge)', () => {
     // Strict `<`: an equal `at` is the same frame arriving twice, and the pill
     // must not go stale just because the server had nothing new to say.
-    const first = applyFrame(emptyBoard(), frame(), NOW);
-    const again = applyFrame(first, frame(), NOW + 1_500);
+    const first = applyFrame(emptyBoard(), frame(), NOW, 'socket');
+    const again = applyFrame(first, frame(), NOW + 1_500, 'socket');
     expect(again.lastFrameAtMs).toBe(NOW + 1_500);
   });
 
@@ -106,14 +109,19 @@ describe('applyFrame / applyDriverLocation', () => {
     };
     expect(hydrated.lastFrameAtMs).toBe(null); // that's what marks it hydrated
 
-    const live = applyFrame(hydrated, frame({ at: AT, drivers: [] }), NOW);
+    const live = applyFrame(
+      hydrated,
+      frame({ at: AT, drivers: [] }),
+      NOW,
+      'socket',
+    );
 
     expect(live.frame?.at).toBe(AT);
     expect(live.lastFrameAtMs).toBe(NOW);
   });
 
   it('patches a known driver position between frames (expected)', () => {
-    const state = applyFrame(emptyBoard(), frame(), NOW);
+    const state = applyFrame(emptyBoard(), frame(), NOW, 'socket');
     const next = applyDriverLocation(state, {
       driverId: DRIVER,
       location: { lat: 57.0, lng: 24.2 },
@@ -126,7 +134,7 @@ describe('applyFrame / applyDriverLocation', () => {
   });
 
   it('ignores a location for a driver the frame does not carry (edge)', () => {
-    const state = applyFrame(emptyBoard(), frame({ drivers: [] }), NOW);
+    const state = applyFrame(emptyBoard(), frame({ drivers: [] }), NOW, 'socket');
     const next = applyDriverLocation(state, {
       driverId: DRIVER,
       location: { lat: 57.0, lng: 24.2 },
@@ -261,6 +269,93 @@ describe('isPanelStale — the panel trusts a frame the banner already caveats',
  * ever moved.
  */
 const TTL_MS = DRIVER_LOCATION_TTL_SECONDS * 1000;
+
+/**
+ * The offset the board carries so its ages are read off the API's clock and
+ * not the browser's (#238). Every case here sets `atMs` — the RECEIPT instant
+ * — apart from `frame.at`, which is exactly what a clock difference looks
+ * like from inside the browser.
+ */
+describe('applyFrame — server clock offset', () => {
+  it('takes the offset from a socket frame that leads receipt (expected)', () => {
+    // A browser 30 s slow: the api stamps `AT`, this machine thinks it is
+    // 30 s earlier. The offset is what closes that.
+    const state = applyFrame(emptyBoard(), frame(), NOW - 30_000, 'socket');
+
+    expect(state.serverOffsetMs).toBe(30_000);
+    // And it is worth having: the board now reads the driver as silent at the
+    // real age instead of 30 s young.
+    expect(
+      driverFreshness(
+        NOW - 30_000 + state.serverOffsetMs,
+        new Date(NOW - TTL_MS).toISOString(),
+      ),
+    ).toBe('stale');
+  });
+
+  it('leaves the offset alone for a move under the step (edge)', () => {
+    // The no-op property on a correctly-set machine: jitter inside
+    // SERVER_OFFSET_STEP_MS never moves the stored value, so ages stay
+    // monotonic between real corrections.
+    const start = applyFrame(emptyBoard(), frame(), NOW, 'socket');
+    expect(start.serverOffsetMs).toBe(0);
+
+    const jittered = applyFrame(
+      start,
+      frame(),
+      NOW - (SERVER_OFFSET_STEP_MS - 1),
+      'socket',
+    );
+
+    expect(jittered.serverOffsetMs).toBe(0);
+  });
+
+  it('still catches up to a browser clock drifting below the step (edge)', () => {
+    // The step is measured against the STORED offset, never the previous
+    // candidate, so a drift whose per-frame move is sub-step still
+    // accumulates into the comparison and trips it. Without that, a browser
+    // losing 200 ms a frame would walk away from the api unboundedly while
+    // every single candidate looked like jitter.
+    //
+    // 200 ms per 2 s frame: the 5th frame is the first with
+    // |candidate - 0| >= 1 000, so the offset snaps there and the error never
+    // exceeds the step.
+    let state = applyFrame(emptyBoard(), frame(), NOW, 'socket');
+    expect(state.serverOffsetMs).toBe(0);
+
+    for (let n = 1; n <= 4; n += 1) {
+      state = applyFrame(state, frame(), NOW - n * 200, 'socket');
+    }
+    expect(state.serverOffsetMs).toBe(0); // 800 ms of drift, still inside
+
+    state = applyFrame(state, frame(), NOW - 5 * 200, 'socket');
+    expect(state.serverOffsetMs).toBe(1_000);
+  });
+
+  it('never samples the clock from a REST snapshot (failure)', () => {
+    // The cold-api case `applyFrame`'s docblock derives: a 3 s round trip
+    // would write −3 000 ms onto a browser that is perfectly synchronised,
+    // and clear any sane step while doing it.
+    const state = applyFrame(emptyBoard(), frame(), NOW + 3_000, 'snapshot');
+
+    expect(state.serverOffsetMs).toBe(0);
+    expect(state.frame?.at).toBe(AT); // the frame itself still applied
+  });
+
+  it('keeps the offset it has when a frame carries a malformed at (failure)', () => {
+    // Since #237 nothing malformed reaches here from either transport; this
+    // is the pure function refusing to answer with NaN regardless.
+    const good = applyFrame(emptyBoard(), frame(), NOW - 30_000, 'socket');
+    const bad = applyFrame(
+      good,
+      frame({ at: 'whenever' }),
+      NOW - 30_000,
+      'socket',
+    );
+
+    expect(bad.serverOffsetMs).toBe(30_000);
+  });
+});
 
 describe('driverFreshness', () => {
   it('calls a driver reporting one fix-interval ago live (expected)', () => {

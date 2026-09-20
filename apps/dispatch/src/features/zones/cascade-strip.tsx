@@ -12,20 +12,26 @@ const LANG: Language = 'lv';
 type Cascade = NonNullable<DispatchBoardEvent['rides'][number]['cascade']>;
 
 /**
- * Seconds left on the offer, re-derived from the board's own `nowMs` — which
- * already ticks at 1 Hz in `use-board`. No second timer: two clocks on one
- * screen drift, and the one that is wrong is the one Dina is reading.
+ * Seconds left on the offer, re-derived from the board's own `serverNowMs` —
+ * which already ticks at 1 Hz in `use-board`. No second timer: two clocks on
+ * one screen drift, and the one that is wrong is the one Dina is reading.
+ *
+ * SERVER now, not browser (#238). `expiresAt` is the api's clock, so a
+ * browser thirty seconds fast used to run this countdown out while the offer
+ * was still open — the one number on the board a dispatcher acts on within
+ * seconds. `RideQueue` passes `useBoard`'s corrected reading; the parameter
+ * name is what keeps a future call site from passing a raw `Date.now()`.
  *
  * A lapsed offer reads 0, never a negative number. The frame is ≤2 s behind
  * the deadline it carries, so «-3» is a normal moment in the cascade rather
  * than an error — and a countdown that goes negative reads as a bug in the
  * board, which costs trust in every other number on it.
  */
-function secondsLeft(nowMs: number, expiresAt: string | null): number | null {
+function secondsLeft(serverNowMs: number, expiresAt: string | null): number | null {
   if (expiresAt === null) return null;
   const deadline = Date.parse(expiresAt);
   if (Number.isNaN(deadline)) return null;
-  return Math.max(0, Math.ceil((deadline - nowMs) / 1000));
+  return Math.max(0, Math.ceil((deadline - serverNowMs) / 1000));
 }
 
 function Part({
@@ -56,9 +62,9 @@ function Part({
  */
 export function CascadeStrip({
   cascade,
-  nowMs,
-}: Readonly<{ cascade: Cascade; nowMs: number }>) {
-  const remaining = secondsLeft(nowMs, cascade.expiresAt);
+  serverNowMs,
+}: Readonly<{ cascade: Cascade; serverNowMs: number }>) {
+  const remaining = secondsLeft(serverNowMs, cascade.expiresAt);
 
   return (
     <span
