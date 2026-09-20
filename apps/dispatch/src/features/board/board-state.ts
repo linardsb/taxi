@@ -1,3 +1,4 @@
+import { DRIVER_LOCATION_TTL_SECONDS } from '@taxi/shared';
 import type {
   DispatchBoardEvent,
   DispatchSmsFailedEvent,
@@ -180,6 +181,51 @@ export function acknowledgeAlert(state: BoardState, id: string): BoardState {
 /** No frame yet, or the last one is older than the heartbeat allows. */
 export function isStale(nowMs: number, lastFrameAtMs: number | null): boolean {
   return lastFrameAtMs === null || nowMs - lastFrameAtMs >= STALE_MS;
+}
+
+/**
+ * Per-driver stream freshness — the read `applyDriverLocation` has been
+ * writing `lastSeenAt` for with no consumer (#234).
+ *
+ * THE BOUNDARY IS `DRIVER_LOCATION_TTL_SECONDS`, IMPORTED, NEVER RESTATED. It
+ * is the same number `findNearby` filters candidates on, so the board cannot
+ * say a driver is reporting while dispatch has already stopped offering to
+ * them. See `@taxi/shared`'s `driver-presence.ts`.
+ *
+ * THREE STATES, NOT TWO. `lastSeenAt: null` is an online driver whose GEO
+ * position was never recorded or was dropped — never-streamed is a different
+ * fact from stopped-streaming, and it has no age to print. Folding it into
+ * `stale` would force the silence label to carry an empty `mm:ss`.
+ *
+ * `>=`, matching `isStale`'s boundary convention above: exactly at the TTL is
+ * already stale, which makes the boundary case deterministic in tests.
+ *
+ * `Date.parse` returns `NaN` on a malformed string, and `NaN >= x` is `false`
+ * — which would silently report `live`. Unreachable: every frame arrives
+ * through `dispatchBoardEventSchema.parse` (`use-board.ts:61,116`) and the
+ * field is `z.string().datetime()`, so no guard is added for it.
+ *
+ * The caller owns the clock (module header), so nothing here ticks. The page's
+ * 1 Hz `nowMs` from `useBoard` is what re-derives this.
+ *
+ * KNOWN LIMITATION — CLIENT CLOCK SKEW. `lastSeenAt` is the api's clock and
+ * `nowMs` is the browser's. A browser two minutes slow reports every driver
+ * `live`; two minutes fast, every driver `stale`. The board already carries
+ * this exposure for every ride age (`ride-queue.tsx`'s `ageOf`), and
+ * `applyFrame` avoids it for ORDERING by comparing two server timestamps —
+ * a precedent for ordering, not for ages. Correcting it means carrying a
+ * server-client offset from `frame.at`, which would change ride ages too and
+ * is its own ticket.
+ */
+export type DriverFreshness = 'live' | 'stale' | 'unknown';
+
+export function driverFreshness(
+  nowMs: number,
+  lastSeenAt: string | null,
+): DriverFreshness {
+  if (lastSeenAt === null) return 'unknown';
+  const ageMs = nowMs - Date.parse(lastSeenAt);
+  return ageMs >= DRIVER_LOCATION_TTL_SECONDS * 1000 ? 'stale' : 'live';
 }
 
 /**

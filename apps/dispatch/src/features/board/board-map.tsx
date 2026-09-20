@@ -15,8 +15,11 @@ type BoardDriver = DispatchBoardEvent['drivers'][number];
 /**
  * The driver map — the tracking page's leaflet island pattern, N markers
  * instead of one: type-only static import, runtime import inside the effect,
- * imperative marker updates, unmount-only teardown. `aria-hidden`: the zones
- * panel and phone list ARE the text alternative (console.map_alt says so).
+ * imperative marker updates, unmount-only teardown. `aria-hidden`: the
+ * `DriverList` panel below is the text alternative (console.map_alt says so).
+ * It, not the zone grid, is the one that carries EVERY online driver — the
+ * grid lists queue entries, so a driver in no zone appeared nowhere readable
+ * until #234.
  */
 export function BoardMap({ drivers }: Readonly<{ drivers: BoardDriver[] }>) {
   const mapNode = useRef<HTMLDivElement | null>(null);

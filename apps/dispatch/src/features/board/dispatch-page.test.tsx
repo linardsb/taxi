@@ -1,5 +1,5 @@
-import { formatMessage } from '@taxi/shared';
-import { render, screen } from '@testing-library/react';
+import { DRIVER_LOCATION_TTL_SECONDS, formatMessage } from '@taxi/shared';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardState, PillState } from './board-state';
 
@@ -130,5 +130,52 @@ describe('DispatchPage — the plan’s Error state', () => {
 
     expect(bannerFor('console.stale_banner_silent')).toBeInTheDocument();
     expect(retryButton()).toBeInTheDocument();
+  });
+});
+
+/**
+ * The drivers panel is mounted OUTSIDE the zones/map ternary, and this is the
+ * test that pins it there (#234).
+ *
+ * Without it, a later refactor can move the panel into either branch and every
+ * other check stays green while the board loses its freshness signal in the
+ * other view — which is exactly the shape of the defect this ticket closed.
+ */
+const SILENT_DRIVER = {
+  driverId: 'd0000000-0000-4000-8000-000000000002',
+  name: 'Anna',
+  phone: '+37129999002',
+  location: { lat: 56.95, lng: 24.11 },
+  // TTL + 30 s → «Klusē 01:30».
+  lastSeenAt: new Date(
+    NOW - (DRIVER_LOCATION_TTL_SECONDS * 1000 + 30_000),
+  ).toISOString(),
+  zoneName: 'Centrs',
+  status: 'online' as const,
+};
+
+const silenceLabel = () =>
+  formatMessage('lv', 'console.driver_silent', { age: '01:30' });
+
+describe('DispatchPage — driver freshness survives the view toggle', () => {
+  it('shows the silence label in the default zones view (expected)', () => {
+    mount('live', boardWith({ frame: { ...frame(), drivers: [SILENT_DRIVER] } }));
+
+    expect(screen.getByText(silenceLabel())).toBeInTheDocument();
+  });
+
+  it('still shows it after switching to the map view (edge)', async () => {
+    mount('live', boardWith({ frame: { ...frame(), drivers: [SILENT_DRIVER] } }));
+
+    fireEvent.click(
+      screen.getByRole('button', { name: formatMessage('lv', 'console.map') }),
+    );
+
+    // `vi.waitFor`, not a bare assertion: the toggle re-renders and the map's
+    // leaflet effect lands a macrotask later, so asserting on the commit alone
+    // flakes on CI while staying green locally (#189).
+    await vi.waitFor(() => {
+      expect(screen.getByText(silenceLabel())).toBeInTheDocument();
+    });
   });
 });

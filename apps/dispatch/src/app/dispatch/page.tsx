@@ -10,6 +10,7 @@ import {
   AlertsPanel,
   BoardMap,
   ConnectionPill,
+  DriverList,
   isStale,
   RideQueue,
   useBoard,
@@ -265,6 +266,11 @@ export default function DispatchPage() {
             ) : (
               <BoardMap drivers={frame.drivers} />
             )}
+            {/* OUTSIDE the toggle on purpose (#234). The map is the only other
+                place `frame.drivers` reaches the DOM, it is aria-hidden, and
+                it is unmounted in the default zones view — so a freshness
+                signal inside either branch is invisible in the other. */}
+            <DriverList drivers={frame.drivers} nowMs={nowMs} />
             <AlertsPanel alerts={board.alerts} ack={ack} />
           </div>
         </div>

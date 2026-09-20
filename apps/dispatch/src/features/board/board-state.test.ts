@@ -1,3 +1,4 @@
+import { DRIVER_LOCATION_TTL_SECONDS } from '@taxi/shared';
 import type {
   DispatchBoardEvent,
   DispatchUnclaimedEvent,
@@ -8,6 +9,7 @@ import {
   ALERTS_CAP,
   applyDriverLocation,
   applyFrame,
+  driverFreshness,
   emptyBoard,
   isStale,
   OFFLINE_AFTER_FAILURES,
@@ -220,5 +222,42 @@ describe('pillFrom — the one truth derivation', () => {
   it('isStale treats "no frame ever" as stale (edge)', () => {
     expect(isStale(NOW, null)).toBe(true);
     expect(isStale(NOW, NOW - STALE_MS + 1)).toBe(false);
+  });
+});
+
+/**
+ * The boundary is asserted against the IMPORTED constant, never against `60`.
+ * A literal here would restate the number the promotion to `@taxi/shared`
+ * exists to prevent (#234 AC #3) and would keep passing if the shared value
+ * ever moved.
+ */
+const TTL_MS = DRIVER_LOCATION_TTL_SECONDS * 1000;
+
+describe('driverFreshness', () => {
+  it('calls a driver reporting one fix-interval ago live (expected)', () => {
+    expect(driverFreshness(NOW, new Date(NOW - 4_000).toISOString())).toBe(
+      'live',
+    );
+  });
+
+  it('flips to stale exactly AT the TTL, not one tick after (edge)', () => {
+    expect(driverFreshness(NOW, new Date(NOW - TTL_MS).toISOString())).toBe(
+      'stale',
+    );
+    expect(driverFreshness(NOW, new Date(NOW - TTL_MS + 1).toISOString())).toBe(
+      'live',
+    );
+  });
+
+  it('stays stale however long the silence runs — the on_ride case (edge)', () => {
+    // No sweep removes an `on_ride` driver (drivers.service.ts), so the row
+    // can outlive the TTL by hours. It must never read as live again.
+    expect(
+      driverFreshness(NOW, new Date(NOW - 3 * 60 * 60 * 1000).toISOString()),
+    ).toBe('stale');
+  });
+
+  it('never reports a driver with no recorded position as live (failure)', () => {
+    expect(driverFreshness(NOW, null)).toBe('unknown');
   });
 });

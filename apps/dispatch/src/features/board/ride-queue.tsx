@@ -11,6 +11,7 @@ import {
 } from '@taxi/shared';
 import { RideRowActions } from '@/features/override';
 import { CascadeStrip } from '@/features/zones';
+import { ageOf } from './age';
 
 const LANG: Language = 'lv';
 
@@ -59,17 +60,6 @@ const ACTIVE = new Set<RideStatus>(ACTIVE_DRIVER_RIDE_STATUSES);
  * to act on — `dispatch:unclaimed` is what escalates the second case.
  */
 const CASCADE_STATUSES = new Set<RideStatus>(['offered', 'queued']);
-
-/** mm:ss since the ride was requested — digits only, no words to translate. */
-function ageOf(nowMs: number, requestedAt: string): string {
-  const totalSeconds = Math.max(
-    0,
-    Math.floor((nowMs - Date.parse(requestedAt)) / 1000),
-  );
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
 
 function RideRow({
   ride,
