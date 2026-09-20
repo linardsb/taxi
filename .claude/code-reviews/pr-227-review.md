@@ -1,6 +1,6 @@
 # PR #227 review — `fix(deps): pin reanimated and worklets to Expo SDK 57's bundle (#225)`
 
-**Head** `6226549` · **Base** `main` @ `fa6277dd760de71d0c1e737547b9e6a313bd3b5f` · **Round** 1
+**Head** `6226549` · **Base** `main` @ `fa6277dd760de71d0c1e737547b9e6a313bd3b5f` · **Reviewed** 2026-09-18 · **Round** 1
 
 Guarantees pass **skipped**: no prior `pr-227-review*.md` exists, so there is no recorded base
 to compare against. For the record, the base branch's live tip (`git fetch origin &&

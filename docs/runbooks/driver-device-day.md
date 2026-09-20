@@ -191,13 +191,13 @@ Run EAS commands from `apps/driver`, never the repo root — `eas.json` lives in
 a monorepo. Build in place; do **not** copy the app outside the repo (that step in the #115 harness
 kit was an artefact of `spikes/` not being a `pnpm-workspace.yaml` member — `apps/driver` is one).
 
-**The cloud build is `expected`, not `observed`.** It has never run: it needs Linards's Expo
-credentials and a build credit. What *is* `observed` (2026-09-17) is that the three failures which
-would otherwise have broken it are each closed and proven in both directions against the exact tree
-EAS receives (`git archive` of the working tree): `@taxi/shared` resolving via the
-`eas-build-post-install` hook, `expo prebuild` finishing after the notification-icon repair, and
-`android:usesCleartextTraffic="true"` reaching the manifest the release variant inherits. Budget one
-failed build anyway, and diagnose it rather than reaching for the harness kit's old workarounds.
+**The cloud build is `observed` (2026-09-18), free tier — neither login nor credit was ever the constraint
+(§The build blocker — cleared).** What *is* `observed` (2026-09-17) is that the three failures which would
+otherwise have broken it are each closed and proven in both directions against the exact tree EAS receives
+(`git archive` of the working tree): `@taxi/shared` resolving via the `eas-build-post-install` hook, `expo
+prebuild` finishing after the notification-icon repair, and `android:usesCleartextTraffic="true"` reaching
+the manifest the release variant inherits. Budget one failed build anyway — `edcc579b` was one — and
+diagnose it rather than reaching for the harness kit's old workarounds.
 
 Install the APK from the EAS build page on the phone. Both the phone and the Mac must be on the
 same Wi-Fi.

@@ -171,7 +171,7 @@ section to that runbook which *cites* the steps and restates none of them.
 Use #14's recipe: `.claude/plans/driver-app-auth-online-location.md` §Level 4 §B. Do not restate it
 here — two copies of a procedure is the failure this runbook exists to clean up.
 ```
-— `docs/runbooks/driver-device-day.md:111-113`. The new section follows the same rule against §Steps.
+— `docs/runbooks/driver-device-day.md:113-114`. The new section follows the same rule against §Steps.
 
 **Every figure carries its provenance.** `observed` (name the run), `derived` (show the arithmetic
 *and* the condition), or `expected`. The runbook models it at
@@ -710,7 +710,7 @@ warning, because it would have produced a false ❌.
   unreachable, and record the divergence.
 - **GOTCHA**: read `clientAt`, not `at`, when timing the cadence —
   `services/api/src/features/drivers/location/driver-location.service.ts:77-79` is where both are
-  logged, and the runbook's note at `:233` (*Which timestamp, and why 12 s*) explains why the server
+  logged, and the runbook's note at `:258` (*Which timestamp, and why 12 s*) explains why the server
   clock bunches into a burst after a socket blip while `clientAt` stays ~4 s apart.
 - **GOTCHA — make the api console readable, or this gate is judged by eye.** Start the api with its
   output teed to a file, and read the file. Scrolling terminal output is not evidence and cannot be
@@ -738,8 +738,8 @@ warning, because it would have produced a false ❌.
   background (`adb shell input keyevent KEYCODE_HOME`). Do not touch it for 60 s. Watch the api
   console for `ping_accepted` throughout.
 - **PATTERN**: the runbook's step 5 reading rules apply verbatim — the field, the 12 s threshold, and
-  "the ❌ is a stream that goes quiet and stays quiet" (the step 5 row at `:222`, and its note at
-  `:233`). **Cite them; the run sheet owns them.**
+  "the ❌ is a stream that goes quiet and stays quiet" (the step 5 row at `:247`, and its note at
+  `:258`). **Cite them; the run sheet owns them.**
 - **IMPORTS**: none.
 - **GOTCHA**: this is the one phase whose outcome is genuinely unknown, and it is the whole ticket.
   `LocationTaskConsumer.handleLocationUpdate` branches on `mIsHostPaused`: foregrounded it reports
@@ -777,7 +777,7 @@ warning, because it would have produced a false ❌.
 - **GOTCHA**: steps 1 and 2 are already covered by T8 with one deliberate narrowing (pings only).
   Step 2's board-visibility half is still owed — judge it here, and say so, rather than marking step 2
   green on T8's evidence.
-- **GOTCHA**: a failure is a finding. "Mostly worked" is not a result — the runbook says so at `:35`.
+- **GOTCHA**: a failure is a finding. "Mostly worked" is not a result — the runbook says so at `:58-59`.
 - **GOTCHA — steps 4 and 8 are taps, and they are deterministic; do not guess pixel coordinates.**
   Dump the view hierarchy, read the toggle's `bounds`, tap its centre:
   ```bash
@@ -803,7 +803,7 @@ warning, because it would have produced a false ❌.
   setup (T2–T4) with the actual measured size; the injection loop; the `google_apis` and
   longitude-first gotchas; and the evidence-grade caveat — what an emulator run does and does not
   prove. Update the Result table's `Platform` row rather than adding a second table.
-- **PATTERN**: `:86-88` — cite, do not restate. The section refers to steps 2–8 **by number**.
+- **PATTERN**: `:111-113` — cite, do not restate. The section refers to steps 2–8 **by number**.
 - **IMPORTS**: none.
 - **GOTCHA**: **if you write an Expect cell, you have created the fourth copy of the run sheet.** This
   is the exact defect PR #218 shipped to close. The section describes *setup and gates*; the steps
@@ -822,18 +822,18 @@ warning, because it would have produced a false ❌.
   constant line count** — 4 lines stay 4 lines — then re-read `:35`, `:37`, `:86`, `:222`, `:233`,
   `:246`, `:282`, `:290`, `:311` and confirm each still resolves to its original text. Leaving a
   falsified claim standing because "the plan said append only" is the worse defect.
-  **DEVIATION, and the anchors above are pre-#224 (`observed`, PR #233 review round 1 M2).** The
-  constant-line-count rule was exceeded, not met: §Result's replacement grew the `@@ -14,25 +14,45 @@`
-  hunk by **+20 lines**, because the filled table, the per-step grid and the step-1 divergence note
-  had more to say than the "not yet run" text they replaced. That was the right call and is not being
-  undone — but it shifted everything below §Result by exactly +20, so **every anchor in this GOTCHA
-  and in the paragraph above it reads against `origin/main`'s copy, not today's.** Today: `:13`→`:13`
-  (unmoved), `:37`→`:57`, `:86`→`:106`, `:222`→`:242`, `:233`→`:253`, `:246`→`:266`, `:282`→`:302`,
-  `:290`→`:310`, `:311`→`:331`, all `observed` exact by text match. `:35` is the exception — its
-  sentence reflowed into the "When a phone exists" paragraph and now begins at `:53`. This plan's own
-  live citations (`:174`, `:178`, `:179`, `:359`, `:571`, `:1222`) were re-pointed in the same pass;
-  `:186`'s `:13-22` still spans the Result heading and field table and needed none. **The next pass
-  that edits §Result re-derives this mapping rather than adding another +20 to it.**
+  **HISTORICAL — T11 has run, and every line number in this GOTCHA is a pre-#224 anchor.** All fourteen (`:13`,
+  `:13-22`, `:23`, `:25-28`, `:35`, `:37`, `:86`, `:222`, `:233`, `:246`, `:282`, `:290`, `:311`, `:322`) resolve by
+  text match against **`7ec3bd7`**'s copy — the 322-line file described two sentences above. At `fa6277d`, **12 of
+  14**: `:23` and `:25-28` still point at their own passages, whose text #226 rewrote in place under the
+  falsified-claim licence directly above — so #226 did not purely append. At `414bada` and later, **2 of 14** — `:13`
+  and `:13-22`, because `## Result` never moved; the other twelve point elsewhere (`observed` 2026-09-20, all three
+  shas). Do not follow them as live line numbers: the rules still hold, the numbers do not — re-read the text at head.
+  **DEVIATION (`observed`, PR #233 review round 1 M2).** §Result's replacement grew the `@@ -14,25 +14,45 @@` hunk by
+  **+20 lines** — the filled table, the per-step grid and the step-1 divergence note had more to say than the "not yet
+  run" text they replaced. Right call, not being undone; it is what stopped the twelve resolving. A pre-#224→today
+  translation table used to sit here. It went stale twice in three PRs (#233 M2, #235 H1) and is gone rather than
+  re-derived a third time — three fixed shas beat a mapping needing upkeep.
 - **VALIDATE**:
   ```bash
   grep -c "Expect" docs/runbooks/driver-device-day.md      # must not grow; baseline 2
