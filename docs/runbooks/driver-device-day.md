@@ -315,10 +315,11 @@ each accepted fix *arriving*, which is what the 4 s claim is about.
 **Why step 7's window is 2 minutes.** Let C be ride completion. Worst case to an observable nudge
 in the **broken** app is **C + 60 s**: ≤15 s to the marking tick + 30 s nudge delay + ≤15 s to the
 sending tick — `derived` from `PRESENCE_SWEEP_INTERVAL_MS = 15_000` and
-`OFFLINE_NUDGE_DELAY_SECONDS = 30` (`driver-location.policy.ts:36,42`), and assuming the dark
+`OFFLINE_NUDGE_DELAY_SECONDS = 30` (`driver-location.policy.ts:46,52`), and assuming the dark
 condition is already true at C, which it is whenever the ride ran longer than
-`PRESENCE_DARK_AFTER_SECONDS = DRIVER_LOCATION_TTL_SECONDS = 60` (`:15,30`). Two minutes is that
-worst case plus margin.
+`PRESENCE_DARK_AFTER_SECONDS = DRIVER_LOCATION_TTL_SECONDS = 60` (`driver-location.policy.ts:40`;
+the TTL itself is declared in `packages/shared/src/driver-presence.ts:26` since #234 and
+re-exported at `driver-location.policy.ts:25`). Two minutes is that worst case plus margin.
 
 ## Verdict
 

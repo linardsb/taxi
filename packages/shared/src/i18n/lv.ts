@@ -77,7 +77,14 @@ export const lv = {
   // A NAME LIST, not a count: formatMessage does plain {placeholder} replace
   // with no plural support, and Latvian agreement (1 šoferis / 2 šoferi /
   // 21 šoferis) cannot be expressed here. Naming them is what Dina acts on.
-  'console.drivers_silent_summary': 'Klusē: {names}',
+  //
+  // STATE-NEUTRAL, deliberately not «Klusē». The summary names every driver
+  // who is not «Raida» — both the stopped-streaming ones and the ones who
+  // have never sent a fix — so it must not pick the stopped-streaming word.
+  // The row keeps three states and «Klusē» stays `console.driver_silent`'s;
+  // this one claims only what `!== 'live'` proves (PR #236 review round 2,
+  // M3).
+  'console.drivers_silent_summary': 'Nav datu: {names}',
   'console.alert_unclaimed': 'Nepieņemts pasūtījums',
   'console.alert_sms_failed': 'Neizdevās nosūtīt {kind}',
   'console.sms_kind_booking_confirmed': 'apstiprinājuma SMS',

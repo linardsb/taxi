@@ -26,6 +26,39 @@ export const STALE_MS = 5_000;
 export const POLL_MS = 5_000;
 
 /**
+ * When the DRIVER PANEL stops trusting the frame it is reading. Wider than
+ * `STALE_MS` on purpose, and a different question from the banner's.
+ *
+ * The banner asks *should the operator caveat what is on screen and be offered
+ * retry*, and answers yes the moment the socket gives up. The panel asks *is
+ * this frame recent enough that a 60 s per-driver judgement is sound* — and
+ * while the pill is «Bezsaistē» the read-only poll (`use-board.ts`) is
+ * refreshing `lastFrameAtMs` every cycle, so the answer is usually yes. Handing
+ * the panel the banner's condition blanked it in exactly the state the
+ * fallback was built for: websocket blocked, HTTP fine.
+ *
+ * `2 × POLL_MS + STALE_MS` = 5 000 + 5 000 + 5 000 = **15 000 ms** (`derived`).
+ *
+ * The bound it has to clear. Ticks fire every `POLL_MS`, and `pollBusy` SKIPS
+ * every tick that lands while a fetch is in flight, so with a round trip `R`
+ * the worst gap between two successful `applyFrame` calls is
+ * `POLL_MS × (1 + ceil(R / POLL_MS))`. Under the stated condition — `R` no
+ * longer than `STALE_MS`, i.e. one skipped tick at most — that is
+ * `5 000 × (1 + 1)` = **10 000 ms**, leaving 5 000 ms of margin under this
+ * constant. The window stops covering the poll at `R` above `2 × POLL_MS`
+ * (gap 15 000, and the comparison is `>=`); an API that slow reads as stale,
+ * which is the safe direction.
+ *
+ * What a 15 s lag costs the signal: `lastSeenAt` is the api's clock and does
+ * not move when the frame does, so a late frame only makes the panel
+ * UNDER-report freshness — it can say «Klusē» for a driver who has since
+ * reported, never «Raida» for one who has not. Worst case a row flips to
+ * «Klusē» up to 15 s late, inside the 75 s (`PRESENCE_DARK_AFTER_SECONDS +
+ * PRESENCE_SWEEP_INTERVAL_MS`) the sweeper takes to drop the driver anyway.
+ */
+export const PANEL_STALE_MS = 2 * POLL_MS + STALE_MS;
+
+/**
  * Failed retries before the pill says «Bezsaistē» (chosen constant, per the
  * plan). Socket.IO keeps retrying forever regardless — offline is a UI state,
  * not a stopped socket.
@@ -181,6 +214,18 @@ export function acknowledgeAlert(state: BoardState, id: string): BoardState {
 /** No frame yet, or the last one is older than the heartbeat allows. */
 export function isStale(nowMs: number, lastFrameAtMs: number | null): boolean {
   return lastFrameAtMs === null || nowMs - lastFrameAtMs >= STALE_MS;
+}
+
+/**
+ * The same read against the panel's wider window (`PANEL_STALE_MS`). A
+ * hydrated cold refresh (`lastFrameAtMs: null`) is stale here too — there is
+ * no frame age to trust at all.
+ */
+export function isPanelStale(
+  nowMs: number,
+  lastFrameAtMs: number | null,
+): boolean {
+  return lastFrameAtMs === null || nowMs - lastFrameAtMs >= PANEL_STALE_MS;
 }
 
 /**

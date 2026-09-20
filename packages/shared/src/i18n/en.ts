@@ -61,7 +61,9 @@ export const en = {
   'console.driver_streaming': 'Reporting',
   'console.driver_silent': 'Silent for {age}',
   'console.driver_no_signal': 'No signal',
-  'console.drivers_silent_summary': 'Silent: {names}',
+  // State-neutral — see the LV catalog's note: this names the never-streamed
+  // drivers too, so it cannot use the stopped-streaming word.
+  'console.drivers_silent_summary': 'Not reporting: {names}',
   'console.alert_unclaimed': 'Unclaimed order',
   'console.alert_sms_failed': 'Failed to send {kind}',
   'console.sms_kind_booking_confirmed': 'the confirmation SMS',

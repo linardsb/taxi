@@ -11,9 +11,12 @@ import {
   applyFrame,
   driverFreshness,
   emptyBoard,
+  isPanelStale,
   isStale,
   OFFLINE_AFTER_FAILURES,
+  PANEL_STALE_MS,
   pillFrom,
+  POLL_MS,
   pushOfflineAlert,
   pushSmsFailedAlert,
   pushUnclaimedAlert,
@@ -222,6 +225,32 @@ describe('pillFrom — the one truth derivation', () => {
   it('isStale treats "no frame ever" as stale (edge)', () => {
     expect(isStale(NOW, null)).toBe(true);
     expect(isStale(NOW, NOW - STALE_MS + 1)).toBe(false);
+  });
+});
+
+/**
+ * The panel's window is WIDER than the banner's, and the gap between them is
+ * load-bearing (PR #236 review round 2, M2): while the pill is «Bezsaistē»
+ * the read-only poll keeps refreshing `lastFrameAtMs`, so a panel reading the
+ * banner's condition blanked itself with a current board. These cases pin the
+ * gap rather than restating `PANEL_STALE_MS`'s digits.
+ */
+describe('isPanelStale — the panel trusts a frame the banner already caveats', () => {
+  it('trusts a frame one poll old (expected)', () => {
+    expect(isPanelStale(NOW, NOW - POLL_MS)).toBe(false);
+  });
+
+  it('still trusts one the BANNER has given up on (edge)', () => {
+    // Past STALE_MS, inside PANEL_STALE_MS — the deliberate gap. Asserted
+    // against both constants so it moves with them, never against 6 000.
+    expect(isStale(NOW, NOW - STALE_MS)).toBe(true);
+    expect(isPanelStale(NOW, NOW - STALE_MS)).toBe(false);
+    expect(isPanelStale(NOW, NOW - PANEL_STALE_MS + 1)).toBe(false);
+  });
+
+  it('gives up at the window and on a hydrated frame of unknown age (failure)', () => {
+    expect(isPanelStale(NOW, NOW - PANEL_STALE_MS)).toBe(true);
+    expect(isPanelStale(NOW, null)).toBe(true);
   });
 });
 

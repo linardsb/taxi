@@ -88,6 +88,13 @@ const row: React.CSSProperties = {
  * restores an arbitrarily old frame deliberately, so without this every row
  * would read «Klusē MM:SS» while every phone streams normally.
  *
+ * It is FRAME AGE and not the stale banner's condition (`PANEL_STALE_MS`, not
+ * `pill === 'offline' || isStale(…)`). The banner fires the moment the socket
+ * gives up; the read-only poll then keeps `lastFrameAtMs` current, so the
+ * banner's condition blanked this panel while the board was one second old —
+ * the over-claim inverted a third time, and the one state the poll fallback
+ * exists for. See `board-state.ts`'s `PANEL_STALE_MS`.
+ *
  * ONE CONSEQUENCE, ACCEPTED RATHER THAN PAPERED OVER. A driver is `unknown`
  * from the instant they go online until their first fix lands — a GPS cold
  * start is tens of seconds outdoors and does not finish indoors — so the live
@@ -202,8 +209,10 @@ function DriverRow({
  *
  * SILENT WHILE THE BOARD ITSELF IS STALE. `boardStale` empties the region
  * rather than unmounting it — the region must stay in the DOM (#234's plan),
- * and naming drivers as silent on the strength of the console's own dead
- * socket would announce a fault the drivers do not have.
+ * and naming drivers as silent on the strength of the console's own frame
+ * gap would announce a fault the drivers do not have. A dead SOCKET is not
+ * that gap: the poll fallback keeps the frame current underneath it, so the
+ * region keeps naming silent drivers while «Bezsaistē» is on screen.
  */
 export function DriverList({
   drivers,
@@ -213,9 +222,14 @@ export function DriverList({
   drivers: BoardDriver[];
   nowMs: number;
   /**
-   * The board has no fresh frame — `page.tsx`'s `showStaleBanner`. REQUIRED,
-   * not defaulted: an optional `false` would let a future mount site drop the
-   * discriminator and silently restore the defect with every test still green.
+   * The board has no fresh frame — `isPanelStale(nowMs, lastFrameAtMs)` at
+   * the mount site, NOT `showStaleBanner`. Frame age only: the banner's
+   * condition is wider (it also fires on «Bezsaistē»), and passing it blanked
+   * this panel while the read-only poll was keeping the board current. So the
+   * banner can be up with this `false`, and the rows are right to keep
+   * reading. REQUIRED, not defaulted: an optional `false` would let a future
+   * mount site drop the discriminator and silently restore the defect with
+   * every test still green.
    */
   boardStale: boolean;
 }>) {
@@ -255,6 +269,17 @@ export function DriverList({
             })}
       </p>
 
+      {/* NOT `boardStale`-aware, deliberately (PR #236 review round 2, L3).
+          «Neviens šoferis nav tiešsaistē» is a present-tense claim, and on a
+          stale board the honest one is "we do not know". It is left
+          unconditional because the caveat is guaranteed to be on screen
+          beside it: `boardStale` is `isPanelStale` (15 s) and the banner is
+          `isStale` (5 s) or «Bezsaistē», so the panel's condition is a strict
+          SUBSET of the banner's — `boardStale` true implies the frame is
+          ≥ 15 s old, which implies the banner. The heading's `(0)` sits next
+          to it too. A fourth catalog string would restate what the banner
+          already says. If the banner's condition ever narrows, this stops
+          being true and the string needs the guard. */}
       {drivers.length === 0 ? (
         <p
           style={{

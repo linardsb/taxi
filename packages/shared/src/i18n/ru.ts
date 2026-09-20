@@ -62,7 +62,9 @@ export const ru = {
   'console.driver_streaming': 'Передаёт',
   'console.driver_silent': 'Молчит {age}',
   'console.driver_no_signal': 'Нет сигнала',
-  'console.drivers_silent_summary': 'Молчат: {names}',
+  // State-neutral — see the LV catalog's note: this names the never-streamed
+  // drivers too, so it cannot use the stopped-streaming word.
+  'console.drivers_silent_summary': 'Без данных: {names}',
   'console.alert_unclaimed': 'Непринятый заказ',
   'console.alert_sms_failed': 'Не удалось отправить {kind}',
   'console.sms_kind_booking_confirmed': 'SMS с подтверждением',

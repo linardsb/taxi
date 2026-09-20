@@ -147,10 +147,15 @@ describe('DriverList', () => {
     expect(text).toContain(
       formatMessage('lv', 'console.driver_silent', { age: '01:30' }),
     );
-    // The two states must not share a label — that is the whole defect.
-    expect(formatMessage('lv', 'console.driver_streaming')).not.toBe(
-      formatMessage('lv', 'console.driver_silent', { age: '01:30' }),
-    );
+    // The two states must not share a label — that is the whole defect. Read
+    // from the RENDERED rows: comparing two catalog lookups to each other
+    // asserts nothing about the panel and stays green if `DriverRow` drops
+    // the label, renders both states alike, or is deleted. The freshness span
+    // is the row's last child; both fixtures share a zone name, so losing the
+    // span makes these equal and reddens the case.
+    const rows = screen.getAllByRole('listitem');
+    const labelOf = (li: HTMLElement) => li.lastElementChild?.textContent ?? '';
+    expect(labelOf(rows[0]!)).not.toBe(labelOf(rows[1]!));
   });
 
   it('keeps the status dot and the freshness label as independent axes (edge)', () => {

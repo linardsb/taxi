@@ -226,11 +226,17 @@ describe('DispatchPage — a deaf console does not accuse the drivers', () => {
     // Handshake fine, frames stopped: the banner is up, and every row's age is
     // now the console's silence rather than the driver's. A fresh-streaming
     // driver would read «Klusē MM:SS» without the thread.
+    //
+    // 16 s, not the banner's 6 s: the panel's window is `PANEL_STALE_MS`
+    // (15 s) and not `STALE_MS`, because the poll fallback would otherwise
+    // blank it while the board is current (round 2, M2). This fixture is past
+    // both, so the banner and the panel agree here — the case below the
+    // describe pins the range where they deliberately do not.
     mount(
       'reconnecting',
       boardWith({
         frame: { ...frame(), drivers: [SILENT_DRIVER, FRESH_DRIVER] },
-        lastFrameAtMs: NOW - 6_000,
+        lastFrameAtMs: NOW - 16_000,
       }),
     );
 
@@ -264,5 +270,31 @@ describe('DispatchPage — a deaf console does not accuse the drivers', () => {
       expect(region).not.toHaveTextContent(SILENT_DRIVER.name);
       expect(region).not.toHaveTextContent(FRESH_DRIVER.name);
     }
+  });
+
+  it('keeps reading the rows while the REST fallback is current (failure)', () => {
+    // Websocket blocked, HTTP fine — a proxy or a corporate network, which is
+    // the exact state `use-board.ts:211-222`'s poll fallback exists for. The
+    // pill is «Bezsaistē» because the socket gave up, and every successful
+    // poll runs `applyFrame(s, frame, Date.now())` (`:117`), so the frame is
+    // at most one poll old and the board is demonstrably current. Reading the
+    // PILL here would blank the panel in the one state it was built to
+    // survive; reading the FRAME AGE keeps the signal on.
+    mount(
+      'offline',
+      boardWith({
+        frame: { ...frame(), drivers: [SILENT_DRIVER, FRESH_DRIVER] },
+        lastFrameAtMs: NOW - 1_000,
+      }),
+    );
+
+    expect(bannerFor('console.stale_banner')).toBeInTheDocument();
+    expect(screen.getByText(silenceLabel())).toBeInTheDocument();
+    expect(
+      screen.getByText(formatMessage('lv', 'console.driver_streaming')),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(formatMessage('lv', 'console.driver_no_signal')),
+    ).toBeNull();
   });
 });
