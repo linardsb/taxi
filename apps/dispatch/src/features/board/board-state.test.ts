@@ -310,6 +310,28 @@ describe('applyFrame — server clock offset', () => {
     expect(jittered.serverOffsetMs).toBe(0);
   });
 
+  it('still catches up to a browser clock drifting below the step (edge)', () => {
+    // The step is measured against the STORED offset, never the previous
+    // candidate, so a drift whose per-frame move is sub-step still
+    // accumulates into the comparison and trips it. Without that, a browser
+    // losing 200 ms a frame would walk away from the api unboundedly while
+    // every single candidate looked like jitter.
+    //
+    // 200 ms per 2 s frame: the 5th frame is the first with
+    // |candidate - 0| >= 1 000, so the offset snaps there and the error never
+    // exceeds the step.
+    let state = applyFrame(emptyBoard(), frame(), NOW, 'socket');
+    expect(state.serverOffsetMs).toBe(0);
+
+    for (let n = 1; n <= 4; n += 1) {
+      state = applyFrame(state, frame(), NOW - n * 200, 'socket');
+    }
+    expect(state.serverOffsetMs).toBe(0); // 800 ms of drift, still inside
+
+    state = applyFrame(state, frame(), NOW - 5 * 200, 'socket');
+    expect(state.serverOffsetMs).toBe(1_000);
+  });
+
   it('never samples the clock from a REST snapshot (failure)', () => {
     // The cold-api case `applyFrame`'s docblock derives: a 3 s round trip
     // would write −3 000 ms onto a browser that is perfectly synchronised,

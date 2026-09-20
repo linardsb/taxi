@@ -94,12 +94,22 @@ export const ALERTS_CAP = 50;
  * WHAT IT COSTS, against the true offset `O`. Once settled,
  * `|stored − O| < 1 000 + L` (`derived`: `|stored − candidate| < 1 000` is
  * the step test itself, and `|candidate − O| = L` is the sampling bias
- * derived in `applyFrame`'s docblock below). Against
- * `DRIVER_LOCATION_TTL_SECONDS` (60 s) that is under 1.7% plus L. Both terms
- * point the SAME way — ages read small — so a driver who has gone quiet can
- * still read «Raida» for that long past the boundary. The error it replaces
- * was unbounded in exactly that direction; bounded beats unbounded, which is
- * the whole claim being made here.
+ * derived in `applyFrame`'s docblock below). The 1 000 is under 1.7% of
+ * `DRIVER_LOCATION_TTL_SECONDS` (60 s); `L` is NOT quantified here — no run
+ * has measured this api's one-way push latency — so that percentage covers
+ * the step term only, and the sentence says so rather than implying the
+ * bound is fully numeric. Both terms point the SAME way — ages read small —
+ * so a driver who has gone quiet can still read «Raida» for that long past
+ * the boundary. The error it replaces was unbounded in exactly that
+ * direction; bounded beats unbounded, which is the whole claim being made.
+ *
+ * THE BOUND SURVIVES A DRIFTING CLOCK, and that is a property of comparing
+ * against the STORED offset rather than the previous candidate. A browser
+ * losing 200 ms a frame produces candidates that each look like jitter, but
+ * the difference accumulates against a stored value that is not moving, so
+ * the fifth frame trips the step and the offset snaps. Comparing consecutive
+ * candidates instead would let such a clock walk away unboundedly with every
+ * individual move sub-step. Pinned by the drift case in board-state.test.ts.
  */
 export const SERVER_OFFSET_STEP_MS = 1_000;
 
