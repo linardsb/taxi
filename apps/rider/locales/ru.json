@@ -1,3 +1,5 @@
 {
-  "NSLocationWhenInUseUsageDescription": "Sakta Cab использует ваше местоположение, чтобы предложить место подачи."
+  "ios": {
+    "NSLocationWhenInUseUsageDescription": "Sakta Cab использует ваше местоположение, чтобы предложить место подачи."
+  }
 }
