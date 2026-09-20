@@ -1,11 +1,17 @@
 # Driver device day — issue #141's proof
 
 Issue [#141](https://github.com/linardsb/taxi/issues/141)'s code is merged (PR #142 `269e8ec`,
-PR #145 `a6481aa`). One claim is still owed, and it is **one claim wide**: that after the
-toggle-OFF chain runs mid-ride, **the real OS background location task is still emitting fixes that
-reach the api**. The driver suite proves `stopStreaming` is never called and can prove nothing
-about the task itself — `jest.setup.ts` fakes every native module by design
-(`apps/driver/CLAUDE.md`, the Tests bullet). Only a phone closes it.
+PR #145 `a6481aa`) and **its one owed claim is now answered** — on an Android emulator, not a phone
+(§Result, §Emulator route). The claim was **one claim wide**: that after the toggle-OFF chain runs
+mid-ride, **the real OS background location task is still emitting fixes that reach the api**. The
+driver suite proves `stopStreaming` is never called and can prove nothing about the task itself —
+`jest.setup.ts` fakes every native module by design (`apps/driver/CLAUDE.md`, the Tests bullet), so
+only a real runtime could answer it. #224's emulator run is that runtime, and Linards took the call
+on 2026-09-20 that its evidence grade carries #141.
+
+**The sheet is not retired.** It stays the run sheet for the phone leg #4 and #14 still want, for
+the other passes in §Also on this day, and for anyone re-proving the chain after a change —
+§Verdict's binary rule applies unchanged whoever runs it.
 
 Everything else about the held branch is already pinned by a test. Do not widen this sheet.
 ~30 minutes with the setup; the eight steps themselves are ~10.
@@ -31,10 +37,9 @@ wearing the same signature (§Emulator route § *Gates 2 and 3, as run*). Step 1
 about the permission *prompts*; #14's §C.13 owns that check and still owes it. Steps 1–3 are setup
 and prove nothing about #141 either way, per §Verdict.
 
-**This does not close #141 by itself** — see §Verdict, which asks for a phone. What it establishes is
-that the owed claim now has emulator evidence rather than none, and whether that is enough to close
-is Linards' call. The evidence grade is stated in §Emulator route § *What an emulator can and cannot
-prove here*, and the run's command-level record is in
+**This run is what closed #141**, on 2026-09-20 — Linards' call, taken on emulator evidence rather
+than on a phone. The evidence grade it rests on is stated in §Emulator route § *What an emulator can
+and cannot prove here*, and the run's command-level record is in
 `.claude/reports/emulator-gates-224-report.md`.
 
 Two things the run settled:
@@ -186,13 +191,13 @@ Run EAS commands from `apps/driver`, never the repo root — `eas.json` lives in
 a monorepo. Build in place; do **not** copy the app outside the repo (that step in the #115 harness
 kit was an artefact of `spikes/` not being a `pnpm-workspace.yaml` member — `apps/driver` is one).
 
-**The cloud build is `expected`, not `observed`.** It has never run: it needs Linards's Expo
-credentials and a build credit. What *is* `observed` (2026-09-17) is that the three failures which
-would otherwise have broken it are each closed and proven in both directions against the exact tree
-EAS receives (`git archive` of the working tree): `@taxi/shared` resolving via the
-`eas-build-post-install` hook, `expo prebuild` finishing after the notification-icon repair, and
-`android:usesCleartextTraffic="true"` reaching the manifest the release variant inherits. Budget one
-failed build anyway, and diagnose it rather than reaching for the harness kit's old workarounds.
+**The cloud build is `observed` (2026-09-18) — neither the login nor a build credit was ever the constraint**
+(`.claude/plans/emulator-oracle-141.md:1149-1150`, Res2 retired by T7; §The build blocker — cleared has the two
+builds). What *is* `observed` (2026-09-17) is that the three failures which would otherwise have broken it are each
+closed and proven in both directions against the exact tree EAS receives (`git archive` of the working tree):
+`@taxi/shared` resolving via the `eas-build-post-install` hook, `expo prebuild` finishing after the notification-icon
+repair, and `android:usesCleartextTraffic="true"` reaching the manifest the release variant inherits. Budget one
+failed build anyway — `edcc579b` was one — and diagnose it rather than reaching for the harness kit's old workarounds.
 
 Install the APK from the EAS build page on the phone. Both the phone and the Mac must be on the
 same Wi-Fi.
@@ -297,7 +302,9 @@ phone streams a fix every 4 s whether or not it moves — the throttle is time-b
 (`fix-throttle.ts:9`, `MIN_FIX_INTERVAL_MS = 4_000`) and `distanceInterval` is `0`
 (`location-options.ts:20`), both by design — so a
 stationary phone's pin does not move, and a live stream and a dead one look identical there.
-Rendering board freshness is the clean fix and is deliberately a separate ticket.
+Rendering board freshness is the clean fix and is deliberately a separate ticket —
+[#234](https://github.com/linardsb/taxi/issues/234), filed 2026-09-20 when this deferral was found
+to name no ticket at all.
 
 **Why step 7's window is 2 minutes.** Let C be ride completion. Worst case to an observable nudge
 in the **broken** app is **C + 60 s**: ≤15 s to the marking tick + 30 s nudge delay + ≤15 s to the
@@ -323,8 +330,15 @@ exists**, stop and fix the setup. Nothing after that point means anything: a blo
 socket produces the same signature as #141 unfixed, and step 2 is the only place the ambiguity can
 be resolved, because at that point no ride and no toggle-OFF has happened yet.
 
-**This runbook does not close #141 by itself.** Close #141 when steps 5–8 have been run on a phone
-and the Result table above is filled in.
+**#141 was closed on the run in §Result**, not on a phone. The eight steps ran on an Android
+emulator on 2026-09-18, the four this rule makes binary all passed, and Linards took the call on
+2026-09-20 that the emulator's evidence grade carries the claim — §Emulator route § *What an
+emulator can and cannot prove here* states what that grade does and does not include. The phone leg
+was never run; it is not owed by #141, and the background-reliability axis an emulator cannot reach
+was never #141's question — it stays with #4 and #14.
+
+**The rule above still governs any later run of this sheet.** A ❌ on 4, 5, 7 or 8 on a phone would
+be new evidence against a closed issue, and should reopen it rather than be filed elsewhere.
 
 ---
 
@@ -364,7 +378,7 @@ emulator can reach in principle.
 It reproduces **no Doze, no OEM process killer, no real radio and no real GPS**. Those bear on
 background *reliability*, which is [#4](https://github.com/linardsb/taxi/issues/4)'s and
 [#14](https://github.com/linardsb/taxi/issues/14)'s question. Emulator evidence does not retire
-either, and whether it closes #141 is Linards' call, not this runbook's.
+either. It did close #141: Linards took that call on 2026-09-20, on exactly this grade.
 
 ### Setup, once
 
