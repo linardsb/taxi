@@ -156,7 +156,8 @@ function zoneHolding(
  * resolves — and `drivers.status` is the column `toCandidates` rejects on, so
  * an offline driver is never a candidate. But the engine's universe is
  * narrower still: `findNearest` also drops positions older than
- * `DRIVER_LOCATION_TTL_SECONDS` (60 s, `driver-location.policy.ts:15`), and
+ * `DRIVER_LOCATION_TTL_SECONDS` (60 s, declared in `@taxi/shared`, re-exported
+ * by `driver-location.policy.ts`), and
  * `drivers.status` is not tied to that window. An app that stopped pinging
  * while still marked online — backgrounded, permission revoked, a swallowed
  * `ingest` — is unreachable outright and can still be named here.

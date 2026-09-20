@@ -4,15 +4,25 @@
  * drivers who are no longer there.
  */
 
+import { DRIVER_LOCATION_TTL_SECONDS } from '@taxi/shared';
+
 /**
  * How long a recorded position stays dispatchable without a refresh.
  *
- * This is a READ-TIME FILTER, not a Redis key expiry, and it cannot be one:
- * GEO members are sorted-set members and carry no per-member TTL, so `EXPIRE`
- * would evict every driver in the city at once. `findNearby` drops anything
- * whose last ping is older than this window instead.
+ * DECLARED IN `@taxi/shared`, re-exported here so this slice keeps one home
+ * for its location policy. It moved there when the dispatch console became
+ * the third surface reading the same boundary (#234) — `apps/dispatch` cannot
+ * import from a service, and a console-local copy would put the board's
+ * «Raida» and dispatch's candidacy on different clocks. Import it from this
+ * file or from `@taxi/shared`; do not restate the number.
+ *
+ * What is api-only and stays here: this is a READ-TIME FILTER, not a Redis key
+ * expiry, and it cannot be one. GEO members are sorted-set members and carry
+ * no per-member TTL, so `EXPIRE` would evict every driver in the city at once.
+ * `findNearby` drops anything whose last ping is older than this window
+ * instead.
  */
-export const DRIVER_LOCATION_TTL_SECONDS = 60;
+export { DRIVER_LOCATION_TTL_SECONDS };
 
 /** Greater-Rīga pickup radius — the default catchment for a nearest-driver query. */
 export const NEAREST_DEFAULT_RADIUS_METERS = 5_000;

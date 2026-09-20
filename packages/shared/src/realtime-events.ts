@@ -178,8 +178,15 @@ export type RideAssignedEvent = z.infer<typeof rideAssignedEventSchema>;
  * `phone` legitimately travels here — the operator console exists so Dina can
  * dispatch by voice, and the masking rule is about LOGS (see raiseUnclaimed's
  * pickup-point note). `location`/`lastSeenAt` are null for an online driver
- * whose GEO position has never been recorded or was dropped; staleness is the
- * client's presentation concern.
+ * whose GEO position has never been recorded or was dropped.
+ *
+ * `lastSeenAt` travels RAW — there is deliberately no pre-computed `isStale`
+ * boolean on the wire, because a boolean cannot carry the age and the client
+ * has both this field and its own clock. That much is still the client's
+ * presentation concern. What is NOT the client's to choose is the BOUNDARY:
+ * it reads `DRIVER_LOCATION_TTL_SECONDS` from this package (#234), the same
+ * number `findNearby` filters on, so the console cannot call a driver live
+ * while dispatch has already stopped offering to them.
  *
  * A ride's `status` is `BOARD_LIVE_RIDE_STATUSES`, NOT the full `RIDE_STATUSES`
  * — the same tuple the board query selects on. The wide enum let the console
