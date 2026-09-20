@@ -6,7 +6,8 @@
 
 **All nine findings actioned: eight fixed, one informational with no action.** Two additions the
 review did not raise, found while fixing — **N1** (a stale anchor of the same class, in the same
-GOTCHA) and **N2** (a false claim inside H1's own fix, caught before it shipped).
+GOTCHA), **N2** (a false claim inside H1's own fix) and **N3** (an unsourced one inside M2's),
+both caught before they shipped.
 
 Both edited files are **line-count neutral** — `docs/runbooks/driver-device-day.md` stays 660 lines
 and `.claude/plans/emulator-oracle-141.md` stays 1250, exactly as at `96c51f3`. That is deliberate:
@@ -31,6 +32,7 @@ than this commit's `--stat`, which its own addition of this report moves: #212's
 | L5 | Low (informational) | No action — recorded so a later round does not inherit it | ✅ n/a |
 | N1 | — | Found here, same class as M3 | ✅ fixed |
 | N2 | — | Found here, inside H1's own fix | ✅ fixed |
+| N3 | — | Found here, inside M2's own fix | ✅ fixed |
 
 Nothing deferred. No issue filed.
 
@@ -123,10 +125,19 @@ credit."* False at head and contradicted three times in the same file (`:25`, `:
 and by the plan at `:1149-1150`. Pre-existing at `414bada`; fixed here on Linards's call because it
 is the same defect class the PR exists to remove, falsified by the same #224 run the PR cites.
 
-**The fix.** Rewritten at a constant seven lines: the build is `observed` (2026-09-18), both builds
-ran on the free tier so neither the login nor a purchased credit was ever the constraint, pointing
-at §The build blocker — cleared. `:200`'s *"Budget one failed build anyway"* now names `edcc579b`
-and so is `observed` rather than precautionary.
+**The fix.** Rewritten at a constant seven lines: the build is `observed` (2026-09-18) and neither
+the login nor a build credit was ever the constraint, citing the plan's Res2 (`:1149-1150`) and
+§The build blocker — cleared. `:200`'s *"Budget one failed build anyway"* now names `edcc579b` and
+so is `observed` rather than precautionary.
+
+**N3 — a second unsourced claim inside a fix, caught the same way.** The first version of this
+rewrite said *"both builds ran on the free tier"*. Nothing sources that. Res2's free-tier
+observation is a **T7** build — *"queued 5 s, ran 468 s"* (plan `:652`, `:1149-1150`) — and 468 s is
+none of the four figures §The build blocker records for the pair (`bcd04c21` 1199 s / `edcc579b`
+1182 s wall; 1189 s / 1077 s `buildDuration`). So the free-tier run is a third build, and the tier
+of these two is simply not stated anywhere in the tree. Cut; the half Res2 *does* state verbatim —
+that neither the login nor the credit was the constraint — is kept and now cites its source line.
+`grep -c "free tier" docs/runbooks/driver-device-day.md` → **0** (`observed` 2026-09-20).
 
 **Closing commands** (run 2026-09-20 against the fixed tree):
 
@@ -244,15 +255,21 @@ and rows 4 and 5 are the retired claims quoted in the act of retiring them. A sw
 
 ## Validation
 
-**The CI-parity gate, `observed` 2026-09-20** — run in worktree `wt-141close` with
-`COMPOSE_PROJECT_NAME=taxi`, on the fixed tree (the tree this round's commit captures):
+**The CI-parity gate, `observed` 2026-09-20** — run twice in worktree `wt-141close` with
+`COMPOSE_PROJECT_NAME=taxi`, once on the source fixes and once after the report landed:
 
 ```
 $ COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force
- Tasks:    22 successful, 22 total
-Cached:    0 cached, 22 total
-  Time:    1m29.73s                exit 0
+ Tasks:    22 successful, 22 total      Tasks:    22 successful, 22 total
+Cached:    0 cached, 22 total          Cached:    0 cached, 22 total
+  Time:    1m29.73s        exit 0        Time:    1m23.387s       exit 0
+        (run 1, 71300db)                       (run 2, 2556fb1)
 ```
+
+**Why this figure does not chase the head sha.** Every commit after run 2 in this round touches
+`.claude/reports/` and `docs/runbooks/` markdown only — no package compiles, lints or tests a
+markdown file, so the gate cannot read them and its result cannot move. The PR body carries the
+figure re-run at the final head, where it is outside the tree and so cannot re-stale itself.
 
 `@taxi/api`: `Test Suites: 2 skipped, 75 passed, 75 of 77 total` · `Tests: 39 skipped, 694 passed,
 733 total` — the documented Redis-gated set, matching `CLAUDE.md`'s re-observation at `0cdb59c`
@@ -280,7 +297,10 @@ $ python3 verify-anchors.py                  # the fixed tree
 ```
 
 The script is not committed — it is specific to this plan's anchor set and would rot. It is
-reproduced here so the check is re-runnable rather than merely reported:
+reproduced here so the check is re-runnable rather than merely reported — and **the block below is
+the one that was run**: it was extracted back out of this report and executed verbatim after the
+last edit to it (`observed` 2026-09-20, exit 0, section A 3/3 and section B 12/12). A reproduced
+script that was never run from its reproduction is a claim like any other.
 
 <details><summary><code>verify-anchors.py</code></summary>
 
