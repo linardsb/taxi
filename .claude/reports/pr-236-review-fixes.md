@@ -67,7 +67,16 @@ Only that test reddened — the fix changes nothing else in the suite.
 - `driver-list.test.tsx` — *"blames nobody while the BOARD is the thing that went quiet (failure)"*: three drivers, `boardStale`, all three rows «Nav signāla», region present and empty.
 - `dispatch-page.test.tsx`, a new describe — *"reads the drivers as silent while the board itself is fresh (expected)"* is the control (banner absent, «Klusē 01:30» present, so the label below is the panel's derivation and not a fixture artefact); *"shows «Nav signāla» instead of «Klusē» once the board is stale (failure)"*; *"announces nobody on a hydrated cold refresh (failure)"* (`lastFrameAtMs: null`). The two pre-existing page-level cases both supply `lastFrameAtMs: NOW` and `pill: 'live'`, so `showStaleBanner` is `false` in each and **neither exercises the prop's value at all** — these are the cases that go red if the thread is cut.
 
-**Runs against the UNFIXED code** (`observed` 2026-09-20), both directions:
+**The control test does real work.** It was strengthened after the first push, because a pair like this can be green-by-accident: if the fixture produced an empty region either way, the two failure cases would pass for a reason unrelated to `boardStale`. Probed it (`observed` 2026-09-20, throwaway `console.log` of every `[aria-live="polite"]` region's `textContent`, since removed):
+
+```
+FRESH-BOARD regions: 2 [ '"Tiešraide"', '"Klusē: Anna"' ]
+STALE-BOARD regions: 2 [ '"Atjaunojas…"', '""' ]
+```
+
+So the summary is populated when the board is fresh and empty when it is stale — the right reason. The control now asserts both the region **count** (2 — the connection pill's and the driver summary's; a dropped region cannot pass as an empty one) and that the summary **does** carry the silent driver's name; the cold-refresh case asserts the same count rather than `>= 1`. The comment claiming the second region is the alerts panel's was wrong and is corrected: it is `ConnectionPill`'s.
+
+**Runs against the UNFIXED code** (`observed` 2026-09-20), both directions, and **re-run after the strengthening** — `Tests 2 failed | 8 passed (10)`, the same two cases:
 
 ```
 # cut the thread only: page.tsx boardStale={showStaleBanner} → boardStale={false}
@@ -166,12 +175,20 @@ env -u REDIS_TEST_URL COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint te
 
  Tasks:    22 successful, 22 total
 Cached:    0 cached, 22 total
-  Time:    1m22.337s
+  Time:    1m26.113s
 ```
 
-`EXIT=0`. No suite flaked; no re-run was needed for a red.
+`EXIT=0`. No suite flaked; no re-run was ever needed for a red.
 
-**The gate ran twice, and these are the SECOND run's figures.** The first (22/22, `1m29.706s`) was on a tree where `npx prettier --write` had also reformatted five blocks I did not write — `board-state.test.ts` ×4, `page.tsx`'s `<h1 tabIndex={-1}>`, and two `mount('live', …)` calls in `dispatch-page.test.tsx`. Those reverts changed three files after that run, so its figures no longer described the committed tree. Re-anchored rather than carried forward. `git diff` now shows no deletion in any changed file that does not trace to a finding (`observed` — deletion-only diff reviewed file by file).
+**The gate ran three times, and these are the THIRD run's figures.** Each re-run was a re-anchoring, not a retry:
+
+| run | wall | why it stopped describing the tree |
+|---|---|---|
+| 1 | `1m29.706s` | `npx prettier --write` had also reformatted five blocks I did not write — `board-state.test.ts` ×4, `page.tsx`'s `<h1 tabIndex={-1}>`, two `mount('live', …)` calls in `dispatch-page.test.tsx`. Reverting those changed three files after the run. |
+| 2 | `1m22.337s` | the figures behind commit `bd10e9c`. Superseded by the control-test strengthening (see F2), which changed `dispatch-page.test.tsx` again. |
+| 3 | `1m26.113s` | **current** — the committed tree. |
+
+`git diff` shows no deletion in any changed file that does not trace to a finding (`observed` — the deletion-only diff reviewed file by file, twice: once before each commit).
 
 | package | before this pass (review's run) | after |
 |---|---|---|
@@ -192,7 +209,31 @@ The 39 skipped are the documented Redis-gated suites with `REDIS_TEST_URL` unset
 
 Left until **last** deliberately: F1's new fixture, F7's `.sort()` test and F3's guard test all add hits to that grep, so re-deriving it before the final commit would have shipped a third wrong version of the same table. Order run: every edit → commit → push → re-derive on the pushed head → `gh pr edit`.
 
-See the PR body for the re-derived output. The AC's own wording ("finds no threshold literal") was satisfied before and is satisfied now; it is the body's restatement of the command's output that was false.
+`observed` at the pushed head `bd10e9c` — **8 hits**, where the body claimed "the only hits are `age.ts`'s" and the review counted six at `7ca9217`:
+
+```
+driver-list.test.tsx:47    lastSeenAt: seenAgo(3 * 60 * 60 * 1000),
+driver-list.test.tsx:63    // 01:30 = TTL (60 s) + 30 s of further silence.
+driver-list.test.tsx:177   // live — green «Raida» for a phone that has reported nothing, for 60-75 s
+driver-list.test.tsx:178   // (TTL 60 + sweep 15) and UNBOUNDED once force-assign makes them
+age.ts:17                  const minutes = Math.floor(totalSeconds / 60);
+age.ts:18                  const seconds = totalSeconds % 60;
+board-state.test.ts:229    * … never against `60`.
+board-state.test.ts:256    driverFreshness(NOW, new Date(NOW - 3 * 60 * 60 * 1000)…
+```
+
+Two of the six→eight are mine (`:177-178`, F1's docblock). None is a threshold literal, so the AC's own wording ("finds no threshold literal") was satisfied before and is satisfied now; it is the body's restatement of the command's output that was false. The other AC #3 grep re-checked at the same head: `grep -rn "DRIVER_LOCATION_TTL_SECONDS *=" packages/shared/src services/api/src apps/dispatch/src` → `packages/shared/src/driver-presence.ts:26`, sole hit.
+
+### One more body figure re-derived, because these fixes moved it
+
+The body claimed the page-level map-view case is the only thing pinning the panel outside the ternary: *"Moving the panel into the zones branch turns it red and leaves the other six green."* The round-1 fixes add three page-level cases, so "six" was stale by construction. Re-derived rather than adjusted (`observed` 2026-09-20 — moved the panel inside the `view === 'zones'` branch under a fragment, ran `npx vitest run --root apps/dispatch src/features/board/dispatch-page.test.tsx`, reverted, worktree clean):
+
+```
+FAIL … > still shows it after switching to the map view (edge)
+Tests  1 failed | 9 passed (10)
+```
+
+The claim survives — that case is still the only red — and the body now says "every other page-level case" with the count `observed` beside it, rather than a digit that goes stale on the next test added.
 
 ## Not done
 

@@ -201,12 +201,25 @@ describe('DispatchPage — a deaf console does not accuse the drivers', () => {
   };
 
   it('reads the drivers as silent while the board itself is fresh (expected)', () => {
-    // The control: same fixture, banner absent, so the label below is the
-    // panel's own derivation and not a side effect of the fixture.
-    mount('live', boardWith({ frame: { ...frame(), drivers: [SILENT_DRIVER] } }));
+    // The control, and it does real work: it proves the two failure cases
+    // below are empty BECAUSE of `boardStale` and not because this fixture
+    // produces an empty region either way.
+    const { container } = mount(
+      'live',
+      boardWith({
+        frame: { ...frame(), drivers: [SILENT_DRIVER, FRESH_DRIVER] },
+      }),
+    );
 
     expect(bannerFor('console.stale_banner_silent')).toBeNull();
     expect(screen.getByText(silenceLabel())).toBeInTheDocument();
+    // Two polite regions on this page: the connection pill and the driver
+    // summary. With the board fresh, the summary names the silent driver.
+    const regions = container.querySelectorAll('[aria-live="polite"]');
+    expect(regions).toHaveLength(2);
+    expect(
+      [...regions].some((r) => r.textContent?.includes(SILENT_DRIVER.name)),
+    ).toBe(true);
   });
 
   it('shows «Nav signāla» instead of «Klusē» once the board is stale (failure)', () => {
@@ -244,8 +257,9 @@ describe('DispatchPage — a deaf console does not accuse the drivers', () => {
     );
 
     const regions = container.querySelectorAll('[aria-live="polite"]');
-    // Two: the alerts panel keeps its own always-mounted one.
-    expect(regions.length).toBeGreaterThanOrEqual(1);
+    // Two, and the count is asserted so this cannot pass by the region having
+    // been unmounted: the connection pill's and the driver summary's.
+    expect(regions).toHaveLength(2);
     for (const region of regions) {
       expect(region).not.toHaveTextContent(SILENT_DRIVER.name);
       expect(region).not.toHaveTextContent(FRESH_DRIVER.name);
