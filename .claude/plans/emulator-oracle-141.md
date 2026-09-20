@@ -171,19 +171,19 @@ section to that runbook which *cites* the steps and restates none of them.
 Use #14's recipe: `.claude/plans/driver-app-auth-online-location.md` §Level 4 §B. Do not restate it
 here — two copies of a procedure is the failure this runbook exists to clean up.
 ```
-— `docs/runbooks/driver-device-day.md:106-108`. The new section follows the same rule against §Steps.
+— `docs/runbooks/driver-device-day.md:111-113`. The new section follows the same rule against §Steps.
 
 **Every figure carries its provenance.** `observed` (name the run), `derived` (show the arithmetic
 *and* the condition), or `expected`. The runbook models it at
-`docs/runbooks/driver-device-day.md:266` (*"The 12 s is `derived`, **not** a measurement: 3 ×
-`MIN_FIX_INTERVAL_MS`…"*) and `:302` (*"Why step 7's window is 2 minutes"*). A download size nobody
+`docs/runbooks/driver-device-day.md:271` (*"The 12 s is `derived`, **not** a measurement: 3 ×
+`MIN_FIX_INTERVAL_MS`…"*) and `:309` (*"Why step 7's window is 2 minutes"*). A download size nobody
 has measured is `expected`, not a fact.
 
 **A ❌ names which route it kills.** The runbook's verdict rule makes four steps binary; this plan's
 gates extend that shape — each gate's failure branch says whether the emulator route is dead, or
 something else is.
 
-**Result recording.** `docs/runbooks/driver-device-day.md:13-22`'s Result table is *filled*, not
+**Result recording.** `docs/runbooks/driver-device-day.md:19-28`'s Result table is *filled*, not
 duplicated. `rider-a11y-walkthrough.md` is the precedent for a runbook that ships reading "not yet
 run" and is later filled in place.
 
@@ -356,7 +356,7 @@ Use information-dense keywords for clarity:
   background consumer uses the fused provider, so the image must be `google_apis`. P2: the template's
   ABI list contains `x86_64`. P3: host still has ≥5 GiB free and `adb` on `PATH`. P4: the fix you will
   inject lies inside the seeded centre zone.
-- **PATTERN**: `docs/runbooks/driver-device-day.md:57-72`'s "re-checked rather than assumed" table.
+- **PATTERN**: `docs/runbooks/driver-device-day.md:62-77`'s "re-checked rather than assumed" table.
 - **IMPORTS**: none.
 - **GOTCHA**: `apps/driver/android/` is gitignored and absent, so `gradle.properties` cannot be read
   from the tree — read the template from npm, and record which template version answered.
@@ -568,7 +568,7 @@ warning, because it would have produced a false ❌.
   ```
   For 6b, the stream, loop the `set-test-provider-location` line every 2 s and confirm the `et=`
   (elapsed time) field on the fused `last location` keeps advancing.
-- **PATTERN**: `docs/runbooks/driver-device-day.md:266` — state the arithmetic behind an interval
+- **PATTERN**: `docs/runbooks/driver-device-day.md:271` — state the arithmetic behind an interval
   and the condition it assumes. Here: 2 s is half of `timeInterval: 4000`
   (`location-options.ts:19`), `derived`, so the OS floor stays the binding constraint rather than the
   injection cadence. **A 2 s injection loop does not predict 2 s pings**: the client throttle drops
@@ -1236,7 +1236,7 @@ the wider set rather than the section narrowed to the plan. Eight lines changed:
 
 **M1's rule — cite §Verdict's step set, never restate it — applies to this file too, and this file
 broke it four times.** The review raised it only against the runbook; the rule at
-`driver-device-day.md:316-319` says "anywhere new", and this plan is 1220 new lines. T10's PATTERN
+`driver-device-day.md:323-326` says "anywhere new", and this plan is 1220 new lines. T10's PATTERN
 restated the set in full, T10's VALIDATE and T13's IMPLEMENT named the load-bearing subset, and the
 Assumptions section restated it inside a closure claim — five lines carrying four enumerations. All
 four now cite §Verdict instead. Sweep: `grep -n 'load-bearing\|corroborat\|4, 5, 7'` over this file
