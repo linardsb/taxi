@@ -40,14 +40,17 @@ export const POLL_MS = 5_000;
  * `2 × POLL_MS + STALE_MS` = 5 000 + 5 000 + 5 000 = **15 000 ms** (`derived`).
  *
  * The bound it has to clear. Ticks fire every `POLL_MS`, and `pollBusy` SKIPS
- * every tick that lands while a fetch is in flight, so with a round trip `R`
- * the worst gap between two successful `applyFrame` calls is
- * `POLL_MS × (1 + ceil(R / POLL_MS))`. Under the stated condition — `R` no
- * longer than `STALE_MS`, i.e. one skipped tick at most — that is
+ * every tick landing in `(T, T+R]` for a fetch started at `T` taking `R`
+ * (the tie at `T+R` counted as skipped — the `finally` and the tick race).
+ * The next fetch therefore starts at the first tick after that, so the worst
+ * gap between two successful `applyFrame` calls is
+ * `POLL_MS × (1 + floor(R / POLL_MS))`.
+ *
+ * Under the stated condition — `R` no longer than `STALE_MS` — that is
  * `5 000 × (1 + 1)` = **10 000 ms**, leaving 5 000 ms of margin under this
- * constant. The window stops covering the poll at `R` above `2 × POLL_MS`
- * (gap 15 000, and the comparison is `>=`); an API that slow reads as stale,
- * which is the safe direction.
+ * constant. Coverage holds while `R < 2 × POLL_MS` and fails at exactly
+ * `R = 2 × POLL_MS`, where the gap reaches 15 000 and the comparison is `>=`;
+ * an API that slow reads as stale, which is the safe direction.
  *
  * What a 15 s lag costs the signal: `lastSeenAt` is the api's clock and does
  * not move when the frame does, so a late frame only makes the panel

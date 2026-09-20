@@ -98,12 +98,25 @@ export const PANEL_STALE_MS = 2 * POLL_MS + STALE_MS;   // 5 000 + 5 000 + 5 000
 ```
 
 **The window, `derived`, with the bound it has to clear.** `pollBusy` **skips** every interval tick
-that lands while a fetch is in flight, so with a round trip `R` the worst gap between two successful
-`applyFrame` calls is `POLL_MS × (1 + ceil(R / POLL_MS))`. Under the stated condition — `R` no longer
-than `STALE_MS`, one skipped tick at most — that is `5 000 × (1 + 1)` = **10 000 ms**, which leaves
-5 000 ms of margin under the constant. The window stops covering the poll once `R` exceeds
-`2 × POLL_MS` (gap 15 000, and the comparison is `>=`); an API that slow reads as stale, which is the
-safe direction.
+landing in `(T, T+R]` for a fetch started at tick `T` taking round trip `R`, so the worst gap between
+two successful `applyFrame` calls is `POLL_MS × (1 + floor(R / POLL_MS))`. Under the stated condition
+— `R` no longer than `STALE_MS` — that is `5 000 × (1 + 1)` = **10 000 ms**, leaving 5 000 ms of
+margin under the constant. Coverage holds while `R < 2 × POLL_MS` and fails at exactly
+`R = 2 × POLL_MS`, where the gap reaches 15 000 and the comparison is `>=`; an API that slow reads as
+stale, which is the safe direction.
+
+**The formula was wrong once before it was right.** It was first written with `ceil`, which
+over-states the gap for every non-multiple `R` (`ceil` gives 20 000 at `R = 10 001` where the real
+worst case is 15 000) and mis-places the cutoff. Corrected against a direct simulation of the tick
+schedule rather than by re-reading the algebra (`observed`):
+
+| `R` | simulated worst gap | `floor` formula | `ceil` formula | blanks (`>= 15 000`) |
+|---|---|---|---|---|
+| 4 999 | 5 000 | 5 000 | 10 000 | no |
+| 5 000 (`= STALE_MS`) | **10 000** | 10 000 | 10 000 | no |
+| 9 999 | 10 000 | 10 000 | 15 000 | no |
+| 10 000 (`= 2 × POLL_MS`) | **15 000** | 15 000 | 15 000 | **yes** |
+| 10 001 | 15 000 | 15 000 | 20 000 | yes |
 
 The review **prescribed no window** — it named two directions and declined to pick, so nothing here is
 a rejected suggestion of its own.
