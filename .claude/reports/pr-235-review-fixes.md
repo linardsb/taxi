@@ -245,6 +245,7 @@ fixed tree, with the PR body fetched to a file via `gh pr view 235 --json body`.
 | 3 | `` `:(35\|222\|233)`\|`:86-88` `` | **4 in the plan, 1 in the runbook** | all four plan hits are inside the T11 GOTCHA (`:814`, `:815`, `:822`, `:826`) — now explicitly marked HISTORICAL, which is the intended disposition. The runbook hit (`:245`) is `` `body` at `:35` `` citing **`stub-sms.provider.ts`**, a different file |
 | 4 | `has never run\|cloud build is .expected\|needs Linards.s Expo` | **0 plan / 0 runbook / 1 body** | retired where it was a claim. The body hit is §5 *naming* it in quotes as the thing rewritten — a retirement record, not a live claim |
 | 5 | `ten (shifted )?anchors\|all ten\|ten line numbers` | **0 plan / 0 runbook / 1 body** (3 in the body before the edit) | the surviving hit is §Notes for the reviewer quoting *"ten anchors"* to correct it — same shape as row 4 |
+| 6 | `free tier` (**N3**) | **2 plan / 0 runbook / 2 body** | the plan's two are Res2 itself (`:652`, `:1149-1150`) — the *source*, correctly stating it of a T7 build. 0 in the runbook is the retirement. The body's two are §5 writing N3 up |
 
 Rows 3, 4 and 5 each keep a hit **on purpose**, and that is the point of grepping the value rather
 than trusting a sentence: row 3's four plan hits are the anchors the HISTORICAL marker now covers,
@@ -255,26 +256,26 @@ and rows 4 and 5 are the retired claims quoted in the act of retiring them. A sw
 
 ## Validation
 
-**The CI-parity gate, `observed` 2026-09-20** — run twice in worktree `wt-141close` with
-`COMPOSE_PROJECT_NAME=taxi`, once on the source fixes and once after the report landed:
+**The CI-parity gate, `observed` 2026-09-20** — run three times in worktree `wt-141close` with
+`COMPOSE_PROJECT_NAME=taxi`, once per commit of this round:
 
-```
-$ COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force
- Tasks:    22 successful, 22 total      Tasks:    22 successful, 22 total
-Cached:    0 cached, 22 total          Cached:    0 cached, 22 total
-  Time:    1m29.73s        exit 0        Time:    1m23.387s       exit 0
-        (run 1, 71300db)                       (run 2, 2556fb1)
-```
+| Run | Commit | Result | Wall |
+|---|---|---|---|
+| 1 | `71300db` (the fixes) | `Tasks: 22 successful, 22 total`, exit 0 | `1m29.73s` |
+| 2 | `2556fb1` (sweep-table correction) | same, exit 0 | `1m23.387s` |
+| 3 | `b2e330e` (N3) | same, exit 0 | `1m21.882s` |
 
-**Why this figure does not chase the head sha.** Every commit after run 2 in this round touches
-`.claude/reports/` and `docs/runbooks/` markdown only — no package compiles, lints or tests a
-markdown file, so the gate cannot read them and its result cannot move. The PR body carries the
-figure re-run at the final head, where it is outside the tree and so cannot re-stale itself.
+`@taxi/api` reported `Test Suites: 2 skipped, 75 passed, 75 of 77 total` and `Tests: 39 skipped,
+694 passed, 733 total` on all three — the documented Redis-gated set, matching `CLAUDE.md`'s
+re-observation at `0cdb59c` digit for digit. `REDIS_TEST_URL` was unset, so each green is 39 tests
+short in the documented way and not in any new one. The three wall times differ by ±5 % on an
+identical task graph; none of them is evidence about this change, since no package reads a markdown
+file.
 
-`@taxi/api`: `Test Suites: 2 skipped, 75 passed, 75 of 77 total` · `Tests: 39 skipped, 694 passed,
-733 total` — the documented Redis-gated set, matching `CLAUDE.md`'s re-observation at `0cdb59c`
-digit for digit. `REDIS_TEST_URL` was not set for this run, so the local green is 39 tests short in
-the documented way and not in any new one.
+**Why this figure does not chase the head sha.** Any commit after run 3 in this round touches
+`.claude/reports/` markdown only — nothing compiles, lints or tests it, so the gate cannot read it
+and the result cannot move. That is the terminating condition; without it, each re-run would stale
+the figure recorded by the commit before it (#212).
 
 The diff touches three markdown files. No package compiles, lints or tests any of them, so the green
 says only that nothing regressed — the whole claim a documentation change can make. This report
