@@ -249,16 +249,14 @@ export function isPanelStale(
  * already stale, which makes the boundary case deterministic in tests.
  *
  * `Date.parse` returns `NaN` on a malformed string, and `NaN >= x` is `false`
- * — which would silently report `live`. What rules that out today is the
- * SERVER's validation, not this client's: `realtime.service.ts:81` runs
- * `RT_EVENT_SCHEMAS[event].parse(payload)` on every emit and the field is
- * `z.string().datetime()`. The two client-side `.parse()` calls
- * (`use-board.ts:61,116`) are the `localStorage` restore and the HTTP
- * snapshot — the COLD-START paths only. The two live paths validate nothing:
- * `:154` (`applyFrame`) and `:158` (`applyDriverLocation`, the
- * highest-frequency writer of this field). #237 closes that gap app-wide;
- * until it does, the guard below is what keeps this derivation honest
- * standalone, and it fails to `unknown` rather than to green «Raida».
+ * — which would silently report `live`. Two independent things now rule that
+ * out, and the guard below is deliberately kept as the second. The api parses
+ * every emit (`realtime.service.ts:81` runs `RT_EVENT_SCHEMAS[event].parse`,
+ * and the field is `z.string().datetime()`), and since #237 so does the
+ * console, on all four inbound socket events as well as the two cold-start
+ * paths (`use-board.ts`). This function is pure and takes a bare `string`
+ * from any caller, so it still owes its own answer: it fails to `unknown`
+ * rather than to green «Raida».
  *
  * The caller owns the clock (module header), so nothing here ticks. The page's
  * 1 Hz `nowMs` from `useBoard` is what re-derives this.

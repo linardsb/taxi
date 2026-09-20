@@ -64,6 +64,17 @@ const frame = (over: Partial<DispatchBoardEvent> = {}): DispatchBoardEvent => ({
   ...over,
 });
 
+/** One online driver with no fix yet — the `lastSeenAt: null` baseline. */
+const DRIVER = {
+  driverId: 'd0000000-0000-4000-8000-000000000001',
+  name: 'Jānis',
+  phone: '+37129999001',
+  location: null,
+  lastSeenAt: null,
+  zoneName: null,
+  status: 'online' as const,
+};
+
 const okJson = (body: unknown) => ({
   ok: true,
   status: 200,
@@ -282,6 +293,88 @@ describe('useBoard', () => {
     // Still the newer frame, and receipt time was not re-stamped as fresh.
     expect(result.current.board.frame?.drivers).toHaveLength(1);
     expect(result.current.board.frame?.at).toBe(laterFrame.at);
+  });
+
+  it('applies a well-formed driver:location onto the frame (expected, #237)', async () => {
+    // The schema gate must pass what the api actually emits — a validation
+    // that rejected real wire data would freeze `lastSeenAt` for good.
+    const { result } = renderHook(() => useBoard());
+    await connectSocket();
+    await act(async () => {
+      fakeSocket.fire('dispatch:board', frame({ drivers: [DRIVER] }));
+    });
+
+    await act(async () => {
+      fakeSocket.fire('driver:location', {
+        driverId: DRIVER.driverId,
+        location: { lat: 56.95, lng: 24.1 },
+        at: new Date(NOW.getTime() + 1_000).toISOString(),
+      });
+    });
+
+    expect(result.current.board.frame?.drivers[0]?.lastSeenAt).toBe(
+      new Date(NOW.getTime() + 1_000).toISOString(),
+    );
+  });
+
+  it('drops a malformed driver:location, leaving lastSeenAt alone (failure, #237)', async () => {
+    // `at` is what `driverFreshness` reads, and `Date.parse('soon')` is NaN —
+    // which `NaN >= ttl` turns into green «Raida». Nothing must reach state.
+    const { result } = renderHook(() => useBoard());
+    await connectSocket();
+    await act(async () => {
+      fakeSocket.fire('dispatch:board', frame({ drivers: [DRIVER] }));
+    });
+
+    await act(async () => {
+      fakeSocket.fire('driver:location', {
+        driverId: DRIVER.driverId,
+        location: { lat: 56.95, lng: 24.1 },
+        at: 'soon',
+      });
+    });
+
+    expect(result.current.board.frame?.drivers[0]?.lastSeenAt).toBeNull();
+  });
+
+  it('drops a malformed frame and withdraws the live pill (failure, #237)', async () => {
+    // The drop is silent, but its consequence is not: the frame that was not
+    // applied never refreshed `lastFrameAtMs`, so the board stops claiming
+    // «Tiešraide» — "zero silent staleness" is what reports the bad stream.
+    const { result } = renderHook(() => useBoard());
+    await connectSocket();
+    expect(result.current.pill).toBe('live');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+      fakeSocket.fire('dispatch:board', { cityId: CITY, at: 'whenever' });
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+
+    expect(result.current.board.frame?.cityId).toBe(CITY); // the good one held
+    expect(result.current.board.frame?.at).toBe(NOW.toISOString());
+    expect(result.current.pill).toBe('reconnecting');
+  });
+
+  it('drops a malformed dispatch:unclaimed instead of alerting on it (failure, #237)', async () => {
+    const { result } = renderHook(() => useBoard());
+    await connectSocket();
+
+    await act(async () => {
+      fakeSocket.fire('dispatch:unclaimed', {
+        // Sole defect, so the drop can only be attributed to the uuid.
+        rideId: 'not-a-uuid',
+        pickup: {
+          address: 'Brīvības iela 1',
+          location: { lat: 56.95, lng: 24.1 },
+        },
+        requestedAt: NOW.toISOString(),
+        unclaimedSeconds: 30,
+        offerAttempts: 2,
+      });
+    });
+
+    expect(result.current.board.alerts).toHaveLength(0);
   });
 
   it('an unauthorized handshake clears the session and redirects (failure)', async () => {
