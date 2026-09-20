@@ -10,6 +10,8 @@ import {
   AlertsPanel,
   BoardMap,
   ConnectionPill,
+  DriverList,
+  isPanelStale,
   isStale,
   RideQueue,
   useBoard,
@@ -265,6 +267,29 @@ export default function DispatchPage() {
             ) : (
               <BoardMap drivers={frame.drivers} />
             )}
+            {/* OUTSIDE the toggle on purpose (#234). The map is the only other
+                place `frame.drivers` reaches the DOM, it is aria-hidden, and
+                it is unmounted in the default zones view — so a freshness
+                signal inside either branch is invisible in the other.
+
+                `boardStale` is FRAME AGE, not the banner's condition, and the
+                two deliberately differ. Per-driver freshness is a browser
+                clock against a frozen field, so a console that has stopped
+                receiving would otherwise report every driver as silent —
+                that is what this prop is for. But the banner also fires on
+                `pill === 'offline'`, and while the pill is «Bezsaistē» the
+                read-only poll is refreshing `lastFrameAtMs` every cycle, so
+                passing `showStaleBanner` blanked the panel with a
+                one-second-old frame (PR #236 review round 2, M2). The window
+                is `PANEL_STALE_MS`, wider than the banner's for the reason
+                its docblock derives. The banner can be up while the panel
+                keeps reading the rows, and that is correct: the operator is
+                told the socket is down and the rows are still true. */}
+            <DriverList
+              drivers={frame.drivers}
+              nowMs={nowMs}
+              boardStale={isPanelStale(nowMs, board.lastFrameAtMs)}
+            />
             <AlertsPanel alerts={board.alerts} ack={ack} />
           </div>
         </div>

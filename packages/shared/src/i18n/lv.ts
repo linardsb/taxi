@@ -56,7 +56,7 @@ export const lv = {
   'console.zone_empty': '(tukšs)',
   'console.zone_none_configured': 'Nevienai zonai nav konfigurācijas',
   'console.map_alt':
-    'Karte ar šoferu atrašanās vietām. Saraksts pieejams zonu skatā.',
+    'Karte ar šoferu atrašanās vietām. Šoferu saraksts ar to statusu ir zemāk.',
   'console.status_requested': 'Meklē šoferi',
   'console.status_offered': 'Piedāvāts šoferim',
   'console.status_queued': 'Rindā',
@@ -67,6 +67,24 @@ export const lv = {
   'console.driver_status_online': 'Tiešsaistē',
   'console.driver_status_on_ride': 'Izpilda braucienu',
   'console.driver_status_offline': 'Nav tiešsaistē',
+  'console.drivers_title': 'Šoferi',
+  'console.drivers_empty': 'Neviens šoferis nav tiešsaistē',
+  'console.driver_streaming': 'Raida',
+  // {age} is mm:ss and can exceed 59:59 — an `on_ride` driver is never swept
+  // offline, so the silence is unbounded and the digits must keep counting.
+  'console.driver_silent': 'Klusē {age}',
+  'console.driver_no_signal': 'Nav signāla',
+  // A NAME LIST, not a count: formatMessage does plain {placeholder} replace
+  // with no plural support, and Latvian agreement (1 šoferis / 2 šoferi /
+  // 21 šoferis) cannot be expressed here. Naming them is what Dina acts on.
+  //
+  // STATE-NEUTRAL, deliberately not «Klusē». The summary names every driver
+  // who is not «Raida» — both the stopped-streaming ones and the ones who
+  // have never sent a fix — so it must not pick the stopped-streaming word.
+  // The row keeps three states and «Klusē» stays `console.driver_silent`'s;
+  // this one claims only what `!== 'live'` proves (PR #236 review round 2,
+  // M3).
+  'console.drivers_silent_summary': 'Nav datu: {names}',
   'console.alert_unclaimed': 'Nepieņemts pasūtījums',
   'console.alert_sms_failed': 'Neizdevās nosūtīt {kind}',
   'console.sms_kind_booking_confirmed': 'apstiprinājuma SMS',

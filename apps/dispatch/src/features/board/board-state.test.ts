@@ -1,3 +1,4 @@
+import { DRIVER_LOCATION_TTL_SECONDS } from '@taxi/shared';
 import type {
   DispatchBoardEvent,
   DispatchUnclaimedEvent,
@@ -8,10 +9,14 @@ import {
   ALERTS_CAP,
   applyDriverLocation,
   applyFrame,
+  driverFreshness,
   emptyBoard,
+  isPanelStale,
   isStale,
   OFFLINE_AFTER_FAILURES,
+  PANEL_STALE_MS,
   pillFrom,
+  POLL_MS,
   pushOfflineAlert,
   pushSmsFailedAlert,
   pushUnclaimedAlert,
@@ -220,5 +225,78 @@ describe('pillFrom — the one truth derivation', () => {
   it('isStale treats "no frame ever" as stale (edge)', () => {
     expect(isStale(NOW, null)).toBe(true);
     expect(isStale(NOW, NOW - STALE_MS + 1)).toBe(false);
+  });
+});
+
+/**
+ * The panel's window is WIDER than the banner's, and the gap between them is
+ * load-bearing (PR #236 review round 2, M2): while the pill is «Bezsaistē»
+ * the read-only poll keeps refreshing `lastFrameAtMs`, so a panel reading the
+ * banner's condition blanked itself with a current board. These cases pin the
+ * gap rather than restating `PANEL_STALE_MS`'s digits.
+ */
+describe('isPanelStale — the panel trusts a frame the banner already caveats', () => {
+  it('trusts a frame one poll old (expected)', () => {
+    expect(isPanelStale(NOW, NOW - POLL_MS)).toBe(false);
+  });
+
+  it('still trusts one the BANNER has given up on (edge)', () => {
+    // Past STALE_MS, inside PANEL_STALE_MS — the deliberate gap. Asserted
+    // against both constants so it moves with them, never against 6 000.
+    expect(isStale(NOW, NOW - STALE_MS)).toBe(true);
+    expect(isPanelStale(NOW, NOW - STALE_MS)).toBe(false);
+    expect(isPanelStale(NOW, NOW - PANEL_STALE_MS + 1)).toBe(false);
+  });
+
+  it('gives up at the window and on a hydrated frame of unknown age (failure)', () => {
+    expect(isPanelStale(NOW, NOW - PANEL_STALE_MS)).toBe(true);
+    expect(isPanelStale(NOW, null)).toBe(true);
+  });
+});
+
+/**
+ * The boundary is asserted against the IMPORTED constant, never against `60`.
+ * A literal here would restate the number the promotion to `@taxi/shared`
+ * exists to prevent (#234 AC #3) and would keep passing if the shared value
+ * ever moved.
+ */
+const TTL_MS = DRIVER_LOCATION_TTL_SECONDS * 1000;
+
+describe('driverFreshness', () => {
+  it('calls a driver reporting one fix-interval ago live (expected)', () => {
+    expect(driverFreshness(NOW, new Date(NOW - 4_000).toISOString())).toBe(
+      'live',
+    );
+  });
+
+  it('flips to stale exactly AT the TTL, not one tick after (edge)', () => {
+    expect(driverFreshness(NOW, new Date(NOW - TTL_MS).toISOString())).toBe(
+      'stale',
+    );
+    expect(driverFreshness(NOW, new Date(NOW - TTL_MS + 1).toISOString())).toBe(
+      'live',
+    );
+  });
+
+  it('stays stale however long the silence runs — the on_ride case (edge)', () => {
+    // No sweep removes an `on_ride` driver (drivers.service.ts), so the row
+    // can outlive the TTL by hours. It must never read as live again.
+    expect(
+      driverFreshness(NOW, new Date(NOW - 3 * 60 * 60 * 1000).toISOString()),
+    ).toBe('stale');
+  });
+
+  it('never reports a driver with no recorded position as live (failure)', () => {
+    expect(driverFreshness(NOW, null)).toBe('unknown');
+  });
+
+  it('fails an unparseable timestamp to unknown, never to live (failure)', () => {
+    // `Date.parse` → NaN, and `NaN >= x` is `false`, so the unguarded
+    // derivation returned 'live' — green «Raida» off a malformed field. What
+    // rules this out in production is the api's own emit-side validation
+    // (`realtime.service.ts:81`), not this client: `use-board.ts` parses only
+    // the two cold-start paths, never the two live socket handlers (#237).
+    expect(driverFreshness(NOW, 'not-a-date')).toBe('unknown');
+    expect(driverFreshness(NOW, '')).toBe('unknown');
   });
 });

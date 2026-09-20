@@ -46,7 +46,7 @@ export const ru = {
   'console.zone_empty': '(пусто)',
   'console.zone_none_configured': 'Ни одна зона не настроена',
   'console.map_alt':
-    'Карта с местоположением водителей. Список доступен в виде зон.',
+    'Карта с местоположением водителей. Список водителей и их статус — ниже.',
   'console.status_requested': 'Ищем водителя',
   'console.status_offered': 'Предложена водителю',
   'console.status_queued': 'В очереди',
@@ -57,6 +57,14 @@ export const ru = {
   'console.driver_status_online': 'Онлайн',
   'console.driver_status_on_ride': 'Выполняет поездку',
   'console.driver_status_offline': 'Не в сети',
+  'console.drivers_title': 'Водители',
+  'console.drivers_empty': 'Нет водителей в сети',
+  'console.driver_streaming': 'Передаёт',
+  'console.driver_silent': 'Молчит {age}',
+  'console.driver_no_signal': 'Нет сигнала',
+  // State-neutral — see the LV catalog's note: this names the never-streamed
+  // drivers too, so it cannot use the stopped-streaming word.
+  'console.drivers_silent_summary': 'Без данных: {names}',
   'console.alert_unclaimed': 'Непринятый заказ',
   'console.alert_sms_failed': 'Не удалось отправить {kind}',
   'console.sms_kind_booking_confirmed': 'SMS с подтверждением',

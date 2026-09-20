@@ -1,3 +1,4 @@
+import { DRIVER_LOCATION_TTL_SECONDS } from '@taxi/shared';
 import type {
   DispatchBoardEvent,
   DispatchSmsFailedEvent,
@@ -23,6 +24,42 @@ export const STALE_MS = 5_000;
 
 /** Read-only fallback poll cadence — mirrors the tracking page's POLL_MS. */
 export const POLL_MS = 5_000;
+
+/**
+ * When the DRIVER PANEL stops trusting the frame it is reading. Wider than
+ * `STALE_MS` on purpose, and a different question from the banner's.
+ *
+ * The banner asks *should the operator caveat what is on screen and be offered
+ * retry*, and answers yes the moment the socket gives up. The panel asks *is
+ * this frame recent enough that a 60 s per-driver judgement is sound* — and
+ * while the pill is «Bezsaistē» the read-only poll (`use-board.ts`) is
+ * refreshing `lastFrameAtMs` every cycle, so the answer is usually yes. Handing
+ * the panel the banner's condition blanked it in exactly the state the
+ * fallback was built for: websocket blocked, HTTP fine.
+ *
+ * `2 × POLL_MS + STALE_MS` = 5 000 + 5 000 + 5 000 = **15 000 ms** (`derived`).
+ *
+ * The bound it has to clear. Ticks fire every `POLL_MS`, and `pollBusy` SKIPS
+ * every tick landing in `(T, T+R]` for a fetch started at `T` taking `R`
+ * (the tie at `T+R` counted as skipped — the `finally` and the tick race).
+ * The next fetch therefore starts at the first tick after that, so the worst
+ * gap between two successful `applyFrame` calls is
+ * `POLL_MS × (1 + floor(R / POLL_MS))`.
+ *
+ * Under the stated condition — `R` no longer than `STALE_MS` — that is
+ * `5 000 × (1 + 1)` = **10 000 ms**, leaving 5 000 ms of margin under this
+ * constant. Coverage holds while `R < 2 × POLL_MS` and fails at exactly
+ * `R = 2 × POLL_MS`, where the gap reaches 15 000 and the comparison is `>=`;
+ * an API that slow reads as stale, which is the safe direction.
+ *
+ * What a 15 s lag costs the signal: `lastSeenAt` is the api's clock and does
+ * not move when the frame does, so a late frame only makes the panel
+ * UNDER-report freshness — it can say «Klusē» for a driver who has since
+ * reported, never «Raida» for one who has not. Worst case a row flips to
+ * «Klusē» up to 15 s late, inside the 75 s (`PRESENCE_DARK_AFTER_SECONDS +
+ * PRESENCE_SWEEP_INTERVAL_MS`) the sweeper takes to drop the driver anyway.
+ */
+export const PANEL_STALE_MS = 2 * POLL_MS + STALE_MS;
 
 /**
  * Failed retries before the pill says «Bezsaistē» (chosen constant, per the
@@ -180,6 +217,76 @@ export function acknowledgeAlert(state: BoardState, id: string): BoardState {
 /** No frame yet, or the last one is older than the heartbeat allows. */
 export function isStale(nowMs: number, lastFrameAtMs: number | null): boolean {
   return lastFrameAtMs === null || nowMs - lastFrameAtMs >= STALE_MS;
+}
+
+/**
+ * The same read against the panel's wider window (`PANEL_STALE_MS`). A
+ * hydrated cold refresh (`lastFrameAtMs: null`) is stale here too — there is
+ * no frame age to trust at all.
+ */
+export function isPanelStale(
+  nowMs: number,
+  lastFrameAtMs: number | null,
+): boolean {
+  return lastFrameAtMs === null || nowMs - lastFrameAtMs >= PANEL_STALE_MS;
+}
+
+/**
+ * Per-driver stream freshness — the read `applyDriverLocation` has been
+ * writing `lastSeenAt` for with no consumer (#234).
+ *
+ * THE BOUNDARY IS `DRIVER_LOCATION_TTL_SECONDS`, IMPORTED, NEVER RESTATED. It
+ * is the same number `findNearby` filters candidates on, so the board cannot
+ * say a driver is reporting while dispatch has already stopped offering to
+ * them. See `@taxi/shared`'s `driver-presence.ts`.
+ *
+ * THREE STATES, NOT TWO. `lastSeenAt: null` is an online driver whose GEO
+ * position was never recorded or was dropped — never-streamed is a different
+ * fact from stopped-streaming, and it has no age to print. Folding it into
+ * `stale` would force the silence label to carry an empty `mm:ss`.
+ *
+ * `>=`, matching `isStale`'s boundary convention above: exactly at the TTL is
+ * already stale, which makes the boundary case deterministic in tests.
+ *
+ * `Date.parse` returns `NaN` on a malformed string, and `NaN >= x` is `false`
+ * — which would silently report `live`. What rules that out today is the
+ * SERVER's validation, not this client's: `realtime.service.ts:81` runs
+ * `RT_EVENT_SCHEMAS[event].parse(payload)` on every emit and the field is
+ * `z.string().datetime()`. The two client-side `.parse()` calls
+ * (`use-board.ts:61,116`) are the `localStorage` restore and the HTTP
+ * snapshot — the COLD-START paths only. The two live paths validate nothing:
+ * `:154` (`applyFrame`) and `:158` (`applyDriverLocation`, the
+ * highest-frequency writer of this field). #237 closes that gap app-wide;
+ * until it does, the guard below is what keeps this derivation honest
+ * standalone, and it fails to `unknown` rather than to green «Raida».
+ *
+ * The caller owns the clock (module header), so nothing here ticks. The page's
+ * 1 Hz `nowMs` from `useBoard` is what re-derives this.
+ *
+ * KNOWN LIMITATION — CLIENT CLOCK SKEW. `lastSeenAt` is the api's clock and
+ * `nowMs` is the browser's. A browser two minutes slow reports every driver
+ * `live`; two minutes fast, every driver `stale`. The board already carries
+ * this exposure for every ride age (`ride-queue.tsx`'s `ageOf`), and
+ * `applyFrame` avoids it for ORDERING by comparing two server timestamps —
+ * a precedent for ordering, not for ages. Correcting it means carrying a
+ * server-client offset from `frame.at`, which would change ride ages too —
+ * tracked as #238.
+ *
+ * WHAT THIS DERIVATION CANNOT SEE, and so does not decide alone: whether a
+ * position was ever recorded (`location`, not `lastSeenAt` — see
+ * `driver-list.tsx`'s `rowFreshness`), and whether the CONSOLE has stopped
+ * receiving. Both would otherwise read as a driver who is reporting.
+ */
+export type DriverFreshness = 'live' | 'stale' | 'unknown';
+
+export function driverFreshness(
+  nowMs: number,
+  lastSeenAt: string | null,
+): DriverFreshness {
+  if (lastSeenAt === null) return 'unknown';
+  const ageMs = nowMs - Date.parse(lastSeenAt);
+  if (Number.isNaN(ageMs)) return 'unknown';
+  return ageMs >= DRIVER_LOCATION_TTL_SECONDS * 1000 ? 'stale' : 'live';
 }
 
 /**

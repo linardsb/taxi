@@ -4,6 +4,7 @@ export * from './ride-state-machine';
 export * from './schemas/platform-config';
 export * from './commission';
 export * from './idempotency';
+export * from './driver-presence';
 // Before realtime-events, which carries its schema on the board frame.
 export * from './dispatch-explanation';
 export * from './realtime-events';
