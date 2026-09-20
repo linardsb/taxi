@@ -323,14 +323,14 @@ re-run against the finished tree; this is the list, not a claim that a list was 
 
 | Retired | `grep -n` run | Hits, and what happened to them |
 |---|---|---|
-| `22 gaps` | `grep -rn '22 gaps' .claude/ docs/ apps/` | **0** — the only copy was report `:197`, fixed |
+| `22 gaps` | `grep -rn '22 gaps' .claude/ docs/ apps/` | **0** — the only copy was report `:197`, fixed. Control: the same pattern against `a25fa49` returns **1**, so the pattern can match and the 0 is real |
 | `f4d37e4` as the build commit | `grep -rn 'f4d37e4' .claude/ docs/ apps/` | **6**: report `:70`, `:71`, `:298`; runbook `:540`, `:624`, `:625`. All six are now the *explanation* of why `4e6ffb68` is correct, or the pre-review gate anchor. No hit still asserts it as the build commit |
 | `same tree minus` | `grep -rn 'same tree minus' …` | **1** — report `:74`, which is the sentence retiring it |
 | bare `Expect` (M5's subject) | `grep -c 'Expect' docs/runbooks/driver-device-day.md` | **2**, equal to `origin/main`'s 2 |
 | `\| Expect \|` | `grep -c '\| Expect \|' …` | **1** — the single run-sheet header, unmoved |
 | `driver-device-day.md:` (M2's subject) | `grep -rln 'driver-device-day\.md:' .claude/ docs/` | **6 files**: the plan + 5 historical PR records the review scoped out. In the plan, 7 lines match — `:174`, `:178`, `:359`, `:571`, `:1239` re-pointed; `:186` (`:13-22`) correct as-is; `:841` is the VALIDATE command, not a citation. `:179`'s bare `:302` is an eighth anchor this pattern does not match, and was re-pointed too |
 | unscoped locale key | **not greppable — see below** | structural check: **0** files, both apps |
-| `249 tests` / `44 suites` | `grep -rn '249 tests\|44 suites' .claude/ docs/ apps/` | **0** in live artifacts; the PR body's copy is updated at push |
+| driver suite figures | `grep -rn 'Tests 249\|Test Suites 44\|2m3\.161s' .claude/ docs/` | **2** — `emulator-gates-224-report.md:303` and `:305`, the pre-review gate block. Correctly left standing: `:298-300` now scopes it as the run at `f4d37e4` *as the branch stood at the reviewed head*, and points here for the run that covers the fixes. See the note below on how this row was first got wrong |
 
 **One sweep row could not be done with `grep`, and saying so is the point.** The obvious check —
 `grep -rn '^\s*"NSLocationWhenInUseUsageDescription"' apps/` — returns **8 hits on the fixed tree**
@@ -349,10 +349,33 @@ done   # prints nothing when every locale file is correctly scoped
 same check against the reviewed head `a25fa49` returns `["NSLocationWhenInUseUsageDescription"]` for
 each of the three rider files, which is the defect M1 named.
 
+**The same mistake was then made a second time in this very table, and caught only on review.** The
+row for the driver suite figures originally read *"`grep -rn '249 tests\|44 suites'` → **0** in live
+artifacts"*. Zero, because `249 tests` does not match the text `Tests 249 passed, 249 total` and
+`44 suites` does not match `Test Suites 44 passed`. The correct pattern returns **2** hits, both in
+the pre-review gate block, both correctly left standing. Twice in one pass a sweep pattern matched
+the *idea* of a value and not its *form* — once on a key name, once on a test count. The lesson is
+narrower than "grep carefully": **a sweep row reporting 0 is the row to distrust**, because a
+mistyped pattern and a genuinely clean tree are indistinguishable from the output alone. Every 0 in
+this table was re-run against a known-positive control (the reviewed head, or the pre-fix text)
+before being written down.
+
 **The PR body was checked separately**, since no working-tree grep reaches it. Four retired claims
-found and corrected there: the `1182 s control … same tree minus the fix` sentence, the
-`f4d37e4 carries every line the gate can read` two-commit argument, and the gate's task/test
-figures.
+were found there and **were corrected** — `gh pr edit 233 --body-file`, run 2026-09-20 after the fix
+commit was pushed, so the body's figures anchor at the head that produced them:
+
+1. *"1199 s, against a 1182 s control that died at lint on the same tree minus the fix"* → both
+   commits named, and the tree claim replaced with the build-inputs one (L5/N1).
+2. *"at `f4d37e4`"* as the gate anchor → `29483ae`, the current head.
+3. The *"branch is two commits; `f4d37e4` carries every line the gate can read"* head-independence
+   argument → **retired, not re-quoted**. It is now false: `29483ae` carries gate-readable source
+   too (the driver test, three rider locale files, the new rider test), so the run is anchored at
+   the head itself.
+4. The gate block's `2m3.161s` / `249 tests` figures → the 2026-09-20 run, with `@taxi/rider` added.
+
+Re-checked against the live body after the edit (`observed`): `249 tests` 0 hits, `2m3.161s` 0 hits,
+``at `f4d37e4`.`` 0 hits; the two surviving `f4d37e4` mentions are the sentences explaining why
+`4e6ffb68` is correct, and the one retiring the head-independence argument.
 
 ---
 
