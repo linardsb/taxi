@@ -1,4 +1,5 @@
 import { RIGA_CITY_ID } from '@taxi/db';
+import { TRACKING_LINK_HOST_MAX_CHARS, trackingLinkHost } from '@taxi/shared';
 import { z } from 'zod';
 import { checkSmsCredentialGroups, smsEnvFields } from './sms-env.schema';
 
@@ -306,6 +307,12 @@ export const envSchema = z
      * Where the SMS tracking links point (#63) — the dispatch web app's
      * public origin, which serves `/t/:token`. The default is its dev origin
      * (first in the seeded `CORS_ORIGINS`); a deploy sets the real domain.
+     *
+     * ITS HOST MUST BE <= `TRACKING_LINK_HOST_MAX_CHARS` (10) IN PRODUCTION,
+     * refused in the `superRefine` below. The host is a term in the rider
+     * SMS's 70-character UCS-2 segment budget (#136) and the binding template
+     * has zero spare, so `saktacab.lv` (11) would silently double the bill on
+     * every phone-booked ride. `sakta.lv` is 8.
      */
     PUBLIC_TRACKING_BASE_URL: z.string().url().default('http://localhost:3000'),
     CORS_ORIGINS: z
@@ -362,6 +369,19 @@ export const envSchema = z
         path: ['PUBLIC_TRACKING_BASE_URL'],
         message:
           'PUBLIC_TRACKING_BASE_URL is a localhost origin — SMS tracking links point here, so production needs the deployed dispatch-app domain.',
+      });
+    }
+
+    // Live since #136, and production-only for the same reason as the check
+    // above: dev and CI run `http://localhost:3000`, whose host is 14
+    // characters, and must keep booting. `trackingLinkHost` is the link
+    // builder's own function, so this measures exactly what the SMS carries.
+    const smsHost = trackingLinkHost(env.PUBLIC_TRACKING_BASE_URL);
+    if (smsHost.length > TRACKING_LINK_HOST_MAX_CHARS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBLIC_TRACKING_BASE_URL'],
+        message: `PUBLIC_TRACKING_BASE_URL's host is ${smsHost.length} characters (${smsHost}); the limit is ${TRACKING_LINK_HOST_MAX_CHARS}. The linked rider SMS must fit one billed UCS-2 segment (#136) and the Russian driver_assigned template has zero spare, so a longer host doubles the SMS bill on every phone-booked ride. Use a shorter domain — sakta.lv is 8.`,
       });
     }
 

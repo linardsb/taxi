@@ -5,15 +5,19 @@
  * forces `ru`/`en` to carry exactly the same keys, so a key added here without
  * a translation fails typecheck rather than rendering blank to a rider.
  *
- * SMS bodies are deliberately terse: SMS bill per 160-char segment (budget
- * guardrail) and GSM-7 has no Latvian diacritics, so long copy gets expensive.
+ * SMS bodies are deliberately terse, and 160 is the WRONG number for this
+ * catalog: GSM-7 has no Latvian diacritics, so every string here is UCS-2 and
+ * a billed segment is 70 characters (#136). The two linked templates below are
+ * budgeted to the character — `tests/sms-budget.test.ts` asserts their exact
+ * rendered length at the maximum of every bound, so a copy edit that costs a
+ * segment reddens rather than shipping.
  */
 export const lv = {
   'sms.booking_confirmed': 'Jūsu taksometrs ir rezervēts.',
-  'sms.booking_confirmed_phone':
-    'Jūsu taksometrs ir rezervēts. Sekojiet līdzi: {link}',
-  'sms.driver_assigned':
-    'Jūsu šoferis {driver}, {plate}, būs pēc ~{eta} min. Sekojiet līdzi: {link}',
+  // Now differs from the line above by exactly ' {link}'. Intended.
+  'sms.booking_confirmed_phone': 'Jūsu taksometrs ir rezervēts. {link}',
+  // No period after `min`: it is 1 character of a budget with 1 to spare.
+  'sms.driver_assigned': 'Šoferis {driver}, {plate}, ~{eta} min {link}',
   'sms.driver_arrived': 'Jūsu taksometrs ({plate}) ir klāt.',
   // Deliberately diacritic-free: GSM-7 keeps the OTP at 1 billed segment.
   'sms.otp_code': 'Sakta Cab kods: {code}',

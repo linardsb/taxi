@@ -8,14 +8,34 @@ import { phoneSchema } from './user';
  */
 
 /**
- * Shape-only validation of a tracking token: 22 base64url chars, the output of
- * `randomBytes(16).toString('base64url')`. MINTING lives in the API
- * (`TrackingService`) — this package is isomorphic and must not touch
- * `node:crypto`.
+ * Shape-only validation of a tracking token: 16 base64url chars, the output of
+ * `randomBytes(12).toString('base64url')` — 96 bits of entropy. MINTING lives
+ * in the API (`TrackingService`) — this package is isomorphic and must not
+ * touch `node:crypto`.
+ *
+ * THE 96 BITS ARE THE WHOLE DEFENCE AGAINST GUESSING, and nothing else backs
+ * them up. `TRACKING_VIEW_MAX_PER_WINDOW` is keyed per token
+ * (`notifications.policy.ts`'s `trackingViewRateKey`), so it bounds polling of
+ * a KNOWN token — the spend path — and gives every guess at an UNKNOWN one its
+ * own fresh window. That file says so outright; do not read the rate limit as
+ * an enumeration control, and do not let it license a shorter token.
+ *
+ * SHORTENED FROM 22 IN #136 for the SMS character budget: six characters of a
+ * 70-character UCS-2 segment. The rest of the URL contract — the host ceiling
+ * and the per-language path — lives in `tracking-link.ts`, with the
+ * derivation. This is a HARD cut-over, not a widening: no deploy has ever run
+ * (`gh run list --workflow=deploy.yml` was empty on 2026-09-21), so no 22-char
+ * link exists to break.
+ *
+ * It DOES break pre-existing local rows. `schemas/ride.ts` wires this into
+ * `rideSchema`, and `rides.repository.ts` parses every row through it, so a
+ * ride minted before #136 — including by `scripts/mint-tracked-ride.ts` —
+ * throws on READ, not just when its link is opened. Remedy on a persistent
+ * local DB: `UPDATE rides SET tracking_token = NULL`, or re-seed.
  */
 export const trackingTokenSchema = z
   .string()
-  .regex(/^[A-Za-z0-9_-]{22}$/, 'expected 22-char base64url tracking token');
+  .regex(/^[A-Za-z0-9_-]{16}$/, 'expected 16-char base64url tracking token');
 export type TrackingToken = z.infer<typeof trackingTokenSchema>;
 
 /**

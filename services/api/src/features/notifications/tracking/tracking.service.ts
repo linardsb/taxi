@@ -41,12 +41,23 @@ import { driverFirstName } from '../sms-templates';
 
 /**
  * Minted at ride creation, one per ride, share-trip (#17) reuses it.
- * 16 random bytes → 22 base64url chars — unguessable, and shape-pinned by
- * `trackingTokenSchema`. Lives HERE and not in @taxi/shared because shared is
- * isomorphic and must not touch `node:crypto`.
+ * 12 random bytes → 16 base64url chars (12 is divisible by 3, so no padding)
+ * — 96 bits, unguessable, and shape-pinned by `trackingTokenSchema`. Lives
+ * HERE and not in @taxi/shared because shared is isomorphic and must not
+ * touch `node:crypto`.
+ *
+ * WAS 16 BYTES / 22 CHARS until #136: the six characters bought back are
+ * spent on the SMS segment budget, where a rider's `driver_assigned` message
+ * has 70 UCS-2 characters and no slack. The 96 bits are the WHOLE defence
+ * against guessing — `TRACKING_VIEW_MAX_PER_WINDOW` does not back them up.
+ * `trackingViewRateKey` keys the window on the token itself, so it bounds
+ * polling of a known token (the spend path, which is what
+ * `notifications.policy.ts` says it is for) while every guess at an unknown
+ * one gets a fresh window. Any further shortening has to be argued against
+ * 2^96 alone.
  */
 export function mintTrackingToken(): string {
-  return randomBytes(16).toString('base64url');
+  return randomBytes(12).toString('base64url');
 }
 
 /**

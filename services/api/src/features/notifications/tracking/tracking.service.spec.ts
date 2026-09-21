@@ -15,8 +15,8 @@ import type {
 } from '../notifications.repository';
 import { TrackingService } from './tracking.service';
 
-/** 22 base64url chars — what `trackingTokenSchema` accepts. */
-const TOKEN = 'aaaaaaaaaaaaaaaaaaaaaa';
+/** 16 base64url chars — what `trackingTokenSchema` accepts (#136). */
+const TOKEN = 'aaaaaaaaaaaaaaaa';
 
 const CENTRE = { lat: 56.9496, lng: 24.1052 };
 

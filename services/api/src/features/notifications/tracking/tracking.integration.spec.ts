@@ -279,7 +279,7 @@ describe('tracking + ride SMS (integration)', () => {
 
     const ride = await bookByPhone(r.id);
     const token = ride.trackingToken!;
-    expect(token).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{16}$/);
 
     // AC #1: the link travels IN the confirmation, sent inside the creation
     // request — delay ≈ 0, comfortably under the ≤30 s ledger row.

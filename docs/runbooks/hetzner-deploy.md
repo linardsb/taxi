@@ -163,6 +163,13 @@ The tracking page's hostname (`PUBLIC_TRACKING_BASE_URL`, §3) is the dispatch
 app's, which #18/#19 deploy. Whatever you set there **404s until then** — known
 and accepted; it exists now because the schema refuses localhost in production.
 
+**Since #136 it must also be at most 10 characters of host, and because it IS
+the dispatch app's own origin, that gate constrains the dispatch domain
+itself** — not a separate tracking host. `sakta.lv` is 8 and fits;
+`dispatch.example.lv` is 19 and the API refuses to boot on it. Pick the
+dispatch app's domain with this in mind before #18/#19 deploy, and keep
+`CORS_ORIGINS` on the same origin. §3's row carries the arithmetic.
+
 ### 2.3 TLS — Origin CA certificate, mode Full (strict)
 
 Cloudflare → SSL/TLS:
@@ -212,7 +219,7 @@ compose hostnames, so the database password lives in one place.
 | `JWT_EXPIRES_IN` | `30d` | Schema default; listed so it is a decision, not an accident. |
 | `DEFAULT_CITY_ID` | `00000000-0000-4000-8000-000000000001` | Rīga, as seeded. Dispatchers join `dispatch:<this>`. |
 | `CORS_ORIGINS` | `https://<dispatch app origin>` | Single source of truth for REST **and** the Socket.IO handshake. A missing origin fails the handshake in a way that looks like an auth error. Native apps do not send an Origin; the dispatch app's browser does. |
-| `PUBLIC_TRACKING_BASE_URL` | `https://<tracking host>` | Where SMS tracking links point. **Production refuses localhost.** 404s until #18/#19. |
+| `PUBLIC_TRACKING_BASE_URL` | `https://sakta.lv` | Where SMS tracking links point. **Production refuses localhost, and refuses a host over 10 characters** (#136). The host is a term in the rider SMS's 70-character UCS-2 segment budget and the binding template (RU `driver_assigned`) has **zero spare at 10**, so `saktacab.lv` (11) would double the SMS bill on every phone-booked ride. Scheme and any trailing slash do not count — `https://sakta.lv/` is 8. 404s until #18/#19. |
 | `PUSH_PROVIDER` | `expo` | **Required in production** (#14): the push factory refuses to boot on the stub, which delivers nothing — a driver whose app was force-quit would never get the "you've gone offline" nudge. Expo's push API needs no credential, so this value is the whole switch. |
 | `EXPO_PUSH_ACCESS_TOKEN` | empty | Optional: Expo's "enhanced push security" token, sent as a Bearer on every push. Empty reads as unset. |
 | `ALLOW_STUB_MAPS_PROVIDER` | `true` | **The one documented relaxation** (#13). Quotes are straight-line × 1.35 and there is no polyline until #134 binds OSRM and deletes this variable. Safe only while **the pilot is closed**, so no rider is quoted at all — that is the load-bearing condition, and the due date. The empty `STRIPE_SECRET_KEY` covers the **card rail only**; a cash ride quoted straight-line is real money at the kerb. Unset this before the first real rider, whether or not #134 has landed, and let the deploy fail. Literal `true`/`false` only. |
@@ -237,8 +244,10 @@ JWT_SECRET=
 OTP_PEPPER=
 JWT_EXPIRES_IN=30d
 DEFAULT_CITY_ID=00000000-0000-4000-8000-000000000001
-CORS_ORIGINS=https://dispatch.example.lv
-PUBLIC_TRACKING_BASE_URL=https://dispatch.example.lv
+# Same origin as PUBLIC_TRACKING_BASE_URL — the dispatch app serves both.
+CORS_ORIGINS=https://sakta.lv
+# <=10 characters of host (#136), so this constrains the DISPATCH domain.
+PUBLIC_TRACKING_BASE_URL=https://sakta.lv
 PUSH_PROVIDER=expo
 EXPO_PUSH_ACCESS_TOKEN=
 ALLOW_STUB_MAPS_PROVIDER=true
@@ -807,6 +816,7 @@ the provider factory, during `InstanceLoader`.
 | `JWT_SECRET=dev-only-change-me` | `JWT_SECRET is the value committed to .env.example and is public` |
 | `ALLOW_STUB_MAPS_PROVIDER` unset | `No production MapsProvider is bound: StubMapsProvider prices rides off straight-line distance … (set ALLOW_STUB_MAPS_PROVIDER=true …)` |
 | `PUBLIC_TRACKING_BASE_URL=http://localhost:3000` | `PUBLIC_TRACKING_BASE_URL is a localhost origin` |
+| `PUBLIC_TRACKING_BASE_URL=https://saktacab.lv` (#136) | `PUBLIC_TRACKING_BASE_URL's host is 11 characters (saktacab.lv); the limit is 10. The linked rider SMS must fit one billed UCS-2 segment (#136) and the Russian driver_assigned template has zero spare, so a longer host doubles the SMS bill on every phone-booked ride. Use a shorter domain — sakta.lv is 8.` — from `envSchema`'s production block, so production only; dev and CI keep booting on `localhost:3000` (14) |
 | two of three `TWILIO_*` | `TWILIO_FROM_NUMBER is missing: TWILIO_* must be set all together or not at all` |
 | `SMS_PROVIDER=stub`, or **no `SMS_PROVIDER` line at all** (#137, `observed`) | `Error: No production SmsProvider is bound: SMS_PROVIDER is stub (or unset, which defaults to stub), and StubSmsProvider delivers nothing and logs OTP codes in full. Set SMS_PROVIDER to twilio, bulkgate or budgetsms together with that kind's whole credential group — TWILIO_* (#85), BULKGATE_* or BUDGETSMS_* (#137). A complete credential group does NOT bind on its own. Then run with NODE_ENV=production.` — thrown by `smsProviderFactory`, so production only. **This is the deploy-day failure if the box's env file is not migrated first — see §5.4's preamble.** |
 | `SMS_PROVIDER=auto` (#137, `observed`) | `ZodError: … "message": "SMS_PROVIDER must be one of: stub \| twilio \| bulkgate \| budgetsms. 'auto' was retired (#137) — name the provider outright; 'stub' delivers nothing and production refuses it."` — `code: "invalid_enum_value"`, raised by `envSchema`, so it fires in **every** environment and stops a local `pnpm test` the same way it stops the container |

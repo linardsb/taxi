@@ -7,9 +7,8 @@ import type { MessageKey } from './lv';
  */
 export const en = {
   'sms.booking_confirmed': 'Your taxi is booked.',
-  'sms.booking_confirmed_phone': 'Your taxi is booked. Track it: {link}',
-  'sms.driver_assigned':
-    'Your driver {driver}, {plate}, is ~{eta} min away. Track it: {link}',
+  'sms.booking_confirmed_phone': 'Your taxi is booked. {link}',
+  'sms.driver_assigned': 'Driver {driver}, {plate}, ~{eta} min {link}',
   'sms.driver_arrived': 'Your taxi ({plate}) has arrived.',
   'sms.otp_code': 'Sakta Cab code: {code}',
   'page.title': 'Your ride',
