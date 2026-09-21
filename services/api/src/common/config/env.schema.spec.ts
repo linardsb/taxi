@@ -142,6 +142,150 @@ describe('envSchema PUBLIC_TRACKING_BASE_URL', () => {
 
     expect(env.PUBLIC_TRACKING_BASE_URL).toBe('https://sakta.lv/');
   });
+
+  /**
+   * THE SHAPE GATE (#246). Every case below except the last two BOOTED before
+   * it existed — `observed` 2026-09-21 at 487570f — because the length check
+   * was the only thing judging the value and a short domain leaves room for
+   * the junk. The hosts here are deliberately 4-character `s.lv`, not
+   * `sakta.lv`: at 8 characters the malformed forms happen to overflow the
+   * 10-character budget and get refused for the wrong reason, which is what
+   * made this bug look narrower than it is.
+   *
+   * Read through `safeParse`, not `toThrow`: a thrown `ZodError`'s message is
+   * the issue array JSON-stringified, so every quote in it arrives escaped and
+   * a pattern written the way the message reads cannot match.
+   */
+  const refusalMessages = (value: string): string => {
+    const parsed = envSchema.safeParse(
+      prod({ PUBLIC_TRACKING_BASE_URL: value }),
+    );
+
+    if (parsed.success) throw new Error(`${value} was accepted, not refused`);
+    return parsed.error.issues.map((i) => i.message).join('\n');
+  };
+
+  it.each([
+    ['userinfo', 'https://u@s.lv', 'u@s.lv', '@'],
+    ['a query', 'https://s.lv?x', 's.lv?x', '?'],
+    ['a fragment', 'https://s.lv#f', 's.lv#f', '#'],
+  ])(
+    'refuses %s in the tracking base URL, naming what the SMS would carry (failure — #246)',
+    (_label, configured, carried, breaker) => {
+      const messages = refusalMessages(configured);
+
+      expect(messages).toContain(`would put "${carried}" in the rider SMS`);
+      expect(messages).toContain(`the "${breaker}" breaks the link`);
+    },
+  );
+
+  it('refuses the at-ceiling fragment PR #245 found (failure — #246)', () => {
+    // `sakta.lv#f` is exactly 10, so the budget gate passed it and riders were
+    // texted `sakta.lv#f/r/<token>` — a URL whose fragment swallows the path.
+    expect(refusalMessages('https://sakta.lv#f')).toContain(
+      'would put "sakta.lv#f" in the rider SMS',
+    );
+  });
+
+  it('refuses a scheme the link builder does not strip (failure — #246)', () => {
+    // 10 characters, so the budget gate accepted it, and the SMS then carried
+    // the scheme: `ftp://s.lv/r/<token>`.
+    expect(refusalMessages('ftp://s.lv')).toContain(
+      'must begin with a lowercase http:// or https://',
+    );
+  });
+
+  it('refuses an uppercase scheme by name, not by length (failure — #246)', () => {
+    // The verdict on this input does NOT change — it was already refused, as
+    // 16 characters of "host". The decision #246 records is that the fix is
+    // this message rather than an `i` flag on `trackingLinkHost`, which would
+    // have made the same input boot.
+    expect(refusalMessages('HTTPS://SAKTA.LV')).toContain(
+      'must begin with a lowercase http:// or https://',
+    );
+  });
+
+  it('still accepts an uppercase HOST and a path prefix (expected — #246)', () => {
+    // The two shapes the gate must NOT catch. DNS is case-insensitive, so
+    // `SAKTA.LV` resolves and its link works; a path prefix is a supported
+    // deployment that `trackingLinkHost` preserves on purpose, costed against
+    // the budget rather than refused (`https://s.lv/a` is 6 characters).
+    expect(
+      envSchema.parse(prod({ PUBLIC_TRACKING_BASE_URL: 'https://SAKTA.LV' }))
+        .PUBLIC_TRACKING_BASE_URL,
+    ).toBe('https://SAKTA.LV');
+    expect(
+      envSchema.parse(prod({ PUBLIC_TRACKING_BASE_URL: 'https://s.lv/a' }))
+        .PUBLIC_TRACKING_BASE_URL,
+    ).toBe('https://s.lv/a');
+  });
+
+  it('names both faults when a value is malformed AND too long (edge — #246)', () => {
+    // No shape check early-returns. One boot, one error, both reasons — an
+    // operator who fixes only the query would otherwise hit the length refusal
+    // on the next deploy.
+    const messages = refusalMessages('https://sakta.lv/app?q=1');
+
+    expect(messages).toContain('breaks the link');
+    expect(messages).toContain('the limit is 10');
+  });
+
+  /**
+   * WHITESPACE, C0 AND DEL — not every invisible character; see the limit
+   * named at the end of this block. `new URL()` strips leading and trailing
+   * whitespace and C0 controls from its INPUT and removes tab/CR/LF anywhere
+   * before parsing, so `.url()` accepts all of these — and zod returns the
+   * ORIGINAL string, which `trackingLinkHost` then carries into the SMS
+   * intact. `observed` 2026-09-21 at 270bfe4: every row below BOOTED, because
+   * the breaker map above lists only characters that are illegal in a host and
+   * these are not.
+   *
+   * The host is quoted JSON-escaped in the refusal for exactly this reason: an
+   * operator who hand-writes the host env file (runbook §3) and leaves a
+   * trailing space cannot see it in a message that prints it raw.
+   *
+   * WHAT THIS GATE STILL MISSES, so the heading above is not read as a
+   * complete claim: the zero-width format characters. `\s` does not match
+   * U+200B or U+00AD, and `new URL()` accepts them and silently DROPS them
+   * from the host — `observed` 2026-09-21: `https://sakta.lv\u200bx` parses to
+   * hostname `sakta.lvx`, so that value boots at 10 characters and texts a
+   * link resolving to a domain the operator does not own. Worse than the
+   * truncation this block covers, and NOT fixed here: the one-line form
+   * (`/[\s\p{Cf}]/u`) takes `env.schema.ts` from 495 to 499 of its 500-line
+   * cap, which is not headroom. Carried on #13 with this evidence.
+   */
+  it.each([
+    ['a trailing space', 'https://sakta.lv ', '"sakta.lv "'],
+    ['a tab', 'https://sakta.lv\tx', '"sakta.lv\\tx"'],
+    ['a newline', 'https://sakta.lv\nx', '"sakta.lv\\nx"'],
+  ])(
+    'refuses %s in the tracking base URL (failure — #246)',
+    (_label, configured, quoted) => {
+      const messages = refusalMessages(configured);
+
+      expect(messages).toContain(`would put ${quoted} in the rider SMS`);
+      expect(messages).toContain('every SMS linkifier ends the link there');
+    },
+  );
+
+  it('refuses whitespace in the path prefix too (edge — #246)', () => {
+    // The space does not have to be in the domain. `s.lv/a b` is 8 characters
+    // and a legal `new URL()`, and the linkifier still ends the link at the
+    // space — the rider taps `s.lv/a` and the token never travels.
+    expect(refusalMessages('https://s.lv/a b')).toContain(
+      'every SMS linkifier ends the link there',
+    );
+  });
+
+  it('refuses a backslash by name, like the other breakers (failure — #246)', () => {
+    // 6 characters, so the budget gate accepted it. A backslash gets its own
+    // entry rather than the whitespace catch-all because it has its own
+    // reason: it is not whitespace, and what it does depends on the linkifier.
+    const messages = refusalMessages('https://s.lv\\x');
+
+    expect(messages).toContain('would put "s.lv\\x" in the rider SMS');
+    expect(messages).toContain('the "\\" breaks the link');
+  });
 });
 
 describe('envSchema STRIPE_SECRET_KEY', () => {
