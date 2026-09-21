@@ -177,4 +177,17 @@ describe('generateMetadata', () => {
     });
     expect(metadata.title).toBe(formatMessage('ru', 'page.title'));
   });
+
+  it('keeps the page out of search indexes (expected — #247)', async () => {
+    // The token in the path is a bearer credential and the page needs no
+    // login, so an indexed URL is a leaked one. This assertion exists so that
+    // a later edit to the returned object cannot drop the tag silently — the
+    // page renders identically with or without it.
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ token: TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: false });
+  });
 });
