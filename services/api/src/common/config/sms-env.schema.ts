@@ -232,13 +232,11 @@ export const smsEnvFields = {
    * `PUSH_PROVIDER` are the same pair), not an accident to route around.
    */
   SMS_PROVIDER: z.preprocess(
-    // `.default()` fires on `undefined` ONLY, so a blanked line
-    // (`SMS_PROVIDER=`) in a hand-edited env file would otherwise deliver
-    // `''` and refuse to boot in EVERY environment with a generic enum
-    // message. Same wrapper and same reason as `ALLOW_STUB_MAPS_PROVIDER` in
-    // `env.schema.ts`, which is the shape this repo already settled on.
-    // (`PUSH_PROVIDER` is the un-wrapped precedent and is left alone — it is
-    // outside #137's diff.)
+    // The blank-means-unset rule, stated once at the top of `env.schema.ts`
+    // (#242) and carried by all three provider switches: a blanked
+    // `SMS_PROVIDER=` line would otherwise deliver `''` and refuse to boot in
+    // EVERY environment with a generic enum message. `NODE_ENV` deliberately
+    // has no wrapper; the rule says why.
     (v) => (v === '' ? undefined : v),
     z
       .enum(['stub', 'twilio', 'bulkgate', 'budgetsms'], {
