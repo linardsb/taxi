@@ -340,10 +340,39 @@ describe('envSchema PUSH_PROVIDER (#14)', () => {
     expect(env.EXPO_PUSH_ACCESS_TOKEN).toBeUndefined();
   });
 
+  it('reads a blanked line as unset rather than refusing to boot (edge — #242)', () => {
+    // A blanked `PUSH_PROVIDER=` line delivers '', and `.default()`
+    // substitutes `undefined` only — so un-wrapped this refused to boot in
+    // EVERY environment with zod's generic enum message, naming no remedy.
+    // The blank now reads as unset, exactly as it does for
+    // ALLOW_STUB_MAPS_PROVIDER and SMS_PROVIDER. Production is NOT relaxed by
+    // that: `stub` is the value `pushProviderFactory` refuses, so the blank
+    // costs the operator the factory's own named message, not the gate.
+    expect(envSchema.parse(dev({ PUSH_PROVIDER: '' })).PUSH_PROVIDER).toBe(
+      'stub',
+    );
+    expect(envSchema.parse(prod({ PUSH_PROVIDER: '' })).PUSH_PROVIDER).toBe(
+      'stub',
+    );
+  });
+
   it('refuses a provider it does not know (failure)', () => {
     // The factory switches on this value; an unknown one would silently
     // bind the stub in production and deliver no nudges.
     expect(() => envSchema.parse(dev({ PUSH_PROVIDER: 'fcm' }))).toThrow();
+  });
+});
+
+describe('envSchema NODE_ENV (#242)', () => {
+  it('refuses a blanked line rather than falling back to development (failure)', () => {
+    // The deliberate EXCEPTION to the blank-means-unset rule the three
+    // provider switches carry, and the reason the rule is conditional rather
+    // than universal: `development` is the default that makes the
+    // `NODE_ENV !== 'production'` gate skip every secret check and every
+    // factory refusal. A wrapper here would boot a real host with the gates
+    // off on one stray keystroke, so the generic refusal is the right answer
+    // for this one field. A future consistency pass must not "fix" it.
+    expect(() => envSchema.parse(prod({ NODE_ENV: '' }))).toThrow();
   });
 });
 

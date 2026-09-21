@@ -3,6 +3,34 @@ import { z } from 'zod';
 import { checkSmsCredentialGroups, smsEnvFields } from './sms-env.schema';
 
 /**
+ * BLANK MEANS UNSET — the rule for the enums in this file and its SMS
+ * sibling, stated once here rather than three times at the sites (#242).
+ *
+ * `.default()` substitutes `undefined` ONLY, so a blanked line (`FOO=`) in a
+ * hand-edited dotenv delivers `''`. An un-wrapped `z.enum` then refuses to
+ * boot in EVERY environment with zod's generic enum message, which names no
+ * remedy. Wrapping it in `z.preprocess((v) => (v === '' ? undefined : v), …)`
+ * reads the blank as unset instead — the reading every optional sibling here
+ * already gives it (`GOOGLE_MAPS_API_KEY`, `STRIPE_SECRET_KEY`, the three SMS
+ * credential groups).
+ *
+ * APPLIED TO THE THREE PROVIDER SWITCHES, and to them because their default
+ * is itself the value production refuses: `ALLOW_STUB_MAPS_PROVIDER`
+ * (`false`), `PUSH_PROVIDER` (`stub`) and `SMS_PROVIDER` (`stub`, in
+ * `sms-env.schema.ts`). A blank there costs the operator that gate's own
+ * named message instead of a generic one; it cannot cost them the gate,
+ * because the gate still fires.
+ *
+ * DELIBERATELY NOT `NODE_ENV` — the fourth and last enum carrying a default
+ * across the two files, and the one where that condition fails. Its default
+ * is `development`, which is what makes the `NODE_ENV !== 'production'` gate
+ * in the `superRefine` below skip every secret check, and each provider
+ * factory skip its production refusal. Blank-as-unset there would turn one
+ * stray keystroke on a real host into a clean boot with every gate off, so
+ * `NODE_ENV` keeps the generic refusal — for it, refusing IS the remedy.
+ */
+
+/**
  * The values committed to `.env.example`. A `cp .env.example .env` that reaches
  * a real host must not boot: `JWT_SECRET` is the whole of the authorization
  * story — `RolesGuard` reads `role` off the token and never re-checks the
@@ -210,11 +238,10 @@ export const envSchema = z
      *
      * #134 DELETES THIS VARIABLE together with the branch that reads it. Debt
      * with a due date, not a feature. `z.enum`, not `z.coerce.boolean()`, which
-     * reads the string "false" as `true`. The preprocess maps '' to unset, as
-     * every optional sibling here does: `.default()` substitutes `undefined`
-     * only, and a blanked line in a hand-written env file delivers '', which
-     * would otherwise refuse to boot in EVERY environment with a generic enum
-     * message instead of the maps gate's own.
+     * reads the string "false" as `true`. The preprocess is the blank-means-
+     * unset rule at the top of this file (#242) — a blanked line still refuses
+     * to boot in production, through the maps gate's own message rather than a
+     * generic enum error.
      */
     ALLOW_STUB_MAPS_PROVIDER: z
       .preprocess(
@@ -259,8 +286,17 @@ export const envSchema = z
      * has to be stated. `stub` logs the nudge and delivers nothing; the
      * factory (`features/push/push.module.ts`) refuses it in production, like
      * `SMS_PROVIDER`.
+     *
+     * The preprocess is the blank-means-unset rule at the top of this file
+     * (#242). It was the un-wrapped odd one out until then, so a blanked
+     * `PUSH_PROVIDER=` line refused to boot in EVERY environment with a
+     * generic enum message; now it falls back to `stub` and production
+     * refuses through the push factory's own message, which names the remedy.
      */
-    PUSH_PROVIDER: z.enum(['stub', 'expo']).default('stub'),
+    PUSH_PROVIDER: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.enum(['stub', 'expo']).default('stub'),
+    ),
     /** Optional: Expo "enhanced push security" — sent as a Bearer on every push. */
     EXPO_PUSH_ACCESS_TOKEN: z
       .string()
