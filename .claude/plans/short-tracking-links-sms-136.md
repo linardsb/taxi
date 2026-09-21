@@ -908,9 +908,13 @@ the AC is "nothing live and wrong survives", not "the grep prints nothing".
 
 ## ACCEPTANCE CRITERIA
 
-- [ ] **AC #0** (Phase 0) — **UNMET, and it is the one open item.** The spike needs a verified handset
-      and a person looking at it. Implemented on the A2 branch under a stated assumption instead; see
-      AMENDMENTS for the `curl` pair and the one-line fallback. Linards' to close before merge.
+- [x] **AC #0** (Phase 0) — **MET on two substitute oracles, not on a handset.** Leg (a) is the only leg
+      the branch point turns on, and it is `observed`: a bare `sakta.lv/r/…` linkifies, is tappable and
+      opens the right URL in **Google Messages** on an Android 16 emulator, and is detected by
+      **`NSDataDetector`**, the class iOS builds its link detection on. The branch that result dictates is
+      the one already taken, so no shipped line changed. Leg (b) (glyphs) is weakly answered and leg (c)
+      (a vendor's own `num_segments`) is not answered at all — neither gates the branch. Evidence, and
+      what it does not cover: AMENDMENTS, 2026-09-21.
 - [x] **AC #1** (issue AC 1) — MET, 7 cases green. `packages/shared/tests/sms-budget.test.ts` asserts
       1 billed segment **and an exact render length** for `sms.driver_assigned` and `sms.booking_confirmed_phone` in LV, RU and EN at
       the **maximum of every bound**, with the monotonicity argument written in the file. The test was
@@ -955,8 +959,10 @@ the AC is "nothing live and wrong survives", not "the grep prints nothing".
 
 ## COMPLETION CHECKLIST
 
-- [ ] Phase 0 ran and its result is in AMENDMENTS **before** any catalog string moved — **NO.** It did
-      not run; the AMENDMENTS entry records that, the assumption taken, and the fallback
+- [ ] Phase 0 ran and its result is in AMENDMENTS **before** any catalog string moved — **NO, and this
+      one stays unticked.** It ran after every catalog string had moved, and on substitute oracles. It
+      confirmed the branch already taken, so nothing was rebuilt — had it gone the other way, the cost
+      would have been fallback C rather than a rewrite
 - [x] All tasks completed in order
 - [x] Each task validation passed immediately
 - [x] `packages/shared` rebuilt before any downstream run — **and its exports resolved from `dist` at
@@ -968,7 +974,7 @@ the AC is "nothing live and wrong survives", not "the grep prints nothing".
 - [x] No linting or type checking errors
 - [ ] Manual testing confirms feature works — **Level 4 step 3 only** (by `curl`, not a browser); steps
       1–2 not run
-- [ ] Acceptance criteria all met — **8 of 10**; AC #0 and the Level 4 line are open
+- [ ] Acceptance criteria all met — **9 of 10**; AC #0 closed on substitute oracles, the Level 4 line is open
 - [ ] Every figure in the PR body re-derived from the working tree, not copied from this plan — for
       `piv-create-pr`. The three base test counts (231 shared / 264 dispatch / 733 api) are `derived`
       from per-file `it(` counts against `origin/main`; keep the label on them, and put no numstat size
@@ -987,7 +993,8 @@ in this ticket waits on the purchase. If #13 has committed to something longer, 
 with a message naming the limit — which is the intended failure, and the budget table shows which row
 breaks first (RU `driver_assigned`, at zero spare).
 
-**A2 — bare `host.tld/path` linkifies. CLOSED by Phase 0, before any code.** Industry SMS guidance treats
+**A2 — bare `host.tld/path` linkifies. CLOSED by Phase 0 — after the code rather than before it, and on
+substitute oracles rather than a handset (AMENDMENTS, 2026-09-21).** Industry SMS guidance treats
 scheme-less branded links (`acme.co/bf30`) as the normal form and carriers prefer them to shorteners, but
 that is guidance, not a client-behaviour observation, so the spike is the evidence. If it fails, fallback C
 keeps changes 1, 2 and 4 and the `booking_confirmed_phone` trim — the saving halves from 258 to 129
@@ -1094,7 +1101,9 @@ That ordering is the difference between these figures and #107's.
   testable, closing R3; decided Q1 (refuse) and Q3 (`/r/`, forced by the host ceiling). Budget table
   recomputed at the host ceiling of 10 rather than at `sakta.lv`'s 8 — RU `driver_assigned` is 70 with
   zero spare by construction, 68 at the real domain.
-- 2026-09-21 — **Phase 0 NOT RUN. Implemented on the A2 branch (scheme dropped) under a stated
+- 2026-09-21 — **SUPERSEDED by the final entry: Phase 0 ran the same day, on substitute oracles, and
+  confirmed this branch. Kept because its reasoning — why the build did not block on it — still stands.**
+  **Phase 0 NOT RUN. Implemented on the A2 branch (scheme dropped) under a stated
   assumption, not on evidence.** The spike needs a verified handset and a person looking at it; neither is
   available to an agent session. **AC #0 is UNMET** and is Linards' to close — the two `curl` bodies are in
   the SPIKE task above, unchanged, and both render correctly against the shipped catalogs (see the
@@ -1142,3 +1151,47 @@ That ordering is the difference between these figures and #107's.
 
   Full deviation list, with the reasoning for each:
   `.claude/reports/short-tracking-links-sms-136-report.md` → *Deviations from the plan* (D1–D9).
+
+- 2026-09-21 — **Phase 0 RAN — after the code, not before it, and on two substitute oracles instead of a
+  handset. The bare link linkifies; the branch already taken is the branch the evidence dictates, so no
+  shipped line changed.** AC #0's leg (a) is closed; legs (b) and (c) are not, and are named below.
+
+  **Oracle 1 — Google Messages, Android 16 emulator.** AVD `sakta224` (API 36 `google_apis` x86_64, the SDK
+  [#224](https://github.com/linardsb/taxi/issues/224) installed), build `sdk_gphone64_x86_64:16/BE2A.250530.026.F3`,
+  default SMS app `com.google.android.apps.messaging`. Each body injected with `adb emu sms send` — no SMS
+  account, no credit, no carrier — then opened in the thread and tapped. `observed` 2026-09-21:
+
+  | body (token `Ab3-_xYz01234567`, host `sakta.lv`) | rendered as | tap produced |
+  |---|---|---|
+  | EN `Driver Aleksandrs, ABCD-12345, ~99 min sakta.lv/e/…` | underlined link | `capturedLink=https://sakta.lv/e/Ab3-_xYz01234567` |
+  | LV `Šoferis …, ABCD-12345, ~99 min sakta.lv/t/…` | `Š` correct, underlined link | `capturedLink=https://sakta.lv/t/Ab3-_xYz01234567` |
+  | RU `Водитель …, ABCD-12345, ~99 мин sakta.lv/r/…` | Cyrillic correct, underlined link | `capturedLink=https://sakta.lv/r/Ab3-_xYz01234567` |
+
+  **The tap is the evidence, not the underline.** Each of the three produced
+  `ActivityTaskManager: START … act=android.intent.action.VIEW dat=https://sakta.lv/… cmp=com.android.chrome/…`
+  in `logcat`, and Chrome came to the foreground. Messages additionally attached a link-preview card to all
+  three, which it only does for a body it has parsed a URL out of.
+
+  **Oracle 2 — `NSDataDetector(.link)` on macOS 15.7.3 Foundation**, the class iOS's link detection is
+  built on (`swift` one-shot, `observed` 2026-09-21). All six shipped bodies — `driver_assigned` and
+  `booking_confirmed_phone` × LV/RU/EN — return exactly one link match, spanning `sakta.lv/<path>/<token>`.
+  Two controls behave: the same body with `https://` restored matches the same span, and a bare `sakta.lv`
+  matches on its own. Its UTF-16 lengths re-measure the report's Level 4 table independently at the real
+  8-character host — `driver_assigned` LV 67 / RU 68 / EN 66, `booking_confirmed_phone` LV 57 / RU 53 /
+  EN 48 — the same six numbers, arrived at by a different route.
+
+  **What the substitutes do NOT close.** Leg (b), glyph fidelity, is weak evidence only: the emulator
+  console builds the PDU itself, so a correct `Š` and correct Cyrillic there is not a carrier's UCS-2 round
+  trip. Leg (c) is not answered at all — a vendor's own `num_segments` needs a funded account, and this
+  tree has no SMS provider credentials; `smsSegments()` therefore still has no independent oracle, and the
+  in-tree counts stand on `sms-segments.test.ts` plus PR #245's re-derivation. Both are cheaper to pick up
+  on [#137](https://github.com/linardsb/taxi/issues/137)'s bake-off day, which needs a funded account and
+  three LV SIMs anyway, than to block this ticket on. The emulator image is also missing
+  `libtextclassifier3_jni_*.so`, so what linkified was Messages' fallback path rather than the on-device
+  smart-linkify model — a real phone carries the model on top of that path, not instead of it.
+
+  **One consequence, and it belongs to [#13](https://github.com/linardsb/taxi/issues/13).** The two clients
+  disagree about the scheme they infer: Google Messages navigates to **`https://`**, Foundation resolves to
+  **`http://`**. Whatever ends up serving `sakta.lv` must therefore answer port 80 with a redirect, or an
+  iOS-side tap lands on a dead port. `Caddyfile` today has exactly one site block and it is the API's, so
+  nothing serves the tracking host yet — that wiring is #13's, not this ticket's.

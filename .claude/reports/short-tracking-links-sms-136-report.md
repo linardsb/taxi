@@ -2,8 +2,9 @@
 
 **Plan**: `.claude/plans/short-tracking-links-sms-136.md`
 **Branch**: `feature/short-tracking-links-sms-136` (worktree `/Users/Berzins/taxi-worktrees/wt-136`, off `origin/main` at `246ae4b`)
-**Status**: **PARTIAL** — Phases 1–5 complete and the gate green; **AC #0** (Phase 0's handset spike) and
-**Level 4 steps 1–2** were not run. See D1 and D8; both need Linards, not more code.
+**Status**: **PARTIAL** — Phases 1–5 complete and the gate green; **AC #0** (Phase 0's linkification
+spike) is now met on substitute oracles rather than a handset, and it confirmed what shipped — see D1.
+**Level 4 steps 1–2** were not run: D8, still Linards' and not more code.
 
 ## Summary
 
@@ -144,12 +145,22 @@ returns empty (the workflow exists, so the query is not vacuous) and `gh issue v
 
 ## Deviations from the plan
 
-**D1 — Phase 0 was not run, and AC #0 is unmet.** The spike needs a verified handset and a person looking
-at it. Everything downstream was built on the plan's primary branch (scheme dropped) under **stated
-assumption A2**, recorded in the plan's AMENDMENTS with the exact `curl` pair and the revert. This is the
-one deviation that changes what ships if it goes the other way, and the change is one line: if a bare
-`sakta.lv/r/…` does not linkify, restore the scheme in `trackingLinkHost`/`trackingLink`, drop the two
-`driver_assigned` rows from `sms-budget.test.ts`'s `EXPECTED_LENGTH`, and amend AC #1.
+**D1 — Phase 0 ran late and on substitutes for a handset; AC #0 is met and the fallback is not taken.**
+The plan put the spike before any code, and there it did not run: it needs a verified handset and a person
+looking at it, so everything downstream was built on the primary branch (scheme dropped) under **stated
+assumption A2**. The spike has since run, `observed` 2026-09-21, against two substitutes — **Google
+Messages** on an Android 16 emulator (each of LV, RU and EN injected with `adb emu sms send`, then tapped:
+all three produced `ActivityTaskManager: START … VIEW dat=https://sakta.lv/…` into Chrome) and
+**`NSDataDetector`** on macOS 15.7.3 Foundation, the class iOS's link detection is built on (exactly one
+link match in each of the six shipped bodies). The scheme-less link linkifies; the branch already taken is
+the one the evidence dictates; no shipped line changed. What the substitutes do **not** close is leg (b),
+glyph fidelity end-to-end (the emulator console builds its own PDU), and leg (c), a vendor's own
+`num_segments` (this tree has no funded SMS account). The plan's AMENDMENTS carries the full result, the
+`logcat` lines and the limits.
+
+**The branch not taken, kept because it is what a negative result would have cost.** One line: restore the
+scheme in `trackingLinkHost`/`trackingLink`, drop the two `driver_assigned` rows from
+`sms-budget.test.ts`'s `EXPECTED_LENGTH`, and amend AC #1.
 `booking_confirmed_phone` stays 1 segment in all three languages with the scheme (`observed` through the
 built `dist` at the real 8-char host: LV 57+8 = 65, RU 53+8 = 61, EN 48+8 = 56, all ≤ 70), so the saving
 does not vanish — it drops to **129 segments/mo, worst case**. The arithmetic, since none of it was shown
@@ -169,7 +180,9 @@ before (PR #245 F10):
 - **It equals the ride count by construction**, not by transcription: one segment saved per ride on one
   surviving template.
 
-**Linards owns closing this before merge.**
+**What is still owed to a real handset**: legs (b) and (c) — a carrier's UCS-2 round trip, and a
+vendor's `num_segments` as an independent check on `smsSegments()`. Neither blocks this PR, and both are
+cheaper to take on #137's bake-off day, which needs a funded account and three LV SIMs regardless.
 
 **D2 — `trackingLinkHost()` is a new exported function the plan did not specify.** The plan had the boot
 gate re-implement the scheme/slash stripping with its own `.replace` pair. Two regexes that must agree is
