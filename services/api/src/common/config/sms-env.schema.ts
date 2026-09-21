@@ -14,18 +14,28 @@ import { z } from 'zod';
  */
 
 /**
- * The kinds backed by a credential group — every value but `'stub'`, which
- * has none. This is `SMS_GROUPS`' key type, so adding `'stub'` here would
- * demand a group the stub does not have.
+ * Everything `SMS_PROVIDER` accepts — DERIVED from the `z.enum` below rather
+ * than listed again, for the same reason `SmsCredentialKey` is (see its
+ * comment): a hand-written copy drifts silently, and the enum is the only
+ * thing an operator's env file is actually checked against.
+ *
+ * Deriving it is what makes adding a kind a guided edit: the new value lands
+ * in the enum, `SMS_GROUPS` is `Record<SmsProviderKind, …>` so the compiler
+ * then demands its credential group, and `auth.module.spec.ts`'s
+ * "every kind the enum lists" case demands a factory branch and a fixture.
+ * Hand-written, the first of those three links was missing.
+ *
+ * `'stub'` is the kind that delivers nothing — it demands no credential
+ * group, and `smsProviderFactory` refuses it under `NODE_ENV=production`.
  */
-export type SmsProviderKind = 'twilio' | 'bulkgate' | 'budgetsms';
+export type SmsProviderSelector = z.infer<typeof smsEnvFields.SMS_PROVIDER>;
 
 /**
- * Everything `SMS_PROVIDER` accepts. `'stub'` is the kind that delivers
- * nothing — it demands no credential group, and `smsProviderFactory` refuses
- * it under `NODE_ENV=production`.
+ * The kinds backed by a credential group — every value but `'stub'`, which
+ * has none. This is `SMS_GROUPS`' key type, so re-admitting `'stub'` here
+ * would demand a group the stub does not have.
  */
-export type SmsProviderSelector = 'stub' | SmsProviderKind;
+export type SmsProviderKind = Exclude<SmsProviderSelector, 'stub'>;
 
 /**
  * Every env key belonging to one of the three `SmsProvider` credential groups

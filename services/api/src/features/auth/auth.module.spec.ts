@@ -1,5 +1,7 @@
+import { Logger } from '@nestjs/common';
 import type { Env } from '../../common/config/env.schema';
 import { APP_ENV } from '../../common/config/env.schema';
+import { smsEnvFields } from '../../common/config/sms-env.schema';
 import { AuthModule, smsProviderFactory } from './auth.module';
 import { BudgetSmsProvider } from './sms/budgetsms.provider';
 import { BulkGateSmsProvider } from './sms/bulkgate-sms.provider';
@@ -35,6 +37,50 @@ const BUDGETSMS_GROUP: Partial<Env> = {
   BUDGETSMS_USERID: '123456',
   BUDGETSMS_HANDLE: 'handle-secret',
   BUDGETSMS_FROM: 'SaktaCab',
+};
+
+/**
+ * One credential group per selectable kind. The exhaustiveness case below
+ * fails if the enum grows a kind this table does not cover, so it is the
+ * second of the three links that make adding a vendor a guided edit (the
+ * first is `SMS_GROUPS`, which the compiler forces; the third is the factory
+ * branch, which nothing else does).
+ */
+const CREDENTIAL_FIXTURES: Record<string, Partial<Env>> = {
+  twilio: TRIO,
+  bulkgate: BULKGATE_GROUP,
+  budgetsms: BUDGETSMS_GROUP,
+};
+
+/**
+ * The enum's own option list, READ BACK off a rejected parse rather than
+ * copied into this file — a copy is what the assertion exists to catch.
+ * `invalid_enum_value` carries `options` even though `{ message }` replaces
+ * the issue's text, so the custom migration message costs nothing here.
+ */
+const selectableKinds = (): string[] => {
+  const rejected = smsEnvFields.SMS_PROVIDER.safeParse('__not-a-selector__');
+  if (rejected.success) {
+    throw new Error('SMS_PROVIDER accepted a value no kind is named after');
+  }
+  const issue = rejected.error.issues[0];
+  if (issue?.code !== 'invalid_enum_value') {
+    throw new Error(`expected invalid_enum_value, got ${issue?.code}`);
+  }
+  return issue.options.map(String).filter((o) => o !== 'stub');
+};
+
+/** Payloads captured from the module-level `Logger` inside the factory. */
+const captureBootLog = (run: () => void): Record<string, unknown>[] => {
+  const spy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+  try {
+    run();
+    return spy.mock.calls.map(
+      ([payload]) => payload as Record<string, unknown>,
+    );
+  } finally {
+    spy.mockRestore();
+  }
 };
 
 describe('smsProviderFactory', () => {
@@ -148,6 +194,88 @@ describe('smsProviderFactory', () => {
     expect(boot).toThrow(
       /A complete credential group does NOT bind on its own/,
     );
+  });
+
+  it('binds a real provider for every kind the enum lists (edge)', () => {
+    // EXHAUSTIVENESS, and the reason it is a test rather than a `never` arm.
+    // The factory is an `if` chain with no `default`, so adding a fifth kind
+    // and forgetting its branch compiles: dev falls through to the stub while
+    // the boot line still names the new vendor, and production throws
+    // "SMS_PROVIDER is stub", sending the operator to a variable they set
+    // correctly. Worst of all, `hetzner-deploy.md` §5.4 step 5's "two lines,
+    // both naming the new kind" rollback check PASSES while the stub is
+    // bound — the silent mis-selection this whole ticket exists to kill.
+    //
+    // Driven off the enum's own options, so it cannot go stale: add a kind
+    // and this case demands a fixture above and a factory branch below.
+    // Raised as M2 in PR #241's review round 1.
+    const kinds = selectableKinds();
+    expect(kinds).toEqual(expect.arrayContaining(['twilio']));
+
+    for (const kind of kinds) {
+      expect(Object.keys(CREDENTIAL_FIXTURES)).toContain(kind);
+      const named = env('development', {
+        ...CREDENTIAL_FIXTURES[kind],
+        SMS_PROVIDER: kind as Env['SMS_PROVIDER'],
+      });
+
+      // Dev half: a missing branch falls through to `bind(new StubSmsProvider())`.
+      expect(smsProviderFactory(named)).not.toBeInstanceOf(StubSmsProvider);
+      // Production half: a missing branch reaches the refusal instead.
+      expect(() =>
+        smsProviderFactory({ ...named, NODE_ENV: 'production' }),
+      ).not.toThrow();
+    }
+  });
+
+  it('emits auth.sms.provider_bound naming the bound kind (expected)', () => {
+    // `hetzner-deploy.md` §5.4 step 5 hard-codes `grep -c
+    // auth.sms.provider_bound` and turns the count into the rollback decision
+    // during a live vendor switch. Until this case existed, a rename, a
+    // dropped `provider` key or a level change broke that procedure with
+    // nothing red anywhere. Raised as M3 in PR #241's review round 1.
+    const lines = captureBootLog(() => {
+      smsProviderFactory(
+        env('development', { ...BULKGATE_GROUP, SMS_PROVIDER: 'bulkgate' }),
+      );
+    });
+
+    expect(lines).toEqual([
+      expect.objectContaining({
+        event: 'auth.sms.provider_bound',
+        provider: 'bulkgate',
+      }),
+    ]);
+  });
+
+  it('logs the kind and never a credential (edge)', () => {
+    // `logging-standard.md`'s never-log list. The BulkGate group's values are
+    // all in scope here, so asserting the payload's exact key set is what
+    // stops a later "add the sender ID, it helps debugging" edit.
+    const [line] = captureBootLog(() => {
+      smsProviderFactory(
+        env('development', { ...BULKGATE_GROUP, SMS_PROVIDER: 'bulkgate' }),
+      );
+    });
+
+    expect(Object.keys(line ?? {}).sort()).toEqual(['at', 'event', 'provider']);
+    expect(JSON.stringify(line)).not.toContain(
+      BULKGATE_GROUP.BULKGATE_APPLICATION_TOKEN,
+    );
+  });
+
+  it('emits no provider_bound line when it refuses to boot (failure)', () => {
+    // The refusal is the one branch with no log line, deliberately: the thrown
+    // error and the crash-looping container are the signal, and a line here
+    // would report a boot that did not happen. Pinned so "add the missing
+    // event for consistency" is a decision rather than a drive-by.
+    const lines = captureBootLog(() => {
+      expect(() => smsProviderFactory(env('production'))).toThrow(
+        /No production SmsProvider is bound/,
+      );
+    });
+
+    expect(lines).toEqual([]);
   });
 
   it('is what the module actually binds SMS_PROVIDER to (edge)', () => {

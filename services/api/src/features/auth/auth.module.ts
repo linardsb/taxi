@@ -38,20 +38,29 @@ const logger = new Logger('smsProviderFactory');
  * `compose.prod.yml` — the switch procedure is `docs/runbooks/hetzner-deploy.md` §5.4.
  */
 export function smsProviderFactory(env: Env): SmsProvider {
-  // ONE `event` name for every branch, including the refusal's absence of
-  // one: what an operator greps for after a switch is a line naming the kind
-  // that actually bound. The kind, never a credential — no sender ID, no
-  // token, no application id (`logging-standard.md`'s never-log list).
+  // ONE `event` name for every branch THAT BINDS: what an operator greps for
+  // after a switch is a line naming the kind that actually bound. The
+  // production refusal below deliberately emits none — the thrown error and
+  // the crash-looping container are its signal, and a log line would suggest
+  // a boot that did not happen. The kind, never a credential — no sender ID,
+  // no token, no application id (`logging-standard.md`'s never-log list).
+  //
+  // `auth.sms.provider_bound` AND its `provider` key are a documented
+  // interface, not an implementation detail: `hetzner-deploy.md` §5.4 step 5
+  // greps this exact string and turns the count into a live rollback
+  // decision. `auth.module.spec.ts`'s "emits auth.sms.provider_bound naming
+  // the bound kind" case pins both, so a rename goes red here before it
+  // breaks the procedure there.
   //
   // THIS LINE IS EMITTED TWICE PER BOOT, and that is correct. `AuthModule`
   // and `NotificationsModule` each bind `SMS_PROVIDER` with this factory
-  // (`notifications.module.ts:13-20` explains why the duplicate is deliberate
-  // — exporting auth's binding would let any module inject SMS off auth's
-  // back and give away the production refusal). Two identical lines are the
-  // operator-visible evidence that BOTH SMS paths bound the same vendor; one
-  // line means only one path switched, and §5.4 step 5 teaches that as the
-  // signal to roll back.
-  const bind = <P extends SmsProvider>(provider: P): P => {
+  // (`notifications.module.ts`'s docblock explains why the duplicate is
+  // deliberate — exporting auth's binding would let any module inject SMS off
+  // auth's back and give away the production refusal). Two identical lines
+  // are the operator-visible evidence that BOTH SMS paths bound the same
+  // vendor; one line means only one path switched, and §5.4 step 5 teaches
+  // that as the signal to roll back.
+  const bind = (provider: SmsProvider): SmsProvider => {
     logger.log({
       event: 'auth.sms.provider_bound',
       provider: env.SMS_PROVIDER,
