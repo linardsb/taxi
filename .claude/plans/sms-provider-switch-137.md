@@ -192,8 +192,11 @@ working tree — this branch is 14 commits behind and four of these files do not
   This is why a stale repo-root env file breaks a local run after the retirement, and why the box's
   real environment always wins.
 - `services/api/test/harness.ts` (lines 454-462, 530, 546-549) - Why: `overrideProvider(SMS_PROVIDER)`
-  resolves by token across the whole compiled graph. **This is why no integration test can verify
-  the binding** and Task 8 must be a metadata test.
+  replaces the token in every module that declares it. **This is why no integration test can verify
+  WHICH factory the binding names** — it sees a `RecordingSmsProvider` either way — and Task 8 must
+  be a metadata test. (Corrected at PR #241 review round 1, M1: the override cannot verify a
+  binding's identity, but it does not mask the binding's *absence*. See "Why the metadata test
+  rather than an integration test" below.)
 - `services/api/src/features/auth/sms/stub-sms.provider.ts` (line 9) - Why: a stale claim —
   "bound when the `TWILIO_*` trio is set" — that this change falsifies.
 - `services/api/src/features/notifications/ride-notifications.service.ts` (lines 42, 70, 137) -
@@ -546,11 +549,11 @@ Run everything DB-touching in that worktree with `COMPOSE_PROJECT_NAME=taxi`.
   `import { smsProviderFactory, SMS_PROVIDER } from '../auth';` — the same path
   `notifications.module.ts:3` uses, not a deep import.
 - **GOTCHA**: **do not write this as an integration test.** `test/harness.ts:548` calls
-  `.overrideProvider(SMS_PROVIDER).useValue(sms)`, which resolves by token across the whole
-  compiled graph (`harness.ts:552-555` says so) — so a `RecordingSmsProvider` would be injected
-  into `RideNotificationsService` whether or not the module binds the factory at all. An
-  integration test here is **green on a broken binding**. This is the same class of defect as
-  #16's C1: a test that pins the wiring it replaced.
+  `.overrideProvider(SMS_PROVIDER).useValue(sms)`, which replaces the token in every module that
+  declares it — so `RideNotificationsService` gets a `RecordingSmsProvider` no matter WHICH factory
+  this module names. An integration test here is **green against a silently forked factory**, and a
+  fork carries none of the production boot-refusal. (Corrected at PR #241 review round 1, M1: it is
+  not green against a *deleted* binding — see the section below for what was actually run.)
 - **VALIDATE**: `cd services/api && npx jest src/features/notifications/notifications.module.spec.ts 2>&1 | tail -20`
   — then **revert `notifications.module.ts`'s `SMS_PROVIDER` provider entry (41-45) and re-run: it
   must go red.** A metadata test that passes against a deleted binding pins nothing. Restore after.
@@ -709,11 +712,11 @@ report by counting `it(` per changed file, not by subtracting totals.
 ### Integration Tests
 
 **None, deliberately — and this is a finding, not an omission.** `test/harness.ts:548` overrides
-`SMS_PROVIDER` by token across the whole compiled graph, so every integration test injects
-`RecordingSmsProvider` regardless of what the factory would return. An integration test asserting
-"ride SMS uses the selected provider" is **green against a deleted binding**. The metadata test in
-Task 8 is the only assertion that can fail for the right reason, and Task 8's VALIDATE step requires
-proving it by reverting the binding.
+`SMS_PROVIDER` in every module that declares it, so every integration test injects
+`RecordingSmsProvider` regardless of which factory the module named. An integration test asserting
+"ride SMS uses the selected provider" is **green against a silently forked factory**. The metadata
+test in Task 8 is the only assertion that can fail for the right reason, and Task 8's VALIDATE step
+requires proving it by reverting the binding.
 
 The existing integration suites still matter as a regression check — they boot the real
 `AppModule`, so a schema that refuses to parse under `NODE_ENV=test` fails all of them at once.
@@ -949,7 +952,7 @@ deliberately not spent on.
 | R17 | P2 ("nothing names the bound provider") might be overstated | **retired** | `observed` — `grep -ic sms` over a full successful production boot log returns **0** |
 | R6 | A new env var might need a `turbo.json` passlist entry; strict mode strips undeclared vars silently | **retired** | `observed` — `globalEnv` read; no test reads the selector from the process environment, so no entry is needed and adding one would pollute the cache key |
 | R7 | Probe 5 could read as "the selector change broke the bake-off script" | **retired** | `observed` — the script parses `process.env` and dotenv-loads nothing; both of its failure modes are named in Level 4's probe-5 GOTCHA |
-| R8 | An integration test for AC #2 would be green against a deleted binding | **retired** | `harness.ts:548` overrides the token graph-wide; Task 8 is a metadata test whose VALIDATE step requires proving it goes red |
+| R8 | An integration test for AC #2 would be green against a silently forked factory | **retired** | `harness.ts:548` replaces the token in every module that declares it, so an integration test sees a `RecordingSmsProvider` whichever factory was named; Task 8 is a metadata test whose VALIDATE step requires proving it goes red. **Restated at PR #241 review round 1 (M1): this row originally read "green against a deleted binding", which is false — `observed`, a deleted binding fails to build the graph, 28 of 28. See "Why the metadata test rather than an integration test"** |
 | R9 | Line references in this plan could be stale, sending the implementer to the wrong hunk | **retired** | Every reference re-read from `origin/main` and corrected once (the §3 template is 232-251, not 232-278; the refusal table 716-725) |
 | R10 | The gate cannot see anything this ticket changes — it never boots under `NODE_ENV=production` | **controlled** | Level 4's four container probes are mandatory, not optional, and AC #7 will not pass on predicted messages. This is inherent to the repo, not to this ticket |
 | R11 | A shared-test-DB collision or a stale `.next` turns the gate red for unrelated reasons | **controlled** | Level 3 names both signatures and says re-run rather than diagnose; the worktree instruction and `COMPOSE_PROJECT_NAME=taxi` are in the pre-Task-1 block |
@@ -1151,15 +1154,26 @@ would be logging an inferred one, which is a weaker claim.
 This is the plan's one genuinely non-obvious testing call, and it is worth stating because the
 instinct runs the other way. "Ride SMS goes through the selected provider" *sounds* like exactly
 what an integration test is for: book a ride, accept it, assert the recorded SMS. That test is easy
-to write, passes today, and would pass with `notifications.module.ts`'s entire `SMS_PROVIDER`
-provider block deleted — because `harness.ts:548` overrides the token graph-wide and Nest resolves
-`RideNotificationsService`'s `@Inject(SMS_PROVIDER)` from the override either way.
+to write, passes today, and would keep passing if this module's `useFactory` were swapped for a
+same-shaped local fork — because `harness.ts:548` replaces the token wherever it is declared, so
+`RideNotificationsService` gets the `RecordingSmsProvider` either way. A fork carries none of
+`smsProviderFactory`'s production boot-refusal, which is the guarantee AC #2 is really about.
 
-The general shape: **a test whose subject is a binding cannot use a `harness` that replaces
-bindings.** #16's C1 is the same defect from the other direction — a socket test with a handler map
-in place of a socket, green while no event was ever delivered. The check that Task 8's VALIDATE
-demands (revert the binding, watch it go red) is the only thing that distinguishes the two cases,
-and it takes thirty seconds.
+**This paragraph originally said the integration test would pass with the provider block DELETED.
+That was false, and PR #241's review round 1 (M1) caught it.** `overrideProvider` merges into a
+module that already declares the token and never creates one — `@nestjs/core`'s `Module.replace` is
+gated on `hasProvider` (`node_modules/@nestjs/core/injector/module.js:344-345`) — nothing this
+module imports exports `SMS_PROVIDER`, and `ride-notifications.service.ts:42` injects it
+non-optionally. Both halves were then run at review round 1, `observed`:
+
+| Mutation | `dispatch.integration.spec.ts` | `notifications.module.spec.ts` |
+|---|---|---|
+| provider block deleted | **28 failed of 28** — "Nest can't resolve dependencies of the RideNotificationsService" | red |
+| `useFactory` forked to `(env) => smsProviderFactory(env)` | **28 passed of 28** | red |
+
+So the general shape is narrower than first written: **a test whose subject is a binding's IDENTITY
+cannot use a `harness` that replaces that binding.** Absence is caught, and loudly. The #16's C1
+analogy was dropped with the false premise it rested on.
 
 ### What the boot proof can and cannot say
 
