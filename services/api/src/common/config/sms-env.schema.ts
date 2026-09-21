@@ -13,11 +13,29 @@ import { z } from 'zod';
  * back in at the same position they occupied.
  */
 
-/** The kinds `SMS_PROVIDER` can name outright — every value but `'auto'`. */
-export type SmsProviderKind = 'twilio' | 'bulkgate' | 'budgetsms';
+/**
+ * Everything `SMS_PROVIDER` accepts — DERIVED from the `z.enum` below rather
+ * than listed again, for the same reason `SmsCredentialKey` is (see its
+ * comment): a hand-written copy drifts silently, and the enum is the only
+ * thing an operator's env file is actually checked against.
+ *
+ * Deriving it is what makes adding a kind a guided edit: the new value lands
+ * in the enum, `SMS_GROUPS` is `Record<SmsProviderKind, …>` so the compiler
+ * then demands its credential group, and `auth.module.spec.ts`'s
+ * "every kind the enum lists" case demands a factory branch and a fixture.
+ * Hand-written, the first of those three links was missing.
+ *
+ * `'stub'` is the kind that delivers nothing — it demands no credential
+ * group, and `smsProviderFactory` refuses it under `NODE_ENV=production`.
+ */
+export type SmsProviderSelector = z.infer<typeof smsEnvFields.SMS_PROVIDER>;
 
-/** Everything `SMS_PROVIDER` accepts. `'auto'` names no kind and demands no group. */
-export type SmsProviderSelector = 'auto' | SmsProviderKind;
+/**
+ * The kinds backed by a credential group — every value but `'stub'`, which
+ * has none. This is `SMS_GROUPS`' key type, so re-admitting `'stub'` here
+ * would demand a group the stub does not have.
+ */
+export type SmsProviderKind = Exclude<SmsProviderSelector, 'stub'>;
 
 /**
  * Every env key belonging to one of the three `SmsProvider` credential groups
@@ -80,12 +98,15 @@ const SMS_GROUPS: Record<
  */
 export const smsEnvFields = {
   /**
-   * The Twilio trio (#85). Absent — or empty, as committed to
-   * `.env.example` — binds `StubSmsProvider`, which refuses to boot in
-   * production: the same arrangement as Stripe and maps. All three set
-   * together or none — `checkSmsCredentialGroups` below enforces it
-   * in EVERY environment. Same `.optional().transform().refine()` order as
-   * `STRIPE_SECRET_KEY`; the refine must see the transformed value.
+   * The Twilio trio (#85) — the credential group `SMS_PROVIDER=twilio`
+   * demands, and reached only under that selector. Absent or empty (as
+   * committed to `.env.example`) is fine while the selector names something
+   * else; under `twilio` it is a boot refusal naming the missing keys, not a
+   * quiet fall back to the stub. Presence selects nothing: that was `'auto'`,
+   * retired at #137's second loop. All three set together or none —
+   * `checkSmsCredentialGroups` below enforces it in EVERY environment. Same
+   * `.optional().transform().refine()` order as `STRIPE_SECRET_KEY`; the
+   * refine must see the transformed value.
    */
   TWILIO_ACCOUNT_SID: z
     .string()
@@ -190,15 +211,21 @@ export const smsEnvFields = {
       },
     ),
   /**
-   * Which `SmsProvider` binds (#137). `auto` is EXACTLY today's behaviour —
-   * the TWILIO_* trio binds Twilio, otherwise the stub, otherwise production
-   * refuses — so this is additive and no existing `.env` moves. The other
-   * three name a kind outright, and `checkSmsCredentialGroups` below then
-   * demands that kind's whole credential group.
+   * Which `SmsProvider` binds (#137). Every value names a kind outright, and
+   * `checkSmsCredentialGroups` below then demands that kind's whole
+   * credential group. `stub` names the one that delivers nothing:
+   * `smsProviderFactory` refuses it under `NODE_ENV=production`.
    *
    * A switch rather than credential-driven, the `PUSH_PROVIDER` reasoning
    * ("the intent has to be stated") — but forced here rather than chosen:
    * during the bake-off two or three groups are funded at once.
+   *
+   * `'auto'` — #240's default, meaning "the TWILIO_* trio decides" — was
+   * RETIRED by this ticket's second loop. It preferred Twilio over a funded
+   * candidate with no log line and no refusal, which is the whole cost the
+   * bake-off exists to escape. Do not re-introduce it: a value that infers
+   * intent cannot be checked against what the operator meant, and
+   * `auth.sms.provider_bound` can only name a kind that was stated.
    *
    * The name collides with the DI token string in `sms/sms.tokens.ts`. That
    * is the established arrangement (`push.tokens.ts:5` and `env.schema.ts`'s
@@ -209,12 +236,25 @@ export const smsEnvFields = {
     // (`SMS_PROVIDER=`) in a hand-edited env file would otherwise deliver
     // `''` and refuse to boot in EVERY environment with a generic enum
     // message. Same wrapper and same reason as `ALLOW_STUB_MAPS_PROVIDER` in
-    // `env.schema.ts`, which is the shape this repo already settled on; the
-    // committed template's `SMS_PROVIDER=auto` means no fresh checkout hits
-    // it either way. (`PUSH_PROVIDER` is the un-wrapped precedent and is left
-    // alone — it is outside #137's diff.)
+    // `env.schema.ts`, which is the shape this repo already settled on.
+    // (`PUSH_PROVIDER` is the un-wrapped precedent and is left alone — it is
+    // outside #137's diff.)
     (v) => (v === '' ? undefined : v),
-    z.enum(['auto', 'twilio', 'bulkgate', 'budgetsms']).default('auto'),
+    z
+      .enum(['stub', 'twilio', 'bulkgate', 'budgetsms'], {
+        // A custom `message` REPLACES zod's whole default string, so the legal
+        // values are listed here rather than inherited — and the sentence has
+        // to stay true for EVERY rejected value, not only `'auto'`: this fires
+        // for `SMS_PROVIDER=vonage` too. Constraint first, retirement second.
+        // `{ invalid_type_error }` is silently ignored for an out-of-range
+        // enum value on zod 3.25.76; `{ message }` is the spelling that works.
+        // It also has to live here rather than in
+        // `checkSmsCredentialGroups`: a failing enum short-circuits the
+        // object's `superRefine`, so code there would never run for `'auto'`.
+        message:
+          "SMS_PROVIDER must be one of: stub | twilio | bulkgate | budgetsms. 'auto' was retired (#137) — name the provider outright; 'stub' delivers nothing and production refuses it.",
+      })
+      .default('stub'),
   ),
 };
 
@@ -253,13 +293,14 @@ export function checkSmsCredentialGroups(
     }
   }
 
-  // An explicitly named kind must have its whole group — otherwise the
+  // A kind backed by credentials must have its whole group — otherwise the
   // factory's non-null assertions on those fields would be the only thing
   // standing between a typo and a `new BulkGateSmsProvider(undefined)`.
-  // `'auto'` demands nothing: it IS today's behaviour, so a fresh checkout
-  // and the committed `.env.example` template still parse. Also above the
+  // `'stub'` demands nothing because it HAS no group (it is not a key of
+  // `SMS_GROUPS`), which is why it is the one value this guard excludes —
+  // and why the default keeps a fresh checkout parsing. Also above the
   // production gate, for the same reason the block above is.
-  if (env.SMS_PROVIDER !== 'auto') {
+  if (env.SMS_PROVIDER !== 'stub') {
     const missing = SMS_GROUPS[env.SMS_PROVIDER].keys.filter(
       (k) => env[k] === undefined,
     );

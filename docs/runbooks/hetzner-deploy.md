@@ -221,7 +221,7 @@ compose hostnames, so the database password lives in one place.
 | `TWILIO_ACCOUNT_SID` | `AC…` from console.twilio.com | **All three or none — the schema refuses a partial trio in every environment.** A **trial** account is enough for testing: it sends only to numbers verified in the console (Atis, Dina, Linards) and the sender must be the trial number. Paid account + alphanumeric sender (`SaktaCab`) before the pilot opens (#137). |
 | `TWILIO_AUTH_TOKEN` | the auth token | |
 | `TWILIO_FROM_NUMBER` | the trial number, E.164 (`+371…`) | |
-| `SMS_PROVIDER` | `auto` | Which `SmsProvider` binds (#137). `auto` is exactly pre-#137 behaviour — the `TWILIO_*` trio binds Twilio, otherwise production refuses — so leaving it alone moves nothing. Naming `twilio`, `bulkgate` or `budgetsms` selects that vendor outright and makes its whole credential group **required at boot**. **A funded candidate group does NOT bind on its own:** #137 separated presence from selection, because the bake-off funds two or three accounts at once. Selection, never failover — exactly one provider binds and there is no fallback to a second vendor. |
+| `SMS_PROVIDER` | `twilio` | **Required in production** (#137), in the same sense `PUSH_PROVIDER` is: `stub` — the schema default, and what an omitted line means — delivers nothing and logs OTP codes in full, so the factory refuses it at boot. The only thing that selects a provider: naming `twilio`, `bulkgate` or `budgetsms` binds that vendor and makes its whole credential group **required at boot**, and **a funded credential group does NOT bind on its own.** Selection, never failover — exactly one provider binds and there is no fallback to a second vendor. `auto` was retired: it meant "the `TWILIO_*` trio decides", which silently preferred Twilio over a candidate account somebody had just funded. To change vendors, §5.4. |
 | `BULKGATE_APPLICATION_ID`, `BULKGATE_APPLICATION_TOKEN`, `BULKGATE_SENDER_ID_VALUE` | omit | #137 bake-off candidate. **All three or none, in every environment.** Only reached with `SMS_PROVIDER=bulkgate`. Sender is `gText`/alphanumeric (`SaktaCab`) — never an E.164 number. |
 | `BUDGETSMS_USERNAME`, `BUDGETSMS_USERID`, `BUDGETSMS_HANDLE`, `BUDGETSMS_FROM` | omit | #137 bake-off candidate. **FOUR keys, not three — all or none.** `BUDGETSMS_HANDLE` is the API secret and `BUDGETSMS_USERID` is the numeric account id, not the username. The endpoint is GET-only, so the secret and every message body travel in the URL — row 16 of `docs/research/sms-bakeoff-scorecard.md`, and a decision to record before binding this in production. |
 | `STRIPE_SECRET_KEY` | **leave empty** | Cash-only pilot: no SIA, no key. Empty binds `CardPaymentsDisabledProvider`, which **refuses** every card charge (§9). A `sk_live_…` is refused at boot in every environment. |
@@ -246,6 +246,7 @@ GOOGLE_MAPS_API_KEY=
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_FROM_NUMBER=
+SMS_PROVIDER=twilio
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 ```
@@ -360,6 +361,83 @@ dc exec db psql -U taxi -d taxi    # the database
 dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js   # migrate without a deploy (no-op when current)
 dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile        # after a by-hand Caddyfile edit; the deploy does this itself
 ```
+
+### 5.4 Switch the SMS provider
+
+`SMS_PROVIDER` is the only thing that selects a vendor (#137), so a switch is
+one line in `/opt/taxi/.env` plus a restart. **No image change and no deploy**
+— which is also why §5.2's image rollback is not the procedure to reach for if
+this goes wrong; step 7 below is.
+
+**Before the retirement image is ever deployed — the one-time pre-step.** A box
+running today most likely has *no* `SMS_PROVIDER` line at all: the template in
+§3 omitted it until this ticket added it. Once the retirement lands, an absent
+line means `stub`, and `smsProviderFactory` refuses to boot on `stub` — the
+container crash-loops, the previous one is already gone, and the API is down
+until someone edits the file. `up -d --wait` fails the deploy step loudly
+rather than leaving a broken stack running, but the outage is real and starts
+at the deploy, not at the first SMS.
+
+The remedy is ordering and it is free, because `SMS_PROVIDER=twilio` was
+**already valid before the retirement** and already bound Twilio. So:
+
+```bash
+ssh <box> "grep -c '^TWILIO_[A-Z_]*=..*' /opt/taxi/.env"   # must print 3
+```
+
+Naming a kind makes that kind's whole group required in **every** environment,
+so setting the selector on a box with two of three `TWILIO_*` variables would
+cause exactly the outage the pre-step exists to prevent — and would do it
+*before* the retirement, when nobody is watching for it. A running box should
+have all three (under the old default, one lacking them would already be
+refusing to boot), but check rather than assume. Then set `SMS_PROVIDER=twilio`
+in `/opt/taxi/.env`, `up -d --wait api`, and confirm `/health` still answers.
+Behaviour is unchanged; the retirement is then a no-op on the box.
+
+**The switch itself:**
+
+1. **Preconditions.** `docs/research/sms-bakeoff-scorecard.md`'s **Verdict**
+   section is filled in and names this vendor. The account is funded with more
+   than one month's segments. For `budgetsms` specifically: scorecard **row 16**
+   — the endpoint is GET-only, so the `handle` API secret *and every OTP body*
+   travel in the URL — has been read and accepted as a decision, not
+   discovered afterwards.
+2. **Add the incoming group** to `/opt/taxi/.env` (`BULKGATE_*`, `BUDGETSMS_*`
+   or `TWILIO_*`; all keys of that group or none — four for BudgetSMS, three
+   for the others). **Do not remove the outgoing vendor's group** — it is the
+   rollback in step 7, and removing it makes step 7 a two-edit job under
+   pressure.
+3. **Flip** `SMS_PROVIDER` to the new kind. One line, one value.
+4. **Restart:**
+   ```bash
+   cd /opt/taxi
+   docker compose -f docker-compose.yml -f compose.prod.yml up -d --wait api
+   ```
+   `--wait` fails the command on a crash loop rather than leaving one running
+   (compose 5.1.0). A non-zero exit here means the schema refused the config —
+   read `dc logs api` against §8.3's table, which quotes every SMS refusal
+   verbatim.
+5. **Verify from the log, before any rider does:**
+   ```bash
+   docker compose -f docker-compose.yml -f compose.prod.yml logs api | grep -c auth.sms.provider_bound
+   ```
+   **Expect `2`**, both lines naming the new kind. Two because `AuthModule` and
+   `NotificationsModule` each bind the factory — OTP and ride SMS are separate
+   bindings of the same function. `observed` 2026-09-21: a production container
+   with `SMS_PROVIDER=bulkgate` printed exactly two, both
+   `provider: 'bulkgate'`. **One line means only one SMS path switched** and is
+   the signal to roll back at step 7 rather than to investigate in production.
+6. **One live OTP** to a handset on each operator you care about, checking the
+   sender string and the body render. **Owed to #137's verdict loop, not
+   performed here** — it needs a funded account and an LV SIM, which the
+   machine this procedure was written on does not have.
+7. **Rollback.** Flip `SMS_PROVIDER` back to the outgoing kind (its credentials
+   are still in the file, per step 2), `up -d --wait api`, re-run step 5's
+   count and confirm both lines name the old kind again. No image change is
+   involved, so **§5.2 is not the procedure** — reaching for it would re-pull
+   an image that is not the problem. Steps 1-5 and this rollback's mechanics
+   were exercised against a real container; the *live* rollback under real
+   traffic is **untested**, for the same reason step 6 is owed.
 
 ## 6 · Backups and restore
 
@@ -699,30 +777,42 @@ dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js                  
 
 Gates — each of these must **fail the container at boot** (`up -d --wait`
 exits non-zero, `dc logs api` names the variable; §3 carries the run behind the
-`up -d --wait` half). The first seven were `observed`
+`up -d --wait` half). The six rows this loop did not touch — `JWT_SECRET`,
+`ALLOW_STUB_MAPS_PROVIDER`, `PUBLIC_TRACKING_BASE_URL`, the partial `TWILIO_*`
+trio, `GOOGLE_MAPS_API_KEY` and `PUSH_PROVIDER` — were `observed`
 on 2026-09-03 against the image built from PR #147's round-1 fix commit,
-before any server existed. The first six were also observed on 2026-08-25; the
-seventh, `PUSH_PROVIDER`, reached `main` with #14 on 2026-08-31 and the rebase
+before any server existed. All but `PUSH_PROVIDER` were also observed on
+2026-08-25; it reached `main` with #14 on 2026-08-31 and the rebase
 inherited the 2026-08-25 boot without re-running it — the review caught it
 (round 1, F1). **After any base move, boot the image again; the gate never
 runs under `NODE_ENV=production` and cannot see a new one of these.**
 
-The **eighth** arrived with #137 and is `expected`, not observed — no image has
-been booted since. It is the one refusal here that is schema-level rather than
-factory-level, so it fires in **every** environment, and `env.schema.spec.ts`
-does observe the message; what is unobserved is that it stops the container.
-Boot the image before the next deploy and move it into the observed set.
+The three SMS rows are `observed` as of **2026-09-21**, and the sentence that
+used to stand here — asking whoever next booted the image to confirm the #137
+refusal stops the container rather than only failing a spec — is **discharged**:
+it does stop it. Image `taxi-api:switch137` (389 MB), built from
+`services/api/Dockerfile` at the switch loop's head, booted four ways on the
+`taxi_default` network against a scratch `sms137` database. Each message below
+is the container's own text, copied from `docker logs`, not a prediction.
 
-| Break | Expected refusal |
+Two of those rows used to be one, and the split is the point: before the
+`'auto'` retirement, an un-migrated env file and a *retired-value* env file
+produced **byte-identical** output. They now refuse from different layers —
+the retired value inside `ConfigModule.forRoot`'s `validate`
+(`app-config.module.ts:20`), before anything dials Postgres; the stub inside
+the provider factory, during `InstanceLoader`.
+
+| Break | Refusal |
 |---|---|
 | `JWT_SECRET=dev-only-change-me` | `JWT_SECRET is the value committed to .env.example and is public` |
 | `ALLOW_STUB_MAPS_PROVIDER` unset | `No production MapsProvider is bound: StubMapsProvider prices rides off straight-line distance … (set ALLOW_STUB_MAPS_PROVIDER=true …)` |
 | `PUBLIC_TRACKING_BASE_URL=http://localhost:3000` | `PUBLIC_TRACKING_BASE_URL is a localhost origin` |
 | two of three `TWILIO_*` | `TWILIO_FROM_NUMBER is missing: TWILIO_* must be set all together or not at all` |
-| no `TWILIO_*` at all, `SMS_PROVIDER` unset or `auto` | `No production SmsProvider is bound: … Either set TWILIO_ACCOUNT_SID, … or set SMS_PROVIDER=bulkgate\|budgetsms together with that group of credentials (#137)`. Since #137 the message names **both** exits, because a complete `BULKGATE_*`/`BUDGETSMS_*` group reaches this refusal too — presence alone no longer binds |
+| `SMS_PROVIDER=stub`, or **no `SMS_PROVIDER` line at all** (#137, `observed`) | `Error: No production SmsProvider is bound: SMS_PROVIDER is stub (or unset, which defaults to stub), and StubSmsProvider delivers nothing and logs OTP codes in full. Set SMS_PROVIDER to twilio, bulkgate or budgetsms together with that kind's whole credential group — TWILIO_* (#85), BULKGATE_* or BUDGETSMS_* (#137). A complete credential group does NOT bind on its own. Then run with NODE_ENV=production.` — thrown by `smsProviderFactory`, so production only. **This is the deploy-day failure if the box's env file is not migrated first — see §5.4's preamble.** |
+| `SMS_PROVIDER=auto` (#137, `observed`) | `ZodError: … "message": "SMS_PROVIDER must be one of: stub \| twilio \| bulkgate \| budgetsms. 'auto' was retired (#137) — name the provider outright; 'stub' delivers nothing and production refuses it."` — `code: "invalid_enum_value"`, raised by `envSchema`, so it fires in **every** environment and stops a local `pnpm test` the same way it stops the container |
 | `GOOGLE_MAPS_API_KEY` unset (switch on) | `No production MapsProvider is bound: no GOOGLE_MAPS_API_KEY is set` |
 | `PUSH_PROVIDER` unset | `No production PushProvider is bound: StubPushProvider delivers nothing. Set PUSH_PROVIDER=expo (#14) …` |
-| `SMS_PROVIDER=bulkgate` with its group incomplete (#137, `expected`) | `SMS_PROVIDER=bulkgate needs BULKGATE_APPLICATION_ID, BULKGATE_APPLICATION_TOKEN, BULKGATE_SENDER_ID_VALUE` — a `ZodError` from `envSchema`, so it fires in every environment, not only production |
+| `SMS_PROVIDER=bulkgate` with its group incomplete (#137, `observed`) | Three issues in one `ZodError`: `BULKGATE_APPLICATION_TOKEN is missing: BULKGATE_* must be set all together or not at all (a partial config silently binds the stub).`, the same for `BULKGATE_SENDER_ID_VALUE`, then `SMS_PROVIDER=bulkgate needs BULKGATE_APPLICATION_TOKEN, BULKGATE_SENDER_ID_VALUE.` The last issue names **only the keys actually missing** — this run set `BULKGATE_APPLICATION_ID` and omitted the other two, so it lists two, not the whole group. From `envSchema`, so every environment |
 
 And one that must **not** be a boot failure: with `STRIPE_SECRET_KEY` empty,
 the API boots and a card settlement answers **502 `payment_provider_error`**,
