@@ -65,7 +65,7 @@ schema edit and `observed` failing against the unfixed tree:
 ```
 Tests: 5 failed, 53 passed, 58 total
 ● refuses a trailing space … → https://sakta.lv  was accepted, not refused
-● refuses a tab …           → https://sakta.lv	x was accepted, not refused
+● refuses a tab …           → https://sakta.lv<TAB>x was accepted, not refused
 ● refuses a newline …       → https://sakta.lv\nx was accepted, not refused
 ● refuses whitespace in the path prefix too → https://s.lv/a b was accepted, not refused
 ● refuses a backslash by name → https://s.lv\x was accepted, not refused
@@ -75,9 +75,9 @@ After the fix: `58 passed, 58 total` (`observed`, `npx jest src/common/config/en
 
 **What new failure mode does this fix's mechanism have?** It is a *deny*-list over characters, so it is
 incomplete by construction — and it is: `\s` does not match the zero-width format characters. `observed`
-2026-09-21: `https://sakta.lv​x` parses to hostname `sakta.lvx`, boots at 10 characters, and texts a
+2026-09-21: `https://sakta.lv<U+200B>x` parses to hostname `sakta.lvx`, boots at 10 characters, and texts a
 link resolving to **a domain the operator does not own** — worse than the truncation this check covers,
-because nothing looks wrong. `­` (soft hyphen) behaves identically; `‌` and ` ` are rejected
+because nothing looks wrong. `U+00AD` (soft hyphen) behaves identically; `U+200C` and `U+00A0` are rejected
 by `new URL()` already.
 
 Not fixed here, and the reason is stated rather than hidden: the one-line form `/[\s\p{Cf}]/u` takes
@@ -204,6 +204,10 @@ The gate command, run in `wt-246-247` from a cleared `apps/dispatch/.next`:
 REDIS_TEST_URL=redis://localhost:6381 COMPOSE_PROJECT_NAME=taxi \
   pnpm turbo run typecheck lint test build --force
 ```
+
+**CI on the pushed commit `453e749`** — `observed` 2026-09-21, all five contexts green:
+`check` pass 3m30s · `codeql` pass 1m18s · `CodeQL` pass · `audit-diff` pass 7s · `ready` pass 5s.
+`gh pr view 251` then reads `state=OPEN merge=CLEAN draft=false`. The local gate and CI agree.
 
 **`env.schema.ts` is now at 496 of 500.** It was already split once for this budget
 (`sms-env.schema.ts`, #137). A split was considered and **rejected as out of scope**: no finding asked for
