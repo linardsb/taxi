@@ -62,17 +62,32 @@ needed no change.
 
 ## Validation results
 
-**The gate — `COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force`: `observed`
-GREEN, 22/22 tasks, 2m17s.**
+**The gate — `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://127.0.0.1:6381 pnpm turbo run typecheck
+lint test build --force`, `dist` and `.next` cleared first: `observed` GREEN at `5e515a1`, exit 0,
+22 successful / 22 total, 0 cached, 1m31.041s.**
+
+**RE-ANCHORED after PR #245's review round 1.** This table first recorded a run at the pre-review head and
+went stale the moment that round's fixes added tests — the exact failure mode CLAUDE.md warns about, with
+this file as one of the four surfaces a figure gets copied to. Every row below is from the single run
+named above, not carried over.
 
 | Suite | Result | |
 |---|---|---|
-| `@taxi/api` | `Test Suites: 2 skipped, 79 passed, 79 of 81` · `Tests: 39 skipped, 746 passed, 785 total` | `observed`, in the gate |
-| `@taxi/shared` | 27 files, 251 passed | `observed` |
+| `@taxi/api` | `Test Suites: 81 passed, 81 total` · `Tests: 786 passed, 786 total` | `observed`, in the gate |
+| `@taxi/shared` | 27 files, 255 passed | `observed` |
 | `@taxi/dispatch` | 29 files, 268 passed | `observed` |
+| `@taxi/driver` | 44 suites, 250 passed | `observed` |
+| `@taxi/rider` | 30 suites, 145 passed | `observed` |
+| `@taxi/db` | 3 files, 17 passed | `observed` |
 
-The 39 skipped are the documented Redis-gated set (no `REDIS_TEST_URL`); the count matches CLAUDE.md's
-re-observed 39 exactly. **`tracking.integration.spec.ts` is NOT one of them** — plain `describe`, no
+**Nothing is skipped in this run, and that is a change in METHOD, not in the suite.** `REDIS_TEST_URL` is
+set here to match `REDIS_PORT=6381`, as CLAUDE.md directs and as CI does, so the documented Redis-gated
+set runs instead of reporting as 39 skipped across 4 files (2 of which hold nothing else and so showed as
+skipped suites). The earlier figures on this PR — `2 skipped, 79 passed, 79 of 81` and `39 skipped, 746
+passed, 785 total` — were a run WITHOUT it, and reconcile exactly: 746 + 39 = 785, and 785 + 1 for the
+case round 1 added at `ride-notifications.service.spec.ts` = 786.
+
+**`tracking.integration.spec.ts` is not in the gated set either way** — plain `describe`, no
 `REDIS_TEST_URL` guard — so the `{16}` token-shape assertion executed against real Postgres. Re-run alone
 to be sure: `Test Suites: 1 passed · Tests: 13 passed` (`observed`).
 
@@ -80,12 +95,17 @@ to be sure: `Test Suites: 1 passed · Tests: 13 passed` (`observed`).
 
 1. Restoring `Sekojiet līdzi: ` to LV `driver_assigned` → **1 failure**, and it is the **length**
    assertion that fires first: `expected … to have a length of 69 but got 85`. Only the LV row reddens.
-2. `TRACKING_LINK_HOST_MAX_CHARS` 10 → 11 → **all 7 assertions fail, every one on length**: LV 69→70,
-   RU 70→71, EN 68→69, and the three `booking_confirmed_phone` rows 59/55/50 → 60/56/51. No segment
-   assertion fires at all, because `toHaveLength` throws first in every case — and that is the point.
+2. `TRACKING_LINK_HOST_MAX_CHARS` 10 → 11 → **all 8 assertions fail, every one on length**: LV 69→70,
+   RU 70→71, EN 68→69, the three `booking_confirmed_phone` rows 59/55/50 → 60/56/51, the zero-spare
+   RU case, and the over-ceiling negative round 1 added (71→72). No segment assertion fires at all,
+   because `toHaveLength` throws first in every case — and that is the point.
    **At host 11, 5 of the 6 bodies still bill one segment** (`observed`, re-run through `dist`: only RU
    `driver_assigned` at 71 tips to 2), so a segment-only test would have caught one row out of six and
    let the budget be widened on the other five. Both reverted; suite green after.
+
+   **Was 7 before PR #245's review round 1**, which added the file's only negative (F9). Both halves were
+   re-run at `5e515a1` rather than carried over: half 1 is still exactly **1 failure** at `length of 69
+   but got 85`, and half 2 is now **8**.
 
 ## Level 4 — manual validation
 

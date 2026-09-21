@@ -939,8 +939,11 @@ the AC is "nothing live and wrong survives", not "the grep prints nothing".
       had not listed — see that task.
 - [x] Production boot refuses a `PUBLIC_TRACKING_BASE_URL` host over 10 characters, with a message naming
       the reason; dev and CI on `localhost:3000` are unaffected.
-- [x] `pnpm turbo run typecheck lint test build --force` green. `observed`: 22/22 tasks, 2m17s;
-      `@taxi/api` 39 skipped, 746 passed, 785 total.
+- [x] `pnpm turbo run typecheck lint test build --force` green. **Re-observed at `5e515a1`** after PR
+      #245's review round 1 added tests, which staled the first figures here: 22 successful / 22 total,
+      0 cached, exit 0, 1m31.041s; `@taxi/api` 786 passed, 786 total, nothing skipped (this run sets
+      `REDIS_TEST_URL`, as CI does — the earlier `39 skipped, 746 passed, 785 total` was a run without it,
+      and 746 + 39 + 1 new case = 786).
 - [ ] Level 4 steps 1–3 performed and recorded. **PARTIAL — step 3 only.** It ran by `curl` against
       `next dev` rather than a browser: `/r/<token>` returns 200 with an empty `redirect_url` (a rewrite,
       not a redirect), renders Russian, and `/t/<token>/data` resolves from that URL. **Steps 1–2 were not
@@ -1102,8 +1105,18 @@ That ordering is the difference between these figures and #107's.
   a rewrite: restore the scheme in `packages/shared/src/tracking-link.ts` (`trackingLinkHost` stops
   stripping it, or the template re-adds it), drop the two `driver_assigned` rows from
   `sms-budget.test.ts`'s `EXPECTED_LENGTH`, and amend AC #1. `booking_confirmed_phone` stays 1 segment in
-  all three languages with the scheme (`derived`, at the real 8-char host: LV 57 + 8 = 65, RU 53 + 8 = 61,
-  both ≤ 70), so the saving halves to 129 segments/mo rather than vanishing.
+  all three languages with the scheme (`observed` through the built `dist` at the real 8-char host: LV
+  57 + 8 = 65, RU 53 + 8 = 61, **EN 48 + 8 = 56** — all three, not the two this line used to name — all
+  ≤ 70), so the saving drops to **129 segments/mo, worst case**, rather than vanishing.
+
+  The arithmetic, since this line asserted the figure without it (PR #245 F10): as shipped the saving is
+  2 linked templates × 1 segment × **129 phone rides/mo**, = 258; with the scheme back
+  `booking_confirmed_phone` keeps its saving on all 129 rides and `driver_assigned` loses its own (LV 75
+  / 2 seg, RU 76 / 2 seg, `observed`), so 129 × 1 + 129 × 0 = 129. **Worst case, not the only case**: EN
+  `driver_assigned` renders 74 characters with the scheme and stays 1 segment on GSM-7's 160 septets, so
+  the true figure sits between 129 and 258 on a language mix nothing here predicts. The 129 rides/mo is
+  `derived` in research §4.3 from a 30% phone-booked share **which §4.3 itself labels evidence-free**;
+  everything above inherits that.
 
   **What to run before merging.** The `curl` pair against a verified number; check (a) tappable, (b) glyphs
   not `?????`, (c) `num_segments` = 1 — and cross-check (c) against `smsSegments()`, which now says 1 for
