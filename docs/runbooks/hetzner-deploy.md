@@ -170,6 +170,12 @@ itself** — not a separate tracking host. `sakta.lv` is 8 and fits;
 dispatch app's domain with this in mind before #18/#19 deploy, and keep
 `CORS_ORIGINS` on the same origin. §3's row carries the arithmetic.
 
+**Since #246 the length is no longer the only rule** — the scheme must be a
+lowercase `http://`/`https://`, and the value must carry no `@`, `?`, `#`,
+`\`, whitespace or control character. Length alone never was a shape filter;
+it only hid how little it caught, because a short domain leaves room for the
+junk. §3's row lists all four rules.
+
 ### 2.3 TLS — Origin CA certificate, mode Full (strict)
 
 Cloudflare → SSL/TLS:
@@ -219,7 +225,7 @@ compose hostnames, so the database password lives in one place.
 | `JWT_EXPIRES_IN` | `30d` | Schema default; listed so it is a decision, not an accident. |
 | `DEFAULT_CITY_ID` | `00000000-0000-4000-8000-000000000001` | Rīga, as seeded. Dispatchers join `dispatch:<this>`. |
 | `CORS_ORIGINS` | `https://<dispatch app origin>` | Single source of truth for REST **and** the Socket.IO handshake. A missing origin fails the handshake in a way that looks like an auth error. Native apps do not send an Origin; the dispatch app's browser does. |
-| `PUBLIC_TRACKING_BASE_URL` | `https://sakta.lv` | Where SMS tracking links point. **Production refuses localhost, and refuses a host over 10 characters** (#136). The host is a term in the rider SMS's 70-character UCS-2 segment budget and the binding template (RU `driver_assigned`) has **zero spare at 10**, so `saktacab.lv` (11) would double the SMS bill on every phone-booked ride. Scheme and any trailing slash do not count — `https://sakta.lv/` is 8. 404s until #18/#19. |
+| `PUBLIC_TRACKING_BASE_URL` | `https://sakta.lv` | Where SMS tracking links point. **Production applies four rules** (#136, #246), and a value must clear all of them. (1) Not a localhost origin. (2) **Lowercase `http://` or `https://`** — the link builder strips exactly that spelling, so `HTTPS://` or `ftp://` is carried into the SMS as part of the host. (3) **No `@`, `?`, `#`, `\`, whitespace or control character** anywhere in what reaches the SMS — each breaks the link differently and the refusal names which. (4) **At most 10 characters of host**, measured after the scheme is stripped. The host is a term in the rider SMS's 70-character UCS-2 segment budget and the binding template (RU `driver_assigned`) has **zero spare at 10**, so `saktacab.lv` (11) would double the SMS bill on every phone-booked ride. A trailing slash does not count — `https://sakta.lv/` is 8 — and the scheme is not counted either, but rule (2) means its *spelling* is still checked. A path prefix (`https://sakta.lv/app`) is supported and **does** count against the 10. 404s until #18/#19. |
 | `PUSH_PROVIDER` | `expo` | **Required in production** (#14): the push factory refuses to boot on the stub, which delivers nothing — a driver whose app was force-quit would never get the "you've gone offline" nudge. Expo's push API needs no credential, so this value is the whole switch. |
 | `EXPO_PUSH_ACCESS_TOKEN` | empty | Optional: Expo's "enhanced push security" token, sent as a Bearer on every push. Empty reads as unset. |
 | `ALLOW_STUB_MAPS_PROVIDER` | `true` | **The one documented relaxation** (#13). Quotes are straight-line × 1.35 and there is no polyline until #134 binds OSRM and deletes this variable. Safe only while **the pilot is closed**, so no rider is quoted at all — that is the load-bearing condition, and the due date. The empty `STRIPE_SECRET_KEY` covers the **card rail only**; a cash ride quoted straight-line is real money at the kerb. Unset this before the first real rider, whether or not #134 has landed, and let the deploy fail. Literal `true`/`false` only. |
@@ -262,7 +268,11 @@ STRIPE_WEBHOOK_SECRET=
 
 Every one of these gates was exercised against the built image on a laptop
 before a server existed (§8.3) — a wrong value fails the container at boot with
-a message naming the variable, and `up -d --wait` fails the deploy. That second
+a message naming the variable, and `up -d --wait` fails the deploy. **Three
+exceptions, added by #246 and not yet booted against an image**: the scheme
+rule, the breaker-character rule and the whitespace rule on
+`PUBLIC_TRACKING_BASE_URL`. They are `derived` from `envSchema` and pinned by
+its spec; §8.3's table marks the same three and says how to promote them. That second
 half is `observed` too, not inferred: 2026-09-03, docker 29.2.1 / compose 5.1.0,
 this overlay and an image built from the round-2 head, `up -d --wait
 --wait-timeout 45 api` on this table's values — **exit 0 in 12 s**, api healthy;
@@ -816,6 +826,9 @@ the provider factory, during `InstanceLoader`.
 | `JWT_SECRET=dev-only-change-me` | `JWT_SECRET is the value committed to .env.example and is public` |
 | `ALLOW_STUB_MAPS_PROVIDER` unset | `No production MapsProvider is bound: StubMapsProvider prices rides off straight-line distance … (set ALLOW_STUB_MAPS_PROVIDER=true …)` |
 | `PUBLIC_TRACKING_BASE_URL=http://localhost:3000` | `PUBLIC_TRACKING_BASE_URL is a localhost origin` |
+| `PUBLIC_TRACKING_BASE_URL=https://u@sakta.lv` (#246, **`derived`** — see the note under this table) | `PUBLIC_TRACKING_BASE_URL would put "u@sakta.lv" in the rider SMS (#136), and the "@" breaks the link: everything before it is read as userinfo, so the link resolves to a different host than the one it reads as. Configure a bare origin, optionally with a path prefix: https://<domain> or https://<domain>/<prefix>.` |
+| `PUBLIC_TRACKING_BASE_URL=https://sakta.lv ` — one trailing space (#246, **`derived`**) | `PUBLIC_TRACKING_BASE_URL would put "sakta.lv " in the rider SMS (#136), and every SMS linkifier ends the link there: the rider taps a truncated URL and the token never travels. Configure a bare origin, optionally with a path prefix: https://<domain> or https://<domain>/<prefix>.` — the most ordinary way this is hit, because §3 has you hand-write the file |
+| `PUBLIC_TRACKING_BASE_URL=HTTPS://SAKTA.LV` (#246, **`derived`**) | `PUBLIC_TRACKING_BASE_URL must begin with a lowercase http:// or https:// (got "HTTPS://SAKTA.LV"). The SMS link builder strips exactly that prefix, so any other spelling is carried into the rider SMS as part of the host: "HTTPS://SAKTA.LV".` — plus the length refusal, since the unstripped scheme counts as 16 characters of "host". Both issues in one boot |
 | `PUBLIC_TRACKING_BASE_URL=https://saktacab.lv` (#136) | `PUBLIC_TRACKING_BASE_URL's host is 11 characters (saktacab.lv); the limit is 10. The linked rider SMS must fit one billed UCS-2 segment (#136) and the Russian driver_assigned template has zero spare, so a longer host doubles the SMS bill on every phone-booked ride. Use a shorter domain — sakta.lv is 8.` — from `envSchema`'s production block, so production only; dev and CI keep booting on `localhost:3000` (14) |
 | two of three `TWILIO_*` | `TWILIO_FROM_NUMBER is missing: TWILIO_* must be set all together or not at all` |
 | `SMS_PROVIDER=stub`, or **no `SMS_PROVIDER` line at all** (#137, `observed`) | `Error: No production SmsProvider is bound: SMS_PROVIDER is stub (or unset, which defaults to stub), and StubSmsProvider delivers nothing and logs OTP codes in full. Set SMS_PROVIDER to twilio, bulkgate or budgetsms together with that kind's whole credential group — TWILIO_* (#85), BULKGATE_* or BUDGETSMS_* (#137). A complete credential group does NOT bind on its own. Then run with NODE_ENV=production.` — thrown by `smsProviderFactory`, so production only. **This is the deploy-day failure if the box's env file is not migrated first — see §5.4's preamble.** |
@@ -823,6 +836,20 @@ the provider factory, during `InstanceLoader`.
 | `GOOGLE_MAPS_API_KEY` unset (switch on) | `No production MapsProvider is bound: no GOOGLE_MAPS_API_KEY is set` |
 | `PUSH_PROVIDER` unset | `No production PushProvider is bound: StubPushProvider delivers nothing. Set PUSH_PROVIDER=expo (#14) …` |
 | `SMS_PROVIDER=bulkgate` with its group incomplete (#137, `observed`) | Three issues in one `ZodError`: `BULKGATE_APPLICATION_TOKEN is missing: BULKGATE_* must be set all together or not at all (a partial config silently binds the stub).`, the same for `BULKGATE_SENDER_ID_VALUE`, then `SMS_PROVIDER=bulkgate needs BULKGATE_APPLICATION_TOKEN, BULKGATE_SENDER_ID_VALUE.` The last issue names **only the keys actually missing** — this run set `BULKGATE_APPLICATION_ID` and omitted the other two, so it lists two, not the whole group. From `envSchema`, so every environment |
+
+**The three `#246` rows are `derived`, not `observed`, and that is the whole
+difference from every other row here.** Their text is the exact string
+`envSchema` emits — read out of the compiled
+`services/api/dist/common/config/env.schema.js` on 2026-09-21 by parsing each
+value under `NODE_ENV=production`, and pinned by
+`services/api/src/common/config/env.schema.spec.ts` — but **no container was
+booted on them**. The rows above them were copied from `docker logs`. These
+three say what the schema returns; whoever next boots the image should run
+them and promote the rows to `observed`, exactly as the #137 rows were
+promoted on 2026-09-21. The refusal reaches `docker logs` by the same
+`ConfigModule.forRoot` `validate` path as the localhost and length rows
+directly below, which *were* observed against the image — that is the reason
+to expect it, not evidence that it happened.
 
 And one that must **not** be a boot failure: with `STRIPE_SECRET_KEY` empty,
 the API boots and a card settlement answers **502 `payment_provider_error`**,

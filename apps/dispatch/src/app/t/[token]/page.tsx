@@ -38,7 +38,25 @@ export async function generateMetadata({
   params: Params;
   searchParams: SearchParams;
 }): Promise<Metadata> {
-  return { title: formatMessage(langFrom(await searchParams), 'page.title') };
+  return {
+    title: formatMessage(langFrom(await searchParams), 'page.title'),
+    /**
+     * NEVER INDEXED (#247). The token in the path is the whole authorization —
+     * no login, and the page renders the driver's first name, the vehicle
+     * plate and a live position. An indexed URL is a leaked credential that
+     * anyone can search for, and #136 took this surface from one shape to
+     * three (`/t/`, `/r/`, `/e/`), all serving this page.
+     *
+     * `follow: false` as well as `index: false`: the page links out to `tel:`
+     * and to its own other languages, and there is no reason to hand a crawler
+     * the second and third spelling of a live token.
+     *
+     * This is the after-the-fetch half. `app/robots.ts` is the before-the-
+     * fetch half, and neither replaces the other — a crawler must load the
+     * page, token and all, to read this tag.
+     */
+    robots: { index: false, follow: false },
+  };
 }
 
 export default async function TrackingPage({
