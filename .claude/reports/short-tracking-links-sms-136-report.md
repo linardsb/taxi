@@ -130,9 +130,26 @@ assumption A2**, recorded in the plan's AMENDMENTS with the exact `curl` pair an
 one deviation that changes what ships if it goes the other way, and the change is one line: if a bare
 `sakta.lv/r/…` does not linkify, restore the scheme in `trackingLinkHost`/`trackingLink`, drop the two
 `driver_assigned` rows from `sms-budget.test.ts`'s `EXPECTED_LENGTH`, and amend AC #1.
-`booking_confirmed_phone` stays 1 segment in all three languages with the scheme (`derived`, at the real
-8-char host: LV 57+8 = 65, RU 53+8 = 61, EN 48+8 = 56, all ≤ 70), so the saving halves to 129 segments/mo
-rather than vanishing. **Linards owns closing this before merge.**
+`booking_confirmed_phone` stays 1 segment in all three languages with the scheme (`observed` through the
+built `dist` at the real 8-char host: LV 57+8 = 65, RU 53+8 = 61, EN 48+8 = 56, all ≤ 70), so the saving
+does not vanish — it drops to **129 segments/mo, worst case**. The arithmetic, since none of it was shown
+before (PR #245 F10):
+
+- **As shipped, 258/mo.** Two linked templates × 1 segment saved each × **129 phone rides/mo**. The 129 is
+  `derived` in research §4.3 as 30% of 430 rides/mo, and **§4.3 labels that 30% share as having no
+  evidence** — it is a "tracked, no target" metric. The 430 is itself the PRD's month-3 success condition,
+  i.e. the busiest month the pilot aims at, not its average. Every figure in this bullet inherits both.
+- **With the scheme restored, 129/mo.** `booking_confirmed_phone` keeps its saving on all 129 rides;
+  `driver_assigned` loses its own, because it goes back over 70 (`observed`, same host: LV 75 / 2 seg,
+  RU 76 / 2 seg). So 129 × 1 + 129 × 0 = 129.
+- **Why worst case and not the only case.** EN `driver_assigned` renders 74 characters *with* the scheme
+  and stays **1 segment** — GSM-7 has 160 septets, not 70 — so every EN phone ride keeps its second
+  saving too. 129 assumes no EN riders; the ceiling is 258 and the true figure sits between, on a
+  language mix nothing here predicts.
+- **It equals the ride count by construction**, not by transcription: one segment saved per ride on one
+  surviving template.
+
+**Linards owns closing this before merge.**
 
 **D2 — `trackingLinkHost()` is a new exported function the plan did not specify.** The plan had the boot
 gate re-implement the scheme/slash stripping with its own `.replace` pair. Two regexes that must agree is

@@ -13,11 +13,27 @@
  * are UCS-2 by construction — their fixed text carries diacritics and
  * Cyrillic, so no rider input can make them cheaper or dearer per character.
  *
- * NOT MODELLED: a surrogate pair straddling a concatenated-segment boundary.
- * The standard handles it by shortening that segment; this counts UTF-16 code
- * units flat, which is exact for the single-segment case that bills here and
- * off by at most one segment on a multi-segment body containing non-BMP
- * characters. No catalog string contains one.
+ * NOT MODELLED, and there are TWO of these, one per encoding:
+ *
+ * - UCS-2: a surrogate pair straddling a concatenated-segment boundary. The
+ *   standard handles it by shortening that segment; this counts UTF-16 code
+ *   units flat. No catalog string contains a non-BMP character.
+ * - GSM-7: the same rule for an escaped character. ESC + char is two septets
+ *   and §6.2.1.1 forbids splitting them, so the segment before the break holds
+ *   152 septets rather than 153 and the pair moves whole into the next one.
+ *   This counts septets flat.
+ *
+ * Both are exact for the single-segment case that bills here, and off by at
+ * most one segment on a multi-segment body. The GSM-7 one is the likelier to
+ * bite if the bounds ever move, because `~` — an extension-table character,
+ * hence two septets — is in all three `driver_assigned` templates, where a
+ * non-BMP name is hypothetical.
+ *
+ * Neither is reachable today, because nothing here reaches a CONCATENATED
+ * GSM-7 body in the first place. EN is the only GSM-7 template that carries a
+ * link, and `observed` with every term at its bound it renders 69 septets at
+ * the enforced production host and 73 at the 14-character dev default —
+ * against the 160-septet single-segment limit either way.
  */
 
 /**

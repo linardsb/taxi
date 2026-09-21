@@ -56,11 +56,22 @@ describe('the SMS link shapes the tracking rewrites serve', () => {
     );
 
     expect(table.filter((r) => sourceMatcher(r.source).test(path))).toEqual([]);
-    // What makes the absence of a rewrite correct rather than an omission.
-    expect(
-      existsSync(join(__dirname, '[token]', 'page.tsx')),
-      'apps/dispatch/src/app/t/[token]/page.tsx',
-    ).toBe(true);
+    // What makes the absence of a rewrite correct rather than an omission: a
+    // real route directory named by the lv path itself.
+    //
+    // The path is BUILT from `TRACKING_PATH_BY_LANGUAGE.lv`, not hardcoded.
+    // This was `join(__dirname, '[token]', 'page.tsx')`, and `__dirname` is
+    // already `…/app/t` — so `t` appeared on both sides and the check could
+    // not fail (PR #245 F7). Going up one level and back down through the
+    // constant is what makes changing `lv` redden this file.
+    const lvRoute = join(
+      __dirname,
+      '..',
+      TRACKING_PATH_BY_LANGUAGE.lv,
+      '[token]',
+      'page.tsx',
+    );
+    expect(existsSync(lvRoute), lvRoute).toBe(true);
   });
 
   it('carries no rewrite for a language the enum does not list (failure)', async () => {
@@ -83,10 +94,11 @@ describe('the SMS link shapes the tracking rewrites serve', () => {
 
     for (const { source } of table) {
       // `/x/:token` — the budget's path term is exactly 3 characters.
+      // Only the REWRITE SOURCES are this file's business; that every value in
+      // `TRACKING_PATH_BY_LANGUAGE` is one character is asserted where the
+      // constant lives (`packages/shared/tests/tracking-link.test.ts`), and
+      // was re-asserted here for no added coverage.
       expect(source, source).toMatch(/^\/[a-z]\/:token$/);
     }
-    expect(Object.values(TRACKING_PATH_BY_LANGUAGE).every((p) => p.length === 1)).toBe(
-      true,
-    );
   });
 });

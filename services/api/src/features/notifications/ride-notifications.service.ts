@@ -181,6 +181,24 @@ export class RideNotificationsService {
    * template past one segment — so this firing in production means the
    * derivation in `tracking-link.ts` is wrong, which is what makes it worth an
    * alarm. It never gates the send: the rider gets their message either way.
+   *
+   * THAT GUARANTEE IS PRODUCTION-ONLY, and the condition is not a technicality
+   * (PR #245 F5). Three of the four bounds hold everywhere, but the host gate
+   * is enforced only under `NODE_ENV === 'production'`; dev and CI default to
+   * `http://localhost:3000`, a 14-character host — four OVER the ceiling the
+   * derivation solves for.
+   *
+   * `observed` at that host, rendered through the built `dist`, every other
+   * term at its bound: LV `driver_assigned` 73 characters / 2 segments, RU 74
+   * / 2, EN 72 / 1 (GSM-7, so it has 160 septets, not 70 code units). And it
+   * needs no pathology to get there — a driver called *Aleksandrs* (10) in
+   * plate `LV-12345` (8) at a 5-minute ETA already renders RU at 71 / 2.
+   *
+   * So LOCALLY this warn is a backstop and reaching it says nothing about the
+   * derivation; only in production is it the alarm described above.
+   * `ride-notifications.service.spec.ts` pins the production case by
+   * overriding the host to the enforced ceiling, because this file's default
+   * cannot.
    */
   private async sendSms(
     rideId: string,

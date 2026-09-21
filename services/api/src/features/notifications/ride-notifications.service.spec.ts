@@ -1,5 +1,12 @@
 import { Logger } from '@nestjs/common';
-import type { Ride, RideStatus, SmsProvider } from '@taxi/shared';
+import {
+  SMS_DRIVER_NAME_MAX_CHARS,
+  SMS_ETA_MAX_DISPLAY_MINUTES,
+  TRACKING_LINK_HOST_MAX_CHARS,
+  type Ride,
+  type RideStatus,
+  type SmsProvider,
+} from '@taxi/shared';
 import type { Env } from '../../common/config/env.schema';
 import type { DriverLocationStore } from '../drivers';
 import type { RealtimeService } from '../realtime';
@@ -76,6 +83,12 @@ function build(
     plate?: string;
     /** The raw `display_name`; `smsDriverName` bounds it (#136). */
     driverName?: string;
+    /**
+     * Overrides `BASE_URL` for ONE case. The file's default stays the dev
+     * origin `env.schema.spec.ts:106` deliberately documents — moving it would
+     * make every other case here stop representing what developers run.
+     */
+    baseUrl?: string;
   } = {},
 ) {
   const calls: string[] = [];
@@ -137,7 +150,7 @@ function build(
   } as unknown as RealtimeService;
 
   const env = {
-    PUBLIC_TRACKING_BASE_URL: BASE_URL,
+    PUBLIC_TRACKING_BASE_URL: options.baseUrl ?? BASE_URL,
     DEFAULT_CITY_ID: '00000000-0000-4000-8000-000000000001',
   } as Env;
 
@@ -371,13 +384,57 @@ describe('RideNotificationsService.onStatus', () => {
     warned.mockRestore();
   });
 
-  it('a budgeted body emits no multi-segment warn (expected — the assertion holds)', async () => {
+  it('a normal body emits no multi-segment warn (expected)', async () => {
+    // A SAMPLE, not the bound — `Jānis` (5) and `AB-1234` (7) against a
+    // 14-character dev host render 65 characters, nine inside the ceiling.
+    // The at-the-bound case is the next one; the exhaustive proof over all
+    // inputs is `packages/shared/tests/sms-budget.test.ts`.
     const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const { service, sent } = build({ language: 'ru' });
 
     await service.onStatus(transitioned('accepted'), 'offered');
 
     expect(sent).toHaveLength(1);
+    expect(warned).not.toHaveBeenCalled();
+    warned.mockRestore();
+  });
+
+  it('holds at the ENFORCED host ceiling with every term maxed (edge)', async () => {
+    // WHY THIS CASE EXISTS (PR #245 F5). The one-segment guarantee is
+    // unconditional in prose but the host bound is enforced only under
+    // `NODE_ENV === 'production'`; this file's `BASE_URL` is the dev default,
+    // a 14-character host — FOUR over the ceiling the derivation assumes. At
+    // that host the guarantee is genuinely false: `reproduced` in the review,
+    // LV 73 / RU 74 characters, 2 segments each, with no pathological input at
+    // all (a 10-character name and an 8-character plate already tip RU).
+    //
+    // So the case above could not be the at-the-bound test it was named for.
+    // This one overrides the host to the value production actually permits and
+    // maxes every other term: name at `SMS_DRIVER_NAME_MAX_CHARS` (10 — one
+    // more and `smsDriverName` abbreviates to `<initial>.`, which is SHORTER),
+    // plate at `vehicleSchema`'s `.max(10)`, and a driver ~111 km north so
+    // `estimateEtaMinutes` overshoots and the send path clamps the display to
+    // `SMS_ETA_MAX_DISPLAY_MINUTES`. RU is the binding language.
+    const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service, sent } = build({
+      language: 'ru',
+      baseUrl: `https://${'x'.repeat(TRACKING_LINK_HOST_MAX_CHARS)}`,
+      driverName: 'A'.repeat(SMS_DRIVER_NAME_MAX_CHARS),
+      plate: 'A'.repeat(10),
+      position: { lat: PICKUP.lat + 1, lng: PICKUP.lng },
+    });
+
+    await service.onStatus(transitioned('accepted'), 'offered');
+
+    expect(sent).toHaveLength(1);
+    const body = sent[0]!.body;
+    // The clamp fired — otherwise the ETA term is not at its bound and this
+    // case is another sample.
+    expect(body).toContain(`${SMS_ETA_MAX_DISPLAY_MINUTES}`);
+    // 70 is the UCS-2 single-segment ceiling, and the RU row has zero spare at
+    // it by construction. Pinning the LENGTH and not just the warn's absence
+    // means widening the host budget reddens here rather than sliding.
+    expect(body).toHaveLength(70);
     expect(warned).not.toHaveBeenCalled();
     warned.mockRestore();
   });
