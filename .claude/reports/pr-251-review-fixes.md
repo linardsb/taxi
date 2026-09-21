@@ -205,9 +205,20 @@ REDIS_TEST_URL=redis://localhost:6381 COMPOSE_PROJECT_NAME=taxi \
   pnpm turbo run typecheck lint test build --force
 ```
 
-**CI on the pushed commit `453e749`** — `observed` 2026-09-21, all five contexts green:
-`check` pass 3m30s · `codeql` pass 1m18s · `CodeQL` pass · `audit-diff` pass 7s · `ready` pass 5s.
-`gh pr view 251` then reads `state=OPEN merge=CLEAN draft=false`. The local gate and CI agree.
+**CI is green on every commit this pass pushed** — `observed` 2026-09-21, all five contexts, twice.
+Round 1's fix commit `453e749`: `check` 3m30s · `codeql` 1m18s · `CodeQL` · `audit-diff` 7s · `ready` 5s.
+The docs-only follow-up that corrected this report: `check` 3m46s · `codeql` 1m2s · `CodeQL` ·
+`audit-diff` 9s · `ready` 4s. `gh pr view 251` reads `merge=CLEAN` after both. Written head-independently
+on purpose: a later commit re-runs CI and would otherwise strand a sha here (the #212 defect).
+
+**A note on this report's own repair.** Its first version reached disk carrying *literal* U+200B, U+00AD,
+U+200C, U+00A0 and a tab, inside the paragraph explaining why invisible characters are the bug — the
+sentence rendered as "sakta.lvx parses to hostname sakta.lvx", a tautology that hid its own evidence.
+`fbee1f5`'s message attributes that to the Write tool interpreting the escapes. That attribution was
+asserted before it was checked; it has since been `observed` — writing ``` `\u200b` ``` through the Write
+tool yields byte `\xe2\x80\x8b` on disk, not the six-character escape. The shipped source was checked for
+the same hazard and is clean: `env.schema.ts:443` carries the escape sequence `'\u007f'`, not the
+character.
 
 **`env.schema.ts` is now at 496 of 500.** It was already split once for this budget
 (`sms-env.schema.ts`, #137). A split was considered and **rejected as out of scope**: no finding asked for
