@@ -19,7 +19,8 @@ that a deferred finding is "logged as an issue". Here those are lines 48, 138 an
 
 ## The same drift in taxi (observed 2026-09-21)
 
-- Labels on open tickets: `review-residue` 3, `plan-follow-up` 3, `post-demo` 2, `epic` 1. Closed with
+- Labels over all 24 open tickets: `review-residue` 3, `plan-follow-up` 3, `post-demo` 2, `epic` 1 — 8 tickets
+  carry any label at all, and #137 carries two of these four. Closed with
   `closed:>=2026-09-07`: 37, of which `review-residue` 5 and `plan-follow-up` 3. The label names admit the
   origin. `observed` 2026-09-21 (`gh issue list --state open`; `gh issue list --state closed --search
   "closed:>=2026-09-07" --limit 100`).
