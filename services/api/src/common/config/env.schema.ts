@@ -49,6 +49,23 @@ const MIN_PRODUCTION_SECRET_LENGTH = 32;
 /** The two independent secrets, checked identically at boot. */
 const SECRET_KEYS = ['JWT_SECRET', 'OTP_PEPPER'] as const;
 
+/**
+ * Characters that make a `PUBLIC_TRACKING_BASE_URL` un-linkable once
+ * `trackingLink` appends `/<lang>/<token>` to it (#246), each with the reason
+ * it does — the boot gate quotes the matching one rather than saying
+ * "malformed".
+ *
+ * A `/` IS DELIBERATELY ABSENT. A path prefix is a supported deployment
+ * (`sakta.lv/app`); `trackingLinkHost` preserves it on purpose so the rider's
+ * SMS budget pays for it, and its test pins that. This set is the shapes that
+ * break the link, not the shapes that cost characters.
+ */
+const TRACKING_BASE_URL_BREAKERS: Readonly<Record<string, string>> = {
+  '@': 'everything before it is read as userinfo, so the link resolves to a different host than the one it reads as',
+  '?': 'the /<lang>/<token> path lands inside the query string',
+  '#': 'the /<lang>/<token> path lands inside the fragment and never reaches the server at all',
+};
+
 export const envSchema = z
   .object({
     NODE_ENV: z
@@ -313,6 +330,11 @@ export const envSchema = z
      * SMS's 70-character UCS-2 segment budget (#136) and the binding template
      * has zero spare, so `saktacab.lv` (11) would silently double the bill on
      * every phone-booked ride. `sakta.lv` is 8.
+     *
+     * ITS SHAPE IS CHECKED THERE TOO (#246): a bare origin, spelled with a
+     * lowercase scheme, optionally with a path prefix. `z.string().url()`
+     * accepts far more than that — userinfo, a query, a fragment, `FTP://` —
+     * and each of those reaches the rider as a link that does not resolve.
      */
     PUBLIC_TRACKING_BASE_URL: z.string().url().default('http://localhost:3000'),
     CORS_ORIGINS: z
@@ -377,6 +399,54 @@ export const envSchema = z
     // characters, and must keep booting. `trackingLinkHost` is the link
     // builder's own function, so this measures exactly what the SMS carries.
     const smsHost = trackingLinkHost(env.PUBLIC_TRACKING_BASE_URL);
+
+    // SHAPE BEFORE LENGTH (#246). The two checks below run first because the
+    // character count under them is only meaningful once the string it counts
+    // is a host: `u:p@sakta.lv` is refused today for being 12 characters, as
+    // if the userinfo were domain.
+    //
+    // Length is not a filter for shape, it only hides how little it catches.
+    // `observed` 2026-09-21 at 487570f, through this schema: `https://u@s.lv`,
+    // `https://s.lv?x`, `https://s.lv#f` and `ftp://s.lv` all BOOT — 6, 6, 6
+    // and 10 characters against a limit of 10 — and each texts a rider a link
+    // that does not resolve. `https://sakta.lv#f` is the same escape at the
+    // ceiling exactly (10), which is how PR #245's review found it.
+    //
+    // Neither check early-returns: a value can be both malformed and too long
+    // (`https://sakta.lv/app?q=1`), and one boot should name both.
+    //
+    // NOT production-only by necessity — nothing in dev legitimately carries
+    // these either — but placed inside the gate so all three rules on this one
+    // variable read as one block.
+    const breaker = Object.keys(TRACKING_BASE_URL_BREAKERS).find((c) =>
+      smsHost.includes(c),
+    );
+    if (breaker !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBLIC_TRACKING_BASE_URL'],
+        message: `PUBLIC_TRACKING_BASE_URL would put "${smsHost}" in the rider SMS (#136), and the "${breaker}" breaks the link: ${TRACKING_BASE_URL_BREAKERS[breaker]}. Configure a bare origin, optionally with a path prefix: https://<domain> or https://<domain>/<prefix>.`,
+      });
+    }
+
+    // THE SCHEME, and the second decision #246 asks for: no `i` flag.
+    // `trackingLinkHost` strips `^https?://` case-sensitively, so `HTTPS://`
+    // or `ftp://` survives into the SMS as part of the "host". Making that
+    // strip case-insensitive would fix one operator typo by changing what a
+    // pure function emits on the rider SMS send path, and would flip an
+    // existing boot verdict (`HTTPS://SAKTA.LV`, refused at 16 characters
+    // today, would become an 8-character accept) as a side effect of a regex
+    // flag. Refusing here costs the operator one lowercase edit, keeps
+    // `@taxi/shared` untouched, and changes no verdict — only the reason
+    // `HTTPS://SAKTA.LV` is already given.
+    if (!/^https?:\/\//.test(env.PUBLIC_TRACKING_BASE_URL)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBLIC_TRACKING_BASE_URL'],
+        message: `PUBLIC_TRACKING_BASE_URL must begin with a lowercase http:// or https:// (got "${env.PUBLIC_TRACKING_BASE_URL}"). The SMS link builder strips exactly that prefix, so any other spelling is carried into the rider SMS as part of the host: "${smsHost}".`,
+      });
+    }
+
     if (smsHost.length > TRACKING_LINK_HOST_MAX_CHARS) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
