@@ -72,9 +72,10 @@
  * RUN CEILING: OUR OWN limiter is not the ceiling — nothing here touches
  * `OTP_MAX_REQUESTS_PER_HOUR`, because no OTP is requested; the script calls
  * `send()` with a fixed illustrative code. The VENDORS' throttles are a
- * separate question and are NOT SOURCED here: round 1 fires 27 sends back to
- * back across three accounts, and a vendor 429 mid-round would arrive as an
- * `ERR` row indistinguishable from a delivery failure in row 8. Otherwise the
+ * separate question and are NOT SOURCED here: round 1 fires 9 sends per vendor
+ * back to back — 27 across the three accounts — and a vendor 429 mid-round
+ * would arrive as an `ERR` row indistinguishable from a delivery failure in
+ * row 8. (9 is the number any one vendor's throttle sees.) Otherwise the
  * ceiling is vendor credit. Three full rounds is what the funding above
  * assumes. A fourth costs another €1.18–€1.33, `derived` — 9 segments per
  * provider, not 11: a round after the first is OTP (1 segment) + LV

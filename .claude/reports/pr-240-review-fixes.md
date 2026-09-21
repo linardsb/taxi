@@ -136,6 +136,14 @@ that is free.
 `/sendsms/` now logs a success with `smsId` undefined and `segments` 1. A test asserts exactly that
 shape, so the widening's cost is recorded rather than discovered.
 
+**And checked at the consumer, not only at the provider** — the whole reason F6 exists is that the
+bake-off script reuses this parser, so a cost absorbed at the class and not at the caller would be
+the same defect moved one layer out. `scripts/sms-bakeoff.ts:391-405` builds the scorecard row as
+`vendorId === undefined ? 'ok' : \`ok ${vendorId}\`` and reads `segments` through a
+`typeof … === 'number'` guard. So a missing id renders **`ok`**, never `ok undefined`, and
+`apiSegments` renders `1`. The column the runner pastes into the scorecard is clean under the bare
+`OK` reply, which is what the run sheet's rewritten step 2 now promises.
+
 **Pin proven**: reverting the parser → `1 failed, 8 passed, 9 total`, and the `ERR`-on-200 pin stayed
 green throughout, which is the property the widening had to preserve.
 

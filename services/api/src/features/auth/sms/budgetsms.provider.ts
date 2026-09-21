@@ -96,6 +96,11 @@ export class BudgetSmsProvider implements SmsProvider {
     // so it is the one most likely to be trusted unverified. Accepting both
     // shapes costs the `smsId` on a reply that carries none; it does not
     // touch the `ERR`-on-200 branch, which is what the pin above protects.
+    //
+    // That cost is absorbed at the only consumer: `scripts/sms-bakeoff.ts`
+    // renders a missing id as `ok`, not `ok undefined` (`vendorId === undefined
+    // ? 'ok' : …`), and reads `segments` as the number it is — so the row the
+    // runner pastes into the scorecard is clean either way.
     if (text !== 'OK' && !text.startsWith('OK ')) {
       // A LOCALLY composed message only: `auth.service.ts` logs `err.message`
       // verbatim. The raw text is short and numeric, but it is still vendor
@@ -125,8 +130,9 @@ export class BudgetSmsProvider implements SmsProvider {
  * whitespace-delimited token straight into that message. Both siblings
  * validate what they extract — `twilio-sms.provider.ts` on `typeof
  * json.code === 'number'`, `bulkgate-sms.provider.ts` on `typeof json.type
- * === 'string'`. Spec V2.7 §10's codes are all four digits; the bound is
- * loose so a fifth does not become an unlabelled `budgetsms_error_200`.
+ * === 'string'`. Every code this repo cites from spec V2.7 §10 is four digits
+ * (`2010`, `2011`, `3001`); the bound is 1–6 rather than exactly 4 so a code
+ * of another width does not silently become `budgetsms_error_200`.
  */
 function errorCode(text: string): string | undefined {
   if (!text.startsWith('ERR ')) return undefined;
