@@ -221,6 +221,9 @@ compose hostnames, so the database password lives in one place.
 | `TWILIO_ACCOUNT_SID` | `AC…` from console.twilio.com | **All three or none — the schema refuses a partial trio in every environment.** A **trial** account is enough for testing: it sends only to numbers verified in the console (Atis, Dina, Linards) and the sender must be the trial number. Paid account + alphanumeric sender (`SaktaCab`) before the pilot opens (#137). |
 | `TWILIO_AUTH_TOKEN` | the auth token | |
 | `TWILIO_FROM_NUMBER` | the trial number, E.164 (`+371…`) | |
+| `SMS_PROVIDER` | `auto` | Which `SmsProvider` binds (#137). `auto` is exactly pre-#137 behaviour — the `TWILIO_*` trio binds Twilio, otherwise production refuses — so leaving it alone moves nothing. Naming `twilio`, `bulkgate` or `budgetsms` selects that vendor outright and makes its whole credential group **required at boot**. **A funded candidate group does NOT bind on its own:** #137 separated presence from selection, because the bake-off funds two or three accounts at once. Selection, never failover — exactly one provider binds and there is no fallback to a second vendor. |
+| `BULKGATE_APPLICATION_ID`, `BULKGATE_APPLICATION_TOKEN`, `BULKGATE_SENDER_ID_VALUE` | omit | #137 bake-off candidate. **All three or none, in every environment.** Only reached with `SMS_PROVIDER=bulkgate`. Sender is `gText`/alphanumeric (`SaktaCab`) — never an E.164 number. |
+| `BUDGETSMS_USERNAME`, `BUDGETSMS_USERID`, `BUDGETSMS_HANDLE`, `BUDGETSMS_FROM` | omit | #137 bake-off candidate. **FOUR keys, not three — all or none.** `BUDGETSMS_HANDLE` is the API secret and `BUDGETSMS_USERID` is the numeric account id, not the username. The endpoint is GET-only, so the secret and every message body travel in the URL — row 16 of `docs/research/sms-bakeoff-scorecard.md`, and a decision to record before binding this in production. |
 | `STRIPE_SECRET_KEY` | **leave empty** | Cash-only pilot: no SIA, no key. Empty binds `CardPaymentsDisabledProvider`, which **refuses** every card charge (§9). A `sk_live_…` is refused at boot in every environment. |
 | `STRIPE_WEBHOOK_SECRET` | empty | Unused (no webhooks). |
 
@@ -696,7 +699,7 @@ dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js                  
 
 Gates — each of these must **fail the container at boot** (`up -d --wait`
 exits non-zero, `dc logs api` names the variable; §3 carries the run behind the
-`up -d --wait` half). All seven were `observed`
+`up -d --wait` half). The first seven were `observed`
 on 2026-09-03 against the image built from PR #147's round-1 fix commit,
 before any server existed. The first six were also observed on 2026-08-25; the
 seventh, `PUSH_PROVIDER`, reached `main` with #14 on 2026-08-31 and the rebase
@@ -704,15 +707,22 @@ inherited the 2026-08-25 boot without re-running it — the review caught it
 (round 1, F1). **After any base move, boot the image again; the gate never
 runs under `NODE_ENV=production` and cannot see a new one of these.**
 
+The **eighth** arrived with #137 and is `expected`, not observed — no image has
+been booted since. It is the one refusal here that is schema-level rather than
+factory-level, so it fires in **every** environment, and `env.schema.spec.ts`
+does observe the message; what is unobserved is that it stops the container.
+Boot the image before the next deploy and move it into the observed set.
+
 | Break | Expected refusal |
 |---|---|
 | `JWT_SECRET=dev-only-change-me` | `JWT_SECRET is the value committed to .env.example and is public` |
 | `ALLOW_STUB_MAPS_PROVIDER` unset | `No production MapsProvider is bound: StubMapsProvider prices rides off straight-line distance … (set ALLOW_STUB_MAPS_PROVIDER=true …)` |
 | `PUBLIC_TRACKING_BASE_URL=http://localhost:3000` | `PUBLIC_TRACKING_BASE_URL is a localhost origin` |
 | two of three `TWILIO_*` | `TWILIO_FROM_NUMBER is missing: TWILIO_* must be set all together or not at all` |
-| no `TWILIO_*` at all | `No production SmsProvider is bound` |
+| no `TWILIO_*` at all, `SMS_PROVIDER` unset or `auto` | `No production SmsProvider is bound: … Either set TWILIO_ACCOUNT_SID, … or set SMS_PROVIDER=bulkgate\|budgetsms together with that group of credentials (#137)`. Since #137 the message names **both** exits, because a complete `BULKGATE_*`/`BUDGETSMS_*` group reaches this refusal too — presence alone no longer binds |
 | `GOOGLE_MAPS_API_KEY` unset (switch on) | `No production MapsProvider is bound: no GOOGLE_MAPS_API_KEY is set` |
 | `PUSH_PROVIDER` unset | `No production PushProvider is bound: StubPushProvider delivers nothing. Set PUSH_PROVIDER=expo (#14) …` |
+| `SMS_PROVIDER=bulkgate` with its group incomplete (#137, `expected`) | `SMS_PROVIDER=bulkgate needs BULKGATE_APPLICATION_ID, BULKGATE_APPLICATION_TOKEN, BULKGATE_SENDER_ID_VALUE` — a `ZodError` from `envSchema`, so it fires in every environment, not only production |
 
 And one that must **not** be a boot failure: with `STRIPE_SECRET_KEY` empty,
 the API boots and a card settlement answers **502 `payment_provider_error`**,

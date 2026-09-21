@@ -1,5 +1,6 @@
 import { RIGA_CITY_ID } from '@taxi/db';
 import { z } from 'zod';
+import { checkSmsCredentialGroups, smsEnvFields } from './sms-env.schema';
 
 /**
  * The values committed to `.env.example`. A `cp .env.example .env` that reaches
@@ -246,44 +247,12 @@ export const envSchema = z
           'STRIPE_SECRET_KEY must be a test-mode key (sk_test_…): Stripe stays in test mode until the SIA exists.',
       }),
     /**
-     * The Twilio trio (#85). Absent — or empty, as committed to
-     * `.env.example` — binds `StubSmsProvider`, which refuses to boot in
-     * production: the same arrangement as Stripe and maps. All three set
-     * together or none — the superRefine below enforces it in EVERY
-     * environment. Same `.optional().transform().refine()` order as
-     * `STRIPE_SECRET_KEY`; the refine must see the transformed value.
+     * The three SMS credential groups and the `SMS_PROVIDER` selector,
+     * spread in from `sms-env.schema.ts` at exactly the position they used
+     * to occupy. Split out for the line budget (#137 took this file past
+     * `max-lines`), not for a boundary — the composed schema is unchanged.
      */
-    TWILIO_ACCOUNT_SID: z
-      .string()
-      .optional()
-      .transform((v) => (v === undefined || v === '' ? undefined : v))
-      .refine((v) => v === undefined || v.startsWith('AC'), {
-        message:
-          'TWILIO_ACCOUNT_SID must start with AC — the Account SID from console.twilio.com, not an API key or the auth token.',
-      }),
-    TWILIO_AUTH_TOKEN: z
-      .string()
-      .optional()
-      .transform((v) => (v === undefined || v === '' ? undefined : v)),
-    /**
-     * An E.164 number (trial accounts must use their trial number), or an
-     * alphanumeric sender ID (≤11 chars, one-way, paid accounts only — no
-     * registration needed in Latvia).
-     */
-    TWILIO_FROM_NUMBER: z
-      .string()
-      .optional()
-      .transform((v) => (v === undefined || v === '' ? undefined : v))
-      .refine(
-        (v) =>
-          v === undefined ||
-          /^\+[1-9]\d{6,14}$/.test(v) ||
-          /^(?=.*[A-Za-z])[A-Za-z0-9 ]{1,11}$/.test(v),
-        {
-          message:
-            'TWILIO_FROM_NUMBER must be an E.164 number (+371…) or an alphanumeric sender ID (≤11 chars, at least one letter).',
-        },
-      ),
+    ...smsEnvFields,
     /**
      * Which `PushProvider` binds (#14). A switch rather than credential-driven
      * like Twilio, because Expo's push API needs no credential — the intent
@@ -316,30 +285,17 @@ export const envSchema = z
   /**
    * Production-only below the gate, because dev and CI legitimately run on
    * short, shared, committed values — a rule that blocked those would just be
-   * turned off. The Twilio all-or-nothing check is the one deliberate
-   * exception, reasoned inline.
+   * turned off. The SMS all-or-nothing check is the one deliberate
+   * exception, reasoned in `sms-env.schema.ts`.
    */
   .superRefine((env, ctx) => {
-    // EVERY environment, deliberately above the production gate: a partial
-    // trio is a misconfiguration everywhere — in dev it silently binds the
-    // stub while you think you are testing Twilio; in production the
-    // factory's refusal would blame "no provider" when the real problem is
-    // one missing var. One issue per missing key.
-    const twilioKeys = [
-      'TWILIO_ACCOUNT_SID',
-      'TWILIO_AUTH_TOKEN',
-      'TWILIO_FROM_NUMBER',
-    ] as const;
-    const set = twilioKeys.filter((k) => env[k] !== undefined);
-    if (set.length > 0 && set.length < twilioKeys.length) {
-      for (const k of twilioKeys.filter((k) => env[k] === undefined)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [k],
-          message: `${k} is missing: TWILIO_* must be set all together or not at all (a partial config silently binds the stub).`,
-        });
-      }
-    }
+    // The all-or-none group check and the named-kind check, ABOVE the
+    // production gate below: a partial group is a misconfiguration in
+    // EVERY environment — in dev it silently binds the stub while you
+    // think you are testing a real gateway. Moved to `sms-env.schema.ts`
+    // with the fields it checks; the PLACEMENT stays here, because that
+    // is what the caller owns.
+    checkSmsCredentialGroups(env, ctx);
 
     if (env.NODE_ENV !== 'production') return;
 
