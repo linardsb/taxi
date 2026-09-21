@@ -2,7 +2,6 @@
 name: system-execution-report
 description: Generates a structured implementation report reflecting on a just-completed feature — what was done, divergences, challenges. Use right after finishing an implementation, as the input to a system review.
 argument-hint: "[plan-file] (optional — defaults to this session's context)"
-arguments: [plan]
 ---
 
 # Execution Report
@@ -11,25 +10,17 @@ Review and deeply analyze the implementation you just completed.
 
 ## Inputs
 
-**Plan file: $plan** — may be empty. If it is, use the plan this session worked from.
+Read `$ARGUMENTS` as **prose**, not as positional slots — never split on whitespace and never
+bind by position. The one input is a **plan path**, and it may arrive inside a sentence naming
+the PR, the merge sha and the sibling artifacts. Take the `.md` path out of that sentence; take
+every other artifact it names as well, and read them too.
 
-**Test `$plan`'s shape before you read anything.** `arguments: [plan]` binds by position, so a free-form
-sentence is word-split and `$plan` silently receives its **first word** — `observed` 2026-09-18 (#229):
-invoked with `the #225 → #227 worklets pin loop, reconstructed from …`, this skill rendered
-`Plan file: the` and discarded the rest. It is the hazard ledger row L18 logged for this exact file, and
-the fix pattern is `opportunity-scan:27` — read the invocation as **prose**, not as slots.
+**This guard is here because the alternative fired.** With `arguments: [plan]` declared, an
+invocation beginning "PR #241 — the SMS provider switch slice…" bound `$plan` to the literal
+string `PR`, and the skill rendered "**Plan file: PR**" (2026-09-21, ledger L18 — logged
+2026-09-04 against this exact file and unapplied for the loops between).
 
-- **`$plan` ends in `.md`** → a real path. Use it.
-- **`$plan` is present but does not end in `.md`** → a word-split sentence. Do **not** ask, and do not
-  treat the first word as a path: read the whole sentence you were invoked with as the scope, and find
-  the loop's artifacts from it (`.claude/plans/`, `.claude/reports/`, `gh pr view`).
-- **`$plan` is empty** → the case below.
-
-**A well-formed path to a file that does not exist is its own case, and the answer is not to stop.**
-A plan path can be well-formed and absent because the loop never had a plan — which is exactly the loop
-most worth reporting on. Say so in the report's Meta Information (`Plan file: none`), name the de-facto
-plan the implementation actually worked from (usually the GitHub issue body), and measure divergences
-against that. Do not invent a plan file to fill the slot.
+**The plan path may be absent.** If it is, use the plan this session worked from.
 
 If it is empty AND this session did not do the implementation, **say so and stop** rather than
 writing a report from the diff alone: this skill reflects on *why* things diverged, and a cold

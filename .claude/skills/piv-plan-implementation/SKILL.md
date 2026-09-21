@@ -354,6 +354,14 @@ Use information-dense keywords for clarity:
   - When this GOTCHA forbids the shape IMPLEMENT sketches, the GOTCHA is binding and IMPLEMENT is a sketch —
     build to it and say so under Divergences from Plan (#19 Phase C's D1 came out right only because the implementer noticed).
 - **VALIDATE**: `{executable validation command}`
+  - **When a GOTCHA claims test A catches a mutation AND test B does not, VALIDATE runs BOTH under that
+    mutation and records both results.** A step of the shape "revert X, watch A go red" proves only the
+    half you already believed; the half asserting B stays green is the half that is wrong, and nothing
+    executes it. #137's plan told the implementer an integration test would be "green against a deleted
+    binding", its VALIDATE step passed truthfully (the metadata test does go red), and the false half
+    was copied into a new source comment and three more plan sites before PR #241's review caught it —
+    `observed`, deleting the binding gives **28 failed of 28**, not green. The claim that was true all
+    along was about the binding's *identity*, not its absence.
 - **SATISFIES**: {which acceptance criterion this task advances — e.g. AC #2 — so every task traces to a criterion}
 
 <Continue with all tasks in dependency order...>
