@@ -55,6 +55,9 @@ const SECRET_KEYS = ['JWT_SECRET', 'OTP_PEPPER'] as const;
  * it does — the boot gate quotes the matching one rather than saying
  * "malformed".
  *
+ * WHITESPACE AND CONTROL CHARACTERS ARE NOT HERE — one shared reason, so the
+ * check beside this map catches them as a class rather than per character.
+ *
  * A `/` IS DELIBERATELY ABSENT. A path prefix is a supported deployment
  * (`sakta.lv/app`); `trackingLinkHost` preserves it on purpose so the rider's
  * SMS budget pays for it, and its test pins that. This set is the shapes that
@@ -64,6 +67,7 @@ const TRACKING_BASE_URL_BREAKERS: Readonly<Record<string, string>> = {
   '@': 'everything before it is read as userinfo, so the link resolves to a different host than the one it reads as',
   '?': 'the /<lang>/<token> path lands inside the query string',
   '#': 'the /<lang>/<token> path lands inside the fragment and never reaches the server at all',
+  '\\': 'a linkifier that normalises it to / sends the rider to a path the server does not serve, and one that stops at it drops the token',
 };
 
 export const envSchema = z
@@ -400,10 +404,10 @@ export const envSchema = z
     // builder's own function, so this measures exactly what the SMS carries.
     const smsHost = trackingLinkHost(env.PUBLIC_TRACKING_BASE_URL);
 
-    // SHAPE BEFORE LENGTH (#246). The two checks below run first because the
-    // character count under them is only meaningful once the string it counts
-    // is a host: `u:p@sakta.lv` is refused today for being 12 characters, as
-    // if the userinfo were domain.
+    // SHAPE BEFORE LENGTH (#246). The breaker, whitespace and scheme checks
+    // below run first because the character count under them is only
+    // meaningful once the string it counts is a host: `u:p@sakta.lv` is
+    // refused today for being 12 characters, as if the userinfo were domain.
     //
     // Length is not a filter for shape, it only hides how little it catches.
     // `observed` 2026-09-21 at 487570f, through this schema: `https://u@s.lv`,
@@ -412,20 +416,35 @@ export const envSchema = z
     // that does not resolve. `https://sakta.lv#f` is the same escape at the
     // ceiling exactly (10), which is how PR #245's review found it.
     //
-    // Neither check early-returns: a value can be both malformed and too long
+    // NO check early-returns: a value can be both malformed and too long
     // (`https://sakta.lv/app?q=1`), and one boot should name both.
     //
     // NOT production-only by necessity — nothing in dev legitimately carries
-    // these either — but placed inside the gate so all three rules on this one
-    // variable read as one block.
-    const breaker = Object.keys(TRACKING_BASE_URL_BREAKERS).find((c) =>
+    // these either — but placed inside the gate so every rule on this one
+    // variable reads as one block. Named rather than counted: the count went
+    // stale the moment the whitespace check was added.
+    const breaker = Object.entries(TRACKING_BASE_URL_BREAKERS).find(([c]) =>
       smsHost.includes(c),
     );
     if (breaker !== undefined) {
+      const [character, reason] = breaker;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['PUBLIC_TRACKING_BASE_URL'],
-        message: `PUBLIC_TRACKING_BASE_URL would put "${smsHost}" in the rider SMS (#136), and the "${breaker}" breaks the link: ${TRACKING_BASE_URL_BREAKERS[breaker]}. Configure a bare origin, optionally with a path prefix: https://<domain> or https://<domain>/<prefix>.`,
+        message: `PUBLIC_TRACKING_BASE_URL would put "${smsHost}" in the rider SMS (#136), and the "${character}" breaks the link: ${reason}. Configure a bare origin, optionally with a path prefix: https://<domain> or https://<domain>/<prefix>.`,
+      });
+    }
+
+    // `new URL()` strips these from its INPUT and removes tab/CR/LF before
+    // parsing, so `.url()` accepts them and zod returns the ORIGINAL string
+    // that `trackingLinkHost` carries into the SMS — `observed` 2026-09-21 at
+    // 270bfe4, `https://sakta.lv ` booted at 9. Quoted ESCAPED, unlike the
+    // check above: printed raw, a trailing space is invisible.
+    if ([...smsHost].some((c) => /\s/.test(c) || c < ' ' || c === '\u007f')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBLIC_TRACKING_BASE_URL'],
+        message: `PUBLIC_TRACKING_BASE_URL would put ${JSON.stringify(smsHost)} in the rider SMS (#136), and every SMS linkifier ends the link there: the rider taps a truncated URL and the token never travels. Configure a bare origin, optionally with a path prefix: https://<domain> or https://<domain>/<prefix>.`,
       });
     }
 
