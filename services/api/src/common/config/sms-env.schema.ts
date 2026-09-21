@@ -88,12 +88,15 @@ const SMS_GROUPS: Record<
  */
 export const smsEnvFields = {
   /**
-   * The Twilio trio (#85). Absent — or empty, as committed to
-   * `.env.example` — binds `StubSmsProvider`, which refuses to boot in
-   * production: the same arrangement as Stripe and maps. All three set
-   * together or none — `checkSmsCredentialGroups` below enforces it
-   * in EVERY environment. Same `.optional().transform().refine()` order as
-   * `STRIPE_SECRET_KEY`; the refine must see the transformed value.
+   * The Twilio trio (#85) — the credential group `SMS_PROVIDER=twilio`
+   * demands, and reached only under that selector. Absent or empty (as
+   * committed to `.env.example`) is fine while the selector names something
+   * else; under `twilio` it is a boot refusal naming the missing keys, not a
+   * quiet fall back to the stub. Presence selects nothing: that was `'auto'`,
+   * retired at #137's second loop. All three set together or none —
+   * `checkSmsCredentialGroups` below enforces it in EVERY environment. Same
+   * `.optional().transform().refine()` order as `STRIPE_SECRET_KEY`; the
+   * refine must see the transformed value.
    */
   TWILIO_ACCOUNT_SID: z
     .string()
