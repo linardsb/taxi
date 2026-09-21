@@ -48,8 +48,13 @@ import { driverFirstName } from '../sms-templates';
  *
  * WAS 16 BYTES / 22 CHARS until #136: the six characters bought back are
  * spent on the SMS segment budget, where a rider's `driver_assigned` message
- * has 70 UCS-2 characters and no slack. Guessing is rate-limited by
- * `TRACKING_VIEW_MAX_PER_WINDOW`, not by the entropy alone.
+ * has 70 UCS-2 characters and no slack. The 96 bits are the WHOLE defence
+ * against guessing — `TRACKING_VIEW_MAX_PER_WINDOW` does not back them up.
+ * `trackingViewRateKey` keys the window on the token itself, so it bounds
+ * polling of a known token (the spend path, which is what
+ * `notifications.policy.ts` says it is for) while every guess at an unknown
+ * one gets a fresh window. Any further shortening has to be argued against
+ * 2^96 alone.
  */
 export function mintTrackingToken(): string {
   return randomBytes(12).toString('base64url');

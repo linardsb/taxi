@@ -487,9 +487,14 @@ a src-only edit is green on a change that has not landed.
 ### UPDATE `packages/shared/src/schemas/tracking.ts`
 
 - **IMPLEMENT**: regex `{22}` → `{16}`, message `'expected 16-char base64url tracking token'`, and rewrite
-  the doc comment at lines 10–15 — 16 base64url chars from `randomBytes(12)`, 96 bits, rate-limited by
-  `TRACKING_VIEW_MAX_PER_WINDOW`, shortened in #136 for the segment budget, with a pointer to
-  `tracking-link.ts` for the rest of the URL contract.
+  the doc comment at lines 10–15 — 16 base64url chars from `randomBytes(12)`, 96 bits, shortened in #136
+  for the segment budget, with a pointer to `tracking-link.ts` for the rest of the URL contract.
+- **CORRECTED post-review (PR #245 F3)**: this task originally said the token was *"rate-limited by
+  `TRACKING_VIEW_MAX_PER_WINDOW`"*, and the docblock shipped saying so. **It is not.**
+  `trackingViewRateKey` keys the window on the token, so it bounds polling of a KNOWN token and gives
+  every guess at an unknown one a fresh window — as `notifications.policy.ts` already states. The 96 bits
+  are the whole defence against guessing. Do not restore the old wording: it is the sentence that would
+  license cutting the token again.
 - **GOTCHA**: `TRACKING_PATH_BY_LANGUAGE` goes in `tracking-link.ts`, **not** here — this file is schemas,
   and a `Record` of route segments is not one.
 - **VALIDATE**: `pnpm --filter @taxi/shared typecheck` (`test` still red until the fixtures move — expected).

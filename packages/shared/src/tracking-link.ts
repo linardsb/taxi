@@ -80,12 +80,33 @@ export const SMS_ETA_MAX_DISPLAY_MINUTES = 99;
  * are a way to be off by one and refuse a domain that fits.
  *
  * `baseUrl` is a validated `z.string().url()`, so it always carries a scheme
- * and may carry a trailing slash. Both replacements are load-bearing;
+ * and may carry a trailing slash. Both strips are load-bearing;
  * `new URL(baseUrl).host` would silently drop a configured path prefix, which
  * the rider's SMS would then have to pay for unbudgeted.
+ *
+ * The trailing slashes come off in a LOOP, not in `.replace(/\/+$/, '')`.
+ * That regex backtracks quadratically (`js/polynomial-redos`, CodeQL alert #1
+ * on PR #245) whenever a slash run is followed by a non-slash, so every start
+ * position consumes the run and then fails at `$`. `observed` on node 20 over
+ * `'https://a' + '/'.repeat(n) + 'x'`, regex vs this loop: 10k 86.9 ms vs
+ * 0.104 ms, 40k 1.39 s vs 0.010 ms, 80k 5.60 s vs 0.008 ms, 100k 8.75 s vs
+ * 0.012 ms. Not reachable from rider input here — both call sites pass the
+ * operator-set `PUBLIC_TRACKING_BASE_URL` — but this is a public export of
+ * `@taxi/shared`, so its parameter is a library-input taint source and the
+ * alert blocks the merge gate.
+ *
+ * The loop is output-identical, not merely equivalent on the happy path:
+ * `observed`, 200,028 inputs (28 hand-picked plus a fuzz over `h t p s : / a
+ * . # ? @`), zero mismatches. It is LINEAR, not uniformly faster — on 100k
+ * genuine trailing slashes the regex matches on its first attempt in 0.121 ms
+ * and the loop walks all of them in 2.23 ms (`observed`). Both are noise
+ * against a host this budget caps at 10 characters.
  */
 export function trackingLinkHost(baseUrl: string): string {
-  return baseUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const stripped = baseUrl.replace(/^https?:\/\//, '');
+  let end = stripped.length;
+  while (end > 0 && stripped.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return stripped.slice(0, end);
 }
 
 /**
