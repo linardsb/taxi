@@ -58,9 +58,7 @@ describe('formatMessage', () => {
       eta: 4,
       link: 'https://t.example/abc',
     });
-    expect(body).toBe(
-      'Jūsu šoferis Jānis, AB-1234, būs pēc ~4 min. Sekojiet līdzi: https://t.example/abc',
-    );
+    expect(body).toBe('Šoferis Jānis, AB-1234, ~4 min https://t.example/abc');
     expect(body).not.toContain('{');
   });
 

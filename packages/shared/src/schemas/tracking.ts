@@ -8,14 +8,22 @@ import { phoneSchema } from './user';
  */
 
 /**
- * Shape-only validation of a tracking token: 22 base64url chars, the output of
- * `randomBytes(16).toString('base64url')`. MINTING lives in the API
- * (`TrackingService`) — this package is isomorphic and must not touch
+ * Shape-only validation of a tracking token: 16 base64url chars, the output of
+ * `randomBytes(12).toString('base64url')` — 96 bits of entropy, and
+ * `TRACKING_VIEW_MAX_PER_WINDOW` rate-limits guessing on top. MINTING lives in
+ * the API (`TrackingService`) — this package is isomorphic and must not touch
  * `node:crypto`.
+ *
+ * SHORTENED FROM 22 IN #136 for the SMS character budget: six characters of a
+ * 70-character UCS-2 segment. The rest of the URL contract — the host ceiling
+ * and the per-language path — lives in `tracking-link.ts`, with the
+ * derivation. This is a HARD cut-over, not a widening: no deploy has ever run
+ * (`gh run list --workflow=deploy.yml` was empty on 2026-09-21), so no 22-char
+ * link exists to break.
  */
 export const trackingTokenSchema = z
   .string()
-  .regex(/^[A-Za-z0-9_-]{22}$/, 'expected 22-char base64url tracking token');
+  .regex(/^[A-Za-z0-9_-]{16}$/, 'expected 16-char base64url tracking token');
 export type TrackingToken = z.infer<typeof trackingTokenSchema>;
 
 /**

@@ -190,13 +190,19 @@ LV message encodes as **UCS-2: 70 chars per segment instead of 160** (67 per
 segment once concatenated). Cyrillic is always UCS-2 — the RU catalog cannot
 escape this.
 
-`mintTrackingToken()` is 16 random bytes → **22 base64url chars**
-(`tracking.service.ts:47`), so a tracking link adds ~44 characters.
+`mintTrackingToken()` was 16 random bytes → **22 base64url chars**, so a
+tracking link added ~44 characters (`https://saktacab.lv/t/<22>` = 44). **#136
+shipped 12 bytes → 16 chars**, and dropped the scheme and the `?lang=` query,
+so a link is now `sakta.lv/r/<16>` = **27 characters** (`derived`: 8 host + 3
+path + 16 token). The budget behind those numbers is
+`packages/shared/src/tracking-link.ts`; the proof is
+`packages/shared/tests/sms-budget.test.ts`.
 
 Templates in `packages/shared/src/i18n.ts` (LV). Counts are **`observed`** — a
 GSM-03.38 segmenter run over each rendered template on 2026-08-14, substituting
 `driver='Jānis'`, `plate='LV-1234'`, `eta=7`, `code=482913`, and a 22-char token
-in `https://saktacab.lv/t/<token>`:
+in `https://saktacab.lv/t/<token>`. **They are the PRE-#136 baseline** — the two
+linked rows below are what that ticket removed:
 
 | Template | Chars | Encoding | Segments |
 |---|---|---|---|
@@ -246,38 +252,61 @@ in-app. It is the same two-line channel filter already used for
 `driver_assigned` at line 95. Depends on the rider app (#17) shipping push.
 
 **Lever 2 — shorten the linked messages (−35% more), keeping full Latvian and
-Russian.** The segment cost of `driver_assigned` and `booking_confirmed_phone`
-is not the alphabet — it is the 44-character link plus the polite framing. Three
-non-linguistic changes bring both to 1 segment. Counts `observed`, same
-segmenter run, 2026-08-14:
+Russian. SHIPPED as #136.** The segment cost of `driver_assigned` and
+`booking_confirmed_phone` is not the alphabet — it was the then-44-character
+link plus the polite framing. **Four** non-linguistic changes bring both to 1
+segment; this section proposed three, and the fourth is the correction below.
+The `Today` counts are `observed`, same segmenter run, 2026-08-14:
 
-| | Today | Trimmed |
+**CORRECTION (#136, 2026-09-21) — this section's RU count was wrong, and it
+mattered.** The `59 ch → 1 seg` for RU `driver_assigned` below reproduces
+(fixed 20 + `Янис` 4 + `LV-1234` 7 + `7` 1 + `sakta.lv/t/` 11 + token 16 = 59),
+but it **omitted the `?lang=ru` that `trackingLink()` actually appended** on
+every non-Latvian link — 8 characters. At the issue's own worst-case name
+(*Aleksandrs*, 10) that is 20 + 10 + 7 + 1 + 11 + 16 + 8 = **73 > 70**: still 2
+segments. The recipe below does not reach 1 segment in Russian. The fix was a
+FOURTH change — a one-character language path served by a dispatch rewrite — so
+the query disappears at no character cost. The LV row was unaffected; `lv` is
+the one language that link was sent without the query.
+
+The rows below are the **pre-#136 proposal, kept for the record**. The shipped
+figures, `derived` at the maximum of every bound rather than at a sample name,
+are the budget table in `.claude/plans/short-tracking-links-sms-136.md` and the
+executable form is `packages/shared/tests/sms-budget.test.ts`. Both label as
+`derived`, not `observed` — no segmenter run produced them; the test asserts
+them.
+
+| | Today | Trimmed (as proposed, pre-#136) |
 |---|---|---|
 | LV `driver_assigned` | 105 ch → 2 seg | `Šoferis Jānis, LV-1234, ~7 min. sakta.lv/t/…` — 59 ch → **1 seg** |
-| RU `driver_assigned` | 2 seg | `Водитель Янис, LV-1234, ~7 мин. …` — 59 ch → **1 seg** |
+| RU `driver_assigned` | 2 seg | `Водитель Янис, LV-1234, ~7 мин. …` — 59 ch → **1 seg**, but see the correction above: with `?lang=ru` and a 10-char name this is **73 → 2 seg** |
 | LV `booking_confirmed_phone` | 90 ch → 2 seg | `Jūsu taksometrs rezervēts. …` — 54 ch → **1 seg** |
 | RU `booking_confirmed_phone` | 2 seg | 48 ch → **1 seg** |
 | `driver_arrived` LV/RU | 1 seg | unchanged |
 
-The three changes:
+The changes, as shipped — **four**, not three:
 
-1. **Shorter domain** — `sakta.lv`, not `saktacab.lv`.
-2. **Shorter tracking token** — `mintTrackingToken()` is 16 random bytes → 22
-   base64url chars (`tracking.service.ts:47`). 12 bytes → 16 chars is still 96
-   bits, and `TRACKING_VIEW_MAX_PER_WINDOW` already rate-limits views. Contract
-   change: `trackingTokenSchema` shape-pins the length, so this touches
-   `@taxi/shared`.
-3. **Drop the polite framing** — "Jūsu šoferis … Sekojiet līdzi:" → "Šoferis …".
-   Content kept: driver first name, plate, ETA, link.
+1. **Shorter domain** — `sakta.lv` (8), not `saktacab.lv` (11). #136 derived the
+   ceiling (`TRACKING_LINK_HOST_MAX_CHARS = 10`) from the binding RU row and
+   refuses a longer host at production boot; #13 still buys the domain.
+2. **Shorter tracking token** — `mintTrackingToken()` was 16 random bytes → 22
+   base64url chars. It is now **12 bytes → 16 chars**, still 96 bits, with
+   `TRACKING_VIEW_MAX_PER_WINDOW` rate-limiting views. Contract change:
+   `trackingTokenSchema` shape-pins the length, so this touched `@taxi/shared`.
+3. **Drop the polite framing and the scheme** — "Jūsu šoferis … Sekojiet līdzi:
+   https://…" → "Šoferis … sakta.lv/…". Content kept: driver first name, plate,
+   ETA, link.
+4. **Get `?lang=` out of the URL** — `/t/` lv, `/r/` ru, `/e/` en, two Next.js
+   rewrites in `apps/dispatch/next.config.ts`. 0 extra characters where the
+   query cost 8, and no wire-contract change.
 
-**Headroom is the real constraint, and it is thin.** At 59 chars there are 11 to
-spare against the 70-char UCS-2 single-segment limit. Keeping `https://` costs 8
-of them (67 ch — still 1 segment, but a driver called *Aleksandrs* instead of
-*Jānis* pushes it over). Either drop the scheme and rely on SMS-client
-auto-linking, or keep `https://` only with **both** the short domain and the
-short token. Whichever is chosen, the templates need a test that asserts the
-1-segment property against a worst-case driver name, or this silently regresses
-the first time someone edits a string.
+**Headroom is the real constraint, and it is thin.** At the host ceiling of 10
+the binding RU render is **70 against a 70-character limit — zero spare**, by
+construction, since the ceiling was solved for that row. At the real `sakta.lv`
+(8) it is 68. That is why #136 did not stop at a test: every term feeding the
+render is bounded (driver name abbreviated above 10, ETA clamped at 99, plate by
+`vehicleSchema`, host at boot), so the 1-segment property is a proof over all
+inputs rather than a sample at a chosen name.
 
 Both levers are their own tickets. Neither belongs in #13.
 

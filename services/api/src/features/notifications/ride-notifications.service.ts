@@ -4,8 +4,11 @@ import {
   RT,
   type Ride,
   type RideStatus,
+  SMS_ETA_MAX_DISPLAY_MINUTES,
   type SmsKind,
   type SmsProvider,
+  smsSegments,
+  trackingLink,
 } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { maskPhone, SMS_PROVIDER } from '../auth';
@@ -17,7 +20,7 @@ import {
   NotificationsRepository,
   type NotifiableRide,
 } from './notifications.repository';
-import { driverFirstName, trackingLink } from './sms-templates';
+import { smsDriverName } from './sms-templates';
 
 /**
  * The rider's SMS story (#63), hanging off two post-commit hooks:
@@ -33,6 +36,11 @@ import { driverFirstName, trackingLink } from './sms-templates';
  * SMS failure never fails a booking. The `sms_send_failed` ERROR log is the
  * durable alarm; `dispatch:sms_failed` (#18) mirrors it onto Dina's console
  * so she can phone the rider the moment the platform fails them.
+ *
+ * Every body leaves through `sendSms`, which counts its billed segments. The
+ * two LINKED templates are budgeted to fit ONE UCS-2 segment at the maximum
+ * of every bound (#136) — the derivation lives in `@taxi/shared`'s
+ * `tracking-link.ts`, the proof in `packages/shared/tests/sms-budget.test.ts`.
  */
 @Injectable()
 export class RideNotificationsService {
@@ -67,12 +75,12 @@ export class RideNotificationsService {
             })
           : formatMessage(rider.language, 'sms.booking_confirmed');
 
-      await this.sms.send(rider.phone, body);
-      this.logSent(
+      await this.sendSms(
         ride.id,
         'booking_confirmed',
         ride.bookingChannel,
         rider.phone,
+        body,
       );
     } catch (error) {
       this.logSendFailed(ride.id, 'booking_confirmed', error);
@@ -119,7 +127,7 @@ export class RideNotificationsService {
       const body =
         kind === 'driver_assigned'
           ? formatMessage(rider.language, 'sms.driver_assigned', {
-              driver: driverFirstName(card.name),
+              driver: smsDriverName(card.name),
               plate,
               eta: await this.etaToPickup(details),
               // A legacy row can lack a token, but every phone booking
@@ -134,8 +142,13 @@ export class RideNotificationsService {
             })
           : formatMessage(rider.language, 'sms.driver_arrived', { plate });
 
-      await this.sms.send(rider.phone, body);
-      this.logSent(ride.id, kind, details.bookingChannel, rider.phone);
+      await this.sendSms(
+        ride.id,
+        kind,
+        details.bookingChannel,
+        rider.phone,
+        body,
+      );
     } catch (error) {
       this.logSendFailed(ride.id, kind, error, from);
     }
@@ -149,10 +162,48 @@ export class RideNotificationsService {
       details.driverId,
     );
     if (!position) return '?';
-    return estimateEtaMinutes(
-      position.location,
-      details.request.pickup.location,
+    // DISPLAY-only clamp, one of #136's four bounds. The value is already an
+    // estimate, and a >99-minute pickup ETA means dispatch assigned a driver
+    // ~41 km away — a bug the rider's SMS should not spend a second billed
+    // segment reporting to three digits.
+    return Math.min(
+      SMS_ETA_MAX_DISPLAY_MINUTES,
+      estimateEtaMinutes(position.location, details.request.pickup.location),
     );
+  }
+
+  /**
+   * The single exit for every rider SMS: count, assert, send, log.
+   *
+   * The `sms_multi_segment` warn is an ASSERTION, not a budget backstop. With
+   * `smsDriverName`, the ETA clamp, `vehicleSchema.plate`'s `.max(10)` and the
+   * `PUBLIC_TRACKING_BASE_URL` host gate at boot, no input can push a linked
+   * template past one segment — so this firing in production means the
+   * derivation in `tracking-link.ts` is wrong, which is what makes it worth an
+   * alarm. It never gates the send: the rider gets their message either way.
+   */
+  private async sendSms(
+    rideId: string,
+    kind: SmsKind,
+    channel: string,
+    phone: string,
+    body: string,
+  ): Promise<void> {
+    const segments = smsSegments(body);
+    if (segments > 1) {
+      // NEVER the body: it carries the rider's tracking link and the driver's
+      // name (logging-standard.md).
+      this.logger.warn({
+        event: 'ride.notifications.sms_multi_segment',
+        rideId,
+        kind,
+        segments,
+        at: new Date().toISOString(),
+      });
+    }
+
+    await this.sms.send(phone, body);
+    this.logSent(rideId, kind, channel, phone);
   }
 
   private logSent(

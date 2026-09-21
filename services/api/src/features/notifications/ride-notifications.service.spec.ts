@@ -14,8 +14,10 @@ const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
 const RIDER_ID = '99999999-8888-4777-8666-555555555555';
 const DRIVER_ID = 'bb1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e12';
 const VEHICLE_ID = 'cc2e3d4f-5a6b-4c7d-8e9f-1b2c3d4e5f01';
-const TOKEN = 'Ab3_-6qhTGplK0vwXz9y-Q';
+const TOKEN = 'Ab3_-6qhTGplK0vw'; // 16 base64url chars, post-#136
 const BASE_URL = 'http://localhost:3000';
+/** What `trackingLink` emits from BASE_URL: no scheme (#136). */
+const SMS_HOST = 'localhost:3000';
 
 const PICKUP = { lat: 56.9496, lng: 24.1052 };
 
@@ -70,6 +72,10 @@ function build(
     /** null = the driver has no recorded position. */
     position?: { lat: number; lng: number } | null;
     emitThrows?: boolean;
+    /** Past `vehicleSchema`'s `.max(10)` on purpose — see the warn case. */
+    plate?: string;
+    /** The raw `display_name`; `smsDriverName` bounds it (#136). */
+    driverName?: string;
   } = {},
 ) {
   const calls: string[] = [];
@@ -102,9 +108,9 @@ function build(
     driverCard: (_driverId: string, vehicleId: string | null) => {
       calls.push(`repo.driverCard(${vehicleId})`);
       return Promise.resolve({
-        name: 'Jānis Bērziņš',
+        name: options.driverName ?? 'Jānis Bērziņš',
         photoUrl: null,
-        plate: 'AB-1234',
+        plate: options.plate ?? 'AB-1234',
       });
     },
   } as unknown as NotificationsRepository;
@@ -157,17 +163,23 @@ describe('RideNotificationsService.onRideCreated', () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.phone).toBe('+37127000001');
-    expect(sent[0]!.body).toContain(`${BASE_URL}/t/${TOKEN}`);
-    // LV rider: no ?lang — the page defaults to LV.
+    expect(sent[0]!.body).toContain(`${SMS_HOST}/t/${TOKEN}`);
+    // LV takes the `/t/` path the real route already serves, and #136 spends
+    // neither the 8 characters of `https://` nor the 8 of `?lang=`.
     expect(sent[0]!.body).not.toContain('?lang=');
+    expect(sent[0]!.body).not.toContain('http');
   });
 
-  it('non-LV rider gets a ?lang link in their language (edge)', async () => {
+  it('non-LV rider gets the one-character language path, not a query (edge)', async () => {
     const { service, sent } = build({ language: 'ru' });
 
     await service.onRideCreated(ride());
 
-    expect(sent[0]!.body).toContain(`/t/${TOKEN}?lang=ru`);
+    // `/r/` is a dispatch rewrite onto `/t/[token]?lang=ru`. It costs 0 extra
+    // characters where `?lang=ru` cost 8, which is what puts RU inside the
+    // 70-character segment (#136).
+    expect(sent[0]!.body).toContain(`${SMS_HOST}/r/${TOKEN}`);
+    expect(sent[0]!.body).not.toContain('?lang=');
     expect(sent[0]!.body).toContain('забронировано');
   });
 
@@ -253,7 +265,7 @@ describe('RideNotificationsService.onStatus', () => {
     expect(body).not.toContain('Bērziņš');
     expect(body).toContain('AB-1234');
     expect(body).toMatch(/~\d+ min/); // a real estimate, not the '?' fallback
-    expect(body).toContain(`/t/${TOKEN}`);
+    expect(body).toContain(`${SMS_HOST}/t/${TOKEN}`);
     // The plate comes from the ride's STAMPED vehicle (#86), never the fleet.
     expect(calls).toContain(`repo.driverCard(${VEHICLE_ID})`);
   });
@@ -313,5 +325,60 @@ describe('RideNotificationsService.onStatus', () => {
       }),
     );
     logged.mockRestore();
+  });
+
+  it('a driver 60 km out renders ~99 min, not ~144 (edge — the #136 ETA clamp)', async () => {
+    // 0.54 degrees of latitude is ~60 km; at 417 m/min that is 144 minutes,
+    // which is three digits of a 70-character budget AND a dispatch bug.
+    const { service, sent } = build({
+      position: { lat: PICKUP.lat + 0.54, lng: PICKUP.lng },
+    });
+
+    await service.onStatus(transitioned('accepted'), 'offered');
+
+    expect(sent[0]!.body).toContain('~99 min');
+    expect(sent[0]!.body).not.toContain('~144');
+  });
+
+  it('a name over 10 characters renders as an initial (edge — the #136 name bound)', async () => {
+    const { service, sent } = build({ driverName: 'Konstantīns Ozoliņš' });
+
+    await service.onStatus(transitioned('accepted'), 'offered');
+
+    expect(sent[0]!.body).toContain('Šoferis K.,');
+    expect(sent[0]!.body).not.toContain('Konstantīn');
+  });
+
+  it('a body over one segment warns and STILL sends (failure — the assertion must not gate)', async () => {
+    const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    // `vehicleSchema` bounds a real plate at 10; this is past it on purpose,
+    // because the warn exists to catch exactly the case where a bound the
+    // budget assumes has stopped holding.
+    const { service, sent } = build({ plate: 'X'.repeat(80) });
+
+    await service.onStatus(transitioned('accepted'), 'offered');
+
+    expect(warned).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'ride.notifications.sms_multi_segment',
+        rideId: RIDE_ID,
+        kind: 'driver_assigned',
+        segments: expect.any(Number) as unknown,
+      }),
+    );
+    // The point of the case: the rider still got their message.
+    expect(sent).toHaveLength(1);
+    warned.mockRestore();
+  });
+
+  it('a budgeted body emits no multi-segment warn (expected — the assertion holds)', async () => {
+    const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service, sent } = build({ language: 'ru' });
+
+    await service.onStatus(transitioned('accepted'), 'offered');
+
+    expect(sent).toHaveLength(1);
+    expect(warned).not.toHaveBeenCalled();
+    warned.mockRestore();
   });
 });

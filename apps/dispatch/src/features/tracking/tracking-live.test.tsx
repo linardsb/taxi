@@ -23,7 +23,7 @@ vi.mock('leaflet', () => ({
   },
 }));
 
-const TOKEN = 'Ab3_-6qhTGplK0vwXz9y-Q'; // 22 base64url chars, same as shared's spec
+const TOKEN = 'Ab3_-6qhTGplK0vw'; // 16 base64url chars, same as shared's spec
 const POSITION_AT = '2026-08-11T09:00:00.000Z';
 const baseView: TrackingView = {
   state: 'arriving',

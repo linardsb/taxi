@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET } from '@/app/t/[token]/data/route';
 
-const TOKEN = 'Ab3_-6qhTGplK0vwXz9y-Q';
+const TOKEN = 'Ab3_-6qhTGplK0vw';
 const baseView = {
   state: 'arriving',
   driverName: 'Jānis',

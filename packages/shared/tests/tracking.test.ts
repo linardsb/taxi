@@ -5,7 +5,7 @@ import {
   trackingViewSchema,
 } from '../src/schemas/tracking';
 
-const VALID_TOKEN = 'Ab3_-6qhTGplK0vwXz9y-Q'; // 22 base64url chars
+const VALID_TOKEN = 'Ab3_-6qhTGplK0vw'; // 16 base64url chars
 
 const validView = {
   state: 'arriving',
@@ -19,7 +19,7 @@ const validView = {
 };
 
 describe('trackingTokenSchema', () => {
-  it('accepts a 22-char base64url token (expected)', () => {
+  it('accepts a 16-char base64url token (expected)', () => {
     expect(trackingTokenSchema.parse(VALID_TOKEN)).toBe(VALID_TOKEN);
   });
 
@@ -33,12 +33,21 @@ describe('trackingTokenSchema', () => {
     expect(trackingTokenSchema.safeParse('').success).toBe(false);
   });
 
+  it('rejects the pre-#136 22-char token (failure)', () => {
+    // A deliberate HARD cut-over, not a widening — no deploy had ever run
+    // when #136 landed, so no 22-char link exists. If one ever does, this is
+    // the assertion that has to be argued with.
+    expect(
+      trackingTokenSchema.safeParse('Ab3_-6qhTGplK0vwXz9y-Q').success,
+    ).toBe(false);
+  });
+
   it('rejects classic-base64 alphabet leaking in (failure)', () => {
     // + / = are base64, NOT base64url — a token built with the wrong encoder
     // must fail shape validation, not silently 404 later.
-    expect(
-      trackingTokenSchema.safeParse('Ab3+/6qhTGplK0vwXz9y=Q').success,
-    ).toBe(false);
+    expect(trackingTokenSchema.safeParse('Ab3+/6qhTGplK0v=').success).toBe(
+      false,
+    );
   });
 });
 

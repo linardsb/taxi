@@ -88,7 +88,7 @@ export const TRACKING_ETA_GRID_DECIMALS = 3;
  *   the source. Closing that needs in-flight coalescing — deferred to #13/#16,
  *   where the real concurrency shape is measurable.
  * - It does NOT protect the database read in general. An attacker can mint
- *   unlimited shape-valid 22-char tokens, each costing one `rideByToken`. This
+ *   unlimited shape-valid 16-char tokens, each costing one `rideByToken`. This
  *   bounds polling of a KNOWN token, which is the spend path.
  * It DOES now break visibly, which it did not when this limit shipped (#100).
  * `apps/dispatch` renders a distinct state on 429 rather than "connection

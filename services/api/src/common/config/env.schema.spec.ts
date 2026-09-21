@@ -21,8 +21,10 @@ const prod = (over: Record<string, string> = {}) => ({
   NODE_ENV: 'production',
   JWT_SECRET: STRONG_JWT,
   OTP_PEPPER: STRONG_PEPPER,
-  // Production refuses the localhost default — every prod() case needs a real one.
-  PUBLIC_TRACKING_BASE_URL: 'https://track.example.com',
+  // Production refuses the localhost default — every prod() case needs a real
+  // one, and since #136 it must also be <= 10 characters of host. The old
+  // `track.example.com` (17) is exactly what the new gate refuses.
+  PUBLIC_TRACKING_BASE_URL: 'https://sakta.lv',
   ...over,
 });
 
@@ -101,6 +103,8 @@ describe('envSchema PUBLIC_TRACKING_BASE_URL', () => {
     ).toThrow(/PUBLIC_TRACKING_BASE_URL is a localhost origin/);
   });
 
+  // Also the #136 case: `localhost:3000` is a 14-character host, over the
+  // budget the production gate enforces, and dev and CI must keep booting.
   it('leaves the localhost default alone outside production (expected)', () => {
     const env = envSchema.parse({
       ...base,
@@ -109,6 +113,34 @@ describe('envSchema PUBLIC_TRACKING_BASE_URL', () => {
     });
 
     expect(env.PUBLIC_TRACKING_BASE_URL).toBe('http://localhost:3000');
+  });
+
+  it('accepts a host inside the SMS budget (expected — #136)', () => {
+    const env = envSchema.parse(
+      prod({ PUBLIC_TRACKING_BASE_URL: 'https://sakta.lv' }),
+    );
+
+    expect(env.PUBLIC_TRACKING_BASE_URL).toBe('https://sakta.lv');
+  });
+
+  it('refuses an 11-character host, naming the limit and the reason (failure — #136)', () => {
+    // `saktacab.lv` is 11. One character over doubles the SMS bill on every
+    // phone-booked ride, because RU driver_assigned has zero spare.
+    expect(() =>
+      envSchema.parse(
+        prod({ PUBLIC_TRACKING_BASE_URL: 'https://saktacab.lv' }),
+      ),
+    ).toThrow(/host is 11 characters \(saktacab\.lv\); the limit is 10/);
+  });
+
+  it('does not count a trailing slash against the budget (edge — #136)', () => {
+    // `https://sakta.lv/` is 8 characters of host, not 9. An off-by-one here
+    // refuses a domain that actually fits.
+    const env = envSchema.parse(
+      prod({ PUBLIC_TRACKING_BASE_URL: 'https://sakta.lv/' }),
+    );
+
+    expect(env.PUBLIC_TRACKING_BASE_URL).toBe('https://sakta.lv/');
   });
 });
 

@@ -22,7 +22,7 @@ vi.mock('leaflet', () => ({
   },
 }));
 
-const TOKEN = 'Ab3_-6qhTGplK0vwXz9y-Q';
+const TOKEN = 'Ab3_-6qhTGplK0vw';
 const baseView: TrackingView = {
   state: 'arriving',
   driverName: 'Jānis',

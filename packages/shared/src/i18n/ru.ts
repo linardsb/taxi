@@ -7,10 +7,11 @@ import type { MessageKey } from './lv';
  */
 export const ru = {
   'sms.booking_confirmed': 'Ваше такси забронировано.',
-  'sms.booking_confirmed_phone':
-    'Ваше такси забронировано. Следите здесь: {link}',
-  'sms.driver_assigned':
-    'Ваш водитель {driver}, {plate}, будет через ~{eta} мин. Следите здесь: {link}',
+  'sms.booking_confirmed_phone': 'Ваше такси забронировано. {link}',
+  // The BINDING row of the #136 budget: 70 characters at every bound, zero
+  // spare. `TRACKING_LINK_HOST_MAX_CHARS` was derived from this line, so a
+  // character added here has to be paid for somewhere else.
+  'sms.driver_assigned': 'Водитель {driver}, {plate}, ~{eta} мин {link}',
   'sms.driver_arrived': 'Ваше такси ({plate}) на месте.',
   'sms.otp_code': 'Код Sakta Cab: {code}',
   'page.title': 'Ваша поездка',
