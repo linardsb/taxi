@@ -1169,8 +1169,9 @@ That ordering is the difference between these figures and #107's.
 
   **The tap is the evidence, not the underline.** Each of the three produced
   `ActivityTaskManager: START … act=android.intent.action.VIEW dat=https://sakta.lv/… cmp=com.android.chrome/…`
-  in `logcat`, and Chrome came to the foreground. Messages additionally attached a link-preview card to all
-  three, which it only does for a body it has parsed a URL out of.
+  in `logcat`, and Chrome came to the foreground. Messages also attached a link-preview card to all three
+  (visible in each bubble), which is consistent with it having parsed a URL out of the body — but that is
+  an inference about Bugle's internals, not something this run isolated. The tap carries the argument.
 
   **Oracle 2 — `NSDataDetector(.link)` on macOS 15.7.3 Foundation**, the class iOS's link detection is
   built on (`swift` one-shot, `observed` 2026-09-21). All six shipped bodies — `driver_assigned` and
