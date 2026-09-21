@@ -45,8 +45,14 @@ Sort the findings before touching code. Honor any direction in the scope argumen
 findings grouped and **ask** rather than fixing everything by default:
 
 - **Fix now (this PR)** — real, in-scope, belongs with this change.
-- **Defer / log as an issue** — real but later; don't bloat this PR. **Create a tracker issue** (or note it) instead
-  of fixing it here.
+- **Defer** — real but later; don't bloat this PR. **Where a deferral goes is decided by severity, not by habit:**
+  - **Low or Medium** → append it as one checklist line to the body of the **next open epic ticket that touches the
+    same file or module** (`gh issue edit <n> --body-file`). Name the PR, the finding code and the file. Do **not**
+    open a new issue. If no such epic ticket exists, note it in the report and drop it — it will be re-found by the
+    review of whichever PR next touches that file, which is the only time it can be verified anyway.
+  - **High** with no epic ticket to carry it → **create a tracker issue**, with the PR and finding code in the body.
+  - Why: a review deferral that becomes a standalone ticket competes with epic slices for the same queue and is worked
+    first because it is smaller. A deferral is a note for the next slice, not a slice.
 - **Needs a human look / manual test** — anything you should inspect or test by hand before trusting it. Flag it,
   don't silently auto-fix.
 - **Noise / won't-fix** — say why, then drop it.
@@ -148,12 +154,12 @@ ran, and its output — or says "not run" honestly.
 
 If these fixes are on a PR branch, **commit them (use `piv-commit`) and push** so the PR reflects the fixes and the
 review can re-run on the updated PR. If nothing was fixed (everything deferred), there's nothing to push — just make
-sure the deferred items are logged as issues.
+sure every deferred item is filed where §1 says it goes (an epic ticket's checklist, or a High-only issue).
 
 ## Output
 
-A short report: what was **fixed** (with its test), what was **deferred/logged** (with issue refs), what needs a
-**manual look/test** — and, if on a PR, the **pushed commit** + confirmation the PR is updated.
+A short report: what was **fixed** (with its test), what was **deferred** (with the epic ticket it was appended to,
+or the High-only issue ref), what needs a **manual look/test** — and, if on a PR, the **pushed commit** + confirmation the PR is updated.
 
 Write it to `.claude/reports/pr-{N}-review-fixes.md` (round number in the name when there is more
 than one). `piv-review-pr` round ≥ 2 reads this file: a report that exists only in this session's
