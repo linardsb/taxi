@@ -88,7 +88,20 @@ For each:
 2. Make the fix.
 3. Create and run a test that proves it. Where you can, **run the new test against the unfixed
    code and watch it fail** — that is the only thing separating a regression test from a passing
-   decoration.
+   decoration. **Probe with the input or mutation the finding NAMES, verbatim, before writing a
+   cleaner one.** A same-shaped substitute proves the test catches *your* mutation, not the
+   reviewer's, and it can go green on code that is genuinely broken:
+   - PR #245 F1 — probed the ReDoS with `'https://a' + '/'.repeat(100_000)`; the review's input
+     ended in a non-slash character. It **passed on the vulnerable body in 8 ms**, because a slash
+     run reaching the end of the string matches on the regex engine's first attempt. With the
+     review's trailing `x` the same body took **8892.7 ms** against a 250 ms bound. Two attempts,
+     and the first one was a false green.
+   - PR #241 L1 — the decline was published in three surfaces on a log-only helper that was
+     `14 passed, 14 total` through the reviewer's exact edit.
+
+   If you cannot reproduce the finding's own input (it needs a service, a fixture you do not have),
+   say so in the fixes report and name what you probed instead. A substituted probe is a reduced
+   claim, not an equivalent one.
 4. For a **Critical or High**, answer in one line: **what new failure mode does this fix's
    mechanism have?** — a swallowed `catch`, a promise chain with no terminal `catch`, a flag set
    before the thing it claims, a read moved before the write it depends on — and add the test for
