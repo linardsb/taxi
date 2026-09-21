@@ -317,9 +317,11 @@ recorded, so `codeql`'s diff-against-base and the merge ref are the ones the rev
 
 - `codeql` staying green is the acceptance for F1, not the local gate — **and it is met**. `observed`
   2026-09-21 at `ae997aa`, the head carrying every fix: `check` pass 3m32s, `audit-diff` pass, `codeql`
-  pass 1m25s, `CodeQL` pass, `ready` pass. The draft flipped to ready for review on its own. The only
-  commit after `ae997aa` is this line, which no job reads; CI re-runs on it regardless, so read the live
-  checks rather than this sentence if they disagree.
+  pass 1m25s, `CodeQL` pass, `ready` pass. The draft flipped to ready for review on its own. Everything
+  committed after `ae997aa` is documentation under `.claude/`, but CI re-runs on each such commit anyway —
+  so this line records one run at one head and cannot speak for the current one. **Read `gh pr checks 245`,
+  not this sentence.** Deliberately phrased without a commit count: the first draft said "the only commit
+  after `ae997aa`", which two further docs commits made false.
 - F5's new case asserts a length of 70 at a synthetic ceiling host. If `TRACKING_LINK_HOST_MAX_CHARS` ever
   moves, that number moves with it and the api spec is now a fourth place it lives.
 - The two deferrals are #246 and #247, neither blocking.
