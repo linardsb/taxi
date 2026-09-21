@@ -369,14 +369,35 @@ describe('envSchema SMS_PROVIDER and the bake-off credential groups (#137)', () 
     BUDGETSMS_FROM: 'SaktaCab',
   };
 
-  it('defaults to auto and accepts a checkout with no SMS credentials at all (expected)', () => {
+  it('defaults to stub and accepts a checkout with no SMS credentials at all (expected)', () => {
     // A fresh clone and the committed `.env.example` both look like this.
-    // `auto` is exactly pre-#137 behaviour, so nothing existing has to move.
+    // `stub` is a NAMED kind rather than an inference, mirroring
+    // `PUSH_PROVIDER` — it demands no credential group, and the factory
+    // refuses it under `NODE_ENV=production`.
     const env = envSchema.parse(dev());
 
-    expect(env.SMS_PROVIDER).toBe('auto');
+    expect(env.SMS_PROVIDER).toBe('stub');
     expect(env.BULKGATE_APPLICATION_ID).toBeUndefined();
     expect(env.BUDGETSMS_FROM).toBeUndefined();
+  });
+
+  it('refuses the retired `auto` with a message naming the migration (failure)', () => {
+    // The one invalid value a real deploy will actually contain: #240 shipped
+    // `SMS_PROVIDER=auto` in the committed template, so every env file copied
+    // from it carries it. zod's own text ("Invalid enum value. Expected …")
+    // says what is legal and nothing about what to do, which is the whole
+    // reason for a custom `message` — and an untested custom message is one
+    // refactor away from silently reverting to the generic one.
+    expect(() => envSchema.parse(dev({ SMS_PROVIDER: 'auto' }))).toThrow(
+      /'auto' was retired \(#137\)/,
+    );
+
+    // The message has to be true for EVERY rejected value, not only `'auto'`
+    // — a custom `message` replaces zod's whole string, so this case gets it
+    // too. Constraint first is what makes it honest here.
+    expect(() => envSchema.parse(dev({ SMS_PROVIDER: 'vonage' }))).toThrow(
+      /SMS_PROVIDER must be one of: stub \| twilio \| bulkgate \| budgetsms/,
+    );
   });
 
   it('parses each full group with values retained, and reads empty lines as unset (expected)', () => {
@@ -411,7 +432,7 @@ describe('envSchema SMS_PROVIDER and the bake-off credential groups (#137)', () 
     // blanked in a hand-edited env file rather than deleted — would be `''`
     // and refuse to boot in EVERY environment with a generic enum message.
     expect(envSchema.parse(dev({ SMS_PROVIDER: '' })).SMS_PROVIDER).toBe(
-      'auto',
+      'stub',
     );
     // And the widening stops there: an unknown kind is still rejected.
     expect(() => envSchema.parse(dev({ SMS_PROVIDER: '  ' }))).toThrow();

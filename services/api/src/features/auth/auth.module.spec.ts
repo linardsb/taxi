@@ -7,15 +7,16 @@ import { SMS_PROVIDER } from './sms/sms.tokens';
 import { StubSmsProvider } from './sms/stub-sms.provider';
 import { TwilioSmsProvider } from './sms/twilio-sms.provider';
 
-// `SMS_PROVIDER: 'auto'` is the schema's default, so every case that does not
-// name a kind describes a realistic `Env`. The cast is still needed — these
-// literals are deliberately partial — but `satisfies Partial<Env>` runs FIRST
-// and checks the keys against the schema, so a typo like `SMS_PROVDER` is a
-// TS2561 rather than a green suite testing a field the factory never reads.
-// It has to wrap the whole literal: `SMS_PROVIDER: 'auto' satisfies
-// Env['SMS_PROVIDER']` checks the value and says nothing about the key.
+// `SMS_PROVIDER: 'stub'` is the schema's default (#137 retired `'auto'`), so
+// every case that does not name a kind describes a realistic `Env`. The cast
+// is still needed — these literals are deliberately partial — but
+// `satisfies Partial<Env>` runs FIRST and checks the keys against the schema,
+// so a typo like `SMS_PROVDER` is a TS2561 rather than a green suite testing a
+// field the factory never reads. It has to wrap the whole literal:
+// `SMS_PROVIDER: 'stub' satisfies Env['SMS_PROVIDER']` checks the value and
+// says nothing about the key.
 const env = (NODE_ENV: Env['NODE_ENV'], over: Partial<Env> = {}) =>
-  ({ NODE_ENV, SMS_PROVIDER: 'auto', ...over }) satisfies Partial<Env> as Env;
+  ({ NODE_ENV, SMS_PROVIDER: 'stub', ...over }) satisfies Partial<Env> as Env;
 
 const TRIO: Partial<Env> = {
   TWILIO_ACCOUNT_SID: 'AC' + 'f'.repeat(32),
@@ -44,14 +45,16 @@ describe('smsProviderFactory', () => {
     expect(smsProviderFactory(env('test'))).toBeInstanceOf(StubSmsProvider);
   });
 
-  it('binds the Twilio provider whenever the trio is present (expected)', () => {
-    // The values are only present when they passed the schema's refines, so
-    // "the trio exists" already means "vetted" — the same reasoning as the
-    // payments factory's "a client exists already means test mode".
+  it('binds Twilio when SMS_PROVIDER names it (expected)', () => {
+    // Presence stopped selecting at #137 and `'auto'` went with it: the trio
+    // is now the credential group `SMS_PROVIDER=twilio` DEMANDS, not the thing
+    // that chooses Twilio. The values are only present when they passed the
+    // schema's refines, so the factory's non-null assertions rest on the
+    // superRefine rather than on a duplicated presence test.
     for (const NODE_ENV of ['development', 'test', 'production'] as const) {
-      expect(smsProviderFactory(env(NODE_ENV, TRIO))).toBeInstanceOf(
-        TwilioSmsProvider,
-      );
+      expect(
+        smsProviderFactory(env(NODE_ENV, { ...TRIO, SMS_PROVIDER: 'twilio' })),
+      ).toBeInstanceOf(TwilioSmsProvider);
     }
   });
 
@@ -92,34 +95,59 @@ describe('smsProviderFactory', () => {
 
   it('refuses to boot in production (failure)', () => {
     // The stub delivers no SMS and logs the code in full, so an internet-facing
-    // deploy without the TWILIO_* trio hands sign-in to anyone with log read
-    // access. Failing at boot is the point: a silent stub is worse than no boot.
+    // deploy that reached it hands sign-in to anyone with log read access.
+    // Failing at boot is the point: a silent stub is worse than no boot.
     expect(() => smsProviderFactory(env('production'))).toThrow(
       /No production SmsProvider is bound/,
     );
+  });
 
-    // #137 added a selector above this branch; `'auto'` — the default, and
-    // what every existing `.env` means — must still reach the same refusal.
+  it('throws in production with a trio AND a funded group present but SMS_PROVIDER=stub (edge)', () => {
+    // THE REGRESSION THIS LOOP EXISTS TO CLOSE. Under #240's `'auto'` this
+    // exact Env bound Twilio — silently, with no log line and no refusal —
+    // while the operator had just funded BulkGate. Post bake-off it is the
+    // likely shape of a real `.env`: two complete groups and a selector
+    // nobody moved. It must now be a boot failure, not a bill.
     expect(() =>
-      smsProviderFactory(env('production', { SMS_PROVIDER: 'auto' })),
+      smsProviderFactory(
+        env('production', {
+          ...TRIO,
+          ...BULKGATE_GROUP,
+          SMS_PROVIDER: 'stub',
+        }),
+      ),
     ).toThrow(/No production SmsProvider is bound/);
   });
 
-  it('names BOTH exits when a funded candidate group is present but unselected (failure)', () => {
-    // The likeliest misconfiguration this PR introduces: an operator funds
-    // BulkGate, sets all three BULKGATE_* vars and forgets the selector.
-    // `SMS_PROVIDER` defaults to `'auto'`, the bulkgate branch is skipped,
-    // the trio is absent — and before #137's selector existed a message
-    // naming only Twilio was complete. It is not any more, so the refusal
-    // must point at the vendor the operator actually funded too.
+  it('binds the stub in development even with a complete TWILIO_* trio (edge)', () => {
+    // The dev-ergonomics change #137's retirement makes, pinned so it is a
+    // decision rather than a surprise: before it, real `TWILIO_*` values in a
+    // developer's env file sent real SMS in development. Now they do not
+    // until `SMS_PROVIDER=twilio` says so — and the factory's
+    // `auth.sms.provider_bound` line names `stub` at every boot, so the
+    // change is visible rather than silent.
+    expect(smsProviderFactory(env('development', TRIO))).toBeInstanceOf(
+      StubSmsProvider,
+    );
+  });
+
+  it('names SMS_PROVIDER and the three selectable kinds when it refuses (failure)', () => {
+    // The likeliest way to reach the refusal: an operator funds BulkGate, sets
+    // all three BULKGATE_* vars and forgets the selector. The message must
+    // send them to the variable that actually binds — and must NOT offer the
+    // TWILIO_* trio as an alternative route, which it is no longer: since the
+    // retirement the trio is the credential group `twilio` demands, and
+    // setting it alone binds nothing.
     const boot = () =>
       smsProviderFactory(env('production', { ...BULKGATE_GROUP }));
 
     expect(boot).toThrow(/No production SmsProvider is bound/);
-    expect(boot).toThrow(/SMS_PROVIDER=bulkgate\|budgetsms/);
-    // And the Twilio route stays named: `'auto'` + the trio is still the
-    // path every pre-#137 deploy takes.
-    expect(boot).toThrow(/TWILIO_ACCOUNT_SID/);
+    expect(boot).toThrow(
+      /Set SMS_PROVIDER to twilio, bulkgate or budgetsms together with that kind's whole credential group/,
+    );
+    expect(boot).toThrow(
+      /A complete credential group does NOT bind on its own/,
+    );
   });
 
   it('is what the module actually binds SMS_PROVIDER to (edge)', () => {

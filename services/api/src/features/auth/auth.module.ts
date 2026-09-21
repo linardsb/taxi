@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import type { SmsProvider } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
@@ -12,79 +12,101 @@ import { SMS_PROVIDER } from './sms/sms.tokens';
 import { StubSmsProvider } from './sms/stub-sms.provider';
 import { TwilioSmsProvider } from './sms/twilio-sms.provider';
 
+const logger = new Logger('smsProviderFactory');
+
 /**
- * The `TWILIO_*` trio binds `TwilioSmsProvider` (#85) — the schema's refines
- * already vetted the values, so trio-presence IS the client construction (the
- * `paymentsProviderFactory` shape, minus the SDK-handle token: `fetch` is
- * ambient). Until the trio is set, production refuses to boot:
+ * `SMS_PROVIDER` states which `SmsProvider` binds, and nothing else selects
+ * one (#137). Until it names a real vendor, production refuses to boot:
  * `StubSmsProvider` delivers no SMS and logs the code in full, so an
  * internet-facing deploy that reached it would hand full sign-in to anyone
  * with log read access — the OTP *is* the credential. Structural rather than
- * conventional.
+ * conventional. `pushProviderFactory` (`features/push/push.module.ts`) is the
+ * same function over the same reasoning.
  *
- * `SMS_PROVIDER` names a kind outright (#137). It exists because a delivery
- * bake-off funds two or three vendor accounts AT ONCE, so credential presence
- * can no longer disambiguate them. `'auto'` is exactly the paragraph above —
- * the default, and what every existing `.env` already means. Naming a kind is
- * a selection, NOT a fallback chain: exactly one provider binds, and there is
- * no failover to a second vendor (a silent one would make the scorecard
- * unreadable).
+ * Naming a kind is a selection, NOT a fallback chain: exactly one provider
+ * binds, and there is no failover to a second vendor (a silent one would make
+ * the bake-off's scorecard unreadable and its €/week ledger wrong).
  *
- * **The production refusal's CONDITION is unchanged.** It still fires on
- * nothing bound and `NODE_ENV=production`, and `'auto'` reaches it by the
- * same path it always did. Its MESSAGE is not unchanged, and could not stay
- * so: under `'auto'` there are now three ways out of this function rather
- * than one, so a message naming only the Twilio trio would send an operator
- * who funded BulkGate to the wrong vendor's console.
+ * **`'auto'` was retired here.** #240 shipped it as the default, meaning "the
+ * `TWILIO_*` trio decides" — correct while the ticket's job was to measure
+ * rather than migrate, and wrong the moment a second vendor account is
+ * funded, which is the state the bake-off creates: an operator who adds a
+ * complete `BULKGATE_*` group and forgets the selector got Twilio, silently,
+ * and every OTP billed at the rate the bake-off existed to escape. Credential
+ * presence stopped selecting; only this variable does. On the box it lives in
+ * `/opt/taxi/.env`, handed whole to the container by `env_file` in
+ * `compose.prod.yml` — the switch procedure is `docs/runbooks/hetzner-deploy.md` §5.4.
  */
 export function smsProviderFactory(env: Env): SmsProvider {
+  // ONE `event` name for every branch, including the refusal's absence of
+  // one: what an operator greps for after a switch is a line naming the kind
+  // that actually bound. The kind, never a credential — no sender ID, no
+  // token, no application id (`logging-standard.md`'s never-log list).
+  //
+  // THIS LINE IS EMITTED TWICE PER BOOT, and that is correct. `AuthModule`
+  // and `NotificationsModule` each bind `SMS_PROVIDER` with this factory
+  // (`notifications.module.ts:13-20` explains why the duplicate is deliberate
+  // — exporting auth's binding would let any module inject SMS off auth's
+  // back and give away the production refusal). Two identical lines are the
+  // operator-visible evidence that BOTH SMS paths bound the same vendor; one
+  // line means only one path switched, and §5.4 step 5 teaches that as the
+  // signal to roll back.
+  const bind = <P extends SmsProvider>(provider: P): P => {
+    logger.log({
+      event: 'auth.sms.provider_bound',
+      provider: env.SMS_PROVIDER,
+      at: new Date().toISOString(),
+    });
+    return provider;
+  };
+
   // The non-null assertions below are load-bearing on the schema, not on
-  // luck: `SMS_PROVIDER` can only hold a named kind once the superRefine has
-  // confirmed that kind's whole credential group. Same reasoning
-  // `auth.module.spec.ts` records for the trio — the values are only present
-  // when they passed the schema's refines.
-  if (env.SMS_PROVIDER === 'bulkgate') {
-    return new BulkGateSmsProvider({
-      applicationId: env.BULKGATE_APPLICATION_ID!,
-      applicationToken: env.BULKGATE_APPLICATION_TOKEN!,
-      senderIdValue: env.BULKGATE_SENDER_ID_VALUE!,
-    });
-  }
-  if (env.SMS_PROVIDER === 'budgetsms') {
-    return new BudgetSmsProvider({
-      username: env.BUDGETSMS_USERNAME!,
-      userid: env.BUDGETSMS_USERID!,
-      handle: env.BUDGETSMS_HANDLE!,
-      from: env.BUDGETSMS_FROM!,
-      // No `baseUrl`: `/testsms/` is the bake-off script's business, never a
-      // deploy's.
-    });
-  }
-  // Both `'twilio'` and `'auto'` land here, and deliberately share one branch
-  // rather than getting a second construction each: under `'twilio'` the
-  // superRefine has already demanded the trio, so the presence test it would
-  // duplicate can only pass.
-  if (
-    env.TWILIO_ACCOUNT_SID &&
-    env.TWILIO_AUTH_TOKEN &&
-    env.TWILIO_FROM_NUMBER
-  ) {
-    return new TwilioSmsProvider({
-      accountSid: env.TWILIO_ACCOUNT_SID,
-      authToken: env.TWILIO_AUTH_TOKEN,
-      from: env.TWILIO_FROM_NUMBER,
-    });
-  }
-  if (env.NODE_ENV === 'production') {
-    // Both exits are named, because reaching here with a funded BulkGate or
-    // BudgetSMS account and no `SMS_PROVIDER` is the likeliest way to arrive:
-    // presence stopped selecting at #137, so a complete credential group is
-    // no longer enough on its own.
-    throw new Error(
-      'No production SmsProvider is bound: StubSmsProvider delivers nothing and logs OTP codes in full. Either set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER (#85), or set SMS_PROVIDER=bulkgate|budgetsms together with that group of credentials (#137) — a complete BULKGATE_*/BUDGETSMS_* group does NOT bind on its own. Then run with NODE_ENV=production.',
+  // luck: `SMS_PROVIDER` can only hold a kind once the superRefine has
+  // confirmed that kind's whole credential group
+  // (`sms-env.schema.ts`'s `checkSmsCredentialGroups`). That is also why the
+  // Twilio branch carries no credential-presence test — it would duplicate a
+  // check that has already passed, and a test here is what made presence look
+  // like a selector.
+  if (env.SMS_PROVIDER === 'twilio') {
+    return bind(
+      new TwilioSmsProvider({
+        accountSid: env.TWILIO_ACCOUNT_SID!,
+        authToken: env.TWILIO_AUTH_TOKEN!,
+        from: env.TWILIO_FROM_NUMBER!,
+      }),
     );
   }
-  return new StubSmsProvider();
+  if (env.SMS_PROVIDER === 'bulkgate') {
+    return bind(
+      new BulkGateSmsProvider({
+        applicationId: env.BULKGATE_APPLICATION_ID!,
+        applicationToken: env.BULKGATE_APPLICATION_TOKEN!,
+        senderIdValue: env.BULKGATE_SENDER_ID_VALUE!,
+      }),
+    );
+  }
+  if (env.SMS_PROVIDER === 'budgetsms') {
+    return bind(
+      new BudgetSmsProvider({
+        username: env.BUDGETSMS_USERNAME!,
+        userid: env.BUDGETSMS_USERID!,
+        handle: env.BUDGETSMS_HANDLE!,
+        from: env.BUDGETSMS_FROM!,
+        // No `baseUrl`: `/testsms/` is the bake-off script's business, never a
+        // deploy's.
+      }),
+    );
+  }
+  if (env.NODE_ENV === 'production') {
+    // The `TWILIO_*` trio is no longer an alternative to `SMS_PROVIDER` — it
+    // is the credential group `SMS_PROVIDER=twilio` demands. A message
+    // offering it as a second way out would send an operator to set three
+    // variables that will not bind on their own.
+    throw new Error(
+      "No production SmsProvider is bound: SMS_PROVIDER is stub (or unset, which defaults to stub), and StubSmsProvider delivers nothing and logs OTP codes in full. Set SMS_PROVIDER to twilio, bulkgate or budgetsms together with that kind's whole credential group — TWILIO_* (#85), BULKGATE_* or BUDGETSMS_* (#137). A complete credential group does NOT bind on its own. Then run with NODE_ENV=production.",
+    );
+  }
+  return bind(new StubSmsProvider());
 }
 
 @Module({

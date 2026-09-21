@@ -5,8 +5,10 @@ import { maskPhone } from '../phone-mask';
 /**
  * Dev implementation of the SmsProvider seam (@taxi/shared). Logs the code
  * instead of spending money at Twilio (#7 scope: "stub implementation in
- * dev — no Twilio spend"). The real implementation is
- * `twilio-sms.provider.ts` (#85), bound when the `TWILIO_*` trio is set.
+ * dev — no Twilio spend"). Bound when `SMS_PROVIDER=stub`, which is the
+ * schema default; a real implementation — `twilio-sms.provider.ts` (#85),
+ * `bulkgate-sms.provider.ts` or `budgetsms.provider.ts` (#137) — binds when
+ * `SMS_PROVIDER` names it. Production refuses this one at boot.
  */
 @Injectable()
 export class StubSmsProvider implements SmsProvider {

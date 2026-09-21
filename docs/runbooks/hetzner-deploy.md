@@ -221,7 +221,7 @@ compose hostnames, so the database password lives in one place.
 | `TWILIO_ACCOUNT_SID` | `AC…` from console.twilio.com | **All three or none — the schema refuses a partial trio in every environment.** A **trial** account is enough for testing: it sends only to numbers verified in the console (Atis, Dina, Linards) and the sender must be the trial number. Paid account + alphanumeric sender (`SaktaCab`) before the pilot opens (#137). |
 | `TWILIO_AUTH_TOKEN` | the auth token | |
 | `TWILIO_FROM_NUMBER` | the trial number, E.164 (`+371…`) | |
-| `SMS_PROVIDER` | `auto` | Which `SmsProvider` binds (#137). `auto` is exactly pre-#137 behaviour — the `TWILIO_*` trio binds Twilio, otherwise production refuses — so leaving it alone moves nothing. Naming `twilio`, `bulkgate` or `budgetsms` selects that vendor outright and makes its whole credential group **required at boot**. **A funded candidate group does NOT bind on its own:** #137 separated presence from selection, because the bake-off funds two or three accounts at once. Selection, never failover — exactly one provider binds and there is no fallback to a second vendor. |
+| `SMS_PROVIDER` | `twilio` | **Required in production** (#137), in the same sense `PUSH_PROVIDER` is: `stub` — the schema default, and what an omitted line means — delivers nothing and logs OTP codes in full, so the factory refuses it at boot. The only thing that selects a provider: naming `twilio`, `bulkgate` or `budgetsms` binds that vendor and makes its whole credential group **required at boot**, and **a funded credential group does NOT bind on its own.** Selection, never failover — exactly one provider binds and there is no fallback to a second vendor. `auto` was retired: it meant "the `TWILIO_*` trio decides", which silently preferred Twilio over a candidate account somebody had just funded. To change vendors, §5.4. |
 | `BULKGATE_APPLICATION_ID`, `BULKGATE_APPLICATION_TOKEN`, `BULKGATE_SENDER_ID_VALUE` | omit | #137 bake-off candidate. **All three or none, in every environment.** Only reached with `SMS_PROVIDER=bulkgate`. Sender is `gText`/alphanumeric (`SaktaCab`) — never an E.164 number. |
 | `BUDGETSMS_USERNAME`, `BUDGETSMS_USERID`, `BUDGETSMS_HANDLE`, `BUDGETSMS_FROM` | omit | #137 bake-off candidate. **FOUR keys, not three — all or none.** `BUDGETSMS_HANDLE` is the API secret and `BUDGETSMS_USERID` is the numeric account id, not the username. The endpoint is GET-only, so the secret and every message body travel in the URL — row 16 of `docs/research/sms-bakeoff-scorecard.md`, and a decision to record before binding this in production. |
 | `STRIPE_SECRET_KEY` | **leave empty** | Cash-only pilot: no SIA, no key. Empty binds `CardPaymentsDisabledProvider`, which **refuses** every card charge (§9). A `sk_live_…` is refused at boot in every environment. |
@@ -246,6 +246,7 @@ GOOGLE_MAPS_API_KEY=
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_FROM_NUMBER=
+SMS_PROVIDER=twilio
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 ```

@@ -770,7 +770,8 @@ async function signIn(
     `no \`auth.otp.stub_sent\` captured for ${masked} in ${OTP_TIMEOUT_MS} ms.\n` +
       `  Either LOG INTERCEPTION IS BROKEN — the same failure that would later turn every paid-call\n` +
       `  count into a meaningless zero, which is why sign-in reaching the capture first is load-bearing —\n` +
-      `  or the TWILIO_* trio is set and the real provider is bound, which logs no code at all. Unset it.`,
+      `  or SMS_PROVIDER names a real vendor, whose provider logs no code at all. Set SMS_PROVIDER=stub\n` +
+      `  (#137 — unsetting the TWILIO_* trio no longer changes the binding; only this variable does).`,
   );
 
   const verified = expectStatus(
