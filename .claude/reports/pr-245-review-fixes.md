@@ -296,10 +296,22 @@ pnpm --filter @taxi/api test -- sms-templates.spec
 10 → 11 is now **8** assertion failures, every one on length, up from 7 because F9 added the negative.
 Both mutations reverted, `git status --porcelain` clean, suite green after.
 
-**The gate ran at `5e515a1`, which is the final CODE head.** Commits after it are this report and the
-review artifact only — no test, lint rule or build step reads either, so the figures above do not go stale
-on them. That ordering is deliberate: a report that quotes figures its own commit then moves is stale by
-construction.
+**The gate ran at `5e515a1`, which is the final CODE head.** Everything after it is documentation under
+`.claude/` — `git log --name-only 5e515a1..HEAD` is two commits touching this report, the implementation
+report and the plan, and nothing else. No test, lint rule or build step reads any of them, so the figures
+above do not go stale on them. That ordering is deliberate: a report that quotes figures its own commit
+then moves is stale by construction.
+
+**Corrected before this shipped:** the sentence above first said those commits were "this report and the
+review artifact". The review artifact is **not in any of them** — `.claude/code-reviews/pr-245-review.md`
+is untracked in the MAIN checkout, which is where `taxi-pr-review-report-location` says a review belongs
+precisely so the author's commits cannot sweep it into the PR it reviews. Committing it here would be the
+documented mistake; landing it is a separate `docs/pr-245-review` PR off `origin/main`, and until that
+happens it belongs to no branch. **Flagged rather than done** — five reviews (#138–#142) orphaned this
+way before and had to be swept up as #143.
+
+**Base did not move during this pass.** `git rev-parse origin/main` = `246ae4b0`, the same sha the review
+recorded, so `codeql`'s diff-against-base and the merge ref are the ones the review reasoned about.
 
 ## What the next round should check
 
