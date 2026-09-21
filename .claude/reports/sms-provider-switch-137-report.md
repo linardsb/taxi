@@ -39,9 +39,11 @@ containers.
 | 14 · §5.4 switch procedure | `docs/runbooks/hetzner-deploy.md` | **CREATE** (section) |
 | 15 · the full gate | — | green |
 
-Five commits on the branch, plan first: `7c3005a` (plan) · `50350fe` (code) ·
+The substantive commits, plan first: `7c3005a` (plan) · `50350fe` (code) ·
 `7f6a008` (runbook + `.env.example`) · `dae738d` (the seventh stale claim,
-D7) · plus this report's own commit.
+D7). This report's own commits follow them and change no code — deliberately
+not totalled, because a count stated inside the report is re-staled by the
+commit that states it (#212).
 
 ## Tests added
 
@@ -295,7 +297,7 @@ in §5.4's own text rather than implied to be covered.
 
 ## Ready for the next step
 
-Working tree clean, five commits on `feature/sms-provider-switch-137`.
+Working tree clean on `feature/sms-provider-switch-137`.
 **The PR must not close #137** — the verdict half is still open, so keep
 closing keywords away from `#137` in the body.
 
