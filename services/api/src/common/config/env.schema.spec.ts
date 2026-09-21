@@ -346,3 +346,152 @@ describe('envSchema PUSH_PROVIDER (#14)', () => {
     expect(() => envSchema.parse(dev({ PUSH_PROVIDER: 'fcm' }))).toThrow();
   });
 });
+
+describe('envSchema SMS_PROVIDER and the bake-off credential groups (#137)', () => {
+  const dev = (over: Record<string, string> = {}) => ({
+    ...base,
+    NODE_ENV: 'development',
+    JWT_SECRET: STRONG_JWT,
+    OTP_PEPPER: STRONG_PEPPER,
+    ...over,
+  });
+
+  const bulkgate = {
+    BULKGATE_APPLICATION_ID: '12345',
+    BULKGATE_APPLICATION_TOKEN: 'h'.repeat(32),
+    BULKGATE_SENDER_ID_VALUE: 'SaktaCab',
+  };
+
+  const budgetsms = {
+    BUDGETSMS_USERNAME: 'saktacab',
+    BUDGETSMS_USERID: '123456',
+    BUDGETSMS_HANDLE: 'i'.repeat(32),
+    BUDGETSMS_FROM: 'SaktaCab',
+  };
+
+  it('defaults to auto and accepts a checkout with no SMS credentials at all (expected)', () => {
+    // A fresh clone and the committed `.env.example` both look like this.
+    // `auto` is exactly pre-#137 behaviour, so nothing existing has to move.
+    const env = envSchema.parse(dev());
+
+    expect(env.SMS_PROVIDER).toBe('auto');
+    expect(env.BULKGATE_APPLICATION_ID).toBeUndefined();
+    expect(env.BUDGETSMS_FROM).toBeUndefined();
+  });
+
+  it('parses each full group with values retained, and reads empty lines as unset (expected)', () => {
+    const parsed = envSchema.parse(
+      dev({ ...bulkgate, ...budgetsms, SMS_PROVIDER: 'budgetsms' }),
+    );
+
+    expect(parsed.BULKGATE_SENDER_ID_VALUE).toBe('SaktaCab');
+    expect(parsed.BUDGETSMS_USERID).toBe('123456');
+    expect(parsed.SMS_PROVIDER).toBe('budgetsms');
+
+    // The `.env.example` template commits all seven keys empty.
+    const blank = envSchema.parse(
+      dev({
+        BULKGATE_APPLICATION_ID: '',
+        BULKGATE_APPLICATION_TOKEN: '',
+        BULKGATE_SENDER_ID_VALUE: '',
+        BUDGETSMS_USERNAME: '',
+        BUDGETSMS_USERID: '',
+        BUDGETSMS_HANDLE: '',
+        BUDGETSMS_FROM: '',
+      }),
+    );
+    expect(blank.BULKGATE_APPLICATION_TOKEN).toBeUndefined();
+    expect(blank.BUDGETSMS_HANDLE).toBeUndefined();
+  });
+
+  it('refuses a named kind whose credential group is absent (failure)', () => {
+    // Without this the factory's non-null assertions would be the only thing
+    // between a typo and `new BulkGateSmsProvider({ applicationId: undefined })`.
+    expect(() => envSchema.parse(dev({ SMS_PROVIDER: 'bulkgate' }))).toThrow(
+      /SMS_PROVIDER=bulkgate needs BULKGATE_APPLICATION_ID, BULKGATE_APPLICATION_TOKEN, BULKGATE_SENDER_ID_VALUE/,
+    );
+
+    // A named kind with SOMEONE ELSE'S group funded is the bake-off's own
+    // misconfiguration, and it fails for the same reason.
+    expect(() =>
+      envSchema.parse(dev({ ...bulkgate, SMS_PROVIDER: 'budgetsms' })),
+    ).toThrow(/SMS_PROVIDER=budgetsms needs BUDGETSMS_USERNAME/);
+  });
+
+  it('accepts a named kind once its whole group is present (expected)', () => {
+    expect(
+      envSchema.parse(dev({ ...bulkgate, SMS_PROVIDER: 'bulkgate' }))
+        .SMS_PROVIDER,
+    ).toBe('bulkgate');
+
+    expect(
+      envSchema.parse(
+        prod({
+          TWILIO_ACCOUNT_SID: 'AC' + 'f'.repeat(32),
+          TWILIO_AUTH_TOKEN: 'g'.repeat(32),
+          TWILIO_FROM_NUMBER: '+37120000000',
+          SMS_PROVIDER: 'twilio',
+        }),
+      ).SMS_PROVIDER,
+    ).toBe('twilio');
+  });
+
+  it('refuses a partial BUDGETSMS group — four keys, not three — in every environment (failure)', () => {
+    // The group the generalised all-or-none check exists for: hardcoding a
+    // trio would have let the fourth key go missing silently.
+    expect(() =>
+      envSchema.parse(
+        dev({
+          BUDGETSMS_USERNAME: budgetsms.BUDGETSMS_USERNAME,
+          BUDGETSMS_USERID: budgetsms.BUDGETSMS_USERID,
+          BUDGETSMS_HANDLE: budgetsms.BUDGETSMS_HANDLE,
+        }),
+      ),
+    ).toThrow(
+      /BUDGETSMS_FROM is missing: BUDGETSMS_\* must be set all together or not at all/,
+    );
+
+    expect(() =>
+      envSchema.parse(
+        prod({ BULKGATE_APPLICATION_ID: bulkgate.BULKGATE_APPLICATION_ID }),
+      ),
+    ).toThrow(
+      /BULKGATE_APPLICATION_TOKEN is missing[\s\S]*BULKGATE_SENDER_ID_VALUE is missing/,
+    );
+  });
+
+  it('holds BUDGETSMS_FROM to a stricter shape than TWILIO_FROM_NUMBER (edge)', () => {
+    // `Sakta Cab` clears the Twilio refine, which permits a space. BudgetSMS
+    // §2 allows [a-z][A-Z][0-9] only, and a space earns a 2003/2004 at send
+    // time — so it has to fail at boot instead.
+    expect(
+      envSchema.parse(
+        prod({
+          TWILIO_ACCOUNT_SID: 'AC' + 'f'.repeat(32),
+          TWILIO_AUTH_TOKEN: 'g'.repeat(32),
+          TWILIO_FROM_NUMBER: 'Sakta Cab',
+        }),
+      ).TWILIO_FROM_NUMBER,
+    ).toBe('Sakta Cab');
+
+    expect(() =>
+      envSchema.parse(dev({ ...budgetsms, BUDGETSMS_FROM: 'Sakta Cab' })),
+    ).toThrow(/BUDGETSMS_FROM must be alphanumeric with no spaces/);
+
+    // BulkGate's own sender, by contrast, is the Twilio alphanumeric shape
+    // minus the E.164 alternative — a bare number is not a `gText` sender.
+    expect(() =>
+      envSchema.parse(dev({ ...bulkgate, BULKGATE_SENDER_ID_VALUE: '37167' })),
+    ).toThrow(/BULKGATE_SENDER_ID_VALUE must be an alphanumeric sender ID/);
+  });
+
+  it('refuses a non-numeric BUDGETSMS_USERID and an unknown SMS_PROVIDER (failure)', () => {
+    // The username pasted into the userid slot fails here, at boot, rather
+    // than as a 2001 on the first send.
+    expect(() =>
+      envSchema.parse(dev({ ...budgetsms, BUDGETSMS_USERID: 'saktacab' })),
+    ).toThrow(/BUDGETSMS_USERID must be numeric/);
+
+    expect(() => envSchema.parse(dev({ SMS_PROVIDER: 'vonage' }))).toThrow();
+  });
+});

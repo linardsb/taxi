@@ -293,6 +293,8 @@ is shipped and tested (#85), so it costs zero engineering to start.
 BudgetSMS before pilot volume → swap behind the `SmsProvider` seam if a cheaper
 provider matches on every reliability criterion.
 
+The bake-off is run and recorded in [`sms-bakeoff-scorecard.md`](./sms-bakeoff-scorecard.md) (#137).
+
 ---
 
 ## 5. Arithmetic
