@@ -28,6 +28,7 @@ containers.
 | 5 · doc-comment rewrite | `services/api/src/features/auth/auth.module.ts` | UPDATE |
 | 6 · stale trio-presence claim | `services/api/src/features/auth/sms/stub-sms.provider.ts` | UPDATE |
 | 6b · a **sixth** stale claim the plan's enumeration missed | `services/api/scripts/mint-tracked-ride.ts` | UPDATE |
+| 6c · a **seventh**, inside a file this loop already edited | `services/api/src/common/config/sms-env.schema.ts` | UPDATE |
 | 7 · spec update + 2 new cases | `services/api/src/features/auth/auth.module.spec.ts` | UPDATE |
 | 8 · metadata pin for the ride-SMS binding | `services/api/src/features/notifications/notifications.module.spec.ts` | **CREATE** |
 | 9 · spec update + 1 new failure case | `services/api/src/common/config/env.schema.spec.ts` | UPDATE |
@@ -38,8 +39,9 @@ containers.
 | 14 · §5.4 switch procedure | `docs/runbooks/hetzner-deploy.md` | **CREATE** (section) |
 | 15 · the full gate | — | green |
 
-Three commits on the branch, plan first: `7c3005a` (plan) · `50350fe` (code) ·
-`7f6a008` (runbook + `.env.example`).
+Five commits on the branch, plan first: `7c3005a` (plan) · `50350fe` (code) ·
+`7f6a008` (runbook + `.env.example`) · `dae738d` (the seventh stale claim,
+D7) · plus this report's own commit.
 
 ## Tests added
 
@@ -97,9 +99,16 @@ Time:     2m25.345s
 `@taxi/api` lint: **0 errors**, 12 warnings — all pre-existing
 `no-unsafe-argument` on `App` in integration specs, none in a changed file.
 
-`max-lines` headroom (cap 500, shipped source): `sms-env.schema.ts` 302
+`max-lines` headroom (cap 500, shipped source): `sms-env.schema.ts` **305**
 (was 274), `auth.module.ts` 141 (was 119), `env.schema.ts` 351 (unchanged),
 `notifications.module.ts` 50 (unchanged). Specs are uncapped (#112).
+
+The gate figures above were `observed` at `7f6a008`. Two commits landed after
+it — `dae738d` and this report — and **neither moves a test**: `dae738d`
+changes one doc comment, so its own check was `pnpm --filter @taxi/api lint`
+(0 errors, 12 pre-existing warnings) and `typecheck` (clean), re-run at that
+head. The `305` above is re-measured at `dae738d`, not carried from the
+earlier run.
 
 ### Level 4 — the production boot proof
 
@@ -220,6 +229,22 @@ hazard: with `SMS_PROVIDER=auto` in the environment the script exits 1 through
 its own "run from a shell that sourced the root env file" handler, quoting the
 migration message.
 
+**D7 — a seventh presence-as-selection claim, inside a file this loop had
+already edited.** `sms-env.schema.ts`'s `TWILIO_ACCOUNT_SID` doc comment read
+"Absent — or empty, as committed to `.env.example` — **binds
+`StubSmsProvider`**". That is the retired selector stated in reverse and is
+now wrong in *both* directions: an absent trio binds the stub only because
+`SMS_PROVIDER` defaults to `stub`, and under `SMS_PROVIDER=twilio` an absent
+trio is a boot refusal naming the missing keys, not a fall back to the stub.
+**Verified, not reasoned** — a throwaway spec parsed both cases; the second
+matched `/SMS_PROVIDER=twilio needs/`; probe deleted. **Why D2's sweep missed
+it**: the regex `trio (is set|binds)` requires the two words adjacent, and
+forty characters of parenthetical sit between them here. The remedy that
+worked was CLAUDE.md's own rule taken literally — `grep -n 'trio'` over the
+candidate files and *read every hit*, rather than a third regex. Fixed in
+`dae738d`; the count in AC #6's sweep is therefore **seven** sites, not the
+plan's five.
+
 **No UX states were declared or built.** The plan has no UX section and this
 ticket ships no user-facing surface — the only new output is a server log line
 and runbook prose. Recorded explicitly because an omitted state is invisible in
@@ -251,11 +276,16 @@ before the retirement, so the change is a no-op on the day), after
 Merging first means a crash-looping container and a down API. This is written
 into §5.4's preamble and belongs in the PR body.
 
-**Local env files on other checkouts will break, by design.** Any `.env` still
-carrying `SMS_PROVIDER=auto` — #240's committed template said so — now fails
-every `pnpm test` with the migration message. That is the message doing its
-job; the PR body should say so, so it reads as expected rather than as
-breakage. Two other Claude sessions share this repo.
+**A local env file still carrying the retired value breaks, by design — and
+the one file measurable here does not carry it.** `observed` during probe 5:
+this worktree's env file, a byte copy of the main checkout's, has **no
+`SMS_PROVIDER` line at all**, so it reads as the schema default and keeps
+working. The hazard is therefore *conditional*, not predicted-certain: any
+file copied from #240's committed template does carry `SMS_PROVIDER=auto`, and
+that file now fails every `pnpm test` with the migration message. Twenty-two
+`claude` processes and roughly thirty worktrees are live against this repo, and
+their env files were not inspected — so state it in the PR body as an expected
+consequence with a one-line fix (set a kind), rather than as breakage.
 
 **Not performable here, and not de-scoped silently**: §5.4 steps 6 and 7's
 live half — one real OTP to a handset through a switched provider, and the
@@ -265,7 +295,7 @@ in §5.4's own text rather than implied to be covered.
 
 ## Ready for the next step
 
-Working tree clean, three commits on `feature/sms-provider-switch-137`.
+Working tree clean, five commits on `feature/sms-provider-switch-137`.
 **The PR must not close #137** — the verdict half is still open, so keep
 closing keywords away from `#137` in the body.
 
