@@ -157,10 +157,13 @@ returning an empty list and passing vacuously. That guard is the second `if` in 
 
 ### What was wrong
 
-`grep -rn provider_bound services/api/{src,test}` returned three hits and **no assertion**, while
-`hetzner-deploy.md:422` hard-codes `grep -c auth.sms.provider_bound` and step 5 turns its count into
-a live rollback decision. The repo's rule is ≥1 expected + 1 edge + 1 failure per feature; this
-surface had zero.
+`observed` here, not taken from the review — `git grep -n provider_bound a38e56f -- services/api/src
+services/api/test` returns **three hits and no assertion**: the emit at `auth.module.ts:56` and
+prose comments at `auth.module.spec.ts:127` and `sms-env.schema.ts:218`.
+
+Meanwhile `hetzner-deploy.md:422` hard-codes `grep -c auth.sms.provider_bound` and step 5 turns its
+count into a live rollback decision. The repo's rule is ≥1 expected + 1 edge + 1 failure per
+feature; this surface had zero.
 
 ### The fix — three cases, not one
 
@@ -168,7 +171,7 @@ surface had zero.
 |---|---|---|
 | `emits auth.sms.provider_bound naming the bound kind` | expected | the exact event string **and** `provider: 'bulkgate'` |
 | `logs the kind and never a credential` | edge | the payload's exact key set `['at','event','provider']`, plus a direct assertion that the BulkGate application token does not appear |
-| `emits no provider_bound line when it refuses to boot` | failure | the refusal branch's deliberate silence (see L1) |
+| `emits nothing at any level when it refuses to boot` | failure | the refusal branch's deliberate silence, across `log`, `error` **and** `warn` (see L1) |
 
 ### Run against the unfixed shape — `observed` 2026-09-21
 
@@ -177,13 +180,26 @@ surface had zero.
 | D | event renamed to `auth.sms.provider_selected` | `1 failed, 13 passed` — the expected case red |
 | E | `provider` key replaced by `senderId: env.BULKGATE_SENDER_ID_VALUE` | `2 failed, 12 passed` — expected **and** never-a-credential red |
 | F | a `logger.log` added to the refusal branch, as "consistency" would | `1 failed, 13 passed` — the failure case red |
+| G | **the review's own L1 suggestion**: `logger.error({ event: 'auth.sms.provider_bind_failed', … })` in the refusal branch | `1 failed, 13 passed` — the failure case red |
 
 Probe E is the one worth noting: it is simultaneously the review's dropped-`provider`-key scenario
 and a credential leak, and both cases caught it.
 
-**New failure mode**: `captureBootLog` spies on `Logger.prototype.log` globally. `mockRestore()` is
-in a `finally`, not a `catch`, so a throwing `run()` (the failure case throws by design) still
-restores it rather than leaking a silenced logger into every later test in the file. The failure
+**Probe G is the one that changed the code.** The first version of `captureBootLog` spied only
+`Logger.prototype.log`, and probe F — a `logger.log` in the refusal branch — was a mutation this
+pass invented. The mutation the review actually proposed lands at **`error`** level, because
+`logging-standard.md` puts `_failed` there. `observed`: with the log-only helper and probe G in
+place, the suite is **`14 passed, 14 total`** — green through exactly the edit the case exists to
+make visible, while the report, the commit message and the PR comment all already claimed it was
+pinned. The same defect class this pass spent its Mediums retiring.
+
+`captureBootLog` now spies `log`, `error` and `warn`, and the failure case is renamed to
+`emits nothing at any level when it refuses to boot`. Re-run with the three-level helper: probe G
+goes **`1 failed, 13 passed`**.
+
+**New failure mode**: the helper silences three `Logger` methods globally. `mockRestore()` runs for
+each in a `finally`, not a `catch`, so a throwing `run()` (the failure case throws by design) still
+restores them rather than leaking a silenced logger into every later test in the file. The failure
 case exercises that path.
 
 ---
@@ -200,9 +216,13 @@ factory, the bootstrap error prints, and a crash-looping container is self-evide
 reading "bind failed" alongside a process that never finished booting is weaker evidence than the
 crash itself.
 
-Rather than leave that as an opinion, the absence is now **pinned by probe F's case**, so a later
-"add the missing event for consistency" edit is a decision that turns a test red, not a drive-by.
-The comment states the reason at the emit site.
+Rather than leave that as an opinion, the absence is **pinned by a test** — at `log`, `error` and
+`warn` — so a later "add the missing event for consistency" edit is a decision that turns a test
+red, not a drive-by. The comment states the reason at the emit site.
+
+**That claim was false when first written**, and probe G above is how it was caught: the pinning
+test watched only `log`, while `auth.sms.provider_bind_failed` would land at `error`. Declining a
+suggestion on the strength of a test that cannot see it is worse than declining it plainly.
 
 ---
 
@@ -289,7 +309,7 @@ typecheck lint test build --force`, run in `/Users/Berzins/taxi-worktrees/wt-137
 ```
 Tasks:    22 successful, 22 total
 Cached:   0 cached, 22 total
-Time:     1m20.674s
+Time:     1m24.657s
 ```
 
     @taxi/api  Test Suites: 80 passed, 80 total
@@ -301,11 +321,14 @@ the +4 are M2's one case and M3's three. The other five packages are reported on
 it, so their per-package counts are **not** restated here. No file outside `services/api` was
 touched by this pass.
 
-**It took two gate runs.** The first was red — `Failed: @taxi/api#lint`, a single
+**It took three gate runs.** The first was red — `Failed: @taxi/api#lint`, a single
 `prettier/prettier` error in the new `captureBootLog` helper. `@taxi/api:test` also printed
 `ELIFECYCLE` in that run with **no test summary at all** and an ioredis teardown stack, which is
 turbo killing the sibling task, not a test failure. `npx prettier --write` on the five touched
-files reformatted one (`auth.module.spec.ts`); `npx eslint` on all five then exited 0.
+files reformatted one (`auth.module.spec.ts`); `npx eslint` on all five then exited 0. The second
+was green at `1m20.674s`; the third is the one quoted above, after probe G forced the
+`captureBootLog` fix. The test totals are identical across the second and third — the fix widened
+an existing case's reach rather than adding one.
 
 Touched-suite runs along the way, `observed`, `COMPOSE_PROJECT_NAME=taxi npx jest` from
 `services/api`:

@@ -70,16 +70,29 @@ const selectableKinds = (): string[] => {
   return issue.options.map(String).filter((o) => o !== 'stub');
 };
 
-/** Payloads captured from the module-level `Logger` inside the factory. */
+/**
+ * Payloads captured from the module-level `Logger` inside the factory, across
+ * `log`, `error` AND `warn`.
+ *
+ * ALL THREE LEVELS, and that is the whole point of the failure case below.
+ * `logging-standard.md` puts a `_failed` state at `error` level, so an edit
+ * adding `logger.error({ event: 'auth.sms.provider_bind_failed', … })` to the
+ * refusal branch is the likely one — and a helper watching only `log` would
+ * stay green through exactly the edit the case exists to make visible.
+ * Found in PR #241's review round 1 fix pass, before the claim was published.
+ */
 const captureBootLog = (run: () => void): Record<string, unknown>[] => {
-  const spy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+  const levels = ['log', 'error', 'warn'] as const;
+  const spies = levels.map((level) =>
+    jest.spyOn(Logger.prototype, level).mockImplementation(() => {}),
+  );
   try {
     run();
-    return spy.mock.calls.map(
-      ([payload]) => payload as Record<string, unknown>,
+    return spies.flatMap((spy) =>
+      spy.mock.calls.map(([payload]) => payload as Record<string, unknown>),
     );
   } finally {
-    spy.mockRestore();
+    spies.forEach((spy) => spy.mockRestore());
   }
 };
 
@@ -264,11 +277,13 @@ describe('smsProviderFactory', () => {
     );
   });
 
-  it('emits no provider_bound line when it refuses to boot (failure)', () => {
+  it('emits nothing at any level when it refuses to boot (failure)', () => {
     // The refusal is the one branch with no log line, deliberately: the thrown
     // error and the crash-looping container are the signal, and a line here
     // would report a boot that did not happen. Pinned so "add the missing
-    // event for consistency" is a decision rather than a drive-by.
+    // event for consistency" is a decision rather than a drive-by — and pinned
+    // at `error` and `warn` as well as `log`, because the review's own
+    // suggestion (`auth.sms.provider_bind_failed`) would land at `error`.
     const lines = captureBootLog(() => {
       expect(() => smsProviderFactory(env('production'))).toThrow(
         /No production SmsProvider is bound/,
