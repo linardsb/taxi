@@ -449,6 +449,20 @@ It also tends to be the ticket's own success condition, because that is the inte
 <An AC whose verification this machine cannot perform — hardware or credentials confirmed absent at planning time —
 is not this ticket's AC. `gh issue create` now, put its number in the AC and mark it "owed by #N" — #16 shipped three unowned.>
 
+<**Before writing that AC off, name the property and find the cheapest oracle for IT, not for the instrument.**
+"Verified handset" is an instrument; "does a bare `host.tld/path` linkify" is the property. Write the property
+first, then list what else could answer it — an emulator, a platform API the real client is built on, a local
+harness, a fixture — and for each say in one clause why it does or does not answer the property. Only after
+that list is empty is the AC unperformable here.
+#136 wrote AC #0 as handset-only and shipped the whole ticket under a stated assumption. The spike then ran in
+about an hour on an **Android 16 emulator** (`adb emu sms send` into Google Messages, tapped, the resulting
+`VIEW` intent read out of `logcat`) and on **`NSDataDetector(.link)`** on macOS Foundation, the class iOS's
+link detection is built on. Both were available the whole time. The guess happened to be right; had it been
+wrong the cost was one line of code plus two test rows, and the plan had already costed that.
+A substitute that answers the property closes the AC. One that answers it weakly — the emulator console builds
+its own PDU, so correct glyphs there are not a carrier's UCS-2 round trip — closes the leg it covers and names
+the legs it does not, which is still better than an unopened spike.>
+
 - [ ] Feature implements all specified functionality
 - [ ] All validation commands pass with zero errors
 - [ ] Unit test coverage meets requirements (80%+)
