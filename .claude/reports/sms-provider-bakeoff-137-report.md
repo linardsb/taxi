@@ -57,7 +57,8 @@ bake-off's verdict needs three LV SIMs and two funded vendor accounts, neither o
 
 ## Validation results
 
-**The gate, `observed` on the final tree** (`COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force`, from a cleared `apps/dispatch/.next`):
+**The gate, `observed` on the IMPLEMENTATION PASS's tree** (`COMPOSE_PROJECT_NAME=taxi pnpm turbo
+run typecheck lint test build --force`, from a cleared `apps/dispatch/.next`):
 
 ```
 Tasks: 22 successful, 22 total      Time: 1m18.843s
@@ -65,12 +66,27 @@ Tasks: 22 successful, 22 total      Time: 1m18.843s
 @taxi/api:test  Tests:       39 skipped, 719 passed, 758 total
 ```
 
+> **Superseded by PR #240's review round.** Four of its fourteen fixes add a test, so these counts
+> are the implementation pass's and no longer the branch's. `observed` 2026-09-21, same command,
+> same worktree, after the review fixes: **22/22 tasks** in `1m32.327s`, `@taxi/api`
+> `Test Suites: 2 skipped, 77 passed, 77 of 79 total`, `Tests: 39 skipped, 723 passed, 762 total`.
+> 723 − 719 = **+4**, one each for F5, F6, F8 and F10; no new suite, so the suite counts hold.
+> Lint re-derived at the same head: still **0 errors, 12 warnings**. The block below re-derives the
+> baseline delta at the new counts; `.claude/reports/pr-240-review-fixes.md` carries the per-finding
+> evidence.
+
 **The baseline, `observed` — not inherited.** `COMPOSE_PROJECT_NAME=taxi pnpm --filter @taxi/api test`
 in a detached worktree at this branch's base `1c98ac8`, run alone:
 `Test Suites: 2 skipped, 75 passed, 75 of 77 total`, `Tests: 39 skipped, 694 passed, 733 total`
 (41.261 s). So the delta is **+25 tests and +2 suites**, which exactly accounts for 8 (bulkgate) +
 7 (budgetsms) + 3 (auth.module) + 7 (env.schema) = 25 in 2 new suites, and therefore no other suite
 moved. The 39 skipped are the documented Redis-gated set, unchanged at both ends.
+
+**After the review round the delta is +29 tests and +2 suites**, re-derived rather than adjusted:
+723 − 694 = 29, and `grep -cE '^\s*it\('` per file gives 8 (bulkgate) + 9 (budgetsms) +
+4 (auth.module, this ticket's cases only — the file holds 8) + 8 (env.schema's `#137` describe
+block) = 29. The baseline itself is untouched: no fix in that round edited a spec outside those
+four files, so no other suite moved there either.
 
 (A first attempt at that baseline reported `8 failed` — it was run in the background while this
 branch's suites ran in the foreground, which is the shared-`taxi_api_test` collision CLAUDE.md
@@ -94,7 +110,10 @@ clean — the largest touched shipped file is `env.schema.ts` at 351 (was 395; s
    `UCS-2` / `UCS-2`, per-provider spend, `DRY RUN — nothing was sent`. Nothing left the machine. ✅
    `--testsms` prints BudgetSMS only and names both skips by reason; `--round 2` correctly drops the
    RU probe. ✅
-3. Boot refusal unchanged — via `auth.module.spec.ts`, including the new explicit `'auto'` assertion. ✅
+3. Boot refusal's CONDITION unchanged — via `auth.module.spec.ts`, including the new explicit
+   `'auto'` assertion. ✅ Its **message** changed in the review round (F5): it now names the
+   `SMS_PROVIDER=bulkgate|budgetsms` exit as well, because a complete candidate group reaches this
+   refusal too. Pinned by a production + full-`BULKGATE_GROUP` + `'auto'` case. ✅
 4. `SMS_PROVIDER=bulkgate` with an empty group → `SMS_PROVIDER=bulkgate needs
    BULKGATE_APPLICATION_ID, BULKGATE_APPLICATION_TOKEN, BULKGATE_SENDER_ID_VALUE.`, exit 1. ✅
 

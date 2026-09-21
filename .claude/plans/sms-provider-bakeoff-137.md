@@ -823,7 +823,7 @@ within ~10 minutes of each round, while it is still obvious which message was wh
 | # | Do | Signal appears in | Expect |
 |---|---|---|---|
 | 1 | `pnpm --filter @taxi/api sms:bakeoff` with no flags | stdout | The full matrix and its derived spend, **nothing sent**. This is what proves the dry-run default defaults |
-| 2 | `--testsms` (BudgetSMS only) | stdout | `OK <id>` per handset, no credit deducted, no SMS |
+| 2 | `--testsms` (BudgetSMS only) | stdout | A success row per handset, no credit deducted, no SMS. **The reply shape is not sourced** — `/sendsms/` answers `OK <id> <price> <parts>`, and the provider accepts a bare `OK` too, so either passes. Record what `/testsms/` actually replied; that is the only way this line stops being an assumption |
 | 3 | **One** BulkGate probe send to a single handset | stdout + that handset | `accepted` and a message arrives. BulkGate has no free dry-run, so this costs a segment and is the cheapest possible credential proof |
 | 4 | Confirm Twilio tier; on a trial, verify the three numbers in the console | Twilio console | All three verified, or the run cannot reach them at all |
 | 5 | **Round 1**, morning: `--confirm --round 1` | stdout + three handsets | Rows pasted into the table below; handset columns filled |
@@ -855,6 +855,15 @@ Paste the script's rows here, unedited.
 - A **split** 2-segment message (row 7) does not disqualify on its own — record it and decide.
 - **Price (row 12) is the tiebreaker, never the criterion** (§4.1). It breaks a tie between
   qualifying candidates; it never promotes a failing one.
+- **Row 16 votes, despite sitting in the informational table.** BudgetSMS is GET-only, so every OTP
+  — which *is* the sign-in credential — and the `handle` API secret travel in the URL, where they
+  land in the vendor's access logs and at every hop that terminates TLS. Rows 1–7 cannot see this,
+  so a BudgetSMS that goes 3/3, keeps `SaktaCab` and wins on price would otherwise be prescribed a
+  switch with the risk never entering the decision. **Before writing "Switch to BudgetSMS", record
+  one of:** (a) *disqualified on row 16*; or (b) *accepted, with the compensating control named* —
+  a shortened OTP TTL, or BudgetSMS bound for notification SMS only and never for the OTP path.
+  Leaving this blank is not a third option. `budgetsms.provider.ts` scored the risk; this is where
+  it gets a vote.
 
 **On a trial Twilio account, the verdict has exactly two legal forms.** A trial cannot use an
 alphanumeric sender and cannot reach unverified riders, so "keep Twilio" is not a validated outcome:
@@ -922,11 +931,47 @@ Numbered so the task text can cite them.
 `notifications.module.ts`, the harness's `RecordingSmsProvider`, and the factory's production
 boot-refusal — all four of `auth.module.spec.ts`'s original cases pass untouched.
 
-**Gate**, `observed` 2026-09-21 on the code tree this ticket's commit ships, via
+**Gate**, `observed` 2026-09-21 on the code tree the IMPLEMENTATION PASS's commit shipped, via
 `record-gate.sh --clean` (exit 0): `pnpm turbo run typecheck lint test build --force` → 22/22 tasks; `@taxi/api` `Tests: 39 skipped, 719 passed, 758 total`, `Test Suites: 2 skipped, 77
 passed, 77 of 79 total`. Baseline at this branch's base `1c98ac8`, run alone: `39 skipped, 694 passed,
 733 total`, `2 skipped, 75 passed, 75 of 77 total` — so +25 tests and +2 suites, exactly this ticket's
 additions, and therefore no other suite moved.
 
+> **Superseded by PR #240's review round** — four of its fixes add a test. `observed` 2026-09-21,
+> same command, same worktree, after those fixes: 22/22 tasks in `1m32.327s`; `@taxi/api`
+> `Tests: 39 skipped, 723 passed, 762 total`, `Test Suites: 2 skipped, 77 passed, 77 of 79 total`.
+> The delta against the same `1c98ac8` baseline is **+29 tests and +2 suites**, re-derived both ways
+> (723 − 694 = 29; and 8 + 9 + 4 + 8 = 29 by `it(` count per file). Lint unchanged at 0 errors,
+> 12 warnings. Evidence per finding: `.claude/reports/pr-240-review-fixes.md`.
+
 **#137 stays OPEN.** AC #6 (handset results) and AC #7 (the switch, or the recorded reason) are
 untouched by this loop.
+
+### 2026-09-21 — PR #240 review round 1 (`.claude/reports/pr-240-review-fixes.md`)
+
+All fourteen findings applied. Two of them **retire instructions written above**, so those are
+corrected here rather than left to be read as still-current:
+
+9. **The boot refusal's MESSAGE is no longer "unchanged" (F5).** The task at `## UPDATE
+   services/api/src/features/auth/auth.module.ts` says *"Keep the refusal's exact message and its
+   position"*, and the doc-comment instruction says the production refusal is unchanged. Position
+   and condition are unchanged and stay so. The **message** could not be: under `'auto'` there are
+   now three ways out of the factory, so a message naming only the `TWILIO_*` trio sends an
+   operator who funded BulkGate to the wrong vendor's console — the likeliest misconfiguration
+   this ticket introduces, precisely because its premise is that credential presence stopped
+   selecting. It now names both exits, and `auth.module.spec.ts` pins that with a production +
+   complete-`BULKGATE_GROUP` + `'auto'` case. The `/No production SmsProvider is bound/` prefix
+   every original case matches is untouched.
+
+10. **The `env()` helper's cast IS now type-checked on its keys (F14).** The GOTCHA at `## UPDATE
+    services/api/src/features/auth/auth.module.spec.ts` says the helper *"casts with `as Env`, so
+    adding a field there is not type-checked against the schema"* and asks for a manual spelling
+    check. That hazard is closed rather than watched: the literal is now `satisfies Partial<Env>`
+    before the cast. `observed` — introducing `SMS_PROVDER` under that form gives
+    `TS2561: … 'SMS_PROVDER' does not exist in type 'Partial<…>'. Did you mean to write
+    'SMS_PROVIDER'?`. The `satisfies` must wrap the whole literal; on the value alone it checks
+    nothing about the key.
+
+Also retired: the run sheet's step 2 no longer promises `OK <id>` per handset. `/testsms/`'s reply
+shape is sourced nowhere in this ticket, so the provider accepts a bare `OK` as well and the step
+asks the runner to record what actually came back (F6).

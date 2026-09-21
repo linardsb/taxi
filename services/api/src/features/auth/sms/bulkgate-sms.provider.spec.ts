@@ -86,10 +86,13 @@ describe('BulkGateSmsProvider', () => {
       smsId: 'tmpde1bcd4b1d1',
     });
     // Same leak rule as err.message: the log carries neither the SMS body
-    // (OTP codes, tracking links) nor the raw phone.
+    // (OTP codes, tracking links) nor the raw phone — spelled WITHOUT the
+    // `+`, so it catches both spellings. `ACCEPTED` above echoes the vendor's
+    // own unprefixed `number`, so a payload copying that field straight out
+    // of the envelope slips past an assertion spelled `+37120000001`.
     const serialized = JSON.stringify(sentLog(log));
     expect(serialized).not.toContain('secret body');
-    expect(serialized).not.toContain('+37120000001');
+    expect(serialized).not.toContain('37120000001');
   });
 
   it('sendOtp sends the lv catalog body with the code interpolated (expected)', async () => {

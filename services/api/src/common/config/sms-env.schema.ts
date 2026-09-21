@@ -19,18 +19,19 @@ export type SmsProviderKind = 'twilio' | 'bulkgate' | 'budgetsms';
 /** Everything `SMS_PROVIDER` accepts. `'auto'` names no kind and demands no group. */
 export type SmsProviderSelector = 'auto' | SmsProviderKind;
 
-/** Every env key belonging to one of the three `SmsProvider` credential groups. */
-type SmsCredentialKey =
-  | 'TWILIO_ACCOUNT_SID'
-  | 'TWILIO_AUTH_TOKEN'
-  | 'TWILIO_FROM_NUMBER'
-  | 'BULKGATE_APPLICATION_ID'
-  | 'BULKGATE_APPLICATION_TOKEN'
-  | 'BULKGATE_SENDER_ID_VALUE'
-  | 'BUDGETSMS_USERNAME'
-  | 'BUDGETSMS_USERID'
-  | 'BUDGETSMS_HANDLE'
-  | 'BUDGETSMS_FROM';
+/**
+ * Every env key belonging to one of the three `SmsProvider` credential groups
+ * — DERIVED from `smsEnvFields` below rather than listed again.
+ *
+ * A hand-written union would let `smsEnvFields` and `SMS_GROUPS` drift apart
+ * silently: `SmsEnvValues` is a `Partial<Record<…>>`, so renaming or dropping
+ * a field leaves a parsed env structurally assignable and the all-or-none
+ * check just stops covering that key, with no typecheck error anywhere.
+ * Order-independence makes the forward reference legal — and
+ * `smsEnvFields`' inferred type does not mention `SMS_GROUPS`, so there is no
+ * cycle.
+ */
+type SmsCredentialKey = Exclude<keyof typeof smsEnvFields, 'SMS_PROVIDER'>;
 
 /**
  * The credential group behind each selectable `SMS_PROVIDER` kind (#85, #137).
@@ -203,9 +204,18 @@ export const smsEnvFields = {
    * is the established arrangement (`push.tokens.ts:5` and `env.schema.ts`'s
    * `PUSH_PROVIDER` are the same pair), not an accident to route around.
    */
-  SMS_PROVIDER: z
-    .enum(['auto', 'twilio', 'bulkgate', 'budgetsms'])
-    .default('auto'),
+  SMS_PROVIDER: z.preprocess(
+    // `.default()` fires on `undefined` ONLY, so a blanked line
+    // (`SMS_PROVIDER=`) in a hand-edited env file would otherwise deliver
+    // `''` and refuse to boot in EVERY environment with a generic enum
+    // message. Same wrapper and same reason as `ALLOW_STUB_MAPS_PROVIDER` in
+    // `env.schema.ts`, which is the shape this repo already settled on; the
+    // committed template's `SMS_PROVIDER=auto` means no fresh checkout hits
+    // it either way. (`PUSH_PROVIDER` is the un-wrapped precedent and is left
+    // alone — it is outside #137's diff.)
+    (v) => (v === '' ? undefined : v),
+    z.enum(['auto', 'twilio', 'bulkgate', 'budgetsms']).default('auto'),
+  ),
 };
 
 /** The slice of a parsed env this module's check reads. */

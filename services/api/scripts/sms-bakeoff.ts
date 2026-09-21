@@ -69,10 +69,18 @@
  * manual Level 4 instrument, held to `typecheck` and `lint` so it cannot rot,
  * and kept out of `dist/` by `tsconfig.build.json`.
  *
- * RUN CEILING: the ceiling is vendor credit, not a rate limit — nothing here
- * touches `OTP_MAX_REQUESTS_PER_HOUR`, because no OTP is requested; the
- * script calls `send()` with a fixed illustrative code. Three full rounds is
- * what the funding above assumes. A fourth costs another ~€1.45.
+ * RUN CEILING: OUR OWN limiter is not the ceiling — nothing here touches
+ * `OTP_MAX_REQUESTS_PER_HOUR`, because no OTP is requested; the script calls
+ * `send()` with a fixed illustrative code. The VENDORS' throttles are a
+ * separate question and are NOT SOURCED here: round 1 fires 27 sends back to
+ * back across three accounts, and a vendor 429 mid-round would arrive as an
+ * `ERR` row indistinguishable from a delivery failure in row 8. Otherwise the
+ * ceiling is vendor credit. Three full rounds is what the funding above
+ * assumes. A fourth costs another €1.18–€1.33, `derived` — 9 segments per
+ * provider, not 11: a round after the first is OTP (1 segment) + LV
+ * `driver_assigned` (2), since the RU probe is `onlyRound: 1`. Same rates and
+ * same EUR/USD 1.3–1.0 range as the total above, and totalled from unrounded
+ * components the same way.
  *
  * Run:  pnpm --filter @taxi/api sms:bakeoff [--confirm] [--testsms] [--round N]
  *       (no `--` separator — pnpm 10 forwards it literally as an argument.
@@ -90,6 +98,14 @@ import { envSchema, type Env } from '../src/common/config/env.schema';
 // off auth's back and skip the production boot-refusal. A script outside
 // `dist/` is not a module, and widening the app-facing API for it would give
 // that guarantee away.
+//
+// `maskPhone` for the same reason `isGsm7` is imported below: a second copy
+// of the mask here would be a second thing to keep in step with
+// `logging-standard.md`. The recipients are the operator's own handsets, but
+// the standard is the standard. Safe because the E.164 check in `main()` has
+// already run — `maskPhone` only hides the country code on a `+`-prefixed
+// number.
+import { maskPhone } from '../src/features/auth/phone-mask';
 import { BudgetSmsProvider } from '../src/features/auth/sms/budgetsms.provider';
 // `isGsm7` comes from the provider rather than a second copy of the GSM 03.38
 // table: the `encoding` column and the segment estimator below must answer
@@ -118,8 +134,13 @@ and a provider whose group is absent is skipped by name, not silently.`;
 const RATES_OBSERVED_ON = '2026-08-14';
 const RATE_EUR_PER_SEGMENT = { bulkgate: 0.0311, budgetsms: 0.045 } as const;
 const RATE_USD_PER_SEGMENT_TWILIO = 0.0715;
-/** §4.1's range, used so no FX rate has to be pinned. */
-const EUR_PER_USD_RANGE = { low: 1.3, high: 1.0 } as const;
+/**
+ * §4.1's range, used so no FX rate has to be pinned. USD PER EUR — 1 EUR buys
+ * 1.3 USD at one end and 1.0 at the other, which is why `costLabel` DIVIDES a
+ * dollar figure by it. The fields name the euro cost that comes out, not the
+ * rate: the stronger euro (1.3) is the cheaper bill.
+ */
+const USD_PER_EUR = { cheapest: 1.3, dearest: 1.0 } as const;
 
 /** Illustrative only — nothing here requests a real OTP. */
 const OTP_CODE = '482913';
@@ -208,6 +229,26 @@ function main(): Promise<void> {
     .map(([k]) => `BAKEOFF_${k.toUpperCase()}`);
   if (missingRecipients.length > 0) {
     console.error(`${USAGE}\n\nmissing: ${missingRecipients.join(', ')}`);
+    process.exitCode = 1;
+    return Promise.resolve();
+  }
+
+  // SHAPE, not just presence. The three providers disagree about a recipient
+  // typed without the `+`: BudgetSMS strips it anyway and sends, BulkGate
+  // passes it through raw, Twilio rejects it — so one mistyped handset
+  // produces a scorecard row that is a SCRIPT artefact attributed to a
+  // vendor, on a day that cannot be re-run cheaply. Script-local rather than
+  // in `envSchema`: the plan's GOTCHA forbids putting run-time handsets in
+  // the production schema, and this is the same regex `TWILIO_FROM_NUMBER`
+  // uses. It is also what makes `maskPhone` below correct here — that mask
+  // only hides the country code when the `+` is present.
+  const malformedRecipients = Object.entries(recipients)
+    .filter(([, v]) => !/^\+[1-9]\d{6,14}$/.test(v!))
+    .map(([k]) => `BAKEOFF_${k.toUpperCase()}`);
+  if (malformedRecipients.length > 0) {
+    console.error(
+      `${USAGE}\n\nnot E.164 (+371… , no spaces or dashes): ${malformedRecipients.join(', ')}`,
+    );
     process.exitCode = 1;
     return Promise.resolve();
   }
@@ -480,7 +521,7 @@ function printPlan(args: {
   );
   console.log(
     `handsets: ${(Object.keys(recipients) as Operator[])
-      .map((o) => `${o} ${maskRecipient(recipients[o])}`)
+      .map((o) => `${o} ${maskPhone(recipients[o])}`)
       .join(' · ')}`,
   );
   console.log(
@@ -538,9 +579,9 @@ function printRows(rows: Row[]): void {
 function costLabel(kind: ProviderKind, segments: number): string {
   if (kind === 'twilio') {
     const usd = segments * RATE_USD_PER_SEGMENT_TWILIO;
-    const low = usd / EUR_PER_USD_RANGE.low;
-    const high = usd / EUR_PER_USD_RANGE.high;
-    return `$${usd.toFixed(2)} = €${low.toFixed(2)}–€${high.toFixed(2)} (EUR/USD 1.3–1.0)`;
+    const cheapest = usd / USD_PER_EUR.cheapest;
+    const dearest = usd / USD_PER_EUR.dearest;
+    return `$${usd.toFixed(2)} = €${cheapest.toFixed(2)}–€${dearest.toFixed(2)} (EUR/USD 1.3–1.0)`;
   }
   return `€${(segments * RATE_EUR_PER_SEGMENT[kind]).toFixed(2)}`;
 }
@@ -561,11 +602,6 @@ function costLabel(kind: ProviderKind, segments: number): string {
 function segmentsFor(body: string): number {
   const [single, concatenated] = isGsm7(body) ? [160, 153] : [70, 67];
   return body.length <= single ? 1 : Math.ceil(body.length / concatenated);
-}
-
-/** The recipients are the operator's own handsets, but logging-standard.md is logging-standard.md. */
-function maskRecipient(phone: string): string {
-  return `${phone.slice(0, 4)}${'*'.repeat(Math.max(0, phone.length - 7))}${phone.slice(-3)}`;
 }
 
 main().catch((err: unknown) => {

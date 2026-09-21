@@ -65,7 +65,7 @@ within ~10 minutes of each round, while it is still obvious which message was wh
 | # | Do | Signal appears in | Expect |
 |---|---|---|---|
 | 1 | `pnpm --filter @taxi/api sms:bakeoff` with no flags | stdout | The full matrix and its derived spend, **nothing sent**. This is what proves the dry-run default defaults |
-| 2 | `--testsms` (BudgetSMS only) | stdout | `OK <id>` per handset, no credit deducted, no SMS |
+| 2 | `--testsms` (BudgetSMS only) | stdout | A success row per handset, no credit deducted, no SMS. **The reply shape is not sourced** — `/sendsms/` answers `OK <id> <price> <parts>`, and the provider accepts a bare `OK` too, so either passes. Record what `/testsms/` actually replied; that is the only way this line stops being an assumption |
 | 3 | **One** BulkGate probe send to a single handset | stdout + that handset | `accepted` and a message arrives. BulkGate has no free dry-run, so this costs a segment and is the cheapest possible credential proof |
 | 4 | Confirm Twilio tier; on a trial, verify the three numbers in the console | Twilio console | All three verified, or the run cannot reach them at all |
 | 5 | **Round 1**, morning: `--confirm --round 1` | stdout + three handsets | Rows pasted into the table below; handset columns filled |
@@ -97,6 +97,15 @@ Paste the script's rows here, unedited.
 - A **split** 2-segment message (row 7) does not disqualify on its own — record it and decide.
 - **Price (row 12) is the tiebreaker, never the criterion** (§4.1). It breaks a tie between
   qualifying candidates; it never promotes a failing one.
+- **Row 16 votes, despite sitting in the informational table.** BudgetSMS is GET-only, so every OTP
+  — which *is* the sign-in credential — and the `handle` API secret travel in the URL, where they
+  land in the vendor's access logs and at every hop that terminates TLS. Rows 1–7 cannot see this,
+  so a BudgetSMS that goes 3/3, keeps `SaktaCab` and wins on price would otherwise be prescribed a
+  switch with the risk never entering the decision. **Before writing "Switch to BudgetSMS", record
+  one of:** (a) *disqualified on row 16*; or (b) *accepted, with the compensating control named* —
+  a shortened OTP TTL, or BudgetSMS bound for notification SMS only and never for the OTP path.
+  Leaving this blank is not a third option. `budgetsms.provider.ts` scored the risk; this is where
+  it gets a vote.
 
 **On a trial Twilio account, the verdict has exactly two legal forms.** A trial cannot use an
 alphanumeric sender and cannot reach unverified riders, so "keep Twilio" is not a validated outcome:

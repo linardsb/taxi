@@ -85,7 +85,18 @@ export class BudgetSmsProvider implements SmsProvider {
     // charges the ledger a segment that was never sent. The prefix is the
     // check; the HTTP status is only the fallback for a response that is
     // neither shape.
-    if (!text.startsWith('OK ')) {
+    //
+    // A BARE `OK` counts as success, which is wider than `/sendsms/` needs.
+    // `/sendsms/` with `price=1` answers `OK <smsid> <price> <parts>`, but
+    // the bake-off's free pre-flight points this same parser at `/testsms/`,
+    // and THAT endpoint's reply shape IS NOT SOURCED anywhere in this repo.
+    // If it answers a bare `OK`, a `startsWith('OK ')` check reports
+    // `budgetsms_error_200` for every handset on the one step whose whole job
+    // is proving the credentials work — and it is the only step that is free,
+    // so it is the one most likely to be trusted unverified. Accepting both
+    // shapes costs the `smsId` on a reply that carries none; it does not
+    // touch the `ERR`-on-200 branch, which is what the pin above protects.
+    if (text !== 'OK' && !text.startsWith('OK ')) {
       // A LOCALLY composed message only: `auth.service.ts` logs `err.message`
       // verbatim. The raw text is short and numeric, but it is still vendor
       // text, so only the code crosses (spec V2.7 §10 is the full list).
@@ -105,8 +116,20 @@ export class BudgetSmsProvider implements SmsProvider {
   }
 }
 
-/** Best-effort: the failure line is `ERR nnnn`, but never trust it. */
+/**
+ * Best-effort: the failure line is `ERR nnnn`, but never trust it.
+ *
+ * The SHAPE is checked, not just the prefix, because the caller advertises
+ * "only the code crosses" and `auth.service.ts` logs `err.message` verbatim.
+ * Without this, any HTTP-200 body starting `ERR ` puts its second
+ * whitespace-delimited token straight into that message. Both siblings
+ * validate what they extract — `twilio-sms.provider.ts` on `typeof
+ * json.code === 'number'`, `bulkgate-sms.provider.ts` on `typeof json.type
+ * === 'string'`. Spec V2.7 §10's codes are all four digits; the bound is
+ * loose so a fifth does not become an unlabelled `budgetsms_error_200`.
+ */
 function errorCode(text: string): string | undefined {
   if (!text.startsWith('ERR ')) return undefined;
-  return text.split(/\s+/)[1];
+  const code = text.split(/\s+/)[1];
+  return /^\d{1,6}$/.test(code ?? '') ? code : undefined;
 }

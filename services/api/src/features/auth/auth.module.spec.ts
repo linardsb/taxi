@@ -8,12 +8,14 @@ import { StubSmsProvider } from './sms/stub-sms.provider';
 import { TwilioSmsProvider } from './sms/twilio-sms.provider';
 
 // `SMS_PROVIDER: 'auto'` is the schema's default, so every case that does not
-// name a kind describes a realistic `Env`. The helper casts, so this field is
-// NOT typechecked against the schema — it is spelled to match the schema key
-// exactly, and a typo here would leave the cases below green against a field
-// the factory never reads.
+// name a kind describes a realistic `Env`. The cast is still needed — these
+// literals are deliberately partial — but `satisfies Partial<Env>` runs FIRST
+// and checks the keys against the schema, so a typo like `SMS_PROVDER` is a
+// TS2561 rather than a green suite testing a field the factory never reads.
+// It has to wrap the whole literal: `SMS_PROVIDER: 'auto' satisfies
+// Env['SMS_PROVIDER']` checks the value and says nothing about the key.
 const env = (NODE_ENV: Env['NODE_ENV'], over: Partial<Env> = {}) =>
-  ({ NODE_ENV, SMS_PROVIDER: 'auto', ...over }) as Env;
+  ({ NODE_ENV, SMS_PROVIDER: 'auto', ...over }) satisfies Partial<Env> as Env;
 
 const TRIO: Partial<Env> = {
   TWILIO_ACCOUNT_SID: 'AC' + 'f'.repeat(32),
@@ -101,6 +103,23 @@ describe('smsProviderFactory', () => {
     expect(() =>
       smsProviderFactory(env('production', { SMS_PROVIDER: 'auto' })),
     ).toThrow(/No production SmsProvider is bound/);
+  });
+
+  it('names BOTH exits when a funded candidate group is present but unselected (failure)', () => {
+    // The likeliest misconfiguration this PR introduces: an operator funds
+    // BulkGate, sets all three BULKGATE_* vars and forgets the selector.
+    // `SMS_PROVIDER` defaults to `'auto'`, the bulkgate branch is skipped,
+    // the trio is absent — and before #137's selector existed a message
+    // naming only Twilio was complete. It is not any more, so the refusal
+    // must point at the vendor the operator actually funded too.
+    const boot = () =>
+      smsProviderFactory(env('production', { ...BULKGATE_GROUP }));
+
+    expect(boot).toThrow(/No production SmsProvider is bound/);
+    expect(boot).toThrow(/SMS_PROVIDER=bulkgate\|budgetsms/);
+    // And the Twilio route stays named: `'auto'` + the trio is still the
+    // path every pre-#137 deploy takes.
+    expect(boot).toThrow(/TWILIO_ACCOUNT_SID/);
   });
 
   it('is what the module actually binds SMS_PROVIDER to (edge)', () => {

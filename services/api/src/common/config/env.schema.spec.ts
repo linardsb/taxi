@@ -404,6 +404,19 @@ describe('envSchema SMS_PROVIDER and the bake-off credential groups (#137)', () 
     expect(blank.BUDGETSMS_HANDLE).toBeUndefined();
   });
 
+  it('reads a blanked SMS_PROVIDER line as unset rather than refusing to boot (edge)', () => {
+    // The seven credential keys above all carry the `'' -> undefined`
+    // transform; the SELECTOR is an enum with `.default()`, which fires on
+    // `undefined` only. Without the preprocess, `SMS_PROVIDER=` — a line
+    // blanked in a hand-edited env file rather than deleted — would be `''`
+    // and refuse to boot in EVERY environment with a generic enum message.
+    expect(envSchema.parse(dev({ SMS_PROVIDER: '' })).SMS_PROVIDER).toBe(
+      'auto',
+    );
+    // And the widening stops there: an unknown kind is still rejected.
+    expect(() => envSchema.parse(dev({ SMS_PROVIDER: '  ' }))).toThrow();
+  });
+
   it('refuses a named kind whose credential group is absent (failure)', () => {
     // Without this the factory's non-null assertions would be the only thing
     // between a typo and `new BulkGateSmsProvider({ applicationId: undefined })`.

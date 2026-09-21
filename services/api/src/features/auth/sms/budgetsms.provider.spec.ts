@@ -75,7 +75,11 @@ describe('BudgetSmsProvider', () => {
     });
     const serialized = JSON.stringify(sentLog(log));
     expect(serialized).not.toContain('secret body');
-    expect(serialized).not.toContain('+37120000001');
+    // Spelled WITHOUT the `+`, which catches both forms: `send()` strips it
+    // for the `to` param, so an unmasked copy of the wire number in this
+    // payload slips past an assertion spelled `+37120000001`. The ERR-path
+    // assertion below already gets this right.
+    expect(serialized).not.toContain('37120000001');
   });
 
   it('sendOtp sends the lv catalog body with the code interpolated (expected)', async () => {
@@ -98,6 +102,9 @@ describe('BudgetSmsProvider', () => {
   });
 
   it('honours a baseUrl override so the bake-off can pre-flight against /testsms/ (edge)', async () => {
+    // The four-token body is `/sendsms/`'s documented shape, asserted here
+    // only to show the override changes the endpoint and nothing else. What
+    // `/testsms/` actually replies is NOT SOURCED — see the next case.
     const { fn, calls } = fakeFetch(200, 'OK 1234567 0.000 1');
 
     await new BudgetSmsProvider(
@@ -113,6 +120,35 @@ describe('BudgetSmsProvider', () => {
       'https://api.budgetsms.net/testsms/',
     );
     expect(url.searchParams.get('handle')).toBe('handle-secret');
+  });
+
+  it('accepts a bare OK, with no smsId and one segment (edge)', async () => {
+    // `/testsms/`'s reply shape is unsourced, and the free pre-flight runs
+    // this parser against it. Under `startsWith('OK ')` a bare `OK` threw
+    // `budgetsms_error_200`, so the one step that exists to prove the
+    // credentials work would have reported all three handsets broken.
+    //
+    // This is the widening's own cost, pinned rather than left to be
+    // discovered: there is no id to log, and the segment count falls back to
+    // 1 exactly as it does for a `/sendsms/` reply with no parts field.
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const { fn } = fakeFetch(200, 'OK');
+
+    await new BudgetSmsProvider(CONFIG, fn).send('+37120000001', 'x');
+
+    expect(sentLog(log)).toMatchObject({ segments: 1 });
+    expect(sentLog(log)!.smsId).toBeUndefined();
+  });
+
+  it('falls back to the status when the ERR code is not numeric (failure)', async () => {
+    // `errorCode` promises the caller that "only the code crosses". Without a
+    // shape check, this vendor text would be the Error.message that
+    // `auth.service.ts` logs verbatim.
+    const { fn } = fakeFetch(200, 'ERR account-suspended-37120000001');
+
+    await expect(
+      new BudgetSmsProvider(CONFIG, fn).send('+37120000001', 'x'),
+    ).rejects.toThrow('budgetsms_error_200');
   });
 
   it('rejects on ERR delivered with an HTTP 200 (failure)', async () => {

@@ -30,9 +30,12 @@ import { TwilioSmsProvider } from './sms/twilio-sms.provider';
  * no failover to a second vendor (a silent one would make the scorecard
  * unreadable).
  *
- * **The production refusal is unchanged.** It still fires on the same
- * condition — nothing bound and `NODE_ENV=production` — and `'auto'` reaches
- * it by the same path it always did.
+ * **The production refusal's CONDITION is unchanged.** It still fires on
+ * nothing bound and `NODE_ENV=production`, and `'auto'` reaches it by the
+ * same path it always did. Its MESSAGE is not unchanged, and could not stay
+ * so: under `'auto'` there are now three ways out of this function rather
+ * than one, so a message naming only the Twilio trio would send an operator
+ * who funded BulkGate to the wrong vendor's console.
  */
 export function smsProviderFactory(env: Env): SmsProvider {
   // The non-null assertions below are load-bearing on the schema, not on
@@ -73,8 +76,12 @@ export function smsProviderFactory(env: Env): SmsProvider {
     });
   }
   if (env.NODE_ENV === 'production') {
+    // Both exits are named, because reaching here with a funded BulkGate or
+    // BudgetSMS account and no `SMS_PROVIDER` is the likeliest way to arrive:
+    // presence stopped selecting at #137, so a complete credential group is
+    // no longer enough on its own.
     throw new Error(
-      'No production SmsProvider is bound: StubSmsProvider delivers nothing and logs OTP codes in full. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER (#85) before running with NODE_ENV=production.',
+      'No production SmsProvider is bound: StubSmsProvider delivers nothing and logs OTP codes in full. Either set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER (#85), or set SMS_PROVIDER=bulkgate|budgetsms together with that group of credentials (#137) — a complete BULKGATE_*/BUDGETSMS_* group does NOT bind on its own. Then run with NODE_ENV=production.',
     );
   }
   return new StubSmsProvider();
