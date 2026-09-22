@@ -31,7 +31,7 @@
 | 4 | Background / force-stop; push opens the card | **unrun** | Blocked twice over: `StubPushProvider` delivers nothing **and** the app cannot register for FCM. `dispatch.offer.push_skipped reason:'no_token'` observed |
 | 5 | Walk arriving → arrived → start → complete | ✅ | Each tap advanced the server: `accepted` → `arriving` → `arrived` → `in_progress` → `completed`, read back from `rides.status` after every tap. Maps hand-off present on the screen throughout |
 | 6 | Receipt to the cent; today's earnings include the ride | ✅ | Receipt: «Pasažieris samaksāja: €9.01» → «Sakta (15%): €1.35» → «Jūs saņemat: €7.66», against the `split` row `901 \| 15 \| 135 \| 766` — **to the cent**, `commission + net === total`. Earnings: «Šodien: €7.66 · Braucieni: 1» — **but only after settlement**, see S1 |
-| 7 | Force-assign opens the ride with no card first | ✅ **with a divergence** | `dispatch.assign.forced`; **no offer card was ever shown** for that ride, and the app opened it at «Brauciens pieņemts» / «Iekāpšana: Force Assign Pickup, Riga». Divergence: the already-open app did not route to it until relaunched — the realtime leg, on a socket that dropped repeatedly here (S2) |
+| 7 | Force-assign opens the ride with no card first | ⚠️ **partial — one half passed, one half unrun** | **Passed**: `dispatch.assign.forced`, and **no offer card was ever shown** for that ride. **Unrun**: that the screen *opens*. The already-open app sat on a stale receipt screen and the ride appeared only after a force-stop and relaunch — which is step 11's behaviour, not step 7's. **Cause not isolated**: a dropped socket is the obvious guess but does not fit, since step 8's reassignment arrived over that same socket in real time minutes later. Something specific to the force-assign path is a live possibility and is not excluded |
 | 8 | Reassign mid-`arriving` → banner + home | ✅ | Advanced to `arriving`, then `POST /dispatch/rides/:id/reassign` → the app showed «Dispečers nodeva braucienu citam šoferim» with a «Gatavs» control, **in real time, no relaunch** — `n10-reassigned.png` |
 | 9 | Glance mode above 10 km/h | **unrun** | Route found and costed (`geo fix` velocity, 20 kn) but not exercised — the card legs ran before it and the APK blocked the rest |
 | 10 | Kill ~75 s; offline push; reopen re-asserts online | **partial** | Reopen **does** re-assert online (`observed`: the app came up online after a force-stop). The push half is unrun for step 4's reason |
@@ -364,7 +364,10 @@ repeatedly showed «Nav savienojuma» and a last-position age growing past 60 s,
 injection loop was demonstrably alive and `dumpsys` showed the fused provider advancing.
 The consequences, each visible above:
 
-- Step 7's realtime leg needed a relaunch (the ride itself was assigned correctly).
+- Step 7's second half never ran: the ride appeared only after a relaunch. **This one is not
+  safely attributable to the socket** — step 8's reassignment reached the same app over the
+  same socket in real time minutes later. Left as an open question rather than explained
+  away.
 - Step 13's banner was never reached: the dispatch engine would not offer, because
   `findNearby` drops a driver whose position is older than
   `DRIVER_LOCATION_TTL_SECONDS = 60`, so the offer card was never up at the moment the
@@ -384,7 +387,7 @@ The consequences, each visible above:
 | AC3 | ✅ | Untouched offer expired at the seeded 20 s; card cleared; banner «Piedāvājuma laiks beidzās»; `dispatch.offer.expired` logged |
 | AC4 | ✅ **on two of its three named paths** | **Step 8's reassignment**: «Dispečers nodeva braucienu citam šoferim» with a «Gatavs» control, no crash. **A deliberate 409**: `PATCH …/payment-method` at `accepted` → `409 payment_method_locked`, refused cleanly with nothing changed. **Step 13's payment-change banner was not reached** (S2). Also, across an unparseable payload and two cold starts on the old APK the app degraded to a banner and **never crashed** — though that banner was *not* recoverable, since its cause was permanent |
 | AC5 | ✅ **less the queue line** | Fare, «you keep €7.66 (85%)», pickup, destination, ETA + km, payment pill, countdown all present on `s1d.png`. Queue line needs a second AVD — partial, as Q1 allowed |
-| AC6 | ✅ **less the maps destination switch** | The walk ran `arriving → arrived → start → complete`, each tap confirmed against `rides.status`. «Atvērt Google Maps» was present at every step; **that the target switches from pickup to destination at `arrived` was not opened and checked** — unverified, not claimed |
+| AC6 | ✅ **for the walk**; the maps hand-off only partly | The walk ran `arriving → arrived → start → complete`, each tap confirmed against `rides.status`. «Atvērt Google Maps» was `observed` in the dump **at `accepted` only** (twice — the accepted ride and the force-assigned one); it was not dumped at `arrived` or `in_progress`, and **it was never opened**, so neither its presence later in the walk nor the pickup→destination switch at `arrived` is established |
 | AC7 | ✅ | Receipt «€9.01 → Sakta (15%) €1.35 → Jūs saņemat €7.66» against the `split` row `901 \| 15 \| 135 \| 766`, to the cent; `135 + 766 = 901`. Today's total then read «€7.66 · Braucieni: 1» — **after settlement**, per S1 |
 | AC8 | ✅ | `driver-device-day.md:362` now names #15; the runbook carries §"The offers / active-ride pass (#15)" with the result table and the setup deltas. Tick count 17 → 24 |
 | AC9 | ✅ **for TalkBack**, per leg | Name leg: all three earnings states ✅ **including the failed-first-load state, with a real route-selective fault** — not inferred. Speech leg: ✅ composed order, ✅ no double «Ieņēmumi», ❌ N3 (#262), ❌ Q5 (#263). VoiceOver → #257 |

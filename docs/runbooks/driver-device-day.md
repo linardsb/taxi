@@ -385,10 +385,12 @@ exactly as §Emulator route below cites §Steps. The command-level record is
 
 | # | 1 | 2 | 3a | 3b | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅* | ✅ | — | ⚠️ | ✅ | — | ⚠️ |
+| | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | ✅ | — | ⚠️ | ✅ | — | ⚠️ |
 
-✅* step 7: no offer card was shown, as required, but the already-open app only routed to the
-ride after a relaunch — the realtime leg, on a socket that dropped repeatedly here.
+⚠️ step 7: the no-card half passed — no offer card was shown. The **opens** half did not run:
+the already-open app routed to the ride only after a relaunch. Cause **not isolated** — a
+dropped socket is the obvious guess and does not fit, since step 8's reassignment arrived
+over the same socket in real time minutes later.
 ⚠️ step 10: reopen re-asserts online ✅; its push half is unrun. ⚠️ step 13: the two payment
 hard rules are verified, the one-time change banner is not. — = unrun (4 and 10's push
 halves need FCM, #14; 9 needs the `geo fix` velocity route; 12 needs the second AVD).
