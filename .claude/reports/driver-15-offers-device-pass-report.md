@@ -43,15 +43,15 @@
 
 | Leg | Result | Artifact |
 |---|---|---|
-| T6 case 1 — earnings link, loading | unrun | — |
-| T6 case 2 — earnings link, failed first load | unrun | — |
-| T6 case 3 — earnings link, ready | unrun | — |
-| T6 — collapse: exactly one node carries the name | unrun | — |
-| T7.1 — offer card spoken, composed order | unrun | — |
-| T7.2 — countdown announcements, `ANNOUNCE_EVERY_S = 5` | unrun | — |
-| T7.3 — does the once-a-second name mutation re-announce? (Q5) | unrun | — |
-| T7.4 — N3 live region inside the collapsed `Pressable` | unrun | — |
-| T7.5 — no double «Ieņēmumi» | unrun | — |
+| T6 case 1 — earnings link, loading | ✅ | `content-desc='Ieņēmumi'` alone — `t6-case1-loading.xml/.png`; proxy log `delaying 20000ms <- GET /drivers/me/earnings/today` proves the call was in flight |
+| T6 case 2 — earnings link, failed first load | ✅ | `content-desc='Ieņēmumi. —'` — `t6-case2-failed.xml/.png`; proxy log `500 <- GET /drivers/me/earnings/today`, **route-selective**, `/drivers/me` untouched |
+| T6 case 3 — earnings link, ready | ✅ | `content-desc='Ieņēmumi. Šodien: €0.00 · Braucieni: 0'` — `dryrun-home-lv.xml` |
+| T6 — collapse: exactly one node carries the name | ✅ | One node carries the composed name; a child `TextView` remains in the tree but gets **no focus stop** — see the collapse note below |
+| T7.1 — offer card spoken, composed order | unrun | needs an offer — blocked on the #15 APK |
+| T7.2 — countdown announcements, `ANNOUNCE_EVERY_S = 5` | unrun | as above |
+| T7.3 — does the once-a-second name mutation re-announce? (Q5) | unrun | as above |
+| T7.4 — N3 live region inside the collapsed `Pressable` | ❌ **finding — [#262](https://github.com/linardsb/taxi/issues/262)** | Never announced. 0 utterances of «Šodien» across a real spinner→number transition; `nodeLiveRegion=0` on all 14 sampled content-change events |
+| T7.5 — no double «Ieņēmumi» | ✅ | `Speaking fragment text="Ieņēmumi. Šodien: €0.00 · Braucieni: 0", locale=lv_LV` — spoken **once**, no hint stutter |
 | VoiceOver | not run — **#257** (owed, not written off) | — |
 
 ## Tasks completed
@@ -61,8 +61,8 @@
 - [~] T3 APK — EAS build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c` submitted, **in queue**
 - [x] T4 stack + accounts
 - [ ] T5 functional pass
-- [ ] T6 `content-desc`
-- [ ] T7 TalkBack aloud
+- [x] T6 `content-desc` — all three states + the collapse
+- [~] T7 TalkBack aloud — home legs done (7.4 ❌ filed, 7.5 ✅); the offer-card legs await the APK
 - [ ] T8 restore
 - [ ] T9 runbook §Result + this report
 - [x] T10 the orphaned issues — **four** filed, not three (#258, #259, #260, #261)
@@ -226,6 +226,56 @@ Exactly one node carries the **composed name** — that half holds. But the chil
 exposed" is not established by the dump. Whether TalkBack gives it its own focus stop is a
 question about focus order, which `content-desc` cannot answer and T7's log can. Recorded
 here so the ✅ on the name leg is not read as covering the focus leg.
+
+### T6 and T7's home legs ran on #224's APK, and here is why that is sound
+
+The #15 build sat in the EAS queue for the whole session. Rather than leave the a11y half
+unrun a fourth month, the legs that depend only on the accessible **name** and on TalkBack's
+**speech** were run on #224's APK, on this argument — which is checkable, not asserted:
+
+`git diff --stat 4e6ffb68 HEAD` over every file that composes these names —
+`offer-card-props.ts`, `offer-card.tsx`, `home-screen.tsx`, `earnings-body.ts`,
+`earnings-card.tsx` — reports **no change**. The only moved file in the set is
+`packages/shared/src/i18n/lv.ts` (+46/−7), and every changed key in it is `sms.*` or
+`console.*`: **not one `driver.*` key differs.** So the strings and the composition that
+produce these accessible names are byte-identical between #224's build commit and HEAD.
+
+That argument covers the name and speech legs. It does **not** cover the wire, so the
+functional pass (T5) is not run on this APK.
+
+### How to drive TalkBack from `adb` — the gesture route does not work
+
+`observed` 2026-09-22, and this is the part worth keeping:
+
+- **`adb shell input swipe` is not seen as a TalkBack gesture.** Three swipe shapes
+  (fast/short, slow/long, both directions) produced **zero** `Speaking fragment` lines while
+  TalkBack was demonstrably alive and logging `TYPE_WINDOW_CONTENT_CHANGED`.
+- **`adb shell input tap` ACTIVATES rather than focuses.** With TalkBack on, a real finger
+  single-taps to focus and double-taps to activate. A synthetic tap on the earnings link
+  opened `/earnings` outright. Any agent run that taps under TalkBack is navigating, not
+  exploring.
+- **`adb shell input keyevent KEYCODE_DPAD_DOWN` / `KEYCODE_TAB` works.** It moves
+  accessibility focus one stop and TalkBack speaks the node, role and usage hint:
+  `«Iziet»`, `«Poga»`, `«Lai aktivizētu, Dubultskāriens»`. This is the mechanism to use.
+
+### The collapse, settled — the dump and the speech disagree, and the speech is right
+
+The dump shows **two** nodes carrying the earnings text:
+
+```
+class=android.widget.Button    text=''                             desc='Ieņēmumi. Šodien: €0.00 · Braucieni: 0'
+class=android.widget.TextView  text='Šodien: €0.00 · Braucieni: 0' desc=''
+```
+
+Read alone, that looks like the child is separately exposed. It is not, where it counts:
+walking focus with `KEYCODE_DPAD_DOWN` gives exactly **four** stops on home —
+`Iet tiešsaistē` → `Ieņēmumi. Šodien: €0.00 · Braucieni: 0` → `Auto: EMU224` → `Iziet` —
+matching the four `content-desc` nodes one for one. The child `TextView` **never receives
+its own focus stop**. The grouping holds; the dump's extra node is a tree artefact, not a
+second thing a blind driver lands on.
+
+This is exactly the split the plan's oracle table predicted: `content-desc` closes the
+name, and only speech closes the focus behaviour.
 
 ## Deviations from the plan
 
