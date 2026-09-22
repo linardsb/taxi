@@ -354,8 +354,9 @@ app has no settle affordance, though the app does know a `settled` status
 (`active-ride-state.ts:169,319`) and the endpoint accepts a `driver` actor
 (`settlement.controller.ts:26`). So on today's build a driver finishes a fare and their own
 earnings card reads zero until someone else settles. That may be the intended cash-
-reconciliation flow; it is not something this ticket should decide, and it is **not** filed
-as a defect. Flagged for #15's owner.
+reconciliation flow; it is not something this ticket should decide, so it is filed as a
+**question**, not a defect — [#264](https://github.com/linardsb/taxi/issues/264). #15 is not
+blocked on it.
 
 ### S2 — the emulator's socket and location stream are intermittent, and that shaped three rows
 
