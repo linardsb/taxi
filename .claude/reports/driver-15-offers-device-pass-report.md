@@ -2,7 +2,7 @@
 
 **Plan**: `.claude/plans/driver-15-offers-device-pass.md`
 **Branch**: `docs/plan-15-device-pass`
-**Status**: PARTIAL — the a11y half is complete; the functional half is blocked by the APK, not by the product
+**Status**: COMPLETE for the a11y half and for §Level 4 steps 1–3, 5, 6, 7, 8, 11; PARTIAL for 4, 9, 10, 12, 13, each with a named cause
 
 > Every row starts at **unrun** and is flipped only by an artifact. A row that was never
 > reached still reads unrun at the end — that is the honest default, not an omission.
@@ -17,7 +17,7 @@
 | Emulator flags | `-no-snapshot -no-boot-anim -gpu swiftshader_indirect` |
 | Worktree | `/Users/Berzins/taxi-worktrees/wt-15` on `docs/plan-15-device-pass` |
 | Base | `origin/main` at `d6207be` + the plan commit `047edcf` (`observed` 2026-09-22) |
-| APK | EAS build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, `preview` profile |
+| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 53 min; pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed 16:23:16. Every row below says which |
 | api | `services/api` dev on `API_PORT=3001`; db+redis from `COMPOSE_PROJECT_NAME=taxi` |
 
 ## §Level 4 functional pass — steps 1–13
@@ -27,17 +27,17 @@
 | 1 | Driver signed in, online, streaming | ✅ | «Tiešsaistē», «Pēdējā pozīcija pirms 3 s · Rindā: 0»; `drivers.status='online'`; 37 `driver.location.ping_accepted` — `s1-online.png` |
 | 2 | Book within ~2 km; full card inside ~2 s | ✅ | `s1d.png` — «Cena €9.01» · «Jūs saņemat €7.66 (85%)» · «Skaidrā naudā» · pickup · destination · «Līdz pasažierim ~1 min · 0.1 km» · «Atlikušas 6 s» · «Pieņemt»/«Atteikt» |
 | 3a | Let the offer expire untouched (at the seeded 20 s) | ✅ | `dispatch.offer.expired` ride `40e61ecf` offer `e42cbaec` at 14:50:42Z; card cleared, banner «Piedāvājuma laiks beidzās» with a focus ring — `s3a-expired.png` |
-| 3b | Book again; accept on the card | ⚠️ **server ✅ / app ❌** | Ride `d2ec8590` → `accepted`, `driver.presence.claimed_for_ride`. The app then showed a recoverable error, **not** the active-ride screen — cause is the APK, not the product (see I5) |
+| 3b | Book again; accept on the card | ✅ **on the #15 APK** | Card «Atlikušas 162 s» (T1's raise on the wire) → tap → «Brauciens pieņemts», «Apmaksa: Skaidrā naudā» pill, «Braucu pie pasažiera», Google Maps hand-off — `n2-card.png`, `n3-accepted.png`. **AC2 met.** On #224's APK the same step failed at the app — that was I5, and the #15 build proves it |
 | 4 | Background / force-stop; push opens the card | **unrun** | Blocked twice over: `StubPushProvider` delivers nothing **and** the app cannot register for FCM. `dispatch.offer.push_skipped reason:'no_token'` observed |
-| 5 | Walk arriving → arrived → start → complete | **unrun** | Needs the active-ride screen — blocked by I5 |
-| 6 | Receipt to the cent; today's earnings include the ride | **unrun** | As above. The split arithmetic *was* checked on the wire: 766 + 135 = 901, net/total = 85.0% |
-| 7 | Force-assign opens the ride with no card first | **unrun** | Blocked by I5 |
-| 8 | Reassign mid-`arriving` → banner + home | **unrun** | Blocked by I5 |
+| 5 | Walk arriving → arrived → start → complete | ✅ | Each tap advanced the server: `accepted` → `arriving` → `arrived` → `in_progress` → `completed`, read back from `rides.status` after every tap. Maps hand-off present on the screen throughout |
+| 6 | Receipt to the cent; today's earnings include the ride | ✅ | Receipt: «Pasažieris samaksāja: €9.01» → «Sakta (15%): €1.35» → «Jūs saņemat: €7.66», against the `split` row `901 \| 15 \| 135 \| 766` — **to the cent**, `commission + net === total`. Earnings: «Šodien: €7.66 · Braucieni: 1» — **but only after settlement**, see S1 |
+| 7 | Force-assign opens the ride with no card first | ✅ **with a divergence** | `dispatch.assign.forced`; **no offer card was ever shown** for that ride, and the app opened it at «Brauciens pieņemts» / «Iekāpšana: Force Assign Pickup, Riga». Divergence: the already-open app did not route to it until relaunched — the realtime leg, on a socket that dropped repeatedly here (S2) |
+| 8 | Reassign mid-`arriving` → banner + home | ✅ | Advanced to `arriving`, then `POST /dispatch/rides/:id/reassign` → the app showed «Dispečers nodeva braucienu citam šoferim» with a «Gatavs» control, **in real time, no relaunch** — `n10-reassigned.png` |
 | 9 | Glance mode above 10 km/h | **unrun** | Route found and costed (`geo fix` velocity, 20 kn) but not exercised — the card legs ran before it and the APK blocked the rest |
 | 10 | Kill ~75 s; offline push; reopen re-asserts online | **partial** | Reopen **does** re-assert online (`observed`: the app came up online after a force-stop). The push half is unrun for step 4's reason |
-| 11 | Kill mid-ride, reopen → active-ride at the right status | ⚠️ **server ✅ / app ❌** | `GET /drivers/me` returns `activeRideId: d2ec8590…` correctly; the app cold-started into the error screen — I5 |
+| 11 | Kill mid-ride, reopen → active-ride at the right status | ✅ | Force-stop + relaunch with a live ride landed on the active-ride screen at the correct status, carrying that ride's own pickup («Force Assign Pickup, Riga») — `n9-coldstart.png` |
 | 12 | Two devices in a zone → «N. of 2 in rix» | **unrun** | Second AVD not booted — AC5's queue half is partial, as Q1 allowed |
-| 13 | Payment method switched between card and acceptance | **unrun** | Rider token minted and ready (`+37120000003`), but the leg needs the active-ride screen — I5 |
+| 13 | Payment method switched between card and acceptance | ⚠️ **partial — the two hard rules verified, the banner not reached** | Verified: the rider's `PATCH /rides/:id/payment-method` cash→card returns 200 before lock; the row then reads `payment_method=card` with `request->>'paymentMethod'` still `cash` — **the operative/snapshot divergence**; the driver app displays «Apmaksa: **Ar karti**», i.e. the **operative** method, honouring the hard rule on device; and at `accepted` the same call returns **409 `payment_method_locked`** with nothing changed. **Not reached**: the one-time change banner, because the switch never landed while an offer card was actually up — see S2 |
 
 ## A11y legs
 
@@ -328,17 +328,64 @@ The subtype field is what makes this answerable rather than arguable: a delibera
 | I4 | `OTP /auth/otp/request` rejects `role: "dispatcher"` — `SIGNUP_ROLES` is `rider \| driver`. | Requested with `role: "rider"`; an existing user's stored role wins (`auth.schemas` docblock), so the dispatcher token came back with dispatcher rights (`POST /dispatch/bookings` → 201, `observed`). |
 
 
+## Two observations from the second pass
+
+### S1 — a completed ride shows €0.00 until it is settled, and the driver app cannot settle
+
+`observed` 2026-09-22 on the #15 APK. Immediately after «Pabeigt braucienu», with the ride
+at `completed`:
+
+```
+GET /drivers/me/earnings/today -> {"day":"2026-09-22","earnedCents":0,"rideCount":0}
+select count(*) from ledger_entries;  -> 0
+```
+
+The home card read «Šodien: €0.00 · Braucieni: 0» while the receipt on the previous screen
+said «Jūs saņemat: €7.66».
+
+The pipeline is **not** broken. `POST /rides/:rideId/settle` moved the ride to `settled`,
+wrote the ledger entries, and the same read then returned
+`{"earnedCents":766,"rideCount":1}` — «Šodien: €7.66 · Braucieni: 1» on the card. Earnings
+count **settled** money, not completed rides, and `ledger.repository.ts:172-181` sums
+`ledger_entries`, which only settlement writes.
+
+What is worth a decision: **`grep -rn 'settle' apps/driver/src` finds no call** — the driver
+app has no settle affordance, though the app does know a `settled` status
+(`active-ride-state.ts:169,319`) and the endpoint accepts a `driver` actor
+(`settlement.controller.ts:26`). So on today's build a driver finishes a fare and their own
+earnings card reads zero until someone else settles. That may be the intended cash-
+reconciliation flow; it is not something this ticket should decide, and it is **not** filed
+as a defect. Flagged for #15's owner.
+
+### S2 — the emulator's socket and location stream are intermittent, and that shaped three rows
+
+Not a product finding, stated so no row above is misread. Across the session the app
+repeatedly showed «Nav savienojuma» and a last-position age growing past 60 s, while the
+injection loop was demonstrably alive and `dumpsys` showed the fused provider advancing.
+The consequences, each visible above:
+
+- Step 7's realtime leg needed a relaunch (the ride itself was assigned correctly).
+- Step 13's banner was never reached: the dispatch engine would not offer, because
+  `findNearby` drops a driver whose position is older than
+  `DRIVER_LOCATION_TTL_SECONDS = 60`, so the offer card was never up at the moment the
+  switch could be timed against it. Two attempts, 20 polls apart.
+- A self-inflicted variant worth recording: setting `drivers.status='online'` by **direct
+  SQL** puts the row online but writes nothing to Redis, so
+  `SISMEMBER drivers:online:<city> <driverId>` stayed `0` and every booking went
+  `dispatch.ride.unclaimed` with `offerAttempts: 0`. Presence must be established through
+  the app's own toggle. That cost two bookings before it was spotted.
+
 ## Acceptance criteria
 
 | AC | Verdict | Basis |
 |---|---|---|
 | AC1 | **partial** | 4 of 13 steps carry an artifact; the other 9 are recorded **unrun with a named cause**, not silently skipped |
-| AC2 | ❌ **app** / ✅ server | Accept produced `accepted` + `driver.presence.claimed_for_ride`; the app did not reach the active-ride screen — **I5, an APK-age defect, not a product one** |
+| AC2 | ✅ | On the #15 APK: accept within the countdown landed the active-ride screen at `accepted`, with the payment pill and «Braucu pie pasažiera» |
 | AC3 | ✅ | Untouched offer expired at the seeded 20 s; card cleared; banner «Piedāvājuma laiks beidzās»; `dispatch.offer.expired` logged |
-| AC4 | **unrun** | AC4 names its paths — step 8's reassignment, step 13's payment change, or a deliberate 409. **None of them ran.** What ran was a schema parse failure (I5), a different path. And the banner was **not** recoverable in the sense AC4 means: tapping «Ielādēt vēlreiz» left the same error, and a cold start reproduced it, because the cause was permanent. *Side observation, not AC4*: the app degraded to a banner with a retry affordance and **never crashed** across an unparseable payload and two cold starts |
+| AC4 | ✅ **on two of its three named paths** | **Step 8's reassignment**: «Dispečers nodeva braucienu citam šoferim» with a «Gatavs» control, no crash. **A deliberate 409**: `PATCH …/payment-method` at `accepted` → `409 payment_method_locked`, refused cleanly with nothing changed. **Step 13's payment-change banner was not reached** (S2). Also, across an unparseable payload and two cold starts on the old APK the app degraded to a banner and **never crashed** — though that banner was *not* recoverable, since its cause was permanent |
 | AC5 | ✅ **less the queue line** | Fare, «you keep €7.66 (85%)», pickup, destination, ETA + km, payment pill, countdown all present on `s1d.png`. Queue line needs a second AVD — partial, as Q1 allowed |
-| AC6 | **unrun** | Blocked by I5 |
-| AC7 | **unrun on device**; arithmetic ✅ on the wire | `commission + net === total`: 135 + 766 = 901, and 766/901 = 85.0%, matching `commissionPct: 15` |
+| AC6 | ✅ **less the maps destination switch** | The walk ran `arriving → arrived → start → complete`, each tap confirmed against `rides.status`. «Atvērt Google Maps» was present at every step; **that the target switches from pickup to destination at `arrived` was not opened and checked** — unverified, not claimed |
+| AC7 | ✅ | Receipt «€9.01 → Sakta (15%) €1.35 → Jūs saņemat €7.66» against the `split` row `901 \| 15 \| 135 \| 766`, to the cent; `135 + 766 = 901`. Today's total then read «€7.66 · Braucieni: 1» — **after settlement**, per S1 |
 | AC8 | ✅ | `driver-device-day.md:362` now names #15; the runbook carries §"The offers / active-ride pass (#15)" with the result table and the setup deltas. Tick count 17 → 24 |
 | AC9 | ✅ **for TalkBack**, per leg | Name leg: all three earnings states ✅ **including the failed-first-load state, with a real route-selective fault** — not inferred. Speech leg: ✅ composed order, ✅ no double «Ieņēmumi», ❌ N3 (#262), ❌ Q5 (#263). VoiceOver → #257 |
 | AC10 | ✅ | This report; every figure carries `observed` / `derived` / `expected` |
@@ -347,24 +394,31 @@ The subtype field is what makes this answerable rather than arguable: a delibera
 
 ## T11 — the #15 decision: **do not close**
 
-AC2, AC4, AC6 and AC7 are unmet, and AC2/AC6/AC7 are the heart of what #15 owns: that a driver who
-accepts an offer reaches the active-ride screen, walks it to `complete`, and sees a receipt
-that reconciles. None of that has been exercised on a device.
+The heart of #15 — accept, walk, receipt — is now **exercised on a device and green**:
+AC2, AC5 (less the queue line), AC6 (less the maps destination switch), AC7, AC8, AC9, AC10,
+AC11 and AC12 all hold. The a11y half, owed since PR #163, is done and found two real
+defects no unit test could have.
 
-What is *not* a reason to keep it open: any of the three is a product defect. The server
-side of each is verified, and the one app-side failure is traced to the APK's age (I5).
+**Still, do not close yet.** Four things are genuinely unrun, and none of them is nothing:
 
-**What closing #15 now needs** — and it is small:
+1. **Step 13's payment-change banner** — the one-time «payment method changed» notice on
+   entry. AC4 names it, and R2 of the shipping plan was written around it. The two hard
+   rules underneath it are verified; the banner itself is not. Cause is S2, an emulator
+   limit, so it is re-runnable rather than blocked.
+2. **Steps 4 and 10's push halves** — owed to **#14**, which owns the FCM credential. Not
+   #15's to close.
+3. **Step 12's queue line** — needs the second AVD (`sakta141`). AC5 is partial and Q1
+   allowed exactly that.
+4. **Step 9's glance mode** — the route is found and costed (`geo fix` velocity, 20 kn), but
+   it was never exercised.
+5. **Two open defects the pass itself produced**, [#262](https://github.com/linardsb/taxi/issues/262)
+   and [#263](https://github.com/linardsb/taxi/issues/263). #263 in particular is an a11y
+   defect in the offer card, which is the screen this ticket is mostly about.
 
-1. The #15 `preview` APK (build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, still queued).
-2. A re-run of §Level 4 steps 3b, 5, 6, 7, 8, 11 and 13 on it. Every means they need is
-   already built and recorded in the runbook: the countdown lever, the rider token, the
-   dispatcher token, the booking call with explicit coordinates.
-3. Steps 4 and 10's push halves stay owed to #14 regardless (no FCM sender).
-4. Step 12 stays owed to a second AVD, or AC5 is accepted as partial.
-
-The a11y half — owed since PR #163 and the longest-outstanding part of this ticket — is
-**done**, and it found two real defects that no unit test could have.
+**Recommendation**: #15 closes on a short follow-up run — step 13's banner, step 9, and
+step 12 with the second AVD — plus a decision on #263. That is one session, not a ticket.
+Everything it needs is recorded in the runbook. Closing it now would mean ticking AC4 on a
+banner nobody has seen.
 
 ## Validation results
 
