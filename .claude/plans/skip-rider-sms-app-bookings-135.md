@@ -7,8 +7,13 @@ Pay special attention to naming of existing utils types and models. Import from 
 ## Feature Description
 
 Stop sending the `driver_arrived` SMS to riders who booked from the rider app. They see the
-same moment in-app; a phone-booked rider (Dina's channel, #63) keeps every message because SMS
-is their only channel.
+same moment on the ride-status screen while the app is open; a phone-booked rider (Dina's
+channel, #63) keeps every message because SMS is their only channel.
+
+**AMENDED at PR #253 review round 1 (F1).** The in-app half was not true when this plan was
+written: `statusKey()` collapsed `arrived` into `rider.status.matched`, so an app rider saw
+nothing new at arrival in *any* app state. PR #253 adds `rider.status.arrived` and the branch
+that selects it, which makes the claim true in the FOREGROUND. Backgrounded remains #17's.
 
 **Half of this ticket is already shipped, and the plan is scoped to the half that is not.**
 `ride-notifications.service.ts:116-117` already skips `driver_assigned` for every non-phone
@@ -184,11 +189,21 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
   one guard covering both kinds, expressed as `=== 'app'`:
 
   ```ts
-      // An app rider sees both moments in-app, so neither message is theirs
-      // (#135, SMS volume lever 1). Phone bookings (#63) keep everything —
-      // SMS is their only channel. `=== 'app'` rather than `!== 'phone'`:
-      // a channel we cannot vouch for gets the SMS (fail open), which is
-      // also the AC's "channel unknown → send".
+      // An app rider sees both moments on `/book/status` while the app is
+      // OPEN — `accepted` reads «Auto ir atrasts», `arrived` «Auto ir klāt»
+      // (`status-screen.tsx` statusKey) — so neither message is theirs
+      // (#135, SMS volume lever 1). Backgrounded they see neither: rider
+      // push is #17 and has not shipped, which is the regression AC #5
+      // prices. Phone bookings (#63) keep everything — SMS is their only
+      // channel.
+      //
+      // `=== 'app'` rather than `!== 'phone'`: a channel we cannot vouch for
+      // gets the SMS (fail open), which is also the AC's "channel unknown →
+      // send". Note this slice is NOT uniform on that question —
+      // `onRideCreated` (:72) fails the opposite way, withholding the
+      // tracking link from any channel that is not `phone`. Whoever adds a
+      // third channel has to settle both, and a `web` rider would otherwise
+      // be denied the link at booking and handed it at assignment.
       if (details.bookingChannel === 'app') return;
   ```
 
@@ -202,8 +217,14 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
   two-value pg enum with `.default('app')` (`db/src/schema/rides.ts:84`), so
   `bookingChannel !== 'phone'` and `bookingChannel === 'app'` are equal over every inhabitant of
   the type **and** every value the database can store. They diverge only if a third channel is
-  ever added, which `ride-quote.service.ts:40` explicitly contemplates — and there `=== 'app'` is
-  the one that fails open. If you cannot convince yourself the rewrite is a no-op today, leave
+  ever added — and there `=== 'app'` is the one that fails open.
+
+  **CORRECTED at PR #253 review round 1 (F2).** This line used to cite
+  `ride-quote.service.ts:40` as "explicitly contemplating" a third channel. It argues the
+  opposite: *"Adding a third `bookingChannel` value would be the same mistake by another door: a
+  preview is not a booking channel."* The no-op argument stands without it — it rests on the
+  closed two-value enum and the `NOT NULL` column, both verified — but the citation was
+  backwards and is withdrawn. If you cannot convince yourself the rewrite is a no-op today, leave
   line 116 alone and add a separate `kind === 'driver_arrived' && bookingChannel === 'app'` guard
   instead; the ticket is satisfied either way, and a silent behaviour change to `driver_assigned`
   is not.
@@ -256,7 +277,10 @@ IMPORTANT: Execute every task in order, top to bottom. Each task is atomic and i
   settle-then-assert pattern:
 
   ```ts
-    // #135: the arrival SMS is the app rider's no longer — the app shows it.
+    // #135: the arrival SMS is the app rider's no longer — `/book/status`
+    // shows it while the app is open. The 100 ms is a HEURISTIC, not a
+    // fence (`emitStatus` dispatches the send detached); the deterministic
+    // guard is the unit spec. See PR #253 F3 for the full comment.
     await new Promise((resolve) => setTimeout(resolve, 100));
     const bodies = smsTo(p(51));
     expect(bodies).toHaveLength(1);
@@ -484,10 +508,18 @@ None. No MCP tool answers a question this ticket raises.
       `apps/driver` does), there is no push slice under `apps/rider/src/features/`, and
       `PUT /drivers/me/push-token` is driver-only. `use-ride-status.tsx` is a foreground socket.
       So an app rider with the app backgrounded — which is the normal state of a rider waiting at
-      the kerb — currently receives **nothing** when the driver arrives once this merges. Weigh it
+      the kerb — receives **nothing** when the driver arrives once this merges. Weigh it
       against what it buys: **€9.36/mo** (see **Cost**). Do not merge until #17's push lands or
       Linards accepts the regression explicitly. **Not a reason to delay writing or reviewing the
       code** — it is a reason not to merge it.
+
+      **AMENDED at PR #253 review round 1 (F1), and the gate got SMALLER, not bigger.** As
+      written above this AC was *understated*: at the review's HEAD the foreground case was
+      broken too, because `statusKey()` collapsed `arrived` into `rider.status.matched` — an app
+      rider saw nothing new at arrival with the app OPEN either. PR #253 now ships
+      `rider.status.arrived` («Auto ir klāt», spoken by `Banner`), so the foreground rider is
+      told. What remains, and what this gate is now exactly about: a **backgrounded** app rider
+      is told nothing until #17 ships push. That is the residual regression the €9.36/mo buys.
 - [ ] **AC #6** — No document or comment in the tree still states "arrival SMS on every channel",
       "2 SMS/ride app channel", or "app rider = 2 segments · phone rider = 5" as current fact.
 - [ ] **AC #7** — #135's `−45% / 1,347 → 745` is corrected on the issue, and
@@ -525,9 +557,10 @@ plain reading wins. Answering Q1 "yes" would roughly double the saving (a furthe
 and, if taken, a separate ticket. Linards's call, not the implementer's.
 
 **Q2 — should `driver_assigned`'s condition be realigned to `=== 'app'`?** This plan says yes
-(D1) because it is provably a no-op at HEAD and fails open for a future third channel, which
-`ride-quote.service.ts:40` contemplates. If the implementer cannot verify the no-op to their own
-satisfaction, Task 1's GOTCHA gives the narrower alternative. Either discharges the ticket.
+(D1) because it is provably a no-op at HEAD and fails open for a future third channel. If the
+implementer cannot verify the no-op to their own satisfaction, Task 1's GOTCHA gives the
+narrower alternative. Either discharges the ticket. (The `ride-quote.service.ts:40` citation
+that stood here was backwards — see D1's correction, PR #253 F2.)
 
 **Assumptions:**
 
@@ -594,7 +627,8 @@ digits — Task 4 grep target `1,347`, `745`, `lever 1`, `45%`.
 ### R1 — what this actually buys, next to what it costs
 
 €9.36/mo against a <€100/mo guardrail, in exchange for an app rider at the kerb receiving no
-arrival notification at all while the app is backgrounded. The justification that carried the
+arrival notification at all while the app is backgrounded. (Foreground is covered as of PR #253's
+`rider.status.arrived` — F1; backgrounded is the residual.) The justification that carried the
 `driver_assigned` filter — "an app rider is watching the app" — is *weakest* precisely at
 `arrived`: assignment happens while the rider is still in the app having just booked; arrival
 happens minutes later, phone in pocket. #17's re-slice specifies an Android ongoing-ride

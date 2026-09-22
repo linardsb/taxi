@@ -14,10 +14,15 @@ import { errorMessageKey, useT } from '@/features/i18n';
 import { useRideStatus } from './use-ride-status';
 
 /**
- * Status → catalog copy. `requested` is "finding a car"; every status past it
- * is "a car has been found", because this screen ends at matched — the arriving
- * / arrived / in-progress detail is #17's, and claiming it here would be a lie
- * about what the app knows.
+ * Status → catalog copy. `requested` is "finding a car"; `arrived` is "the car
+ * is here"; every other status past requested is "a car has been found".
+ *
+ * `arrived` is called out on its own because #135 stopped sending the
+ * `driver_arrived` SMS to app bookings — this line is now the app rider's only
+ * arrival signal, and `Banner` speaks it. The screen still ends there: the
+ * `arriving` / `in_progress` detail is #17's, and claiming it here would be a
+ * lie about what the app knows. It is a FOREGROUND signal only — a backgrounded
+ * rider is told nothing until #17 ships push.
  */
 function statusKey(
   status: RideStatus | null,
@@ -30,6 +35,7 @@ function statusKey(
   }
   if (status.startsWith('cancelled')) return 'rider.status.cancelled';
   if (isOver(status)) return 'rider.status.completed';
+  if (status === 'arrived') return 'rider.status.arrived';
   return 'rider.status.matched';
 }
 

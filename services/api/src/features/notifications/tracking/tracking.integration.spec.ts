@@ -378,9 +378,25 @@ describe('tracking + ride SMS (integration)', () => {
         .expect(201);
     }
 
-    // #135: the arrival SMS is the app rider's no longer — the app shows it,
-    // so the confirmation is the whole of their SMS budget. Settle and count;
-    // `waitForSms` polls for AT LEAST N and so cannot assert an absence.
+    // #135: the arrival SMS is the app rider's no longer — `/book/status`
+    // shows it while the app is open — so the confirmation is the whole of
+    // their SMS budget. `waitForSms` polls for AT LEAST N and so cannot
+    // assert an absence; what replaces it has to settle instead.
+    //
+    // THE 100 ms IS A HEURISTIC, NOT A FENCE, and nothing here can make it
+    // one: `RideTransitionService.emitStatus` dispatches the notification
+    // path detached (`void this.notifications.onStatus(...)`, :131), so the
+    // 201 above does not await the send. A slow enough runner would read an
+    // as-yet-undelivered second SMS as an absence. The REAL guard against a
+    // weakened guard is `ride-notifications.service.spec.ts:296-303`, where
+    // `onStatus` is awaited against an in-memory provider and the same
+    // absence is deterministic. This case is the end-to-end companion.
+    //
+    // The `view()` round trip is deliberately ahead of the count rather than
+    // after it: it is a real request through the same app, so it settles
+    // strictly more than 100 ms of idle. It also asserts what it says — the
+    // app rider's ride stays trackable, which #17's share-trip reuses.
+    expect((await view(ride.trackingToken!)).state).toBe('arrived');
     await new Promise((resolve) => setTimeout(resolve, 100));
     const bodies = smsTo(p(51));
     expect(bodies).toHaveLength(1);
@@ -388,9 +404,6 @@ describe('tracking + ride SMS (integration)', () => {
     // The survivor is the CONFIRMATION, not the arrival: only the two
     // driver-details templates carry a plate.
     expect(bodies[0]).not.toContain(d.plate);
-
-    // The app rider's ride is still trackable — #17's share-trip reuses this.
-    expect((await view(ride.trackingToken!)).state).toBe('arrived');
   });
 
   it('terminal ride outliving the 24 h grace answers 410 (edge — AC #3)', async () => {

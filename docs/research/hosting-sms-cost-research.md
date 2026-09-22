@@ -252,12 +252,14 @@ is unknown.
 | Scenario | Segments | BulkGate | Twilio |
 |---|---|---|---|
 | **As shipped 2026-08-14** (pre-#136, pre-#135) — 301 app × 2 + 129 phone × 5 + 100 OTP | **1,347** | **€41.89** | **$96.31** |
-| **+ Lever 1** — skip SMS for app riders | 745 | €23.17 | $53.27 |
+| **+ Lever 1** (projected 2026-08-14; SHIPPED as #135 — see the correction below) | 745 | €23.17 | $53.27 |
 | **+ Lever 2** — trim the linked templates | **487** | **€15.15** | $34.82 |
 
-**Lever 1 — skip SMS for app riders (−45%).** App riders see both events
-in-app. It is the same two-line channel filter already used for
-`driver_assigned` in `onStatus`. Depends on the rider app (#17) shipping push.
+**Lever 1 — skip SMS for app riders (−45%, SUPERSEDED — see the correction
+below).** App riders see both events on the ride-status screen *while the app
+is open*; backgrounded they see neither, because rider push (#17) has not
+shipped. It is the same two-line channel filter already used for
+`driver_assigned` in `onStatus`.
 
 **CORRECTION (#135, 2026-09-22) — the lever-1 row above is wrong twice, and
 neither fault is in its arithmetic.** The lever shipped as #135, and what it
@@ -290,6 +292,9 @@ evidence behind it; #137's bake-off moves the €/segment rate, not the counts.
 
 **The #17 dependency is now a merge gate, not a footnote.** Rider push has not
 shipped, so a backgrounded app rider is told nothing when the driver arrives.
+An app rider with the screen OPEN is told: #135 added `rider.status.arrived`
+(«Auto ir klāt»), which `Banner` also speaks, so the foreground case is
+covered and the backgrounded one is the whole of the residual regression.
 That is what the €9.36/mo buys, and it is the trade this row does not price.
 
 **Lever 2 — shorten the linked messages (−35% more), keeping full Latvian and

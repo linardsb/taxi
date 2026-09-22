@@ -2,13 +2,15 @@
 
 **Plan**: `.claude/plans/skip-rider-sms-app-bookings-135.md`
 **Branch**: `feature/skip-rider-sms-app-bookings-135` (from `fabd615`)
-**Status**: COMPLETE for every code and documentation task — with **two items deliberately
-left open**, both named here so the header does not hide them:
+**Status**: COMPLETE for every code and documentation task — with **one item deliberately
+left open**, named here so the header does not hide it:
 
 1. **Level 4 manual validation was not run** (**V2** below carries the argument and the evidence).
-2. **Task 5 / AC #7's issue half is owed** — the comment correcting #135's `1,347 → 745 / −45%`
-   is due at PR time, as the plan's own IMPLEMENT line instructs. AC #7's research-doc half
-   (§4.3's annotation) is done.
+
+*(A second item stood here — "Task 5 / AC #7's issue half is owed" — and was already discharged
+when this report was written. `gh issue view 135 --comments` returns the correction, posted
+2026-09-22T09:14:25Z, carrying the same two-fault analysis and the same 1,089 → 788 table.
+AC #7 is closed on both halves. Struck at PR #253 review round 1, F5.)*
 
 Every other acceptance criterion is met. **AC #5 is not an open task but a merge gate** — a
 human decision, restated at the end of this report.
@@ -226,6 +228,12 @@ Unchanged and still binding. `observed` at `6710f1a`: `apps/rider/package.json` 
 `expo-notifications` (0 matches), and `apps/rider/src/features/` holds `auth booking i18n places
 ride-status` — no push slice. So once this merges, an app rider with the app backgrounded learns
 nothing when the driver arrives, until #17 ships push.
+
+**AMENDED at PR #253 review round 1 (F1).** At the review's HEAD the FOREGROUND case was broken
+too — `statusKey()` collapsed `arrived` into `rider.status.matched`, so an open app showed the
+same «Auto ir atrasts» it had shown since acceptance. Round 1 adds `rider.status.arrived` and
+the branch that selects it, so a foreground rider is now told and `Banner` speaks it. The gate
+above is unchanged in kind and smaller in size: **backgrounded** is the whole residual.
 
 What it buys is **€9.36/mo** — `derived`: 301 app rides × 1 segment removed × €0.0311, under
 §4.3's own unevidenced assumptions (430 rides/mo, 30% phone-booked, €0.0311/segment BulkGate
