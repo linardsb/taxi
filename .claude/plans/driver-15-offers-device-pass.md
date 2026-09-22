@@ -147,9 +147,13 @@ machine-readable log of everything TalkBack says. T7 sets it up before it runs a
 - **Not included: VoiceOver.** Genuinely unreachable here — iMac19,1 cannot run Tahoe so
   Xcode 26.3 is the ceiling, SDK 57 does not compile at it (`observed` 2026-08-25), no
   Apple ID, no paid programme. Filed as **#257**, cited in AC9.
-- **Not included: PIN pickup, the blind-rider protocol, `distanceMeters`/`durationSeconds`
-  on the quote, rider identity on the driver ride read.** All four are real and all four
-  are deferred — T10 files the three that have no ticket. Do not build any of them here.
+- **Not included: PIN pickup ([#258](https://github.com/linardsb/taxi/issues/258)), the
+  blind-rider protocol ([#259](https://github.com/linardsb/taxi/issues/259)),
+  `distanceMeters`/`durationSeconds` on the quote
+  ([#260](https://github.com/linardsb/taxi/issues/260)), rider identity on the driver ride
+  read ([#261](https://github.com/linardsb/taxi/issues/261)).** All four are real and all
+  four are deferred — T10 filed **four**, not three: the fourth (rider identity) was the
+  "check whether it has a home" item, and it did not. Do not build any of them here.
 - **Not changing: `offer_timeout_seconds` in the seed.** T1's raise is a runtime `UPDATE`
   against the dev database and is reverted by T8. The seeded 20 s is the product decision
   (`driver-ux-evidence.md` §"Accept timer 20–30 s") and stays.
@@ -179,7 +183,10 @@ machine-readable log of everything TalkBack says. T7 sets it up before it runs a
 
 **Forward-references**:
 
-- (none yet — T10's three new issues will be listed here once numbered)
+- [#258](https://github.com/linardsb/taxi/issues/258) PIN pickup — Why: #15's re-slice promised it a separate ticket; no schema, column or endpoint exists (`observed` 2026-09-22).
+- [#259](https://github.com/linardsb/taxi/issues/259) Blind-rider protocol — Why: a PRD §1/§5 headline claim (S5-8) that was in nobody's backlog. Ordered after #261.
+- [#260](https://github.com/linardsb/taxi/issues/260) Quote carries `distanceMeters`/`durationSeconds` — Why: PR #154 promised it; `fareQuoteSchema` carries money, not measurements.
+- [#261](https://github.com/linardsb/taxi/issues/261) Rider identity on the driver ride read — Why: PR #154's fourth promised follow-up; `rideSchema` carries `riderId` and no name. Gates #259.
 
 ---
 

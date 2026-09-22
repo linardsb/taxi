@@ -359,7 +359,7 @@ check is not expressible as #141 failing, and the day can legitimately stop at t
 |---|---|
 | The full driver device pass, §C steps 1–13 (sign-in, streaming, dead zone, process kill, dark sweep, expired token, earnings, i18n, TalkBack banner, background-permission refusal) | #14 — `.claude/plans/driver-app-auth-online-location.md:812` §Level 4 §C |
 | Three ear-checks: #161's two earnings-label states, F4's offer-card label, and N3 — whether `earnings-card.tsx:17`'s `polite` live region is still announced inside a collapsed `Pressable` | `.claude/references/ui-decisions.md:17`; N3 from `.claude/code-reviews/pr-163-review.md:183` |
-| The offers / active-ride device pass | #16 — `.claude/plans/driver-offers-active-ride.md:506` §Level 4 |
+| The offers / active-ride device pass | #15 — `.claude/plans/driver-offers-active-ride.md:506` §Level 4 |
 | The GPS field drive (#4, deferred 2026-08-26) | `docs/spikes/04-gps-field-test.md` §Field protocol |
 
 ---
