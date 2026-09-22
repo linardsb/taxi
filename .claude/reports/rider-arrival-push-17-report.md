@@ -158,6 +158,14 @@ Two specific things only a build can answer:
 
 ## One shared string worth not "fixing" later
 
+> **AMENDED 2026-09-22, review round 1 (F2, `e515f64`).** The *value* is still shared for the reason
+> below, and that reasoning stands. What changed is where the literal lives: it was spelled three
+> times — api request, driver app, rider app — and a cross-surface contract held as three copies is
+> what `packages/shared` exists to stop. `PUSH_CHANNEL_ID` now lives in `seams/push-provider.ts`
+> and both app constants re-export it, so the paragraph's own failure mode ("renaming either side
+> alone breaks delivery silently") is no longer reachable. Read the section as the argument for the
+> shared value, not as a description of three literals.
+
 `RIDE_CHANNEL = 'presence'` in the rider slice is the same Android channel id the driver app uses,
 because **the api sends one `channelId` on every push it makes**
 (`expo-push.provider.ts`) — driver nudges, offer pushes and this arrival alike. It is a contract
