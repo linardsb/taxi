@@ -100,6 +100,46 @@ accessibility event — which is what makes T7.3 (does the once-a-second name mu
 re-announce?) answerable by **counting log lines against event subtypes** rather than by ear.
 This belongs in the runbook: it removes the only attended step in the a11y half.
 
+### Step 9's speed cannot come from the runbook's recipe — but `geo fix` carries it
+
+The plan routes step 9 (glance mode above 10 km/h) through the runbook's test-provider
+recipe (`driver-device-day.md:434`). That recipe cannot set a speed. `observed` 2026-09-22
+on `sakta224`:
+
+```
+$ adb shell cmd location help
+    set-test-provider-location <PROVIDER> --location <LATITUDE>,<LONGITUDE>
+      [--accuracy <ACCURACY>] [--time <TIME>]
+```
+
+`--location`, `--accuracy`, `--time` and nothing else. (`add-test-provider` has a
+`--supportsSpeed` **capability** flag, which advertises the property without ever setting a
+value.) That matters because the app takes the speed straight off the fix rather than
+deriving it from successive positions — `location-task.ts:43-52`, `speedMps` is
+`raw.coords.speed`, nulled only when absent, non-finite or negative. Moving the mock
+position faster therefore produces **no** speed at all, and `glance` is
+`state.speedMps !== null && state.speedMps > GLANCE_SPEED_MPS`
+(`offer-card-props.ts:88`) — null fails it.
+
+The emulator console command does carry one. `observed` same session:
+
+```
+$ adb emu help geo fix
+'geo fix <longitude> <latitude> [<altitude> [<satellites> [<velocity>]]]'
+  <velocity>    optional velocity in knots
+```
+
+`derived`: `GLANCE_SPEED_MPS = 10 / 3.6 = 2.778 m/s` (`offer-card-props.ts:12`), i.e.
+10 km/h; at 1 knot = 1.852 km/h that threshold is 10 / 1.852 = **5.40 knots**. A fix sent at
+**20 knots = 37.0 km/h = 10.29 m/s** clears it by 3.7x, which leaves room for the fix to be
+rounded or re-projected without landing under the threshold.
+
+The condition this assumes: `geo fix` is only delivered once something is requesting
+location. The runbook's «`adb emu geo fix` alone does nothing» finding (`:434`) was made
+with **no app requesting**, leaving the HAL at `ProviderRequest[OFF]`. With the driver app
+online and streaming that precondition no longer holds, so `geo fix` is expected to land —
+**`expected`, not observed**, and the run either confirms it or step 9 is unrun.
+
 ### The push legs cannot be observed on the device, and this was not in the plan
 
 `PUSH_PROVIDER` is unset in the local runtime config, so `pushProviderFactory`
@@ -132,6 +172,6 @@ emulator has no account for; that is #14's ground, not #15's.
 | # | Issue | Resolution |
 |---|---|---|
 | I1 | The dev DB was one migration behind the code: `users.push_token` did not exist, so **every** `POST /auth/otp/verify` returned 500 from `AuthRepository.findOrCreate`. | Applied `db/migrations/0011_small_polaris.sql` (`pnpm --filter @taxi/db migrate`). Latest migration is now `0011_small_polaris.sql`. |
-| I2 | Five stale `requested` rides from 2026-08 (one 22-char tracking token, four NULL) failed **every** `DispatchSweeper` pass once per second — `expected 16-char base64url tracking token`. They predate #136's token format. | Retired them to `cancelled_by_system` in the dev DB. Sweeper quiet from 14:16:48Z (`observed`). |
+| I2 | Five stale `requested` rides from 2026-08 (one 22-char tracking token, four NULL) failed **every** `DispatchSweeper` pass once per second — `expected 16-char base64url tracking token`. They predate #136's token format. | Retired them to `cancelled_by_system` by direct `UPDATE` on the dev DB. Sweeper quiet from 14:16:48Z (`observed`). **This deliberately bypassed `assertTransition()`** — it is dev-data surgery on rows the current schema can no longer parse, not a product path, and no shipped code was changed to do it. The repo's no-direct-status-writes rule is about the application, and these rows cannot be moved through it: the read that would load them is the one that throws. |
 | I3 | `eas init --id` re-added 8 fully-qualified `android.permissions`, 3 of them new (`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`) — #224's addendum reproduced exactly. | Reverted to the committed 8 before the build; kept `extra.eas.projectId` and `owner`, both to be reverted by T8. |
 | I4 | `OTP /auth/otp/request` rejects `role: "dispatcher"` — `SIGNUP_ROLES` is `rider \| driver`. | Requested with `role: "rider"`; an existing user's stored role wins (`auth.schemas` docblock), so the dispatcher token came back with dispatcher rights (`POST /dispatch/bookings` → 201, `observed`). |
