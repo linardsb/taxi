@@ -80,6 +80,33 @@ observed — branch line removed (the exact collapse F1 names), same command:
 
 Restored and re-verified byte-identical after the probe.
 
+**The end-to-end link, which I had inherited from the review and had not checked.** The test above
+mocks `use-ride-status` outright, so on its own it proves `statusKey()` maps `arrived` → the string
+— **not** that `arrived` ever reaches the screen. The review asserted that half ("`use-ride-status`
+does receive `RT.rideStatus` with `status: 'arrived'` and applies it") and I had taken it as given.
+That is the `taxi-review-payoffs-are-claims` failure mode, and here the payoff *is* the deliverable:
+if the hook filtered `arrived`, the whole remedy would be inert while every test stayed green, and
+"foreground is covered" would be false in five artifacts at once.
+
+Checked, then pinned:
+
+- `use-ride-status.tsx:199-203` — the handler `safeParse`s against `rideStatusEventSchema` and calls
+  `apply(parsed.data.status, …)` directly. **No allowlist, no switch, no terminal-state guard.**
+- `realtime-events.ts:95` — `status: z.enum(RIDE_STATUSES)`, the full enum, no narrowing.
+- Reading it was not enough, because nothing stopped a later edit from adding the filter. New test
+  in `use-ride-status.test.tsx` drives a real `arrived` event through the hook:
+
+```
+observed — as shipped:
+  pnpm --filter @taxi/rider test -- use-ride-status → Tests: 11 passed, 11 total
+observed — with an allowlist-style `if (status === 'arrived') return;` in the handler:
+  → Tests: 1 failed, 10 passed, 11 total
+     ✕ applies arrived, so the screen can say the car is here
+```
+
+So the test pins the *absence* of a filter as much as the presence of the value, and the two halves
+of the remedy (delivery and rendering) are each covered rather than each assuming the other.
+
 **Fix — text, all 11 sites.** After the code remedy the accurate claim is: **foreground covered,
 backgrounded not** — so "backgrounded" in the docs, which F1 correctly called an *understatement*
 at review HEAD, becomes exactly right at this HEAD. Sites 7 and 9–11 are this PR's own artifacts.
@@ -289,7 +316,7 @@ COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force
 | Package | Result | vs the review's round-1 table |
 |---|---|---|
 | `@taxi/api` | 2 skipped, 79 passed, 79 of 81 suites · **39 skipped, 761 passed, 800 total** | unchanged — F4 added assertions to existing tests, F3 reordered a statement |
-| `@taxi/rider` | 30 suites passed · **147 passed, 147 total** | **+2** — exactly F1's two new tests (145 → 147) |
+| `@taxi/rider` | 30 suites passed · **148 passed, 148 total** | **+3** — F1's two screen tests plus the hook-delivery test (145 → 148) |
 | `@taxi/shared` | 27 files · **255 passed** | unchanged — catalog parity is enforced by `satisfies`, not by a test |
 
 `REDIS_TEST_URL` was not exported, so the 39 gated Redis tests skipped; that is the documented
