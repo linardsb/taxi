@@ -134,6 +134,16 @@ Two red gates preceded the green one, both reported rather than hidden:
 
 ## Owed, and not verified
 
+> **State this first, because the rest of the report can be misread as a claim it does not make:
+> the gap is IMPLEMENTED, not CLOSED.** On a device today a backgrounded rider gets exactly what
+> they got before this branch — nothing. `apps/rider` has no `extra.eas.projectId` **and no
+> `eas.json` at all** (`observed`; `apps/driver/eas.json` exists, the rider's does not — the app
+> has never been EAS-built). So `registerPushToken` returns `no_project` on every start, no token
+> is ever stored, `riderPushTarget` always answers `pushToken: null`, and `pushArrival` logs
+> `no_token` and returns. Every test above still passes, which is precisely why this paragraph is
+> here. Closing the gap needs an EAS project for the rider app plus FCM credentials — provisioning,
+> not code.
+
 **No EAS build has run, and the gate cannot stand in for one.** This adds a native module to the
 rider app. `taxi-android-build-invisible-to-gate` is explicit: a 22/22 green gate says nothing about
 whether an Android build works, and two separate blockers (#225 deps, #232 `expo.locales` lint) each
@@ -144,10 +154,20 @@ Two specific things only a build can answer:
 1. **The merged manifest actually lacks `RECEIVE_BOOT_COMPLETED`.** `blockedPermissions` is the
    documented mechanism and is already load-bearing in this file for `ACCESS_FINE_LOCATION`, but the
    claim above is `derived` from Expo's documented behaviour, not `observed` in a built artifact.
-2. **`apps/rider` has no EAS project id.** `extra.eas.projectId` is deliberately out of git
-   (`taxi-eas-project-id-not-committed`), and the id on record is the **driver** app's. The rider app
-   needs its own project and its own FCM credentials before any token is mintable — until then
-   `registerPushToken` returns `no_project` and the feature is inert on a device.
+2. **`apps/rider` has no EAS project id** — see the block above; this is the blocking one.
+
+## One shared string worth not "fixing" later
+
+`RIDE_CHANNEL = 'presence'` in the rider slice is the same Android channel id the driver app uses,
+because **the api sends one `channelId` on every push it makes**
+(`expo-push.provider.ts`) — driver nudges, offer pushes and this arrival alike. It is a contract
+with that request, not a description of what the channel carries, which is why the rider's
+user-visible channel *name* is «Paziņojumi par braucienu» while the id stays `presence`.
+
+Renaming either side alone breaks delivery silently: Android drops a push whose `channelId` names
+no existing channel into the default channel at default importance. The two apps' channels are
+independent on a phone (channels are per-app), so the shared id costs nothing — it just looks like
+a mistake to anyone who finds it and does not read this.
 
 `npx expo install --check` on `apps/rider` reports nine packages behind their expected versions —
 **all pre-existing drift**, not introduced here; `expo-notifications@~57.0.15` matches what
