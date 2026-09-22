@@ -489,6 +489,13 @@ exploring one.
 - **`uiautomator dump` on the offer card** — §Emulator route below records the same refusal
   for the OTP resend timer; on this card the flash and the countdown never let it settle
   either. `screencap` plus fixed coordinates is the only route.
+- **`uiautomator dump` on HOME, while the driver is online.** Same
+  `ERROR: could not get idle state.`, and this one is easy to miss because the same screen
+  dumps perfectly when the driver is **offline**. The diagnostics line
+  («Pēdējā pozīcija pirms N s · Rindā: N») re-renders once a second whenever the stream is
+  up, which is a third continuous source alongside the card's flash and countdown. Every
+  successful home dump in this pass — all three earnings-label states — was taken with the
+  driver offline. Go offline to dump home, or drive it from `screencap`.
 
 ## Emulator route
 
