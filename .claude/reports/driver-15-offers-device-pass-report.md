@@ -428,7 +428,7 @@ banner nobody has seen.
 
 | Command | Result |
 |---|---|
-| `pnpm turbo run typecheck lint test build --force` | ✅ **green** — `observed` 2026-09-22 from cleared dist, `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit 0: `Tasks: 22 successful, 22 total`, `Cached: 0 cached`, `Time: 2m29.421s`; `@taxi/api` `Test Suites: 83 passed, 83 total`, `Tests: 812 passed, 812 total` — **no skips**, because `REDIS_TEST_URL` was set, so the 39 Redis-gated tests ran |
+| `pnpm turbo run typecheck lint test build --force` | ✅ **green** — `observed` 2026-09-22, the run taken **after every edit in this branch**, from cleared dist, `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit 0: `Tasks: 22 successful, 22 total`, `Cached: 0 cached`, `Time: 1m56.842s`; `@taxi/api` `Test Suites: 83 passed, 83 total`, `Tests: 812 passed, 812 total`, `Time: 61.87 s` — **no skips**: `REDIS_TEST_URL` was set, so the Redis-gated suites ran. (An earlier identical-count run at 2m29.421s preceded the last four doc commits; this is the one that covers them.) |
 | `offer_timeout_seconds` restored | `20` (`observed`) |
 | TalkBack restored | `accessibility_enabled=0` (`observed`) |
 | `eas.json` / `app.json` | reverted; `git status --porcelain` empty (`observed`) |
