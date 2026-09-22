@@ -2,7 +2,7 @@
 
 **Plan**: `.claude/plans/driver-15-offers-device-pass.md`
 **Branch**: `docs/plan-15-device-pass`
-**Status**: IN PROGRESS
+**Status**: PARTIAL — the a11y half is complete; the functional half is blocked by the APK, not by the product
 
 > Every row starts at **unrun** and is flipped only by an artifact. A row that was never
 > reached still reads unrun at the end — that is the honest default, not an omission.
@@ -48,7 +48,7 @@
 | T6 case 3 — earnings link, ready | ✅ | `content-desc='Ieņēmumi. Šodien: €0.00 · Braucieni: 0'` — `dryrun-home-lv.xml` |
 | T6 — collapse: exactly one node carries the name | ✅ | One node carries the composed name; a child `TextView` remains in the tree but gets **no focus stop** — see the collapse note below |
 | T7.1 — offer card spoken, composed order | ✅ | Full utterance quoted below; fare and «you keep» both spoken, payment **before** the accept instruction |
-| T7.2 — countdown announcements, `ANNOUNCE_EVERY_S = 5` | ⚠️ **fires, then starves** | 180/175/170/165 at `TYPE_ANNOUNCEMENT`, then **none** — crowded out by the label re-reads. Part of [#263](https://github.com/linardsb/taxi/issues/263) |
+| T7.2 — countdown announcements, `ANNOUNCE_EVERY_S = 5` | ⚠️ **fires, then starves** — under the **raised 180 s** window | 180/175/170/165 at `TYPE_ANNOUNCEMENT`, then **none** — crowded out by the label re-reads. **Never counted at the seeded 20 s**, where the `derived` expectation is 8 announcements (s = 20,15,10,5,4,3,2,1 from `s <= 5 \|\| s % 5 === 0`). Part of [#263](https://github.com/linardsb/taxi/issues/263) |
 | T7.3 — does the once-a-second name mutation re-announce? (Q5) | ❌ **YES — finding, [#263](https://github.com/linardsb/taxi/issues/263)** | 5 full-label re-reads at `TYPE_WINDOW_CONTENT_CHANGED` vs 1 legitimate focus read |
 | T7.4 — N3 live region inside the collapsed `Pressable` | ❌ **finding — [#262](https://github.com/linardsb/taxi/issues/262)** | Never announced. 0 utterances of «Šodien» across a real spinner→number transition; `nodeLiveRegion=0` on all 14 sampled content-change events |
 | T7.5 — no double «Ieņēmumi» | ✅ | `Speaking fragment text="Ieņēmumi. Šodien: €0.00 · Braucieni: 0", locale=lv_LV` — spoken **once**, no hint stutter |
@@ -56,17 +56,17 @@
 
 ## Tasks completed
 
-- [ ] T1 countdown lever
+- [x] T1 countdown lever — raised to 180, verified on the wire («Atlikušas 162 s»), restored to 20
 - [x] T2 runbook `#16` → `#15` (line 362)
-- [~] T3 APK — EAS build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c` submitted, **in queue**
+- [~] T3 APK — EAS build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c` submitted 14:14:57Z, **still `in queue` ~50 min later**; the pass ran on #224's APK instead (see below)
 - [x] T4 stack + accounts
-- [ ] T5 functional pass
+- [~] T5 functional pass — steps 1, 2, 3a ✅; 3b server-only; the rest blocked by I5
 - [x] T6 `content-desc` — all three states + the collapse
 - [x] T7 TalkBack aloud — all five legs run; two are findings (#262, #263)
-- [ ] T8 restore
-- [ ] T9 runbook §Result + this report
+- [x] T8 restore
+- [x] T9 runbook §Result + this report
 - [x] T10 the orphaned issues — **four** filed, not three (#258, #259, #260, #261)
-- [ ] T11 #15 decision
+- [x] T11 #15 decision — **do not close**, see below
 
 ## Established before the run
 
@@ -326,3 +326,51 @@ The subtype field is what makes this answerable rather than arguable: a delibera
 | I3 | `eas init --id` re-added 8 fully-qualified `android.permissions`, 3 of them new (`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`) — #224's addendum reproduced exactly. | Reverted to the committed 8 before the build; kept `extra.eas.projectId` and `owner`, both to be reverted by T8. |
 | I5 | **The old APK rejects every ride payload**, so steps 5–8, 11 and 13 could not run on it. #136 shortened the tracking token from **22** base64url chars to **16** (`schemas/tracking.ts`, "a HARD cut-over, not a widening"), and `rideSchema` pulls `trackingTokenSchema` in by a **transitive import** (`schemas/ride.ts:20,269`). The api now mints `VlSag2fDzVinzLjZ` (16); the old bundle demands 22, so `rideSchema.parse()` throws and the app renders its generic error. **The server is provably fine**: `GET /drivers/me` → 200 with the right `activeRideId`, `GET /rides/:id` → 200 `accepted`. | Not fixable without the #15 build. It also **corrects my own reasoning**: I had argued the old APK was safe because `schemas/ride.ts` was unchanged — but a file can be unchanged and still import a contract that moved. Diffing the schema file is not enough; the transitive closure is what matters. This is exactly the plan's A2, and A2 was right. |
 | I4 | `OTP /auth/otp/request` rejects `role: "dispatcher"` — `SIGNUP_ROLES` is `rider \| driver`. | Requested with `role: "rider"`; an existing user's stored role wins (`auth.schemas` docblock), so the dispatcher token came back with dispatcher rights (`POST /dispatch/bookings` → 201, `observed`). |
+
+
+## Acceptance criteria
+
+| AC | Verdict | Basis |
+|---|---|---|
+| AC1 | **partial** | 4 of 13 steps carry an artifact; the other 9 are recorded **unrun with a named cause**, not silently skipped |
+| AC2 | ❌ **app** / ✅ server | Accept produced `accepted` + `driver.presence.claimed_for_ride`; the app did not reach the active-ride screen — **I5, an APK-age defect, not a product one** |
+| AC3 | ✅ | Untouched offer expired at the seeded 20 s; card cleared; banner «Piedāvājuma laiks beidzās»; `dispatch.offer.expired` logged |
+| AC4 | **unrun** | AC4 names its paths — step 8's reassignment, step 13's payment change, or a deliberate 409. **None of them ran.** What ran was a schema parse failure (I5), a different path. And the banner was **not** recoverable in the sense AC4 means: tapping «Ielādēt vēlreiz» left the same error, and a cold start reproduced it, because the cause was permanent. *Side observation, not AC4*: the app degraded to a banner with a retry affordance and **never crashed** across an unparseable payload and two cold starts |
+| AC5 | ✅ **less the queue line** | Fare, «you keep €7.66 (85%)», pickup, destination, ETA + km, payment pill, countdown all present on `s1d.png`. Queue line needs a second AVD — partial, as Q1 allowed |
+| AC6 | **unrun** | Blocked by I5 |
+| AC7 | **unrun on device**; arithmetic ✅ on the wire | `commission + net === total`: 135 + 766 = 901, and 766/901 = 85.0%, matching `commissionPct: 15` |
+| AC8 | ✅ | `driver-device-day.md:362` now names #15; the runbook carries §"The offers / active-ride pass (#15)" with the result table and the setup deltas. Tick count 17 → 24 |
+| AC9 | ✅ **for TalkBack**, per leg | Name leg: all three earnings states ✅ **including the failed-first-load state, with a real route-selective fault** — not inferred. Speech leg: ✅ composed order, ✅ no double «Ieņēmumi», ❌ N3 (#262), ❌ Q5 (#263). VoiceOver → #257 |
+| AC10 | ✅ | This report; every figure carries `observed` / `derived` / `expected` |
+| AC11 | ✅ **exceeded** | #258 PIN, #259 blind-rider, #260 quote fields, **#261 rider identity** (the fourth, which had no home). Plan Non-Goals and Forward-references cite all four |
+| AC12 | ✅ | Config restored (`offer_timeout_seconds` = 20, TalkBack off, test provider removed, `eas.json`/`app.json` reverted, tree clean) |
+
+## T11 — the #15 decision: **do not close**
+
+AC2, AC4, AC6 and AC7 are unmet, and AC2/AC6/AC7 are the heart of what #15 owns: that a driver who
+accepts an offer reaches the active-ride screen, walks it to `complete`, and sees a receipt
+that reconciles. None of that has been exercised on a device.
+
+What is *not* a reason to keep it open: any of the three is a product defect. The server
+side of each is verified, and the one app-side failure is traced to the APK's age (I5).
+
+**What closing #15 now needs** — and it is small:
+
+1. The #15 `preview` APK (build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, still queued).
+2. A re-run of §Level 4 steps 3b, 5, 6, 7, 8, 11 and 13 on it. Every means they need is
+   already built and recorded in the runbook: the countdown lever, the rider token, the
+   dispatcher token, the booking call with explicit coordinates.
+3. Steps 4 and 10's push halves stay owed to #14 regardless (no FCM sender).
+4. Step 12 stays owed to a second AVD, or AC5 is accepted as partial.
+
+The a11y half — owed since PR #163 and the longest-outstanding part of this ticket — is
+**done**, and it found two real defects that no unit test could have.
+
+## Validation results
+
+| Command | Result |
+|---|---|
+| `pnpm turbo run typecheck lint test build --force` | ✅ **green** — `observed` 2026-09-22 from cleared dist, `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit 0: `Tasks: 22 successful, 22 total`, `Cached: 0 cached`, `Time: 2m29.421s`; `@taxi/api` `Test Suites: 83 passed, 83 total`, `Tests: 812 passed, 812 total` — **no skips**, because `REDIS_TEST_URL` was set, so the 39 Redis-gated tests ran |
+| `offer_timeout_seconds` restored | `20` (`observed`) |
+| TalkBack restored | `accessibility_enabled=0` (`observed`) |
+| `eas.json` / `app.json` | reverted; `git status --porcelain` empty (`observed`) |
