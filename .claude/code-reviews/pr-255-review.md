@@ -4,7 +4,7 @@
 **Title**: feat(rider): push the arrival to a backgrounded app rider (#17)
 **Reviewed and fixed** 2026-09-22 · fresh context, sibling-app comparison
 
-**Recommendation: APPROVE at `2b985f1`.** One High and one Medium were found and
+**Recommendation: APPROVE at `c9f6190`.** One High and one Medium were found and
 both are fixed on the branch; one Low is reported and deliberately not fixed.
 
 The High is not a wording defect. The rider app registered only
@@ -12,8 +12,22 @@ The High is not a wording defect. The rider app registered only
 the process — so tapping «Auto ir klāt» on a killed app opened the booking form,
 not the ride. That is the exact rider #17 exists for.
 
-This PR is stacked on #253. #253's round-2 close is posted; merge order is
-**#253 → #255 → #254**.
+> **REBASED 2026-09-22, after this review was written.** #253 merged as a
+> **squash** (`8fa7aa7` on `main`), so the four commits this branch carried from
+> it were no longer ancestors of `main` and GitHub reported #255 as
+> `CONFLICTING`. Fixed by `git rebase --onto origin/main f2cc6c4`, which replays
+> #255's own six commits. Not a content change: `tree(8fa7aa7)` ==
+> `tree(f2cc6c4)` == `d8193f8`, so the replay had nothing to resolve, and
+> `tree(c9f6190)` == `tree(2b985f1)` == `9f65bcd` — the post-rebase tip is
+> byte-identical to the tree the gate below ran on.
+>
+> Every sha below is therefore **pre-rebase and historical**. The map:
+> `9508f0b`→`b35f902`, `3e753f7`→`0233891`, `13982ad`→`9197a81`,
+> `e515f64`→`21211b3`, `a950f53`→`85062ca`, `2b985f1`→`c9f6190`. The reviewed
+> head stays quoted as `13982ad` because that is the commit that was read.
+
+This PR was stacked on #253, which has since merged. Remaining merge order is
+**#255 → #254 → #256**.
 
 ---
 
@@ -269,7 +283,7 @@ past.
 
 ## Recommendation
 
-**Approve at `2b985f1`.** F1 and F2 are fixed on the branch with probes; F3 is
+**Approve at `c9f6190`.** F1 and F2 are fixed on the branch with probes; F3 is
 reported and left. Merge **#253 first**, then this, then #254.
 
 Two things a green gate cannot answer, both for Linards rather than a reviewer:
