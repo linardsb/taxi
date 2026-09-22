@@ -2,7 +2,7 @@
 
 **Plan**: `.claude/plans/driver-15-offers-device-pass.md`
 **Branch**: `docs/plan-15-device-pass`
-**Status**: COMPLETE for the a11y half and for §Level 4 steps 1–3, 5, 6, 7, 8, 11; PARTIAL for 4, 9, 10, 12, 13, each with a named cause
+**Status**: COMPLETE for the a11y half and for §Level 4 steps 1, 2, 3a, 3b, 5, 6, 8, 11; PARTIAL for 7, 10, 13; **UNRUN for 4, 9, 12** — each with a named cause. (`derived` from the step table below, which is the source of truth for every row.)
 
 > Every row starts at **unrun** and is flipped only by an artifact. A row that was never
 > reached still reads unrun at the end — that is the honest default, not an omission.
@@ -17,7 +17,7 @@
 | Emulator flags | `-no-snapshot -no-boot-anim -gpu swiftshader_indirect` |
 | Worktree | `/Users/Berzins/taxi-worktrees/wt-15` on `docs/plan-15-device-pass` |
 | Base | `origin/main` at `d6207be` + the plan commit `047edcf` (`observed` 2026-09-22) |
-| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 53 min; pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed 16:23:16. Every row below says which |
+| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 53 min; pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed **16:23:16Z**. `observed` via the EAS GraphQL API 2026-09-22: that build was created `14:14:57.231Z` and `completedAt` `15:22:03.251Z`, so **nothing could run on it before 15:22Z**. **Pass 1 owns steps 1, 2, 3a and every a11y leg; pass 2 owns steps 3b, 5, 6, 7, 8, 10, 11, 13.** Step 3a's own artifact is timestamped `14:50:42Z` — 31 min before the #15 build finished — which is the proof of the split, not an inference |
 | api | `services/api` dev on `API_PORT=3001`; db+redis from `COMPOSE_PROJECT_NAME=taxi` |
 
 ## §Level 4 functional pass — steps 1–13
@@ -48,7 +48,7 @@
 | T6 case 3 — earnings link, ready | ✅ | `content-desc='Ieņēmumi. Šodien: €0.00 · Braucieni: 0'` — `dryrun-home-lv.xml` |
 | T6 — collapse: exactly one node carries the name | ✅ | One node carries the composed name; a child `TextView` remains in the tree but gets **no focus stop** — see the collapse note below |
 | T7.1 — offer card spoken, composed order | ✅ | Full utterance quoted below; fare and «you keep» both spoken, payment **before** the accept instruction |
-| T7.2 — countdown announcements, `ANNOUNCE_EVERY_S = 5` | ⚠️ **fires, then starves** — under the **raised 180 s** window | 180/175/170/165 at `TYPE_ANNOUNCEMENT`, then **none** — crowded out by the label re-reads. **Never counted at the seeded 20 s**, where the `derived` expectation is 8 announcements (s = 20,15,10,5,4,3,2,1 from `s <= 5 \|\| s % 5 === 0`). Part of [#263](https://github.com/linardsb/taxi/issues/263) |
+| T7.2 — countdown announcements, `ANNOUNCE_EVERY_S = 5` | ⚠️ **fires, then starves** — under the **raised 180 s** window | 180/175/170/165 at `TYPE_ANNOUNCEMENT`, then **none** — crowded out by the label re-reads. **Never counted at the seeded 20 s**, where the `derived` expectation is 8 announcements (s = 20,15,10,5,4,3,2,1 from `s <= 5 \|\| s % 5 === 0`, **and** the separate `s <= 0` guard on the same line that excludes s = 0 — `offer-card.tsx:60`; without it the predicate alone would give 9. The countdown does start at exactly 20: `offer-builder.ts:61` → `offer-state.ts:204`). Part of [#263](https://github.com/linardsb/taxi/issues/263) |
 | T7.3 — does the once-a-second name mutation re-announce? (Q5) | ❌ **YES — finding, [#263](https://github.com/linardsb/taxi/issues/263)** | 5 full-label re-reads at `TYPE_WINDOW_CONTENT_CHANGED` vs 1 legitimate focus read |
 | T7.4 — N3 live region inside the collapsed `Pressable` | ❌ **finding — [#262](https://github.com/linardsb/taxi/issues/262)** | Never announced. 0 utterances of «Šodien» across a real spinner→number transition; `nodeLiveRegion=0` on all 14 sampled content-change events |
 | T7.5 — no double «Ieņēmumi» | ✅ | `Speaking fragment text="Ieņēmumi. Šodien: €0.00 · Braucieni: 0", locale=lv_LV` — spoken **once**, no hint stutter |
@@ -60,7 +60,7 @@
 - [x] T2 runbook `#16` → `#15` (line 362)
 - [~] T3 APK — EAS build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c` submitted 14:14:57Z, **still `in queue` ~50 min later**; the pass ran on #224's APK instead (see below)
 - [x] T4 stack + accounts
-- [~] T5 functional pass — steps 1, 2, 3a ✅; 3b server-only; the rest blocked by I5
+- [~] T5 functional pass — **pass 1** (#224's APK): steps 1, 2, 3a ✅, 3b server-only, the rest blocked by I5. **Pass 2** (the #15 APK): 3b, 5, 6, 8, 11 ✅; 7, 10, 13 partial; 4, 9, 12 unrun
 - [x] T6 `content-desc` — all three states + the collapse
 - [x] T7 TalkBack aloud — all five legs run; two are findings (#262, #263)
 - [x] T8 restore
@@ -103,7 +103,7 @@ This belongs in the runbook: it removes the only attended step in the a11y half.
 ### Step 9's speed cannot come from the runbook's recipe — but `geo fix` carries it
 
 The plan routes step 9 (glance mode above 10 km/h) through the runbook's test-provider
-recipe (`driver-device-day.md:434`). That recipe cannot set a speed. `observed` 2026-09-22
+recipe (`driver-device-day.md:598`). That recipe cannot set a speed. `observed` 2026-09-22
 on `sakta224`:
 
 ```
@@ -115,7 +115,7 @@ $ adb shell cmd location help
 `--location`, `--accuracy`, `--time` and nothing else. (`add-test-provider` has a
 `--supportsSpeed` **capability** flag, which advertises the property without ever setting a
 value.) That matters because the app takes the speed straight off the fix rather than
-deriving it from successive positions — `location-task.ts:43-52`, `speedMps` is
+deriving it from successive positions — `location-task.ts:43-53`, `speedMps` is
 `raw.coords.speed`, nulled only when absent, non-finite or negative. Moving the mock
 position faster therefore produces **no** speed at all, and `glance` is
 `state.speedMps !== null && state.speedMps > GLANCE_SPEED_MPS`
@@ -143,7 +143,7 @@ online and streaming that precondition no longer holds, so `geo fix` is expected
 ### The push legs cannot be observed on the device, and this was not in the plan
 
 `PUSH_PROVIDER` is unset in the local runtime config, so `pushProviderFactory`
-(`services/api/src/features/push/push.module.ts:16-27`) binds `StubPushProvider` outside
+(`services/api/src/features/push/push.module.ts:16-26`) binds `StubPushProvider` outside
 production. The stub **logs and delivers nothing**
 (`stub-push.provider.ts:23-31`, `event: 'driver.push.stub_sent'` with `title` and `body`).
 
@@ -185,14 +185,16 @@ That string is itself the proof the api was reached: `earningsBody()` returns `n
 spinner) while loading and the em dash `'—'` on a failed first load, so a **composed**
 string means `GET /drivers/me/earnings/today` returned a body.
 
-**No #15 step result is taken from this APK.** It predates `packages/shared`'s moves
+**No step requiring a ride payload is taken from this APK** — which is what I5 makes
+load-bearing. Steps 1, 2 and 3a *are* taken from it (see the step table and the Run
+environment row); none of the three touches a ride payload. It predates `packages/shared`'s moves
 (#245 `5e45d49`, #135 `001d1c7`) and is here only to de-risk the harness — that the
 emulator reaches the api, that the session survives, and that the app starts without a
 crash. Screenshots: `pass-evidence-harness-01.png` (splash), `-02.png` (home).
 
 ### Two setup corrections the runbook owes its next reader
 
-**1. The locale line needs a reboot.** `driver-device-day.md:548` says to run
+**1. The locale line needs a reboot.** `driver-device-day.md:719` says to run
 `adb shell settings put system system_locales lv-LV` "first if you want the LV strings".
 `observed` 2026-09-22: that alone is **not** sufficient. With `system_locales=lv-LV` and
 `persist.sys.locale=lv-LV` both set and the app force-stopped and relaunched, the dump still
@@ -236,9 +238,12 @@ unrun a fourth month, the legs that depend only on the accessible **name** and o
 `git diff --stat 4e6ffb68 HEAD` over every file that composes these names —
 `offer-card-props.ts`, `offer-card.tsx`, `home-screen.tsx`, `earnings-body.ts`,
 `earnings-card.tsx` — reports **no change**. The only moved file in the set is
-`packages/shared/src/i18n/lv.ts` (+46/−7), and every changed key in it is `sms.*` or
-`console.*`: **not one `driver.*` key differs.** So the strings and the composition that
-produce these accessible names are byte-identical between #224's build commit and HEAD.
+`packages/shared/src/i18n/lv.ts` (+46/−7), and its changed keys are `sms.*` (×2),
+`console.*` (×6), `push.*` (×2 — `push.rider_arrived_title`, `push.rider_arrived_body`)
+and `rider.*` (×2 — `rider.status.arrived`, `rider.push.channel_name`), all of them #17's
+and #135's rider work: **not one `driver.*` key differs**, which is the half that matters
+here. So the strings and the composition that produce these accessible names are
+byte-identical between #224's build commit and HEAD.
 
 That argument covers the name and speech legs. It does **not** cover the wire, so the
 functional pass (T5) is not run on this APK.
@@ -293,7 +298,7 @@ instruction** — the two things T7.1 exists to check.
 
 The figures on the card match the wire to the cent: `totalCents: 901` → «€9.01»,
 `driverNetCents: 766` → «€7.66», `commissionPct: 15` → «(85%)». `derived`:
-766 + 135 = 901, and 766 / 901 = 85.0%.
+766 + 135 = 901. The «(85%)» is rendered from `commissionPct` (100 − 15), **not** from the ratio; 766 / 901 = 85.0% is a consistency check on it, not its derivation.
 
 ### Q5, answered — and it is the bad answer
 
@@ -315,7 +320,7 @@ The subtype field is what makes this answerable rather than arguable: a delibera
 | D1 | The plan's `psql -U postgres -d taxi` is wrong; the compose user is `taxi` (`docker-compose.yml:5`). Used `-U taxi -d taxi`. | The command as written fails with `role "postgres" does not exist`. |
 | D2 | T10 filed **four** issues, not three. | The plan's own T10 says to "check whether rider identity has a home; file it if not". It did not (`observed`: 111 issues, no match), so it was filed as #261. |
 | D3 | TalkBack's log level was set by writing the prefs file as root, not through the Settings UI. | See above — strictly better evidence and repeatable, and it removes the plan's one attended setup step. |
-| D4 | `expo install --check` reports **15** outdated packages, not the runbook §D3's 9. Not bumped. | The plan forbids code changes to the slices, and #225/#232 each proved a dep change needs its own ~20 min build to validate. Recorded, not silently fixed. |
+| D4 | `expo install --check` reports **15** outdated packages against the runbook's **14** (`driver-device-day.md:178-182`, `observed` 2026-09-17) — **+1** of new drift, not the +6 an earlier draft of this row implied by citing a §D3 that does not exist. Not bumped. | The plan forbids code changes to the slices, and #225/#232 each proved a dep change needs its own ~20 min build to validate. Recorded, not silently fixed. |
 
 ## Issues encountered
 
@@ -324,8 +329,8 @@ The subtype field is what makes this answerable rather than arguable: a delibera
 | I1 | The dev DB was one migration behind the code: `users.push_token` did not exist, so **every** `POST /auth/otp/verify` returned 500 from `AuthRepository.findOrCreate`. | Applied `db/migrations/0011_small_polaris.sql` (`pnpm --filter @taxi/db migrate`). Latest migration is now `0011_small_polaris.sql`. |
 | I2 | Five stale `requested` rides from 2026-08 (one 22-char tracking token, four NULL) failed **every** `DispatchSweeper` pass once per second — `expected 16-char base64url tracking token`. They predate #136's token format. | Retired them to `cancelled_by_system` by direct `UPDATE` on the dev DB. Sweeper quiet from 14:16:48Z (`observed`). **This deliberately bypassed `assertTransition()`** — it is dev-data surgery on rows the current schema can no longer parse, not a product path, and no shipped code was changed to do it. The repo's no-direct-status-writes rule is about the application, and these rows cannot be moved through it: the read that would load them is the one that throws. |
 | I3 | `eas init --id` re-added 8 fully-qualified `android.permissions`, 3 of them new (`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`) — #224's addendum reproduced exactly. | Reverted to the committed 8 before the build; kept `extra.eas.projectId` and `owner`, both to be reverted by T8. |
-| I5 | **The old APK rejects every ride payload**, so steps 5–8, 11 and 13 could not run on it. #136 shortened the tracking token from **22** base64url chars to **16** (`schemas/tracking.ts`, "a HARD cut-over, not a widening"), and `rideSchema` pulls `trackingTokenSchema` in by a **transitive import** (`schemas/ride.ts:20,269`). The api now mints `VlSag2fDzVinzLjZ` (16); the old bundle demands 22, so `rideSchema.parse()` throws and the app renders its generic error. **The server is provably fine**: `GET /drivers/me` → 200 with the right `activeRideId`, `GET /rides/:id` → 200 `accepted`. | Not fixable without the #15 build. It also **corrects my own reasoning**: I had argued the old APK was safe because `schemas/ride.ts` was unchanged — but a file can be unchanged and still import a contract that moved. Diffing the schema file is not enough; the transitive closure is what matters. This is exactly the plan's A2, and A2 was right. |
-| I4 | `OTP /auth/otp/request` rejects `role: "dispatcher"` — `SIGNUP_ROLES` is `rider \| driver`. | Requested with `role: "rider"`; an existing user's stored role wins (`auth.schemas` docblock), so the dispatcher token came back with dispatcher rights (`POST /dispatch/bookings` → 201, `observed`). |
+| I5 | **The old APK rejects every ride payload**, so steps 5–8, 11 and 13 could not run on it. #136 shortened the tracking token from **22** base64url chars to **16** (`schemas/tracking.ts`, "a HARD cut-over, not a widening"), and `rideSchema` imports `trackingTokenSchema` **directly** (`schemas/ride.ts:20,269`) — what was transitive is the **change**, not the import: the file is byte-identical and the contract under it moved. The api now mints `VlSag2fDzVinzLjZ` (16); the old bundle demands 22, so `rideSchema.parse()` throws and the app renders its generic error. **The server is provably fine**: `GET /drivers/me` → 200 with the right `activeRideId`, `GET /rides/:id` → 200 `accepted`. | Not fixable without the #15 build. It also **corrects my own reasoning**: I had argued the old APK was safe because `schemas/ride.ts` was unchanged — but a file can be unchanged and still import a contract that moved. Diffing the schema file is not enough; the transitive closure is what matters. This is exactly the plan's A2, and A2 was right. |
+| I4 | `OTP /auth/otp/request` rejects `role: "dispatcher"` — `SIGNUP_ROLES` is `rider \| driver`. | Requested with `role: "rider"`; an existing user's stored role wins (`packages/shared/src/schemas/auth.ts:15` docblock), so the dispatcher token came back with dispatcher rights (`POST /dispatch/bookings` → 201, `observed`). |
 
 
 ## Two observations from the second pass
@@ -383,14 +388,14 @@ The consequences, each visible above:
 
 | AC | Verdict | Basis |
 |---|---|---|
-| AC1 | **partial** | 4 of 13 steps carry an artifact; the other 9 are recorded **unrun with a named cause**, not silently skipped |
+| AC1 | **partial** | **11 of 14** step rows carry an artifact of their own outcome (8 ✅ + 7, 10, 13 partial); the other **3** — steps 4, 9, 12 — are recorded **unrun with a named cause**, not silently skipped. `derived` from the step table above |
 | AC2 | ✅ | On the #15 APK: accept within the countdown landed the active-ride screen at `accepted`, with the payment pill and «Braucu pie pasažiera» |
 | AC3 | ✅ | Untouched offer expired at the seeded 20 s; card cleared; banner «Piedāvājuma laiks beidzās»; `dispatch.offer.expired` logged |
 | AC4 | ✅ **on two of its three named paths** | **Step 8's reassignment**: «Dispečers nodeva braucienu citam šoferim» with a «Gatavs» control, no crash. **A deliberate 409**: `PATCH …/payment-method` at `accepted` → `409 payment_method_locked`, refused cleanly with nothing changed. **Step 13's payment-change banner was not reached** (S2). Also, across an unparseable payload and two cold starts on the old APK the app degraded to a banner and **never crashed** — though that banner was *not* recoverable, since its cause was permanent |
 | AC5 | ✅ **less the queue line** | Fare, «you keep €7.66 (85%)», pickup, destination, ETA + km, payment pill, countdown all present on `s1d.png`. Queue line needs a second AVD — partial, as Q1 allowed |
 | AC6 | ✅ **for the walk**; the maps hand-off only partly | The walk ran `arriving → arrived → start → complete`, each tap confirmed against `rides.status`. «Atvērt Google Maps» was `observed` in the dump **at `accepted` only** (twice — the accepted ride and the force-assigned one); it was not dumped at `arrived` or `in_progress`, and **it was never opened**, so neither its presence later in the walk nor the pickup→destination switch at `arrived` is established |
 | AC7 | ✅ | Receipt «€9.01 → Sakta (15%) €1.35 → Jūs saņemat €7.66» against the `split` row `901 \| 15 \| 135 \| 766`, to the cent; `135 + 766 = 901`. Today's total then read «€7.66 · Braucieni: 1» — **after settlement**, per S1 |
-| AC8 | ✅ | `driver-device-day.md:362` now names #15; the runbook carries §"The offers / active-ride pass (#15)" with the result table and the setup deltas. Tick count 17 → 24 |
+| AC8 | ✅ | `driver-device-day.md:362` now names #15; the runbook carries §"The offers / active-ride pass (#15)" with the result table and the setup deltas. Tick count **17 → 25** (`observed`, `grep -c '✅\|❌' docs/runbooks/driver-device-day.md` at this branch's final head vs `origin/main` `d6207be`; the plan's own VALIDATE unit at its §T9). Re-derived after the last runbook commit on this branch — an earlier draft of this cell said 24, which was true at `86b6871` and was moved by two later commits in this same PR |
 | AC9 | ✅ **for TalkBack**, per leg | Name leg: all three earnings states ✅ **including the failed-first-load state, with a real route-selective fault** — not inferred. Speech leg: ✅ composed order, ✅ no double «Ieņēmumi», ❌ N3 (#262), ❌ Q5 (#263). VoiceOver → #257 |
 | AC10 | ✅ | This report; every figure carries `observed` / `derived` / `expected` |
 | AC11 | ✅ **exceeded** | #258 PIN, #259 blind-rider, #260 quote fields, **#261 rider identity** (the fourth, which had no home). Plan Non-Goals and Forward-references cite all four |
@@ -428,7 +433,7 @@ banner nobody has seen.
 
 | Command | Result |
 |---|---|
-| `pnpm turbo run typecheck lint test build --force` | ✅ **green** — from cleared dist, `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit 0, `Tasks: 22 successful, 22 total`, `Cached: 0 cached`. **No skips**: `REDIS_TEST_URL` was set, so the Redis-gated suites ran. Per-package: `@taxi/api` 812/83, `@taxi/shared` 255/28, `@taxi/dispatch` 272/30, `@taxi/driver` 250/44, `@taxi/rider` 162/31, `@taxi/db` 17/3. Re-run after each documentation commit; every run identical in counts, differing only in wall clock. **No wall-clock figure is quoted here on purpose**: this report is itself in the diff, so any run it named would be superseded by the commit that named it. **The PR body carries the run taken at the branch head**, recorded by `record-gate.sh` into `.claude/last-gate.json`, whose `head` field is the check that it matches |
+| `pnpm turbo run typecheck lint test build --force` | ✅ **green** — from cleared dist, `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit 0, `Tasks: 22 successful, 22 total`, `Cached: 0 cached`. **No skips**: `REDIS_TEST_URL` was set, so the Redis-gated suites ran. Per-package: `@taxi/api` 812/83, `@taxi/shared` 255/28, `@taxi/dispatch` 272/30, `@taxi/driver` 250/44, `@taxi/rider` 162/31, `@taxi/db` 17/3. Re-run after each documentation commit; every run identical in counts, differing only in wall clock. **No wall-clock figure is quoted here on purpose**: this report is itself in the diff, so any run it named would be superseded by the commit that named it. **The PR body carries the run taken at the branch head**, recorded by `record-gate.sh` into `.claude/last-gate.json`, whose `head` field is the check that it matches — but that file is **gitignored** (`.gitignore:25`), so it is local-only and reaches no GitHub reviewer. The reviewable equivalent is CI's `check` job on the head commit, whose `head_sha` is public: `gh api "repos/linardsb/taxi/actions/runs?head_sha=<head>"` |
 | `offer_timeout_seconds` restored | `20` (`observed`) |
 | TalkBack restored | `accessibility_enabled=0` (`observed`) |
 | `eas.json` / `app.json` | reverted; `git status --porcelain` empty (`observed`) |

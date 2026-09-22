@@ -42,16 +42,16 @@ Three problems, in descending order of how much they cost:
 
 2. **Two documented blockers make three of those steps unperformable as written**, and both
    are recorded in the runbook as agent-run findings rather than fixed:
-   - `driver-device-day.md:545` — *"An `adb` tap cannot win the offer countdown."*
+   - `driver-device-day.md:709` — *"An `adb` tap cannot win the offer countdown."*
      `screencap` → read → `input tap` is a ~4 s round trip; at 20 s the card already read
      «8 s left» when the screenshot came back, the offer expired
      (`dispatch.offer.expired`) and the ride stayed unassigned. **Step 3's accept leg, step
      4's push-tap leg and step 13's payment-change leg all require winning the countdown.**
-   - `driver-device-day.md:541` — *"`uiautomator dump` fails on any screen with a running
+   - `driver-device-day.md:705` — *"`uiautomator dump` fails on any screen with a running
      countdown"* (`ERROR: could not get idle state.`). The offer card has **two**
      continuous re-render sources, so this is structural, not flaky:
      `FLASH_HALF_PERIOD_MS = 500` (`offer-card.tsx:15`, a `setInterval` toggling the card
-     background) and the per-second countdown text (`offer-card.tsx:113`).
+     background) and the per-second countdown text (`offer-card.tsx:111-115`).
 
 3. **Three follow-ups have no ticket.** The prior plan's Non-Goals promised "separate
    tickets" for **PIN pickup** and the **blind-rider protocol**; PR #154's body promised
@@ -142,7 +142,7 @@ machine-readable log of everything TalkBack says. T7 sets it up before it runs a
   `driver-device-day.md:360` assigns it to #14, which is still open. Different owner, same
   day. Running it is welcome; it does not gate #15.
 - **Not included: #141's own gates.** Closed, proven, recorded
-  (`driver-device-day.md:558` §"Gates 2 and 3, as run"). Do not re-run them.
+  (`driver-device-day.md:722` §"Gates 2 and 3, as run"). Do not re-run them.
 - **Not included: the GPS field drive (#4).** Deferred by Linards 2026-08-26; needs a car.
 - **Not included: VoiceOver.** Genuinely unreachable here — iMac19,1 cannot run Tahoe so
   Xcode 26.3 is the ceiling, SDK 57 does not compile at it (`observed` 2026-08-25), no
@@ -156,9 +156,10 @@ machine-readable log of everything TalkBack says. T7 sets it up before it runs a
   "check whether it has a home" item, and it did not. Do not build any of them here.
 - **Not changing: `offer_timeout_seconds` in the seed.** T1's raise is a runtime `UPDATE`
   against the dev database and is reverted by T8. The seeded 20 s is the product decision
-  (`driver-ux-evidence.md` §"Accept timer 20–30 s") and stays.
+  (`docs/research/driver-ux-evidence.md:104` §"5.1 Accept timer: longer is safer and
+  reduces cancellations", whose body carries the 20–30 s figure) and stays.
 - **Not building: a second run sheet.** The runbook's own rule
-  (`driver-device-day.md:368`): the emulator section cites §Steps by number rather than
+  (`driver-device-day.md:534`): the emulator section cites §Steps by number rather than
   restating them. This pass follows the same discipline — the steps live in
   `driver-offers-active-ride.md:506`, and the runbook gains a §Result table plus the
   setup deltas, not a copy.
@@ -194,17 +195,17 @@ machine-readable log of everything TalkBack says. T7 sets it up before it runs a
 
 ### Relevant Codebase Files IMPORTANT: YOU MUST READ THESE FILES BEFORE IMPLEMENTING!
 
-- `docs/runbooks/driver-device-day.md` (**whole file**, 660+ lines) — Why: the only copy of the run sheet. §Setup (78), §Steps (233), §Emulator route (367), §"Setup, once" (390), §"Injecting a position" (434), §"Running the steps on an emulator" (519), §"Also on this day" (352). **T2 edits line 362; T9 appends a §Result.**
+- `docs/runbooks/driver-device-day.md` (**whole file**, 667 lines at `d6207be`; 831 at this PR's head, which this PR's own +164 explains) — Why: the only copy of the run sheet. §Setup (78), §Steps (233), §Emulator route (531), §"Setup, once" (554), §"Injecting a position" (598), §"Running the steps on an emulator" (683), §"Also on this day" (352). **T2 edits line 362; T9 appends a §Result.**
 - `.claude/plans/driver-offers-active-ride.md` lines 495–560 — Why: §Level 4's thirteen steps, verbatim what T5 runs. Do not paraphrase them into the runbook.
 - `db/src/schema/platform-config.ts` (line 42) — Why: `offerTimeoutSeconds: integer('offer_timeout_seconds').notNull().default(20)`. T1's `UPDATE` target; the snake_case column name is what SQL needs.
 - `services/api/src/features/platform-config/platform-config.repository.ts` — Why: proves the read is uncached (plain `select().limit(1)`, parsed through `platformConfigSchema`, no memo). **This is why T1 needs no API restart** — verify it yourself before relying on it.
 - `services/api/src/features/dispatch/offer-builder.ts` (line 61) — Why: `sentAt.getTime() + input.config.offerTimeoutSeconds * 1000` — the only consumer; confirms the raise lands on the wire `expiresAt` the app counts down from.
 - `apps/driver/src/features/offers/offer-card.tsx` (lines 15, 17, 45–66, 71–113) — Why: `FLASH_HALF_PERIOD_MS = 500` and the countdown `Text` are the two reasons `uiautomator dump` cannot settle here; `ANNOUNCE_EVERY_S = 5` and the `announceForAccessibility` effect are what step A3 listens for.
 - `apps/driver/src/features/offers/offer-card-props.ts` (lines 60–118) — Why: `a11yLabel` is composed from seven segments **including `seconds`**, so the accessible name mutates once a second. T7's observation target.
-- `apps/driver/src/features/availability/home-screen.tsx` (lines 96–110) — Why: the earnings link — grouping `Pressable`, explicit `accessibilityLabel`, no `accessibilityHint`. **The same mechanism as the offer card, on a screen with no countdown**, which is what makes it dumpable (T6).
+- `apps/driver/src/features/availability/home-screen.tsx` (lines 101–111; 96–100 is its comment) — Why: the earnings link — grouping `Pressable`, explicit `accessibilityLabel`, no `accessibilityHint`. **The same mechanism as the offer card, on a screen with no countdown**, which is what makes it dumpable (T6).
 - `apps/driver/src/features/availability/earnings-body.ts` — Why: the three states T6 reads (`null` → spinner, `'—'` → failed first load, the composed string → ready).
 - `apps/driver/src/features/availability/earnings-card.tsx` (line ~17) — Why: `accessibilityLiveRegion="polite"` inside the collapsed `Pressable` — review N3's open question, T7.
-- `apps/driver/eas.json` — Why: the `preview` profile, `distribution: internal`, `buildType: apk`, and `EXPO_PUBLIC_API_URL` baked at build time (committed value `http://192.168.1.11:3001`; the emulator needs `http://10.0.2.2:3001` as an **uncommitted** edit — `driver-device-day.md:527`).
+- `apps/driver/eas.json` — Why: the `preview` profile, `distribution: internal`, `buildType: apk`, and `EXPO_PUBLIC_API_URL` baked at build time (committed value `http://192.168.1.11:3001`; the emulator needs `http://10.0.2.2:3001` as an **uncommitted** edit — `driver-device-day.md:693`).
 - `services/api/scripts/provision-dispatcher.ts` — Why: `pnpm --filter @taxi/api provision:dispatcher +371…`, the one means of getting a dispatcher account.
 - `.claude/code-reviews/pr-163-review.md` (line 183) — Why: N3, the third ear-check.
 - `.claude/references/ui-decisions.md` (2026-09-09 entry, ~line 17) — Why: the cosmetic decisions behind the earnings-label states; do not re-litigate them.
@@ -334,7 +335,7 @@ IMPORTANT: Execute every task in order, top to bottom.
      deliberately out of git, so every `eas` subcommand otherwise refuses in a TTY-less
      shell. **Never `--account`**: it creates a second project.
   3. Build the `preview` profile, install the APK on `sakta224`.
-- **PATTERN**: `driver-device-day.md:128` §2 "Build and install the APK", and `:527` for
+- **PATTERN**: `driver-device-day.md:128` §2 "Build and install the APK", and `:693` for
   the `10.0.2.2` rule and why it is a property of the emulator rather than of a DHCP lease.
 - **GOTCHA**: **`10.0.2.2` must never reach a phone build.** Keep the edit uncommitted.
 - **GOTCHA**: **a green gate says nothing about whether the Android build works.** Two
@@ -342,8 +343,8 @@ IMPORTANT: Execute every task in order, top to bottom.
   surface. Budget one build *and one failure*. `apps/driver` last changed at `414bada`
   (2026-09-20); `packages/shared` has moved since (#245 `5e45d49`, #135 `001d1c7`) and is
   bundled into the app, so **do not reuse an older APK** without checking its commit.
-- **GOTCHA**: run `npx expo install --check` before the build. `driver-device-day.md` §D3
-  records 9 packages of pre-existing drift; decide and record, do not silently bump.
+- **GOTCHA**: run `npx expo install --check` before the build. `driver-device-day.md:178-182`
+  records **14** packages of pre-existing drift (`observed` 2026-09-17); decide and record, do not silently bump.
 - **VALIDATE**: `adb -s emulator-5554 shell pm list packages | grep sakta` → the package is present; cold-launch it and reach the sign-in screen without a crash; `adb logcat -d | grep -i 'cleartext\|ECONNREFUSED'` is empty once the api is up.
 - **SATISFIES**: prerequisite for every AC.
 
@@ -354,7 +355,7 @@ IMPORTANT: Execute every task in order, top to bottom.
   emulator with a **different** number (`+37120000002`). Boot the AVD and poll
   `sys.boot_completed` (~80 s, `observed` 2026-09-18). Set the locale if you want the LV
   strings the run sheet quotes: `adb shell settings put system system_locales lv-LV`.
-- **PATTERN**: `driver-device-day.md:111` §1, `:390` §"Setup, once" step 5, `:548` (the
+- **PATTERN**: `driver-device-day.md:111` §1, `:554` §"Setup, once" step 5, `:719` (the
   phone-number and locale findings).
 - **GOTCHA**: **the driver phone must not be the dispatcher's.** `findOrCreate` applies
   `role` only to a brand-new row (`auth.repository.ts:47-50`), so reusing the dispatcher's
@@ -370,8 +371,10 @@ IMPORTANT: Execute every task in order, top to bottom.
 - **ALSO PROVISION: a rider session.** §Level 4 step 13 needs the rider to switch the
   payment method while the driver's card is up, and a phone-booked customer has a **row,
   not a session**. Get one the same way the driver did: `POST` an OTP request for that
-  customer's number, read the code from the api console — `auth.sms.stub_sent` logs the
-  SMS **body in full**, deliberately (`stub-sms.provider.ts:28-37`) — and exchange it for a
+  customer's number, read the code from the api console — `auth.otp.stub_sent` logs the
+  OTP **code in full**, deliberately (`stub-sms.provider.ts:17-28`, `sendOtp()`; the
+  neighbouring `send()` at `:30-41` logs an SMS **body** under `auth.sms.stub_sent` and is
+  the tracking-link path, not this one) — and exchange it for a
   token. Drive `PATCH` of the payment method with that bearer. **Third distinct phone
   number**: `findOrCreate` applies `role` only to a brand-new row
   (`auth.repository.ts:46-52`), so reusing the driver's or the dispatcher's number gets you
@@ -391,17 +394,17 @@ IMPORTANT: Execute every task in order, top to bottom.
   divergence with what it does and does not close:
   - **Step 9 (glance mode above 10 km/h)**: no car. `GLANCE_SPEED_MPS = 10/3.6`
     (`offer-card-props.ts:12`) reads `state.speedMps`, which comes from the location fix.
-    Inject motion with the test-provider recipe at `driver-device-day.md:434` — a real
+    Inject motion with the test-provider recipe at `driver-device-day.md:598` — a real
     `speed` on synthetic fixes. **Closes**: the card collapses at the threshold.
     **Does not close**: readability at speed, which is the point of the feature.
   - **Steps 3/4/13 (accept legs)**: rely on T1's raise. **Closes**: the transition, the
     payload, the banner. **Does not close**: that a driver can win 20 s — that is a human
     finger on a phone and stays owed.
   - **Any tap**: `input tap` at exact centre coordinates proves nothing about the 44 px
-    touch-target rule (`driver-device-day.md:531`).
+    touch-target rule (`driver-device-day.md:700-701`).
   - **Step 12 (two devices in a zone)**: needs a second AVD (`sakta141` exists). If you
     run only one, say so — the queue line is then unverified on device, and AC5 is partial.
-- **PATTERN**: `driver-device-day.md:519` §"Running the steps on an emulator" — cite steps
+- **PATTERN**: `driver-device-day.md:683` §"Running the steps on an emulator" — cite steps
   by number, do not restate them.
 - **GOTCHA**: `uiautomator dump` **will fail on the offer card** with
   `ERROR: could not get idle state.` — two causes, both continuous:
@@ -426,7 +429,7 @@ IMPORTANT: Execute every task in order, top to bottom.
   Then assert the **collapse**: exactly **one** node carries the composed name, and the
   `EarningsCard`'s child `Text` is **not** separately exposed. That is the mechanism F4 and
   F20 both rest on.
-- **PATTERN**: `driver-device-day.md:535` already uses `uiautomator dump` → read `bounds` →
+- **PATTERN**: `driver-device-day.md:698-699` already uses `uiautomator dump` → read `bounds` →
   `input tap`; this reads `content-desc` from the same dump.
 - **IMPORTS**: none. `adb shell uiautomator dump /sdcard/dump.xml && adb shell cat /sdcard/dump.xml`.
 - **GOTCHA**: the home screen has **no countdown**, so the dump settles — `observed`
@@ -439,7 +442,8 @@ IMPORTANT: Execute every task in order, top to bottom.
   restore is local (`readSession` from `session-store`, no network — `use-session.tsx:13`),
   so a cold launch offline gets past the session check; but `GateScreen` then blocks on
   `useMe`: `if (status === 'error')` renders the offline banner and **returns before the
-  redirect**, so home never mounts (`gate-screen.tsx`). With the api down you get the
+  redirect**, so home never mounts (`apps/driver/src/features/onboarding/gate-screen.tsx` — the **driver**
+  app's; `apps/rider/src/features/auth/gate-screen.tsx` is a different file). With the api down you get the
   banner, not a dashed earnings link. The state needs `GET /drivers/me` to **succeed** and
   `GET /drivers/me/earnings/today` to **fail**, which is route-selective.
   Three ways, pick one and record it:
@@ -675,7 +679,7 @@ Every step is performable with what this plan ships:
 | An offer window an `adb` tap can win | **T1** — the `offer_timeout_seconds` raise |
 | An offer that expires untouched | the seeded 20 s, before T1 or after T8 |
 | A second driver for the queue line | AVD `sakta141` (exists) — or declare AC5 partial |
-| Motion above 10 km/h | the test-provider recipe, `driver-device-day.md:434` |
+| Motion above 10 km/h | the test-provider recipe, `driver-device-day.md:598` |
 | TalkBack | already on the image — `observed` 2026-09-22 |
 | The accessible name, machine-readable | `uiautomator dump` → `content-desc`, static screens only |
 | A running app | **T3** — an EAS `preview` APK built with `EXPO_PUBLIC_API_URL=http://10.0.2.2:3001` |
@@ -800,7 +804,7 @@ and the card has two independent continuous sources:
 
 - `FLASH_HALF_PERIOD_MS = 500` — a `setInterval` toggling `flashOn`, which drives the card's
   background colour (`offer-card.tsx:15, 45-53`). Runs until `card.accepting`.
-- The countdown `Text` at `offer-card.tsx:113`, re-rendered every second.
+- The countdown `Text` at `offer-card.tsx:111-115`, re-rendered every second.
 
 Raising `offer_timeout_seconds` lengthens the window but does not quiet it — the flash is
 independent of the timeout entirely. So the offer card is `screencap`-and-ear territory by
