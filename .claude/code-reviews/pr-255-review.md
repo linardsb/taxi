@@ -4,7 +4,7 @@
 **Title**: feat(rider): push the arrival to a backgrounded app rider (#17)
 **Reviewed and fixed** 2026-09-22 · fresh context, sibling-app comparison
 
-**Recommendation: APPROVE at `a950f53`.** One High and one Medium were found and
+**Recommendation: APPROVE at `2b985f1`.** One High and one Medium were found and
 both are fixed on the branch; one Low is reported and deliberately not fixed.
 
 The High is not a wording defect. The rider app registered only
@@ -71,6 +71,14 @@ by the OS, which is ordinary on Android after a few minutes. The driver taps
 #135 removed the SMS and `/book/status` is a foreground screen. They tap it. The
 app cold-starts on `/book`, the booking form, with no indication which ride the
 notification was about. Nothing errors; the push worked, the routing did not.
+
+*Where a cold start lands was checked rather than assumed*, because "the tap is
+dropped" and "and it lands on `/book`" are two claims and only the first follows
+from the missing call: `apps/rider/src/app/index.tsx` re-exports `GateScreen`,
+and `gate-screen.tsx:45` answers a signed-in rider with
+`<Redirect href="/book" />` — pinned at `gate-screen.test.tsx:43`.
+`SessionGuard` does not intervene: it only bounces a **signed-out** rider, and
+`/book` is not in its `PUBLIC_SEGMENTS`.
 
 **Fixed** in `a950f53`. `getLastNotificationResponseAsync` is now read, the
 payload goes through `rideIdOf` on this path too (an unknown `kind` routes
@@ -204,7 +212,7 @@ Wrong number, right shape, no way to tell from the line.
 
 ## Validation
 
-`observed`, in the `wt-rider-push` worktree, on the tree now at `a950f53`:
+`observed`, in the `wt-rider-push` worktree, on the tree at `a950f53`. The one commit after it (`2b985f1`) amends a markdown report under `.claude/reports/` and touches no compiled or tested path, so this run describes the tip:
 
 ```
 COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force
@@ -261,7 +269,7 @@ past.
 
 ## Recommendation
 
-**Approve at `a950f53`.** F1 and F2 are fixed on the branch with probes; F3 is
+**Approve at `2b985f1`.** F1 and F2 are fixed on the branch with probes; F3 is
 reported and left. Merge **#253 first**, then this, then #254.
 
 Two things a green gate cannot answer, both for Linards rather than a reviewer:
