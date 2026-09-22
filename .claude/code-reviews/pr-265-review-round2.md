@@ -376,7 +376,10 @@ real, and #15 should stay open as §T11 argues.
 
 Suggested order: **F1** (four targets, plus a closing grep that matches both forms) → **F5**
 (runbook first, it is the surface device-day sessions read) → **F4** → **F11** → **F12**, **F13**.
-Re-derive the PR body's size table after the push, as the fix pass did last time.
+Re-derive the PR body's size table after the push, as the fix pass did last time. **If F5's
+fix rebuilds the runbook's step table at `:386-388`, it moves AC8's tick count**, because the
+table's cells are ✅ glyphs: re-run `grep -c '✅\|❌' docs/runbooks/driver-device-day.md` after
+the last runbook edit and restate AC8, the same "F7 last" rule round 1 set.
 
 ---
 
