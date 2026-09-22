@@ -181,7 +181,7 @@ elsewhere are recorded here rather than actioned:
 |---|---|
 | Diff shape | 4 files (this report is the 4th), documentation only, **no shipped source** |
 | Local full gate | **not run, deliberately** — see below |
-| CI `check` on the pushed head | the gate of record; `gh api "repos/linardsb/taxi/actions/runs?head_sha=<head>"` |
+| CI `check` on the pushed head | **the gate of record.** The two fix commits `a0b48c0` and `b96553a` were gated by [run 35768875089](https://github.com/linardsb/taxi/actions/runs/35768875089) — `head_sha` `b96553a`, conclusion **success**, `check` pass 3m41s, with `audit-diff`, `codeql`, `CodeQL` and `ready` green (`observed` via `gh api`). Any commit after `b96553a` — including the one that added this sentence — raises its own run; read the PR's checks for the head of the moment, never this line |
 | F7's unit at the final tree | `grep -c '✅\|❌' docs/runbooks/driver-device-day.md` → **25**; `origin/main` → **17** |
 
 **Why the local gate was not re-run.** The change is four Markdown files and no source — it cannot
