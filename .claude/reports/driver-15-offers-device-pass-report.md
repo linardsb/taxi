@@ -24,20 +24,20 @@
 
 | # | Step | Result | Artifact |
 |---|---|---|---|
-| 1 | Driver signed in, online, streaming | unrun | — |
-| 2 | Book within ~2 km; full card inside ~2 s | unrun | — |
-| 3a | Let the offer expire untouched (at the seeded 20 s) | unrun | — |
-| 3b | Book again; accept on the card | unrun | — |
-| 4 | Background / force-stop; push opens the card | unrun | — |
-| 5 | Walk arriving → arrived → start → complete | unrun | — |
-| 6 | Receipt to the cent; today's earnings include the ride | unrun | — |
-| 7 | Force-assign opens the ride with no card first | unrun | — |
-| 8 | Reassign mid-`arriving` → banner + home | unrun | — |
-| 9 | Glance mode above 10 km/h | unrun | — |
-| 10 | Kill ~75 s; offline push; reopen re-asserts online | unrun | — |
-| 11 | Kill mid-ride, reopen → active-ride at the right status | unrun | — |
-| 12 | Two devices in a zone → «N. of 2 in rix» | unrun | — |
-| 13 | Payment method switched between card and acceptance | unrun | — |
+| 1 | Driver signed in, online, streaming | ✅ | «Tiešsaistē», «Pēdējā pozīcija pirms 3 s · Rindā: 0»; `drivers.status='online'`; 37 `driver.location.ping_accepted` — `s1-online.png` |
+| 2 | Book within ~2 km; full card inside ~2 s | ✅ | `s1d.png` — «Cena €9.01» · «Jūs saņemat €7.66 (85%)» · «Skaidrā naudā» · pickup · destination · «Līdz pasažierim ~1 min · 0.1 km» · «Atlikušas 6 s» · «Pieņemt»/«Atteikt» |
+| 3a | Let the offer expire untouched (at the seeded 20 s) | ✅ | `dispatch.offer.expired` ride `40e61ecf` offer `e42cbaec` at 14:50:42Z; card cleared, banner «Piedāvājuma laiks beidzās» with a focus ring — `s3a-expired.png` |
+| 3b | Book again; accept on the card | ⚠️ **server ✅ / app ❌** | Ride `d2ec8590` → `accepted`, `driver.presence.claimed_for_ride`. The app then showed a recoverable error, **not** the active-ride screen — cause is the APK, not the product (see I5) |
+| 4 | Background / force-stop; push opens the card | **unrun** | Blocked twice over: `StubPushProvider` delivers nothing **and** the app cannot register for FCM. `dispatch.offer.push_skipped reason:'no_token'` observed |
+| 5 | Walk arriving → arrived → start → complete | **unrun** | Needs the active-ride screen — blocked by I5 |
+| 6 | Receipt to the cent; today's earnings include the ride | **unrun** | As above. The split arithmetic *was* checked on the wire: 766 + 135 = 901, net/total = 85.0% |
+| 7 | Force-assign opens the ride with no card first | **unrun** | Blocked by I5 |
+| 8 | Reassign mid-`arriving` → banner + home | **unrun** | Blocked by I5 |
+| 9 | Glance mode above 10 km/h | **unrun** | Route found and costed (`geo fix` velocity, 20 kn) but not exercised — the card legs ran before it and the APK blocked the rest |
+| 10 | Kill ~75 s; offline push; reopen re-asserts online | **partial** | Reopen **does** re-assert online (`observed`: the app came up online after a force-stop). The push half is unrun for step 4's reason |
+| 11 | Kill mid-ride, reopen → active-ride at the right status | ⚠️ **server ✅ / app ❌** | `GET /drivers/me` returns `activeRideId: d2ec8590…` correctly; the app cold-started into the error screen — I5 |
+| 12 | Two devices in a zone → «N. of 2 in rix» | **unrun** | Second AVD not booted — AC5's queue half is partial, as Q1 allowed |
+| 13 | Payment method switched between card and acceptance | **unrun** | Rider token minted and ready (`+37120000003`), but the leg needs the active-ride screen — I5 |
 
 ## A11y legs
 
@@ -47,9 +47,9 @@
 | T6 case 2 — earnings link, failed first load | ✅ | `content-desc='Ieņēmumi. —'` — `t6-case2-failed.xml/.png`; proxy log `500 <- GET /drivers/me/earnings/today`, **route-selective**, `/drivers/me` untouched |
 | T6 case 3 — earnings link, ready | ✅ | `content-desc='Ieņēmumi. Šodien: €0.00 · Braucieni: 0'` — `dryrun-home-lv.xml` |
 | T6 — collapse: exactly one node carries the name | ✅ | One node carries the composed name; a child `TextView` remains in the tree but gets **no focus stop** — see the collapse note below |
-| T7.1 — offer card spoken, composed order | unrun | needs an offer — blocked on the #15 APK |
-| T7.2 — countdown announcements, `ANNOUNCE_EVERY_S = 5` | unrun | as above |
-| T7.3 — does the once-a-second name mutation re-announce? (Q5) | unrun | as above |
+| T7.1 — offer card spoken, composed order | ✅ | Full utterance quoted below; fare and «you keep» both spoken, payment **before** the accept instruction |
+| T7.2 — countdown announcements, `ANNOUNCE_EVERY_S = 5` | ⚠️ **fires, then starves** | 180/175/170/165 at `TYPE_ANNOUNCEMENT`, then **none** — crowded out by the label re-reads. Part of [#263](https://github.com/linardsb/taxi/issues/263) |
+| T7.3 — does the once-a-second name mutation re-announce? (Q5) | ❌ **YES — finding, [#263](https://github.com/linardsb/taxi/issues/263)** | 5 full-label re-reads at `TYPE_WINDOW_CONTENT_CHANGED` vs 1 legitimate focus read |
 | T7.4 — N3 live region inside the collapsed `Pressable` | ❌ **finding — [#262](https://github.com/linardsb/taxi/issues/262)** | Never announced. 0 utterances of «Šodien» across a real spinner→number transition; `nodeLiveRegion=0` on all 14 sampled content-change events |
 | T7.5 — no double «Ieņēmumi» | ✅ | `Speaking fragment text="Ieņēmumi. Šodien: €0.00 · Braucieni: 0", locale=lv_LV` — spoken **once**, no hint stutter |
 | VoiceOver | not run — **#257** (owed, not written off) | — |
@@ -62,7 +62,7 @@
 - [x] T4 stack + accounts
 - [ ] T5 functional pass
 - [x] T6 `content-desc` — all three states + the collapse
-- [~] T7 TalkBack aloud — home legs done (7.4 ❌ filed, 7.5 ✅); the offer-card legs await the APK
+- [x] T7 TalkBack aloud — all five legs run; two are findings (#262, #263)
 - [ ] T8 restore
 - [ ] T9 runbook §Result + this report
 - [x] T10 the orphaned issues — **four** filed, not three (#258, #259, #260, #261)
@@ -277,6 +277,37 @@ second thing a blind driver lands on.
 This is exactly the split the plan's oracle table predicted: `content-desc` closes the
 name, and only speech closes the focus behaviour.
 
+### T7.1 — what the offer card actually says
+
+`observed` 2026-09-22, one `SpeechControllerImpl` line, `subtype=TYPE_VIEW_ACCESSIBILITY_FOCUSED`:
+
+> «Jauns brauciens. Cena €9.01, jūs saņemat €7.66. Atlikušas 180 sekundes. Skaidrā naudā.
+> Iekāpšana: Brivibas iela 22, Riga. Galamērķis: Teika, Riga. Līdz pasažierim ~1 min ·
+> 0.1 km. Pieskarieties, lai pieņemtu.»
+
+Checked against `offer-card-props.ts:98-106`, segment by segment: card (fare + net +
+seconds) → payment → pickup → destination → ETA → queue → accept. The queue segment is
+absent, correctly: one driver online, so there is no queue line. **The fare and the «you
+keep» figure are both spoken**, and **the payment method lands before the accept
+instruction** — the two things T7.1 exists to check.
+
+The figures on the card match the wire to the cent: `totalCents: 901` → «€9.01»,
+`driverNetCents: 766` → «€7.66», `commissionPct: 15` → «(85%)». `derived`:
+766 + 135 = 901, and 766 / 901 = 85.0%.
+
+### Q5, answered — and it is the bad answer
+
+This was the one genuinely new thing the pass could learn, and the finding is
+[#263](https://github.com/linardsb/taxi/issues/263). The once-a-second `a11yLabel` mutation
+**does** make TalkBack re-read the whole seven-segment label, and the re-reads **starve the
+throttled countdown announcements** the card was designed around. The full evidence — six
+timestamped reads split by event subtype, and the four countdown announcements that stop
+dead while the re-reads continue — is in the issue.
+
+The subtype field is what makes this answerable rather than arguable: a deliberate
+`announceForAccessibility` call arrives as `TYPE_ANNOUNCEMENT`, a label mutation as
+`TYPE_WINDOW_CONTENT_CHANGED`. Counting total utterances would have conflated them.
+
 ## Deviations from the plan
 
 | # | Deviation | Why |
@@ -293,4 +324,5 @@ name, and only speech closes the focus behaviour.
 | I1 | The dev DB was one migration behind the code: `users.push_token` did not exist, so **every** `POST /auth/otp/verify` returned 500 from `AuthRepository.findOrCreate`. | Applied `db/migrations/0011_small_polaris.sql` (`pnpm --filter @taxi/db migrate`). Latest migration is now `0011_small_polaris.sql`. |
 | I2 | Five stale `requested` rides from 2026-08 (one 22-char tracking token, four NULL) failed **every** `DispatchSweeper` pass once per second — `expected 16-char base64url tracking token`. They predate #136's token format. | Retired them to `cancelled_by_system` by direct `UPDATE` on the dev DB. Sweeper quiet from 14:16:48Z (`observed`). **This deliberately bypassed `assertTransition()`** — it is dev-data surgery on rows the current schema can no longer parse, not a product path, and no shipped code was changed to do it. The repo's no-direct-status-writes rule is about the application, and these rows cannot be moved through it: the read that would load them is the one that throws. |
 | I3 | `eas init --id` re-added 8 fully-qualified `android.permissions`, 3 of them new (`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`) — #224's addendum reproduced exactly. | Reverted to the committed 8 before the build; kept `extra.eas.projectId` and `owner`, both to be reverted by T8. |
+| I5 | **The old APK rejects every ride payload**, so steps 5–8, 11 and 13 could not run on it. #136 shortened the tracking token from **22** base64url chars to **16** (`schemas/tracking.ts`, "a HARD cut-over, not a widening"), and `rideSchema` pulls `trackingTokenSchema` in by a **transitive import** (`schemas/ride.ts:20,269`). The api now mints `VlSag2fDzVinzLjZ` (16); the old bundle demands 22, so `rideSchema.parse()` throws and the app renders its generic error. **The server is provably fine**: `GET /drivers/me` → 200 with the right `activeRideId`, `GET /rides/:id` → 200 `accepted`. | Not fixable without the #15 build. It also **corrects my own reasoning**: I had argued the old APK was safe because `schemas/ride.ts` was unchanged — but a file can be unchanged and still import a contract that moved. Diffing the schema file is not enough; the transitive closure is what matters. This is exactly the plan's A2, and A2 was right. |
 | I4 | `OTP /auth/otp/request` rejects `role: "dispatcher"` — `SIGNUP_ROLES` is `rider \| driver`. | Requested with `role: "rider"`; an existing user's stored role wins (`auth.schemas` docblock), so the dispatcher token came back with dispatcher rights (`POST /dispatch/bookings` → 201, `observed`). |
