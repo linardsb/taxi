@@ -13,6 +13,17 @@ export interface PushMessage {
 }
 
 /**
+ * The Android notification channel every push this platform sends lands on —
+ * `channelId` on the api's Expo request, and the channel BOTH apps create at
+ * registration. One literal because it is a three-surface contract (api,
+ * `apps/driver`, `apps/rider`), and drift between them is silent: Android
+ * routes a push naming an unknown channel into the default channel at default
+ * importance, so an arrival alarm degrades into a quiet tray line with nothing
+ * failing anywhere.
+ */
+export const PUSH_CHANNEL_ID = 'presence';
+
+/**
  * EXACTLY TWO, split by the one question the caller must answer — SHOULD THE
  * TOKEN BE FORGOTTEN?
  *

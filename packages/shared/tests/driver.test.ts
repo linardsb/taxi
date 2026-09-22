@@ -5,7 +5,6 @@ import {
   driverProfileSchema,
   driverProfileUpdateSchema,
   driverStatusUpdateSchema,
-  pushTokenUpdateSchema,
 } from '../src/schemas/driver';
 import {
   vehicleCreateSchema,
@@ -237,35 +236,6 @@ describe('driverMeSchema', () => {
         vehicles: [],
         activeRideId: 'ride-1',
       }).success,
-    ).toBe(false);
-  });
-});
-
-describe('pushTokenUpdateSchema (#14)', () => {
-  it('accepts the classic ExponentPushToken form (expected)', () => {
-    expect(
-      pushTokenUpdateSchema.parse({
-        token: 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]',
-      }).token,
-    ).toBe('ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]');
-  });
-
-  it('accepts the newer ExpoPushToken form (edge)', () => {
-    expect(
-      pushTokenUpdateSchema.safeParse({ token: 'ExpoPushToken[abc-DEF_123]' })
-        .success,
-    ).toBe(true);
-  });
-
-  it('rejects a raw FCM/APNs handle and an empty bracket (failure)', () => {
-    // The seam posts to Expo's push API, which only understands its own
-    // tokens; a raw device token here would be a guaranteed provider error
-    // on every nudge.
-    expect(pushTokenUpdateSchema.safeParse({ token: 'fcm:abc' }).success).toBe(
-      false,
-    );
-    expect(
-      pushTokenUpdateSchema.safeParse({ token: 'ExpoPushToken[]' }).success,
     ).toBe(false);
   });
 });

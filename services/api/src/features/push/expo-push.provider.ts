@@ -1,8 +1,9 @@
 import { Logger } from '@nestjs/common';
-import type {
-  PushDeliveryResult,
-  PushMessage,
-  PushProvider,
+import {
+  PUSH_CHANNEL_ID,
+  type PushDeliveryResult,
+  type PushMessage,
+  type PushProvider,
 } from '@taxi/shared';
 import { z } from 'zod';
 
@@ -87,7 +88,7 @@ export class ExpoPushProvider implements PushProvider {
             body: message.body,
             data: message.data,
             priority: 'high',
-            channelId: 'presence',
+            channelId: PUSH_CHANNEL_ID,
             sound: 'default',
           },
         ]),

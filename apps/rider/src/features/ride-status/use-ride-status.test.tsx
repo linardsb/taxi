@@ -117,6 +117,33 @@ describe('useRideStatus', () => {
     await screen.findByText('accepted|not|up');
   });
 
+  it('applies arrived, so the screen can say the car is here (expected — #135)', async () => {
+    // #135 stopped the `driver_arrived` SMS for app bookings, which makes THIS
+    // the path that replaces it: the screen's «Auto ir klāt» is only reachable
+    // if the hook actually delivers `arrived`. `statusKey()` mapping the status
+    // to the string is asserted in `status-screen.test.tsx`; without this test
+    // the two halves are each green while the rider is still told nothing.
+    //
+    // There is no allowlist between the wire and `status` — the handler
+    // `safeParse`s against `rideStatusEventSchema` (`status: z.enum(
+    // RIDE_STATUSES)`, no narrowing) and calls `apply` — so this pins the
+    // absence of one as much as the presence of the value.
+    await render(<Probe />);
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      mockHandlers.get('connect')!(undefined);
+      mockHandlers.get(RT.rideStatus)!(event('accepted', 'requested'));
+    });
+    await screen.findByText('accepted|not|up');
+
+    await act(async () => {
+      mockHandlers.get(RT.rideStatus)!(event('arrived', 'arriving'));
+    });
+
+    await screen.findByText('arrived|not|up');
+  });
+
   it('refetches on EVERY connect, the opening one included (edge — E7, C1)', async () => {
     await render(<Probe />);
     await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
