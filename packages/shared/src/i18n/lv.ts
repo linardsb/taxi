@@ -312,6 +312,14 @@ export const lv = {
   // copy for the offer push; the `{amount}` there is the driver's NET.
   'push.offer_title': 'Jauns brauciens',
   'push.offer_body': 'Jūs saņemat {amount}. Atveriet, lai pieņemtu.',
+  // #17's rider arrival push — the ONLY arrival signal a backgrounded app
+  // rider gets, since #135 stopped their `driver_arrived` SMS. The body
+  // carries the plate for the same reason the SMS did: it is what the rider
+  // matches at the kerb, and a push they must open the app to act on is a
+  // push that failed. Deliberately the same wording as `sms.driver_arrived`
+  // so the two channels cannot drift into saying different things.
+  'push.rider_arrived_title': 'Auto ir klāt',
+  'push.rider_arrived_body': 'Jūsu taksometrs ({plate}) ir klāt.',
   'driver.offer.title': 'Jauns brauciens',
   'driver.offer.fare': 'Cena {amount}',
   'driver.offer.you_keep': 'Jūs saņemat {amount} ({pct}%)',
@@ -442,6 +450,10 @@ export const lv = {
   // `router.replace`, so there is no back entry to fall through to.
   'rider.status.book_again': 'Pasūtīt jaunu braucienu',
   'rider.status.reconnecting': 'Atjaunojam savienojumu…',
+  // The Android notification channel's user-visible name (#17) — it appears
+  // in system settings, where a rider can mute it. Named for what it carries,
+  // not for the app, so muting it is an informed choice.
+  'rider.push.channel_name': 'Paziņojumi par braucienu',
   'rider.a11y.quote_arrived': 'Cena {total}',
   'rider.a11y.quote_failed': 'Cenu neizdevās aprēķināt',
   'rider.a11y.ride_requested': 'Brauciens pieteikts',

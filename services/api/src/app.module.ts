@@ -14,6 +14,7 @@ import { LedgerModule } from './features/ledger';
 import { NotificationsModule } from './features/notifications';
 import { PaymentsModule } from './features/payments';
 import { RealtimeModule } from './features/realtime';
+import { RidersModule } from './features/riders';
 import { RidesModule } from './features/rides';
 import { TelephonyModule } from './features/telephony';
 
@@ -25,6 +26,10 @@ import { TelephonyModule } from './features/telephony';
     AuthModule,
     RealtimeModule,
     DriversModule,
+    // Order-independent: the slice owns two write-only routes and injects
+    // nothing but the global DRIZZLE. The arrival push that consumes the
+    // token it stores lives in NotificationsModule, not here (#17).
+    RidersModule,
     GeozonesModule,
     // Before RidesModule: the dispatcher booking path (in DispatchModule)
     // resolves a caller through this slice, then delegates to RidesService.

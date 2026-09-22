@@ -22,8 +22,11 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["ACCESS_COARSE_LOCATION"],
-      "blockedPermissions": ["android.permission.ACCESS_FINE_LOCATION"]
+      "permissions": ["ACCESS_COARSE_LOCATION", "POST_NOTIFICATIONS"],
+      "blockedPermissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -31,6 +34,7 @@
     "plugins": [
       "expo-router",
       "expo-location",
+      "expo-notifications",
       "expo-secure-store",
       "expo-localization",
       "expo-status-bar"

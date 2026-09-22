@@ -1,3 +1,4 @@
+import { PUSH_CHANNEL_ID } from '@taxi/shared';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { AppState, Platform } from 'react-native';
@@ -10,8 +11,12 @@ import {
 
 export type PushRegistration = 'registered' | 'no_project' | 'unavailable';
 
-/** The Android channel the nudge AND the offer push land on — `channelId` in the api's Expo request. */
-export const PRESENCE_CHANNEL = 'presence';
+/**
+ * The Android channel the nudge AND the offer push land on — `channelId` in
+ * the api's Expo request, which is why the value comes from the seam rather
+ * than being spelled here: three surfaces used to hold the same literal.
+ */
+export const PRESENCE_CHANNEL = PUSH_CHANNEL_ID;
 
 /**
  * Mints the phone's Expo push token and registers it (#14). Runs on every
