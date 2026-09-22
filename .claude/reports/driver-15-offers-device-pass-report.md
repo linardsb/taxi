@@ -17,7 +17,7 @@
 | Emulator flags | `-no-snapshot -no-boot-anim -gpu swiftshader_indirect` |
 | Worktree | `/Users/Berzins/taxi-worktrees/wt-15` on `docs/plan-15-device-pass` |
 | Base | `origin/main` at `d6207be` + the plan commit `047edcf` (`observed` 2026-09-22) |
-| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 53 min; pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed **15:23:16Z** — `16:23:16` is `dumpsys package`'s `lastUpdateTime`, on the emulator's clock, which follows the host's BST (UTC+1), not Rīga time: every commit on this branch carries `+0100`, and the api log pairs Nest's local prefix `16:24:20` with `at: '2026-09-22T15:24:20.152Z'` on pass 2's first `dispatch.offer.sent` (`observed`). `observed` via the EAS GraphQL API 2026-09-22: that build was created `14:14:57.231Z` and `completedAt` `15:22:03.251Z`, so **nothing could run on it before 15:22Z**. **Pass 1 owns steps 1, 2, 3a and every a11y leg; pass 2 owns steps 3b, 5, 6, 7, 8, 11, 13** — 5–8, 11 and 13 because I5 names them as blocked on the old APK, and 3b by its own row (✅ on the #15 APK). **Step 10's pass is NOT established**: its half that passed (reopen re-asserts online) needs no ride payload, so I5 does not place it, and its evidence carries no timestamp to compare against `15:22:03Z`. Step 3a's own artifact is timestamped `14:50:42Z` — 31 min before the #15 build finished — which is the proof of the split, not an inference |
+| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 52 min 29 s and built 14 min 34 s (`derived`: 15:07:29.726 − 14:15:00.283 and 15:22:03.251 − 15:07:29.726, timestamps below; queue measured from `enqueuedAt`, not `createdAt`); pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed **15:23:16Z** — `16:23:16` is `dumpsys package`'s `lastUpdateTime`, on the emulator's clock, which follows the host's BST (UTC+1), not Rīga time: every commit on this branch carries `+0100`, and the api log pairs Nest's local prefix `16:24:20` with `at: '2026-09-22T15:24:20.152Z'` on pass 2's first `dispatch.offer.sent` (`observed`). `observed` via the EAS GraphQL API 2026-09-22: that build was created `14:14:57.231Z`, `enqueuedAt` `14:15:00.283Z`, `workerStartedAt` `15:07:29.726Z` and `completedAt` `15:22:03.251Z`, so **nothing could run on it before 15:22Z**. **Pass 1 owns steps 1, 2, 3a and every a11y leg; pass 2 owns steps 3b, 5, 6, 7, 8, 11, 13** — 5–8, 11 and 13 because I5 names them as blocked on the old APK, and 3b by its own row (✅ on the #15 APK). **Step 10's pass is NOT established**: its half that passed (reopen re-asserts online) needs no ride payload, so I5 does not place it, and its evidence carries no timestamp to compare against `15:22:03Z`. Step 3a's own artifact is timestamped `14:50:42Z` — 31 min before the #15 build finished — which is the proof of the split, not an inference |
 | api | `services/api` dev on `API_PORT=3001`; db+redis from `COMPOSE_PROJECT_NAME=taxi` |
 
 ## §Level 4 functional pass — steps 1–13
@@ -171,10 +171,10 @@ so there is no FCM sender and no token to register. The push legs are therefore 
 no push token to deliver to. Either alone would be enough. Setting up FCM credentials is
 #14's ground (it owns the offline nudge), not #15's.
 
-This was found on #224's APK while the #15 build was still queued, so it is a property of
+This was found on #224's APK before the #15 build had finished, so it is a property of
 the app configuration rather than of either build.
 
-### The harness was validated on #224's APK while the build queued
+### The harness was validated on #224's APK before the #15 build finished
 
 `observed` 2026-09-22: #224's `preview` APK (`bcd04c21`, artifact still live) carries
 `http://10.0.2.2:3001` and was installed on `sakta224` to prove the route end to end before
@@ -231,7 +231,7 @@ here so the ✅ on the name leg is not read as covering the focus leg.
 
 ### T6 and T7's home legs ran on #224's APK, and here is why that is sound
 
-The #15 build sat in the EAS queue for the whole of pass 1. Rather than leave the a11y half
+The #15 build was not installed until 15:23:16Z, after pass 1. Rather than leave the a11y half
 unrun a fourth month, the legs that depend only on the accessible **name** and on TalkBack's
 **speech** were run on #224's APK, on this argument — which is checkable, not asserted:
 
@@ -408,7 +408,7 @@ AC2, AC5 (less the queue line), AC6 (less the maps destination switch), AC7, AC8
 AC11 and AC12 all hold. The a11y half, owed since PR #163, is done and found two real
 defects no unit test could have.
 
-**Still, do not close yet.** Four things are genuinely unrun, and none of them is nothing:
+**Still, do not close yet.** Six things are unrun or open, and none of them is nothing:
 
 1. **Step 13's payment-change banner** — the one-time «payment method changed» notice on
    entry. AC4 names it, and R2 of the shipping plan was written around it. The two hard
@@ -420,13 +420,15 @@ defects no unit test could have.
    allowed exactly that.
 4. **Step 9's glance mode** — the route is found and costed (`geo fix` velocity, 20 kn), but
    it was never exercised.
-5. **Two open defects the pass itself produced**, [#262](https://github.com/linardsb/taxi/issues/262)
+5. **Step 7's «opens» half** — the ride appeared only after a relaunch; cause not isolated
+   (S2), and a force-assign-specific defect is not excluded. Re-run it before closing.
+6. **Two open defects the pass itself produced**, [#262](https://github.com/linardsb/taxi/issues/262)
    and [#263](https://github.com/linardsb/taxi/issues/263). #263 in particular is an a11y
    defect in the offer card, which is the screen this ticket is mostly about.
 
-**Recommendation**: #15 closes on a short follow-up run — step 13's banner, step 9, and
-step 12 with the second AVD — plus a decision on #263. That is one session, not a ticket.
-Everything it needs is recorded in the runbook. Closing it now would mean ticking AC4 on a
+**Recommendation**: #15 closes on a short follow-up run — step 13's banner, step 7's
+«opens» half, step 9, and step 12 with the second AVD — plus a decision on #262 and #263.
+That is one session, not a ticket. Everything it needs is recorded in the runbook. Closing it now would mean ticking AC4 on a
 banner nobody has seen.
 
 ## Validation results

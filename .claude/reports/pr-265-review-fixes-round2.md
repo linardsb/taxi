@@ -120,7 +120,7 @@ Over the plan, the report, the runbook and the round-1 fixes report (`grep -n -F
 | `1 h 01 m` | 0 |
 | `Consistent.` | 0 |
 | `ettled by evidence` | 0 |
-| `assigns every step to a pass` (fixes report `:25`, found by the advisor after the first push: it contradicted step 10's unassigned status) | 0; the cell now reads *"every step but 10"* |
+| `assigns every step to a pass` (fixes report `:25`, found by the advisor after the first push: it contradicted step 10's unassigned status) | 0; the cell now reads *"every step that ran to a pass, except 10"* (round 3, F15) |
 | `whole session` | 0 |
 | `` still `in queue` `` | 0 |
 | `APK blocked the rest` | 0 |

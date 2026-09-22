@@ -377,11 +377,11 @@ exactly as §Emulator route below cites §Steps. The command-level record is
 |---|---|
 | Run by | Claude (agent-driven, `adb`), #15 |
 | Platform | Android emulator, AVD `sakta224` (API 36 `google_apis` x86_64, Pixel 7, 1080×2400) — **no phone** |
-| App | Two passes: #224's `bcd04c21…` (commit `4e6ffb68`) while the #15 build queued 53 min, then the **#15 build `e1afc69a…`**. The a11y legs and steps 1, 2 and 3a ran on the first; steps 3b, 5–8, 11 and 13 on the second. Step 10's passing half is not assigned to either, since its evidence has no timestamp; 4, 9 and 12 ran on neither |
+| App | Two passes: #224's `bcd04c21…` (commit `4e6ffb68`) while the #15 build queued 52 min 29 s and built 14 min 34 s (`derived` from EAS timestamps: `enqueuedAt` 14:15:00.283Z → `workerStartedAt` 15:07:29.726Z → `completedAt` 15:22:03.251Z; queue measured from `enqueuedAt`, not `createdAt`), then the **#15 build `e1afc69a…`**. The a11y legs and steps 1, 2 and 3a ran on the first; steps 3b, 5–8, 11 and 13 on the second. Step 10's passing half is not assigned to either, since its evidence has no timestamp; 4, 9 and 12 ran on neither |
 | Date | 2026-09-22 |
-| Outcome | **The a11y half is complete. The functional core is green on the #15 build** — accept, the four-step walk, the receipt, force-assign, reassignment and cold-start-mid-ride all pass. Five steps stay owed, each with a cause |
+| Outcome | **The a11y half is complete. The functional core is green on the #15 build** — accept, the four-step walk, the receipt, reassignment and cold-start-mid-ride all pass, and so does force-assign's no-card half. Six steps are not green (4, 7, 9, 10, 12, 13), each explained under the table — step 7's cause not isolated |
 
-§Level 4 steps — 1, 2, 3a on #224's APK; 3b, 5–8, 11, 13 on the #15 build; 10 not assigned to a pass:
+§Level 4 steps — 1, 2, 3a on #224's APK; 3b, 5–8, 11, 13 on the #15 build; 10 not assigned to a pass; 4, 9, 12 unrun:
 
 | # | 1 | 2 | 3a | 3b | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
