@@ -310,7 +310,7 @@ foreground remedy. It makes no claim about what the rider sees.
 
 ```
 COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force
-→ Tasks: 22 successful, 22 total · Cached: 0 cached, 22 total · Time: 1m17.893s
+→ Tasks: 22 successful, 22 total · Cached: 0 cached, 22 total · Time: 1m32.351s
 ```
 
 | Package | Result | vs the review's round-1 table |
