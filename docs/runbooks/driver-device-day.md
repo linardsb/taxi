@@ -377,17 +377,31 @@ exactly as §Emulator route below cites §Steps. The command-level record is
 |---|---|
 | Run by | Claude (agent-driven, `adb`), #15 |
 | Platform | Android emulator, AVD `sakta224` (API 36 `google_apis` x86_64, Pixel 7, 1080×2400) — **no phone** |
-| App | `preview` APK `bcd04c21…` on commit `4e6ffb68` — **#224's build, not a #15 build** (see the APK warning below) |
+| App | Two passes: #224's `bcd04c21…` (commit `4e6ffb68`) while the #15 build queued 53 min, then the **#15 build `e1afc69a…`**. The a11y legs ran on the first, the functional walk on the second |
 | Date | 2026-09-22 |
-| Outcome | **The a11y half is complete. The functional half is partial** — steps 1, 2, 3a pass; 3b passes server-side only; the rest are blocked by the APK, not by the product |
+| Outcome | **The a11y half is complete. The functional core is green on the #15 build** — accept, the four-step walk, the receipt, force-assign, reassignment and cold-start-mid-ride all pass. Five steps stay owed, each with a cause |
 
-§Level 4 steps:
+§Level 4 steps, on the #15 build:
 
 | # | 1 | 2 | 3a | 3b | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| | ✅ | ✅ | ✅ | ⚠️ | — | — | — | — | — | — | ⚠️ | ⚠️ | — | — |
+| | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅* | ✅ | — | ⚠️ | ✅ | — | ⚠️ |
 
-⚠️ = server side verified, app side blocked. — = unrun.
+✅* step 7: no offer card was shown, as required, but the already-open app only routed to the
+ride after a relaunch — the realtime leg, on a socket that dropped repeatedly here.
+⚠️ step 10: reopen re-asserts online ✅; its push half is unrun. ⚠️ step 13: the two payment
+hard rules are verified, the one-time change banner is not. — = unrun (4 and 10's push
+halves need FCM, #14; 9 needs the `geo fix` velocity route; 12 needs the second AVD).
+
+**Two things the walk settled that are worth keeping:**
+
+- The receipt reconciles to the cent: «€9.01 → Sakta (15%) €1.35 → Jūs saņemat €7.66»
+  against the `split` row `901 | 15 | 135 | 766`.
+- **Today's earnings count SETTLED money, not completed rides.** A ride at `completed` reads
+  `earnedCents: 0` and writes no `ledger_entries`; `POST /rides/:rideId/settle` moves it to
+  `settled`, writes the ledger, and the card then reads «Šodien: €7.66 · Braucieni: 1». The
+  driver app has no settle call, so do not read a €0.00 card after a fare as a bug without
+  checking the ride's status first.
 
 The owed ear-checks (§"Also on this day", row 2) are **closed for TalkBack**:
 
@@ -400,6 +414,21 @@ The owed ear-checks (§"Also on this day", row 2) are **closed for TalkBack**:
 | N3 — the `polite` live region inside the collapsed `Pressable` | ❌ **never announced** → [#262](https://github.com/linardsb/taxi/issues/262) |
 | The once-a-second label mutation re-announcing (Q5) | ❌ **it does, and it starves the countdown** → [#263](https://github.com/linardsb/taxi/issues/263) |
 | VoiceOver | owed — [#257](https://github.com/linardsb/taxi/issues/257) |
+
+### Presence must be established through the app, never by SQL
+
+`update drivers set status='online'` puts the **row** online and writes **nothing to Redis**.
+`findNearby` reads Redis, so every booking then goes `dispatch.ride.unclaimed` with
+`offerAttempts: 0` while the driver looks online in every query you would think to run.
+Check with
+`redis-cli SISMEMBER drivers:online:<cityId> <driverId>` — it returns `0` — and fix it by
+toggling offline→online in the app. `observed` 2026-09-22; it cost two bookings.
+
+Related: a driver whose last position is older than `DRIVER_LOCATION_TTL_SECONDS` (60) is
+dropped from `findNearby` even while present in the online set. On this emulator the
+location stream stalls intermittently, so confirm a fresh
+`driver.location.ping_accepted` in the api console **immediately before** booking anything
+that must be offered.
 
 ### Setup deltas this pass discovered
 
