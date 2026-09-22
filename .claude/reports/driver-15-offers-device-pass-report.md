@@ -17,7 +17,7 @@
 | Emulator flags | `-no-snapshot -no-boot-anim -gpu swiftshader_indirect` |
 | Worktree | `/Users/Berzins/taxi-worktrees/wt-15` on `docs/plan-15-device-pass` |
 | Base | `origin/main` at `d6207be` + the plan commit `047edcf` (`observed` 2026-09-22) |
-| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 53 min; pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed **16:23:16Z**. `observed` via the EAS GraphQL API 2026-09-22: that build was created `14:14:57.231Z` and `completedAt` `15:22:03.251Z`, so **nothing could run on it before 15:22Z**. **Pass 1 owns steps 1, 2, 3a and every a11y leg; pass 2 owns steps 3b, 5, 6, 7, 8, 11, 13** — each of those named by I5 as blocked on the old APK. **Step 10's pass is NOT established**: its half that passed (reopen re-asserts online) needs no ride payload, so I5 does not place it, and its evidence carries no timestamp to compare against `15:22:03Z`. Step 3a's own artifact is timestamped `14:50:42Z` — 31 min before the #15 build finished — which is the proof of the split, not an inference |
+| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 53 min; pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed **15:23:16Z** — `16:23:16` on the host clock, which is BST (UTC+1), not Rīga time: every commit on this branch carries `+0100`, and the api log pairs Nest's local prefix `16:24:20` with `at: '2026-09-22T15:24:20.152Z'` on pass 2's first `dispatch.offer.sent` (`observed`). `observed` via the EAS GraphQL API 2026-09-22: that build was created `14:14:57.231Z` and `completedAt` `15:22:03.251Z`, so **nothing could run on it before 15:22Z**. **Pass 1 owns steps 1, 2, 3a and every a11y leg; pass 2 owns steps 3b, 5, 6, 7, 8, 11, 13** — 5–8, 11 and 13 because I5 names them as blocked on the old APK, and 3b by its own row (✅ on the #15 APK). **Step 10's pass is NOT established**: its half that passed (reopen re-asserts online) needs no ride payload, so I5 does not place it, and its evidence carries no timestamp to compare against `15:22:03Z`. Step 3a's own artifact is timestamped `14:50:42Z` — 31 min before the #15 build finished — which is the proof of the split, not an inference |
 | api | `services/api` dev on `API_PORT=3001`; db+redis from `COMPOSE_PROJECT_NAME=taxi` |
 
 ## §Level 4 functional pass — steps 1–13
@@ -33,7 +33,7 @@
 | 6 | Receipt to the cent; today's earnings include the ride | ✅ | Receipt: «Pasažieris samaksāja: €9.01» → «Sakta (15%): €1.35» → «Jūs saņemat: €7.66», against the `split` row `901 \| 15 \| 135 \| 766` — **to the cent**, `commission + net === total`. Earnings: «Šodien: €7.66 · Braucieni: 1» — **but only after settlement**, see S1 |
 | 7 | Force-assign opens the ride with no card first | ⚠️ **partial — one half passed, one half unrun** | **Passed**: `dispatch.assign.forced`, and **no offer card was ever shown** for that ride. **Unrun**: that the screen *opens*. The already-open app sat on a stale receipt screen and the ride appeared only after a force-stop and relaunch — which is step 11's behaviour, not step 7's. **Cause not isolated**: a dropped socket is the obvious guess but does not fit, since step 8's reassignment arrived over that same socket in real time minutes later. Something specific to the force-assign path is a live possibility and is not excluded |
 | 8 | Reassign mid-`arriving` → banner + home | ✅ | Advanced to `arriving`, then `POST /dispatch/rides/:id/reassign` → the app showed «Dispečers nodeva braucienu citam šoferim» with a «Gatavs» control, **in real time, no relaunch** — `n10-reassigned.png` |
-| 9 | Glance mode above 10 km/h | **unrun** | Route found and costed (`geo fix` velocity, 20 kn) but not exercised — the card legs ran before it and the APK blocked the rest |
+| 9 | Glance mode above 10 km/h | **unrun** | Route found and costed (`geo fix` velocity, 20 kn) but driven in neither pass — step 9 needs the `geo fix` velocity route (the runbook's §Result gives the same cause), and that route is still `expected`, not observed (§"Step 9's speed" below) |
 | 10 | Kill ~75 s; offline push; reopen re-asserts online | **partial** | Reopen **does** re-assert online (`observed`: the app came up online after a force-stop). The push half is unrun for step 4's reason |
 | 11 | Kill mid-ride, reopen → active-ride at the right status | ✅ | Force-stop + relaunch with a live ride landed on the active-ride screen at the correct status, carrying that ride's own pickup («Force Assign Pickup, Riga») — `n9-coldstart.png` |
 | 12 | Two devices in a zone → «N. of 2 in rix» | **unrun** | Second AVD not booted — AC5's queue half is partial, as Q1 allowed |
@@ -58,9 +58,9 @@
 
 - [x] T1 countdown lever — raised to 180, verified on the wire («Atlikušas 162 s»), restored to 20
 - [x] T2 runbook `#16` → `#15` (line 362)
-- [~] T3 APK — EAS build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c` submitted 14:14:57Z, **still `in queue` ~50 min later**; the pass ran on #224's APK instead (see below)
+- [x] T3 APK — EAS build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c` submitted 14:14:57Z, `completedAt` 15:22:03Z, installed 15:23:16Z; pass 1 ran on #224's APK while it queued, pass 2 on this build (see the Run environment row)
 - [x] T4 stack + accounts
-- [~] T5 functional pass — **pass 1** (#224's APK): steps 1, 2, 3a ✅, 3b server-only, the rest blocked by I5. **Pass 2** (the #15 APK): 3b, 5, 6, 8, 11 ✅; 7, 13 partial; 4, 9, 12 unrun. **Step 10 (partial) is not assigned to a pass** — see the Run environment row
+- [~] T5 functional pass — **pass 1** (#224's APK): steps 1, 2, 3a ✅, 3b server-only, 5–8, 11 and 13 blocked by I5. **Pass 2** (the #15 APK): 3b, 5, 6, 8, 11 ✅; 7, 13 partial. **4, 9, 12 unrun in both passes**, each for its own row's cause. **Step 10 (partial) is not assigned to a pass** — see the Run environment row
 - [x] T6 `content-desc` — all three states + the collapse
 - [x] T7 TalkBack aloud — all five legs run; two are findings (#262, #263)
 - [x] T8 restore
@@ -135,7 +135,7 @@ $ adb emu help geo fix
 rounded or re-projected without landing under the threshold.
 
 The condition this assumes: `geo fix` is only delivered once something is requesting
-location. The runbook's «`adb emu geo fix` alone does nothing» finding (`:434`) was made
+location. The runbook's «`adb emu geo fix` alone does nothing» finding (`:600`) was made
 with **no app requesting**, leaving the HAL at `ProviderRequest[OFF]`. With the driver app
 online and streaming that precondition no longer holds, so `geo fix` is expected to land —
 **`expected`, not observed**, and the run either confirms it or step 9 is unrun.
@@ -231,7 +231,7 @@ here so the ✅ on the name leg is not read as covering the focus leg.
 
 ### T6 and T7's home legs ran on #224's APK, and here is why that is sound
 
-The #15 build sat in the EAS queue for the whole session. Rather than leave the a11y half
+The #15 build sat in the EAS queue for the whole of pass 1. Rather than leave the a11y half
 unrun a fourth month, the legs that depend only on the accessible **name** and on TalkBack's
 **speech** were run on #224's APK, on this argument — which is checkable, not asserted:
 
@@ -245,8 +245,8 @@ and #135's rider work: **not one `driver.*` key differs**, which is the half tha
 here. So the strings and the composition that produce these accessible names are
 byte-identical between #224's build commit and HEAD.
 
-That argument covers the name and speech legs. It does **not** cover the wire, so the
-functional pass (T5) is not run on this APK.
+That argument covers the name and speech legs. It does **not** cover the wire, so no
+step that needs a ride payload is run on this APK.
 
 ### How to drive TalkBack from `adb` — the gesture route does not work
 

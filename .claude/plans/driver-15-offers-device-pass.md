@@ -105,7 +105,7 @@ I TextToSpeech: Connected to TTS engine
 ```
 
 TalkBack is installed, starts, and binds to the TTS engine on the **`google_apis`** image —
-the runbook's `google_apis`-not-`default` rule (`:390` §Setup step 3) already gives it to
+the runbook's `google_apis`-not-`default` rule (`:566-568` §Setup step 3) already gives it to
 us, and no Play Store image is needed. **The TalkBack half of the owed ear-checks is
 therefore not hardware-blocked.** Only VoiceOver is → **#257**.
 
@@ -239,7 +239,7 @@ single easiest place to ship it a third time, because every figure in it *looks*
 path, a `content-desc` string. "It worked" is not a result.
 
 **Divergence logging** — the runbook already records `adb`-run divergences honestly
-(`:531`: *"an `input tap` at exact centre coordinates proves nothing about the 44 px
+(`:700-701`: *"an `input tap` at exact centre coordinates proves nothing about the 44 px
 touch-target rule a real finger tests"*). Every substitution in this pass gets the same
 treatment: what it closes, and what it does not.
 
@@ -547,7 +547,7 @@ IMPORTANT: Execute every task in order, top to bottom.
 - **PATTERN**: the existing §Result table (`driver-device-day.md:19`) and
   `.claude/reports/emulator-gates-224-report.md`.
 - **GOTCHA**: **do not restate §Level 4's steps in the runbook.** Cite them by number, as
-  the emulator section already does for §Steps (`:368`).
+  the emulator section already does for §Steps (`:534`).
 - **GOTCHA**: figures in the report are **not** inherited from this plan. Re-derive
   anything you copy. A report that quotes a PR body's size table is stale by construction.
 - **VALIDATE**: `grep -c '✅\|❌' docs/runbooks/driver-device-day.md` rises by the number of rows added; the report has no figure lacking a provenance word; `pnpm turbo run typecheck lint test build --force` green (docs-only changes, but the runbook edit sits beside code in the same commit).

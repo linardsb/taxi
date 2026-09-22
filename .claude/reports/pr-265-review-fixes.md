@@ -5,12 +5,12 @@
 **Base at fix time**: `origin/main` `d6207be` — unmoved since the review recorded it
 **Fixed**: 2026-09-22
 
-**All ten findings fixed, plus two the review did not catch.** Nothing deferred. No conclusion in
+**All ten findings fixed, plus two the review did not catch** (round 2 reopened F1, F4 and F5: `pr-265-review-fixes-round2.md`). Nothing deferred. No conclusion in
 the PR changed: every defect was bookkeeping, exactly as the review said.
 
 Two of the review's own rows did **not** reproduce and were fixed differently — see §"Where the
-review was itself wrong". One finding (F5's timezone half) was routed to a human and is instead
-**settled by evidence**: the EAS GraphQL API gives the build's `completedAt`.
+review was itself wrong". One finding (F5's timezone half) was routed to a human, and this pass
+settled it **wrongly**, as UTC; round 2's F11 corrected it to BST — see §"F5's timezone".
 
 ---
 
@@ -19,10 +19,10 @@ review was itself wrong". One finding (F5's timezone half) was routed to a human
 | # | Sev | What was wrong | Fix | Closing command, run against the fixed tree |
 |---|---|---|---|---|
 | F1 | High | 12 citations into `driver-device-day.md` pointed into the 164 lines this same PR inserted | Each **re-derived by grepping its quoted phrase at head**, never by adding an offset — four were already 2–7 lines low against `origin/main`, so no offset exists | ✅ 12/12 HIT — see §F1 table below |
-| F3 | High | Plan + report + PR body cite a **`§D3` that does not exist**, with a baseline of **9** that appears nowhere in the repo; D4 reported a +6 deviation that is really **+1** | `§D3` → `:178-182`; `9` → **14** (`observed` 2026-09-17, the runbook's own figure); D4 restated as +1 of new drift | `grep -rn '§D3' --include='*.md' .` → **1 hit, and it is the correction itself** (report:323, "a §D3 that does not exist"). `grep -rn 'records 9 packages'` → **0** |
+| F3 | High | Plan + report + PR body cite a **`§D3` that does not exist**, with a baseline of **9** that appears nowhere in the repo; D4 reported a +6 deviation that is really **+1** | `§D3` → `:178-182`; `9` → **14** (`observed` 2026-09-17, the runbook's own figure); D4 restated as +1 of new drift | `grep -rn '§D3' --include='*.md' --exclude='pr-265-review*' .` → **1 hit, and it is the correction itself** (report:323, "a §D3 that does not exist"). `grep -rn --exclude='pr-265-review*' 'records 9 packages' .` → **0**. Both exclude the review and fixes reports, which quote the retired values |
 | F2 | Med | The runbook's §"Also on this day" listed as **owed** two rows this same PR records as **done** | Marked done in place, one clause each. **Row 1 (#14's) untouched**, as the review required | `sed -n '361,362p'` → both rows now carry their 2026-09-22 outcome and point at §"The offers / active-ride pass (#15)" |
 | F4 | Med | Status header, AC1 and T5 all described the state after **pass 1**, contradicting the report's own step table 380 lines below | All three restated **from the step table**, which is now named as the source of truth. AC1: `4 of 13 … other 9` → **11 of 14 … other 3** | `grep -c '4 of 13\|the other 9'` → **0**. Arithmetic: 8 ✅ + 3 partial = 11 carry an artifact; 14 − 11 = 3 unrun (steps 4, 9, 12) |
-| F5 | Med | «Every row below says which [APK]» was false for 13 of 14 rows; the absolute *"No #15 step result is taken from this APK"* is contradicted by steps 1, 2, 3a; `16:23:16` was the one timestamp with no timezone | Run-environment row now **assigns every step to a pass**; `:188` narrowed to *"No step requiring a ride payload"*; `16:23:16` → **`16:23:16Z`** | **Settled by evidence, not by wording** — see §"F5's timezone, settled" |
+| F5 | Med | «Every row below says which [APK]» was false for 13 of 14 rows; the absolute *"No #15 step result is taken from this APK"* is contradicted by steps 1, 2, 3a; `16:23:16` was the one timestamp with no timezone | Run-environment row now **assigns every step to a pass**; `:188` narrowed to *"No step requiring a ride payload"*; `16:23:16` → **`15:23:16Z`** (this pass first wrote it as UTC; round 2's F11 corrected it — the host clock is BST) | Settled wrongly here, corrected in round 2 — see §"F5's timezone" |
 | F6 | Med | The byte-identity argument the report invites the reader to run enumerates the wrong key set (`sms.*` or `console.*`) | Enumerated in full: `sms.` ×2, `console.` ×6, **`push.` ×2**, **`rider.` ×2**, all #17/#135 rider work | `git diff -U0 4e6ffb68 HEAD -- packages/shared/src/i18n/lv.ts` → prefixes are exactly those four; **no changed line defines a `driver.` key**. Conclusion unchanged and still true |
 | F7 | Low | `Tick count 17 → 24` was `observed`-true at `86b6871` and moved by two later commits in this same PR; carried no provenance word | **`17 → 25`**, with `observed` + the exact command + the two revisions compared. **Edited last**, after the runbook settled | `grep -c '✅\|❌' docs/runbooks/driver-device-day.md` → **25** at the final tree; `git show origin/main:…` → **17**. F2's and N1's runbook edits were written glyph-free and **asserted** not to move this unit |
 | F8 | Low | The plan sends the next runner to `auth.sms.stub_sent` (the SMS-**body** event) to read an **OTP code** | → `auth.otp.stub_sent`, `sendOtp()` at `:17-28`; the neighbouring `send()` at `:30-41` named as the tracking-link path so the two cannot be confused again | `sed -n '17p;22p;30p;35p'` → `sendOtp()` :17 logs `auth.otp.stub_sent` :22; `send()` :30 logs `auth.sms.stub_sent` :35. Exact |
@@ -44,8 +44,8 @@ the quoted phrase instead of trusting the number. That is the same recipe the F1
 records, promoted from this report into the artifact a future session actually opens.
 
 **A third unsourced claim, found by the same reasoning and fixed here:** the pass-split I added
-for F5 assigned step 10 to pass 2. Steps 3b, 5, 6, 7, 8, 11 and 13 are each named by I5 as
-blocked on the old APK, so they are established. Step 10 is **not** in I5's list, its passing
+for F5 assigned step 10 to pass 2. Steps 5–8, 11 and 13 are named by I5 as blocked on the old
+APK, and 3b's own row puts it on the #15 APK, so they are established. Step 10 is **not** in I5's list, its passing
 half needs no ride payload, and its evidence carries no timestamp — so its pass is now recorded
 as not established rather than asserted. Replacing a false absolute with a precise claim is only
 a gain if every element of the precise claim is sourced.
@@ -72,11 +72,11 @@ a gain if every element of the precise claim is sourced.
 Unchanged because they were already correct, and re-checked: `:19`, `:78`, `:111`, `:128`, `:233`,
 `:245`, `:352`, `:360`, `:362`, `:363`, `:178-182`.
 
-### F5's timezone, settled — this was routed to a human and did not need one
+### F5's timezone — settled wrongly here, corrected in round 2 (F11)
 
-The review could not decide whether `16:23:16` was UTC or local, because under one reading it
-precedes the build submission and under the other it does not sit with *"queued 53 min"*. The EAS
-GraphQL API answers it directly. `observed` 2026-09-22, build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`:
+The review could not decide whether `16:23:16` was UTC or local. This pass took "local" to mean
+Rīga time, ruled it out, and wrote UTC. The host clock is **BST (UTC+1)**, so the install was
+**15:23:16Z**. The EAS timestamps are right and still prove the pass split. `observed` 2026-09-22, build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`:
 
 ```
 status      FINISHED
@@ -84,11 +84,11 @@ createdAt   2026-09-22T14:14:57.231Z
 completedAt 2026-09-22T15:22:03.251Z
 ```
 
-- Read as **local** (Rīga is UTC+3 in September), `16:23:16` = `13:23:16Z` — **before the build was
-  even submitted**. Impossible.
-- Read as **UTC**, it is 1 h 01 m after `completedAt`. Consistent.
+- **The wrong premise (round 1's, taken over here)**: "local" = Rīga, UTC+3, which puts the install
+  before the build was submitted. The host is not on Rīga time.
+- **Round 2 (F11), `observed`**: every commit on this branch carries `+0100`, and the api log pairs Nest's local `16:24:20` with `at: 15:24:20.152Z`.
 
-So `16:23:16Z`, and the report now carries the two EAS timestamps as the evidence.
+So **`15:23:16Z`**: ~73 s after `completedAt` (`derived`: 15:23:16 − 15:22:03.251), before pass 2's first offer at 15:24:20Z.
 
 This also gives the **pass split a hard proof rather than an inference**: step 3a's own artifact is
 `dispatch.offer.expired` at **`14:50:42Z`**, which is **31 minutes before the #15 build finished**.
@@ -143,8 +143,8 @@ the topic word, and both are inside this PR's diff.
   line 164 of the hunk), so it is in scope. Corrected to `:43-53`.
 
 N2 is the point of the advisor's rule: fixing the report's copy and stopping would have left the
-runbook's copy stating the same wrong range. `grep -rn -F 'location-task.ts:43-52' --include='*.md'`
-→ **0 hits** repo-wide now.
+runbook's copy stating the same wrong range. `grep -rn -F 'location-task.ts:43-52' --include='*.md' --exclude='pr-265-review*' .`
+→ **0 hits** repo-wide now, outside the review and fixes reports that quote it.
 
 ---
 
@@ -170,8 +170,8 @@ repo rule asks for, not a sentence claiming a sweep happened.
 | `sms.* or` | 0 | clean |
 | `:28-37` | 0 (was 2 — plan **and** runbook, see N1) | clean |
 
-Repo-wide, not just these three files: `grep -rn '§D3' --include='*.md' .` → the single correction
-line above. The phantom section is retired everywhere it ever appeared.
+Repo-wide, not just these three files: `grep -rn '§D3' --include='*.md' --exclude='pr-265-review*' .`
+→ the single correction line above (the exclude drops the review and fixes reports, which quote it). The phantom section is retired everywhere it ever appeared.
 
 Remaining `driver-device-day.md:NNN` citations across plan and report, all re-checked:
 `:19 :111 :128 :178 :245 :352 :360 :362 :534 :598 :683 :693 :698 :700 :705 :709 :719 :722`.
