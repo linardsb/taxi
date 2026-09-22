@@ -27,10 +27,10 @@ import { smsDriverName } from './sms-templates';
  * `RidesService.createRide` (booking confirmed) and
  * `RideTransitionService.emitStatus` (driver assigned / arrived).
  *
- * Send policy (rider-ux-evidence.md §3.3): confirm + arrival SMS on every
- * channel; the tracking link travels in the confirmation, and the
- * driver-details message goes only to PHONE bookings — an app rider is
- * watching the app. Budget: 2 SMS/ride app channel, 3 phone channel.
+ * Send policy (rider-ux-evidence.md §3.3, amended by #135): the confirmation
+ * goes to every channel and carries the tracking link; the driver-details AND
+ * arrival messages go only to PHONE bookings (#63) — an app rider sees both
+ * moments in-app. Budget: 1 SMS/ride app channel, 3 phone channel.
  *
  * NEVER THROWS, structurally: both entry points wrap their whole body — an
  * SMS failure never fails a booking. The `sms_send_failed` ERROR log is the
@@ -111,10 +111,12 @@ export class RideNotificationsService {
     try {
       const details = await this.repository.rideById(ride.id);
       if (!details || !details.driverId) return;
-      // The assigned message is the phone-channel follow-up (the Uber
-      // call-to-ride pattern); an app rider sees the same moment in-app.
-      if (kind === 'driver_assigned' && details.bookingChannel !== 'phone')
-        return;
+      // An app rider sees both moments in-app, so neither message is theirs
+      // (#135, SMS volume lever 1). Phone bookings (#63) keep everything —
+      // SMS is their only channel. `=== 'app'` rather than `!== 'phone'`:
+      // a channel we cannot vouch for gets the SMS (fail open), which is
+      // also the AC's "channel unknown → send".
+      if (details.bookingChannel === 'app') return;
 
       const rider = await this.repository.riderContact(ride.riderId);
       if (!rider) return;

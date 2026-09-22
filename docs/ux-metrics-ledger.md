@@ -47,7 +47,7 @@ How to use: each ticket's acceptance criteria bind to rows here (column "Ticket"
 | Phone-booking entry time (median) | The channel bet — validates Dina's console as a competitive weapon, not just a fallback |
 | Rider taps-to-book (repeat) | The friction-audit rule made measurable |
 | Driver offer→accept rate + decline reasons | Early-warning for offer-card or fare problems (never a driver penalty) |
-| SMS spend €/week | Budget guardrail feed (tracking-link + status SMS volume) |
+| SMS spend €/week | Budget guardrail feed (tracking-link + status SMS volume). **#135 (2026-09-22) changed the population, not the event:** `logSent` still emits `kind` + `channel`, but no `kind=driver_arrived, channel=app` row is ever written again. Expect a one-off step down of ~301 segments/mo (`derived`, hosting-sms-cost-research.md §4.3) — a week-over-week drop across that date is the change landing, not a regression |
 
 ## Review log
 

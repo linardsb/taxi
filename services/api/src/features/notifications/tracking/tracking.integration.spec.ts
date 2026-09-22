@@ -325,7 +325,7 @@ describe('tracking + ride SMS (integration)', () => {
       expect((await view(token)).state).toBe(step);
     }
 
-    // The arrival SMS goes to every channel (AC #1).
+    // The arrival SMS goes to PHONE bookings only since #135 (AC #1).
     await waitForSms(p(50), 3);
     expect(smsTo(p(50))[2]).toContain(d.plate);
 
@@ -351,7 +351,7 @@ describe('tracking + ride SMS (integration)', () => {
     expect(smsTo(p(50))).toHaveLength(3);
   });
 
-  it('app booking: 2 SMS, no link, no driver_assigned (edge — budget row)', async () => {
+  it('app booking: 1 SMS, no link, no driver_assigned, no driver_arrived (edge — budget row, AC #1)', async () => {
     const d = await onlineDriver(2, {
       lat: CENTRE_PICKUP.location.lat + 0.001,
       lng: CENTRE_PICKUP.location.lng,
@@ -378,13 +378,16 @@ describe('tracking + ride SMS (integration)', () => {
         .expect(201);
     }
 
-    // arrived SMS arrives; driver_assigned never does.
-    await waitForSms(p(51), 2);
+    // #135: the arrival SMS is the app rider's no longer — the app shows it,
+    // so the confirmation is the whole of their SMS budget. Settle and count;
+    // `waitForSms` polls for AT LEAST N and so cannot assert an absence.
     await new Promise((resolve) => setTimeout(resolve, 100));
     const bodies = smsTo(p(51));
-    expect(bodies).toHaveLength(2);
-    expect(bodies[1]).toContain(d.plate);
-    expect(bodies[1]).not.toContain('/t/');
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).not.toContain('/t/');
+    // The survivor is the CONFIRMATION, not the arrival: only the two
+    // driver-details templates carry a plate.
+    expect(bodies[0]).not.toContain(d.plate);
 
     // The app rider's ride is still trackable — #17's share-trip reuses this.
     expect((await view(ride.trackingToken!)).state).toBe('arrived');

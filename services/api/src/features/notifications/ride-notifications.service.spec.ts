@@ -293,15 +293,27 @@ describe('RideNotificationsService.onStatus', () => {
     expect(sent).toHaveLength(0);
   });
 
-  it('arrived → driver_arrived SMS on EVERY channel (expected)', async () => {
+  it('arrived + app channel → NO driver_arrived SMS (expected — AC #1)', async () => {
     const { service, sent } = build({
       details: notifiable({ status: 'arrived', bookingChannel: 'app' }),
     });
 
     await service.onStatus(transitioned('arrived'), 'arriving');
 
+    expect(sent).toHaveLength(0);
+  });
+
+  it('arrived + phone channel → driver_arrived SMS, unchanged (expected — AC #2)', async () => {
+    const { service, sent } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'phone' }),
+    });
+
+    await service.onStatus(transitioned('arrived'), 'arriving');
+
     expect(sent).toHaveLength(1);
     expect(sent[0]!.body).toContain('AB-1234');
+    // The arrival template carries no link — only the two LINKED ones do.
+    expect(sent[0]!.body).not.toContain('/t/');
   });
 
   it('any other transition is a no-op — not even a repository read (edge)', async () => {
