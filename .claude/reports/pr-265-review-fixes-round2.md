@@ -18,14 +18,14 @@ was changed".
 ## Fixed
 
 Every closing command below was run against the fixed tree at 2026-09-22 19:49Z, before this file
-was written.
+was written, and all of them were re-run at 19:57Z after the `:25` follow-up, with the same results.
 
 | # | Sev | What was wrong | Fix | Closing command → output |
 |---|---|---|---|---|
 | F1 | High | Four bare `` `:NNN` `` citations into the runbook landed on the wrong line: plan `:108` (`:390`), `:242` (`:531`), `:550` (`:368`); report `:138` (`:434`) | → `:566-568`, `:700-701`, `:534`, `:600` | The review's two-form grep, `` grep -noE '(driver-device-day\.md\|\(\|`):[0-9]{3}' `` over the plan and the report → **29 hits, 29 resolve** to the phrase they cite (table below) |
 | F5 | Med | The runbook §Result still said steps 1, 2, 3a ran on the #15 build (`:380`, `:384`); report `:248-249` still said T5 "is not run on this APK" | Runbook `:380` and `:384` list each step's build explicitly: 1, 2, 3a on #224's APK; 3b, 5–8, 11, 13 on the #15 build; 10 unassigned; 4, 9, 12 on neither. Report → *"no step that needs a ride payload is run on this APK"* | `grep -n -F` for `functional walk on the second`, `steps, on the #15 build`, `not run on this APK` over the four PR files → **0 each** |
 | F4 | Med | Report `:61` (T3 "still `in queue`"), `:234` ("for the whole session"), `:36` (step 9's cause) described pass 1 only | T3 `[~]` → `[x]` with `completedAt` 15:22:03Z and the install time; `:234` → "the whole of pass 1"; `:36` → the runbook's cause (the `geo fix` velocity route, still `expected`) | `grep -n -F` for `` still `in queue` ``, `whole session`, `APK blocked the rest` → **0 each** |
-| F11 | Med | The install time was settled as `16:23:16Z`. The host clock is BST, so it is **15:23:16Z** | Report `:20`; fixes report `:12-13`, `:25`, `:75-91` rewritten with the BST reading and its evidence (below) | `grep -n -F` for `16:23:16Z`, `1 h 01 m`, `Consistent.`, `ettled by evidence` over the four files → **0 each** |
+| F11 | Med | The install time was settled as `16:23:16Z`. The emulator's clock follows the host's BST, so it is **15:23:16Z** | Report `:20`; fixes report `:12-13`, `:25`, `:75-91` rewritten with the BST reading and its evidence (below) | `grep -n -F` for `16:23:16Z`, `1 h 01 m`, `Consistent.`, `ettled by evidence` over the four files → **0 each** |
 | F12 | Low | Three greps in the round-1 fixes report were unscoped, and the report itself quoted the values they claimed were gone | Scoped with **`--exclude='pr-265-review*'`** (an executable scope, not the prose "outside this file") at `:22`, `:146-147`, `:173` | `grep -rn '§D3' --include='*.md' --exclude='pr-265-review*' .` → **1** (report:323). `grep -rn --exclude='pr-265-review*' 'records 9 packages' .` → **0**. `grep -rn -F 'location-task.ts:43-52' --include='*.md' --exclude='pr-265-review*' .` → **0** |
 | F13 | Low | Report `:20` and fixes report `:47` credited 3b to I5's list, which names only 5–8, 11, 13; report `:63` said "the rest blocked by I5" | 3b is sourced by its own row; `:63` → "5–8, 11 and 13 blocked by I5", and 4, 9, 12 "unrun in both passes, each for its own row's cause" | `grep -n -F` for `each of those named by I5`, `the rest blocked by I5` → **0 each** |
 
@@ -51,6 +51,9 @@ The other 25 are unchanged and resolve as well: `:362` ×3, `:709`, `:705`, `:36
 
 ### F11 — the evidence for BST
 
+- **Where `16:23:16` came from** (the pass session's transcript, local only): `adb shell dumpsys
+  package` printed `lastUpdateTime=2026-09-22 16:23:16`, on the emulator's clock, which follows the
+  host. The transcript stamps that tool result at **`2026-09-22T15:23:18.546Z`**, 2 s later in true UTC.
 - **Re-runnable, in the repo**: `git log --format=%ci d6207be..c0f487d` → **20 of 20 commits at
   `+0100`**; `date '+%Z %z'` on the host → `BST +0100`.
 - **Local only** (the pass's api log, in the author's session scratchpad): one event carries both
@@ -117,6 +120,7 @@ Over the plan, the report, the runbook and the round-1 fixes report (`grep -n -F
 | `1 h 01 m` | 0 |
 | `Consistent.` | 0 |
 | `ettled by evidence` | 0 |
+| `assigns every step to a pass` (fixes report `:25`, found by the advisor after the first push: it contradicted step 10's unassigned status) | 0; the cell now reads *"every step but 10"* |
 | `whole session` | 0 |
 | `` still `in queue` `` | 0 |
 | `APK blocked the rest` | 0 |
