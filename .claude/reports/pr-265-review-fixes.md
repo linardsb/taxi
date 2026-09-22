@@ -29,6 +29,27 @@ review was itself wrong". One finding (F5's timezone half) was routed to a human
 | F9 | Low | The report names `.claude/last-gate.json` as the check, and it is **gitignored** — no GitHub reviewer can run it | Says so, **and names the reviewable equivalent**: CI's `check` job by `head_sha`, which is public and moves with the head | `sed -n '25p' .gitignore` → `.claude/last-gate.json`. Confirmed gitignored |
 | F10 | Low | 13 off-by-N citations and wording nits | All fixed, each **re-opened at head** rather than inherited | See §F10 below — two rows did not reproduce |
 
+### The new failure mode these two High fixes introduce
+
+Required for a High: the repro proves the old failure is gone, not that the mechanism is safe.
+
+**F1 and F3 both write absolute line numbers into a living file.** `driver-device-day.md` is the
+only copy of the run sheet and CLAUDE.md routes every device-day session to it, so the next PR
+that inserts above `:534` re-breaks all twelve F1 citations, and one above `:178` re-breaks F3.
+The fix restores correctness at this head; it does not make the citations durable.
+
+Guarded by an instruction rather than a test, since no gate reads Markdown: the plan's runbook
+read-list entry now carries a warning naming this failure and telling the next reader to grep
+the quoted phrase instead of trusting the number. That is the same recipe the F1 table below
+records, promoted from this report into the artifact a future session actually opens.
+
+**A third unsourced claim, found by the same reasoning and fixed here:** the pass-split I added
+for F5 assigned step 10 to pass 2. Steps 3b, 5, 6, 7, 8, 11 and 13 are each named by I5 as
+blocked on the old APK, so they are established. Step 10 is **not** in I5's list, its passing
+half needs no ride payload, and its evidence carries no timestamp — so its pass is now recorded
+as not established rather than asserted. Replacing a false absolute with a precise claim is only
+a gain if every element of the precise claim is sourced.
+
 ### F1 — every citation re-derived, then re-checked at the fixed tree
 
 `observed` 2026-09-22 18:39:38Z, `sed -n '<line>p' docs/runbooks/driver-device-day.md | grep -F '<phrase>'`:

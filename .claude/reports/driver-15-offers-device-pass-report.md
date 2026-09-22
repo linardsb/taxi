@@ -17,7 +17,7 @@
 | Emulator flags | `-no-snapshot -no-boot-anim -gpu swiftshader_indirect` |
 | Worktree | `/Users/Berzins/taxi-worktrees/wt-15` on `docs/plan-15-device-pass` |
 | Base | `origin/main` at `d6207be` + the plan commit `047edcf` (`observed` 2026-09-22) |
-| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 53 min; pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed **16:23:16Z**. `observed` via the EAS GraphQL API 2026-09-22: that build was created `14:14:57.231Z` and `completedAt` `15:22:03.251Z`, so **nothing could run on it before 15:22Z**. **Pass 1 owns steps 1, 2, 3a and every a11y leg; pass 2 owns steps 3b, 5, 6, 7, 8, 10, 11, 13.** Step 3a's own artifact is timestamped `14:50:42Z` — 31 min before the #15 build finished — which is the proof of the split, not an inference |
+| APK | **Two passes.** Pass 1 on #224's `bcd04c21` (commit `4e6ffb68`) while the #15 build queued 53 min; pass 2 on the #15 build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c`, installed **16:23:16Z**. `observed` via the EAS GraphQL API 2026-09-22: that build was created `14:14:57.231Z` and `completedAt` `15:22:03.251Z`, so **nothing could run on it before 15:22Z**. **Pass 1 owns steps 1, 2, 3a and every a11y leg; pass 2 owns steps 3b, 5, 6, 7, 8, 11, 13** — each of those named by I5 as blocked on the old APK. **Step 10's pass is NOT established**: its half that passed (reopen re-asserts online) needs no ride payload, so I5 does not place it, and its evidence carries no timestamp to compare against `15:22:03Z`. Step 3a's own artifact is timestamped `14:50:42Z` — 31 min before the #15 build finished — which is the proof of the split, not an inference |
 | api | `services/api` dev on `API_PORT=3001`; db+redis from `COMPOSE_PROJECT_NAME=taxi` |
 
 ## §Level 4 functional pass — steps 1–13
@@ -60,7 +60,7 @@
 - [x] T2 runbook `#16` → `#15` (line 362)
 - [~] T3 APK — EAS build `e1afc69a-95db-417c-97ee-69a1a9fd5d8c` submitted 14:14:57Z, **still `in queue` ~50 min later**; the pass ran on #224's APK instead (see below)
 - [x] T4 stack + accounts
-- [~] T5 functional pass — **pass 1** (#224's APK): steps 1, 2, 3a ✅, 3b server-only, the rest blocked by I5. **Pass 2** (the #15 APK): 3b, 5, 6, 8, 11 ✅; 7, 10, 13 partial; 4, 9, 12 unrun
+- [~] T5 functional pass — **pass 1** (#224's APK): steps 1, 2, 3a ✅, 3b server-only, the rest blocked by I5. **Pass 2** (the #15 APK): 3b, 5, 6, 8, 11 ✅; 7, 13 partial; 4, 9, 12 unrun. **Step 10 (partial) is not assigned to a pass** — see the Run environment row
 - [x] T6 `content-desc` — all three states + the collapse
 - [x] T7 TalkBack aloud — all five legs run; two are findings (#262, #263)
 - [x] T8 restore
