@@ -348,6 +348,7 @@ export const ru = {
   'rider.status.searching': 'Ищем машину…',
   'rider.status.still_searching': 'Всё ещё ищем машину.',
   'rider.status.matched': 'Машина найдена',
+  'rider.status.arrived': 'Машина подъехала',
   'rider.status.cancelled': 'Поездка отменена',
   'rider.status.completed': 'Поездка завершена',
   'rider.status.cancel': 'Отменить поездку',

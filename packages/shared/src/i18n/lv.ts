@@ -430,6 +430,11 @@ export const lv = {
   // that is still being worked. This says only that it is still running.
   'rider.status.still_searching': 'Vēl meklējam auto.',
   'rider.status.matched': 'Auto ir atrasts',
+  // «klāt», not «atbraucis»: the driver is AT the pickup point now, which is
+  // the one thing this line has to mean. #135 stops the arrival SMS for app
+  // bookings, so this string is the app rider's only arrival signal until
+  // #17 ships push — a backgrounded rider still hears nothing.
+  'rider.status.arrived': 'Auto ir klāt',
   'rider.status.cancelled': 'Brauciens ir atcelts',
   'rider.status.completed': 'Brauciens ir pabeigts',
   'rider.status.cancel': 'Atcelt braucienu',

@@ -221,13 +221,21 @@ touching the alphabet**.
 
 Who receives what, per `ride-notifications.service.ts`:
 
-- `booking_confirmed` → **every** rider (`onRideCreated`, line 60–67); the
-  `_phone` variant with the link only when `bookingChannel === 'phone'`.
-- `driver_assigned` → **phone bookings only** — the channel filter already
-  exists at line 95–96.
-- `driver_arrived` → **every** rider, no channel filter (line 122).
+- `booking_confirmed` → **every** rider (`onRideCreated`); the `_phone`
+  variant with the link only when `bookingChannel === 'phone'`.
+- `driver_assigned` → **phone bookings only** — the channel filter in
+  `onStatus`.
+- `driver_arrived` → **phone bookings only since #135** (2026-09-22). When this
+  section was written it went to every rider with no channel filter; one guard
+  in `onStatus` now covers both kinds.
 
-**Per ride: app rider = 2 segments · phone rider = 5 segments.**
+(Line numbers are deliberately not cited here — the three this list carried
+were all stale by 2026-09-22. The method names are stable.)
+
+**Per ride at HEAD — `derived`, 2026-09-22: app rider = 1 segment · phone rider
+= 3 segments.** Superseded: *"app rider = 2 segments · phone rider = 5
+segments"*, true when written and wrong twice since — #136 took the phone ride
+from 5 to 3, and #135 took the app ride from 2 to 1.
 
 ### 4.3 Pilot month, and the two levers
 
@@ -243,13 +251,51 @@ is unknown.
 
 | Scenario | Segments | BulkGate | Twilio |
 |---|---|---|---|
-| **As shipped today** — 301 app × 2 + 129 phone × 5 + 100 OTP | **1,347** | **€41.89** | **$96.31** |
-| **+ Lever 1** — skip SMS for app riders | 745 | €23.17 | $53.27 |
+| **As shipped 2026-08-14** (pre-#136, pre-#135) — 301 app × 2 + 129 phone × 5 + 100 OTP | **1,347** | **€41.89** | **$96.31** |
+| **+ Lever 1** (projected 2026-08-14; SHIPPED as #135 — see the correction below) | 745 | €23.17 | $53.27 |
 | **+ Lever 2** — trim the linked templates | **487** | **€15.15** | $34.82 |
 
-**Lever 1 — skip SMS for app riders (−45%).** App riders see both events
-in-app. It is the same two-line channel filter already used for
-`driver_assigned` at line 95. Depends on the rider app (#17) shipping push.
+**Lever 1 — skip SMS for app riders (−45%, SUPERSEDED — see the correction
+below).** App riders see both events on the ride-status screen *while the app
+is open*; backgrounded they see neither, because rider push (#17) has not
+shipped. It is the same two-line channel filter already used for
+`driver_assigned` in `onStatus`.
+
+**CORRECTION (#135, 2026-09-22) — the lever-1 row above is wrong twice, and
+neither fault is in its arithmetic.** The lever shipped as #135, and what it
+saves is **301 segments / €9.36 a month**, not the `1,347 → 745 / −45%`
+projected here.
+
+1. **Its baseline is pre-#136.** Lever 2 shipped first and took the phone ride
+   from 5 segments to 3, removing 129 × 2 = **258** segments/mo before lever 1
+   touched anything. The pool that −45% is a fraction of no longer exists.
+2. **Its saving removes `booking_confirmed` as well.** `1,347 − 745 = 602 =
+   301 app rides × 2 segments`, i.e. **both** of the app rider's messages.
+   #135's Scope says "on assign/arrive", so the confirmation stays. Dropping it
+   too is a separate, untaken decision worth a further 301 segments / €9.36.
+
+**What HEAD costs — `derived`** under this section's own assumptions (430
+rides/mo, 30% phone-booked = 129 phone / 301 app, ~100 OTP/mo, €0.0311/segment
+BulkGate, §3). Per ride at HEAD: app = `booking_confirmed` 1 = **1** segment;
+phone = confirmation 1 + `driver_assigned` 1 + `driver_arrived` 1 = **3**.
+
+| | Segments | BulkGate @ €0.0311 |
+|---|---|---|
+| Before #135 (post-#136) | 301×2 + 129×3 + 100 = **1,089** | **€33.87** |
+| At HEAD (post-#135) | 301×1 + 129×3 + 100 = **788** | **€24.51** |
+| **Saving** | **301** | **€9.36/mo**, **−27.6%** |
+
+−27.6% is `301 / 1,089`, against the same OTP-inclusive denominator the row's
+−45% used, so the two fractions are comparable. Ride-SMS-only it is 30.4%,
+which is not. Every figure inherits the assumptions above, none of which has
+evidence behind it; #137's bake-off moves the €/segment rate, not the counts.
+
+**The #17 dependency is now a merge gate, not a footnote.** Rider push has not
+shipped, so a backgrounded app rider is told nothing when the driver arrives.
+An app rider with the screen OPEN is told: #135 added `rider.status.arrived`
+(«Auto ir klāt»), which `Banner` also speaks, so the foreground case is
+covered and the backgrounded one is the whole of the residual regression.
+That is what the €9.36/mo buys, and it is the trade this row does not price.
 
 **Lever 2 — shorten the linked messages (−35% more), keeping full Latvian and
 Russian. SHIPPED as #136.** The segment cost of `driver_assigned` and

@@ -27,10 +27,12 @@ import { smsDriverName } from './sms-templates';
  * `RidesService.createRide` (booking confirmed) and
  * `RideTransitionService.emitStatus` (driver assigned / arrived).
  *
- * Send policy (rider-ux-evidence.md §3.3): confirm + arrival SMS on every
- * channel; the tracking link travels in the confirmation, and the
- * driver-details message goes only to PHONE bookings — an app rider is
- * watching the app. Budget: 2 SMS/ride app channel, 3 phone channel.
+ * Send policy (rider-ux-evidence.md §3.3, amended by #135): the confirmation
+ * goes to every channel and carries the tracking link; the driver-details AND
+ * arrival messages go only to PHONE bookings (#63) — an app rider sees both
+ * moments on the ride-status screen WHILE THE APP IS OPEN. Backgrounded, they
+ * see neither: rider push is #17 and has not shipped. Budget: 1 SMS/ride app
+ * channel, 3 phone channel.
  *
  * NEVER THROWS, structurally: both entry points wrap their whole body — an
  * SMS failure never fails a booking. The `sms_send_failed` ERROR log is the
@@ -111,10 +113,22 @@ export class RideNotificationsService {
     try {
       const details = await this.repository.rideById(ride.id);
       if (!details || !details.driverId) return;
-      // The assigned message is the phone-channel follow-up (the Uber
-      // call-to-ride pattern); an app rider sees the same moment in-app.
-      if (kind === 'driver_assigned' && details.bookingChannel !== 'phone')
-        return;
+      // An app rider sees both moments on `/book/status` while the app is
+      // OPEN — `accepted` reads «Auto ir atrasts», `arrived` «Auto ir klāt»
+      // (`status-screen.tsx` statusKey) — so neither message is theirs
+      // (#135, SMS volume lever 1). Backgrounded they see neither: rider
+      // push is #17 and has not shipped, which is the regression AC #5
+      // prices. Phone bookings (#63) keep everything — SMS is their only
+      // channel.
+      //
+      // `=== 'app'` rather than `!== 'phone'`: a channel we cannot vouch for
+      // gets the SMS (fail open), which is also the AC's "channel unknown →
+      // send". Note this slice is NOT uniform on that question —
+      // `onRideCreated` (:72) fails the opposite way, withholding the
+      // tracking link from any channel that is not `phone`. Whoever adds a
+      // third channel has to settle both, and a `web` rider would otherwise
+      // be denied the link at booking and handed it at assignment.
+      if (details.bookingChannel === 'app') return;
 
       const rider = await this.repository.riderContact(ride.riderId);
       if (!rider) return;

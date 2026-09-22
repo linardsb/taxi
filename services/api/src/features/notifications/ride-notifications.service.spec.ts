@@ -284,24 +284,42 @@ describe('RideNotificationsService.onStatus', () => {
   });
 
   it('accepted + app channel → NO driver_assigned SMS (edge — SMS budget row)', async () => {
-    const { service, sent } = build({
+    const { service, sent, calls } = build({
       details: notifiable({ bookingChannel: 'app' }),
     });
 
     await service.onStatus(transitioned('accepted'), 'offered');
 
     expect(sent).toHaveLength(0);
+    // WHERE the guard sits, not just that it fires: after the row read and
+    // before `riderContact`, so an app ride costs no extra queries. Moving it
+    // below `driverCard` keeps every `sent` assertion green and quietly adds
+    // two reads per transition.
+    expect(calls).toEqual(['repo.rideById']);
   });
 
-  it('arrived → driver_arrived SMS on EVERY channel (expected)', async () => {
-    const { service, sent } = build({
+  it('arrived + app channel → NO driver_arrived SMS (expected — AC #1)', async () => {
+    const { service, sent, calls } = build({
       details: notifiable({ status: 'arrived', bookingChannel: 'app' }),
+    });
+
+    await service.onStatus(transitioned('arrived'), 'arriving');
+
+    expect(sent).toHaveLength(0);
+    expect(calls).toEqual(['repo.rideById']);
+  });
+
+  it('arrived + phone channel → driver_arrived SMS, unchanged (expected — AC #2)', async () => {
+    const { service, sent } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'phone' }),
     });
 
     await service.onStatus(transitioned('arrived'), 'arriving');
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.body).toContain('AB-1234');
+    // The arrival template carries no link — only the two LINKED ones do.
+    expect(sent[0]!.body).not.toContain('/t/');
   });
 
   it('any other transition is a no-op — not even a repository read (edge)', async () => {

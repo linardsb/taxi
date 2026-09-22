@@ -340,6 +340,7 @@ export const en = {
   'rider.status.searching': 'Finding a car…',
   'rider.status.still_searching': 'Still finding a car.',
   'rider.status.matched': 'A car has been found',
+  'rider.status.arrived': 'Your car is here',
   'rider.status.cancelled': 'Ride cancelled',
   'rider.status.completed': 'Ride complete',
   'rider.status.cancel': 'Cancel ride',
