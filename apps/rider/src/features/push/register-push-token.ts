@@ -62,7 +62,16 @@ export async function registerPushToken(
 }
 
 /**
- * Foreground presentation and taps (#17).
+ * `getLastNotificationResponseAsync` answers with the SAME response on every
+ * call after a cold-start tap; without this a re-mount of the registrar would
+ * route that tap again, on top of wherever the rider navigated since. Keyed by
+ * the notification id, so each tap routes exactly once per process. Same
+ * mechanism as the driver app's (#14).
+ */
+const routedColdStartTaps = new Set<string>();
+
+/**
+ * Foreground presentation, taps, and the cold-start tap (#17).
  *
  * An arrival push arriving while the app is ACTIVE is suppressed: the rider
  * is already looking at `/book/status`, which reads «Auto ir klāt» and has
@@ -96,6 +105,27 @@ export function installNotificationHandling(
       if (rideId) onTap(rideId);
     },
   );
+  // The tap that LAUNCHED the app does not reach the listener above — it is
+  // waiting here instead, which is the only reason the driver app reads it
+  // too. Backgrounded is the case #17 exists for, and a rider whose phone was
+  // asleep in their pocket is on the killed-app side of that as often as not:
+  // without this, tapping «Auto ir klāt» from a cold start opens the app on
+  // `/book` and the rider has to find their own ride.
+  //
+  // This routes the response; it does not prove a device does. The whole path
+  // is unverified on hardware — no Android phone (#4) — so the claim here is
+  // "the response is read and handed to `onTap`", nothing further.
+  void Notifications.getLastNotificationResponseAsync()
+    .then((response) => {
+      if (!response) return;
+      const rideId = rideIdOf(response.notification.request.content.data);
+      if (!rideId) return;
+      const id = response.notification.request.identifier;
+      if (routedColdStartTaps.has(id)) return;
+      routedColdStartTaps.add(id);
+      onTap(rideId);
+    })
+    .catch(() => undefined);
   return () => tapped.remove();
 }
 

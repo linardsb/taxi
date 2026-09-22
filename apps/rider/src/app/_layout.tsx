@@ -20,7 +20,9 @@ export default function RootLayout() {
             re-rendered. */}
         <SessionGuard />
         {/* Same reason, and it must outlive any one screen: the arrival push
-            can be tapped from a cold start, with no screen mounted yet. */}
+            can be tapped from a cold start, with no screen mounted yet — that
+            response is read here, via `getLastNotificationResponseAsync`, and
+            not by the listener, which never sees it. */}
         <PushRegistrar />
         <Stack screenOptions={{ headerShown: false }} />
         <StatusBar style="dark" />

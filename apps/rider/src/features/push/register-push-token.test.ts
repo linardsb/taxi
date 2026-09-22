@@ -20,6 +20,7 @@ jest.mock('expo-notifications', () => ({
   addNotificationResponseReceivedListener: jest.fn(() => ({
     remove: jest.fn(),
   })),
+  getLastNotificationResponseAsync: jest.fn(() => Promise.resolve(null)),
   AndroidImportance: { MAX: 5 },
 }));
 
@@ -46,6 +47,11 @@ beforeEach(() => {
   (Notifications.requestPermissionsAsync as jest.Mock).mockResolvedValue({
     status: 'granted',
   });
+  // No cold-start tap unless a case asks for one — `clearAllMocks` clears
+  // calls, not the implementation a previous case installed.
+  (
+    Notifications.getLastNotificationResponseAsync as jest.Mock
+  ).mockResolvedValue(null);
   Platform.OS = 'android';
 });
 
@@ -181,6 +187,70 @@ describe('installNotificationHandling — foreground presentation (#17)', () => 
 
     expect(onTap).toHaveBeenCalledTimes(1);
     expect(onTap).toHaveBeenCalledWith('r-9');
+  });
+
+  it('routes the tap that LAUNCHED the app, exactly once per notification (failure)', async () => {
+    // A killed app is the common case for a rider whose phone slept in their
+    // pocket — the very rider #17 exists for. That tap never reaches the
+    // listener above; it waits in `getLastNotificationResponseAsync`, which
+    // answers with the SAME response on every call, so a re-mounted registrar
+    // must not route it a second time on top of wherever they navigated.
+    const onTap = jest.fn();
+    const response = (identifier: string, data: unknown) =>
+      ({
+        notification: { request: { identifier, content: { data } } },
+      }) as unknown as Notifications.NotificationResponse;
+    const flush = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+
+    (
+      Notifications.getLastNotificationResponseAsync as jest.Mock
+    ).mockResolvedValue(
+      response('rider-cold-1', { kind: 'ride_arrived', rideId: 'r-cold' }),
+    );
+    installNotificationHandling(onTap);
+    installNotificationHandling(onTap);
+    await flush();
+
+    expect(onTap).toHaveBeenCalledTimes(1);
+    expect(onTap).toHaveBeenCalledWith('r-cold');
+
+    // A genuinely new tap is a new notification and routes again.
+    (
+      Notifications.getLastNotificationResponseAsync as jest.Mock
+    ).mockResolvedValue(
+      response('rider-cold-2', { kind: 'ride_arrived', rideId: 'r-cold-2' }),
+    );
+    installNotificationHandling(onTap);
+    await flush();
+
+    expect(onTap).toHaveBeenCalledTimes(2);
+    expect(onTap).toHaveBeenLastCalledWith('r-cold-2');
+  });
+
+  it('a cold-start response carrying an unknown kind routes nowhere (edge)', async () => {
+    // Same defensive read as the listener path: `data` is remote input, and a
+    // future push kind must not open the status screen on an id that means
+    // something else.
+    const onTap = jest.fn();
+    (
+      Notifications.getLastNotificationResponseAsync as jest.Mock
+    ).mockResolvedValue({
+      notification: {
+        request: {
+          identifier: 'rider-cold-junk',
+          content: { data: { kind: 'ride_cancelled', rideId: 'r-x' } },
+        },
+      },
+    });
+
+    installNotificationHandling(onTap);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onTap).not.toHaveBeenCalled();
   });
 });
 
