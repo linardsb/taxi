@@ -364,6 +364,132 @@ check is not expressible as #141 failing, and the day can legitimately stop at t
 
 ---
 
+## The offers / active-ride pass (#15)
+
+Run 2026-09-22 on AVD `sakta224`. The steps are **not** restated here: they are
+`.claude/plans/driver-offers-active-ride.md:506` §Level 4, steps 1–13, cited by number
+exactly as §Emulator route below cites §Steps. The command-level record is
+`.claude/reports/driver-15-offers-device-pass-report.md`.
+
+### Result
+
+| Field | Value |
+|---|---|
+| Run by | Claude (agent-driven, `adb`), #15 |
+| Platform | Android emulator, AVD `sakta224` (API 36 `google_apis` x86_64, Pixel 7, 1080×2400) — **no phone** |
+| App | `preview` APK `bcd04c21…` on commit `4e6ffb68` — **#224's build, not a #15 build** (see the APK warning below) |
+| Date | 2026-09-22 |
+| Outcome | **The a11y half is complete. The functional half is partial** — steps 1, 2, 3a pass; 3b passes server-side only; the rest are blocked by the APK, not by the product |
+
+§Level 4 steps:
+
+| # | 1 | 2 | 3a | 3b | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| | ✅ | ✅ | ✅ | ⚠️ | — | — | — | — | — | — | ⚠️ | ⚠️ | — | — |
+
+⚠️ = server side verified, app side blocked. — = unrun.
+
+The owed ear-checks (§"Also on this day", row 2) are **closed for TalkBack**:
+
+| Leg | Result |
+|---|---|
+| Earnings link accessible name — loading / failed / ready | ✅ ✅ ✅ |
+| The grouping collapses to one focus stop | ✅ |
+| Offer card spoken, composed order, payment before the accept prompt | ✅ |
+| No double «Ieņēmumi» | ✅ |
+| N3 — the `polite` live region inside the collapsed `Pressable` | ❌ **never announced** → [#262](https://github.com/linardsb/taxi/issues/262) |
+| The once-a-second label mutation re-announcing (Q5) | ❌ **it does, and it starves the countdown** → [#263](https://github.com/linardsb/taxi/issues/263) |
+| VoiceOver | owed — [#257](https://github.com/linardsb/taxi/issues/257) |
+
+### Setup deltas this pass discovered
+
+**An APK from an earlier commit is not reusable, and the failure is silent.** #136 shortened
+the tracking token from 22 base64url characters to 16. `schemas/ride.ts` imports
+`trackingTokenSchema` from `schemas/tracking.ts`, so **`rideSchema` changed without
+`schemas/ride.ts` changing a byte**. An older bundle rejects every ride payload and the app
+shows only its generic «Kaut kas nogāja greizi» — no hint that a schema is at fault. Check
+the transitive closure of what a contract imports, not the file's own diff, before reusing a
+build.
+
+**Raising the offer window needs no restart.** `PlatformConfigRepository.forCity()` is a
+bare `select().limit(1)` with no cache, so
+`update platform_config set offer_timeout_seconds = 180;` reaches the next offer's wire
+`expiresAt` immediately. `observed`: the card's first frame read «Atlikušas 162 s».
+**Put it back to 20 afterwards** — nothing will tell you it is still raised. It does not
+distort the unclaimed alert: `alertUnclaimed` iterates `findAwaitingDispatch`, whose
+predicate is `status = 'requested'` (`rides.repository.ts:205`), and a ride with a live
+offer is at `offered`.
+
+**`psql -U postgres` does not work here.** The compose user is `taxi`
+(`docker-compose.yml:5`): `docker exec taxi-db-1 psql -U taxi -d taxi`.
+
+**The locale line needs a reboot.** `settings put system system_locales lv-LV` alone leaves
+the app in EN even after a force-stop and relaunch; `persist.sys.locale` only propagates on
+boot. `adb reboot` first, then the LV strings the §Steps cells quote actually appear
+(9 s to `sys.boot_completed` on a warm VM).
+
+### Driving TalkBack from `adb`
+
+TalkBack is on the `google_apis` image already — no Play Store image needed.
+
+```bash
+PKG=com.google.android.marvin.talkback
+adb shell settings put secure enabled_accessibility_services $PKG/$PKG.TalkBackService
+adb shell settings put secure accessibility_enabled 1
+# restore afterwards (an empty-string `put` fails with `Bad arguments`):
+adb shell settings delete secure enabled_accessibility_services
+adb shell settings put secure accessibility_enabled 0
+```
+
+**Its utterance log can be turned on without touching the Settings UI.** TalkBack's
+`LogUtils` gates on its own preference rather than on `Log.isLoggable`, so `setprop` does
+nothing — but `adb root` works on this image and the preference is just a file:
+
+```bash
+adb root
+printf '%s' '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<map><string name="pref_log_level">2</string></map>' > /tmp/tb.xml   # 2 = VERBOSE
+adb push /tmp/tb.xml /data/local/tmp/tb.xml
+adb shell "cp /data/local/tmp/tb.xml /data/data/$PKG/shared_prefs/${PKG}_preferences.xml \
+  && chown \$(stat -c '%u:%g' /data/data/$PKG) /data/data/$PKG/shared_prefs/${PKG}_preferences.xml"
+adb shell am force-stop $PKG   # then re-enable as above
+```
+
+Every spoken string then appears as
+`V talkback: SpeechControllerImpl: Speaking fragment text="…", locale=…, event=… subtype=…`.
+The key name `pref_log_level` is `observed` in the APK's own string table
+(`adb pull /product/app/talkback/talkback.apk`, `strings | grep -iE '^pref.*log'`).
+The file survives a reboot.
+
+**Read the `subtype`, not just the text.** `TYPE_ANNOUNCEMENT` is a deliberate
+`announceForAccessibility` call; `TYPE_VIEW_ACCESSIBILITY_FOCUSED` is a focus read;
+`TYPE_WINDOW_CONTENT_CHANGED` is the platform re-reading a node whose name changed. Counting
+utterances without splitting by subtype conflates a throttled announcement with a
+re-announcement, which is the whole of #263.
+
+**Moving accessibility focus:** `input keyevent KEYCODE_DPAD_DOWN` (or `KEYCODE_TAB`).
+`input swipe` is **not** recognised as a TalkBack gesture in any shape tried, and
+`input tap` **activates** the control rather than focusing it — the opposite of a finger
+under explore-by-touch. An agent tapping under TalkBack moves between screens instead of
+exploring one.
+
+### What still cannot be reached here
+
+- **Both push legs (steps 4 and 10's push half).** Blocked twice over: the api binds
+  `StubPushProvider`, which delivers nothing, **and** the app cannot register for FCM at all
+  — `app.json` declares no `googleServicesFile`, so `logcat` carries
+  `push: registration failed … Default FirebaseApp is not initialized` and the api logs
+  `dispatch.offer.push_skipped reason:'no_token'`. Both halves are #14's ground.
+- **Step 9's speed**, by the recipe in §"Injecting a position": `set-test-provider-location`
+  takes only `--location`, `--accuracy` and `--time`, and the app reads speed straight off
+  the fix (`location-task.ts:43-52`). Use `adb emu geo fix <lng> <lat> <alt> <sats>
+  <velocity-in-knots>` instead — the only mechanism here that carries a speed.
+  `derived`: `GLANCE_SPEED_MPS = 10/3.6` = 10 km/h = **5.40 knots** at 1 kn = 1.852 km/h, so
+  20 knots clears the threshold 3.7-fold.
+- **`uiautomator dump` on the offer card** — §Emulator route below records the same refusal
+  for the OTP resend timer; on this card the flash and the countdown never let it settle
+  either. `screencap` plus fixed coordinates is the only route.
+
 ## Emulator route
 
 An Android emulator was tested as a substitute runtime for this day ([#224](https://github.com/linardsb/taxi/issues/224)).
