@@ -102,6 +102,29 @@ describe('StatusScreen', () => {
     expect(screen.getByText(t('rider.status.matched'))).toBeTruthy();
   });
 
+  it('says the car is HERE at arrived, and speaks it (expected — #135)', async () => {
+    // #135 stopped the `driver_arrived` SMS for app bookings, so this line is
+    // the app rider's only arrival signal. Before it existed, `arrived` fell
+    // through to `rider.status.matched` and the screen showed the same text it
+    // had shown since acceptance — the rider at the kerb was told nothing, on
+    // screen or by SMS. The announce assertion is the half that matters: a
+    // rider with the phone in their pocket has to HEAR it.
+    Object.assign(mockStatus, { status: 'arrived' });
+    await render(<StatusScreen />);
+    expect(screen.getByText(t('rider.status.arrived'))).toBeTruthy();
+    expect(screen.queryByText(t('rider.status.matched'))).toBeNull();
+    expect(announce).toHaveBeenCalledWith(t('rider.status.arrived'));
+  });
+
+  it("still reads arriving as matched — that detail is #17's (edge)", async () => {
+    // Only `arrived` was carved out. `arriving` means the driver is en route,
+    // which the screen has no way to render honestly (no ETA, no position), so
+    // it stays at «Auto ir atrasts» rather than claiming knowledge it lacks.
+    Object.assign(mockStatus, { status: 'arriving' });
+    await render(<StatusScreen />);
+    expect(screen.getByText(t('rider.status.matched'))).toBeTruthy();
+  });
+
   it('shows a reconnecting line while the socket is down (edge)', async () => {
     Object.assign(mockStatus, { connected: false, joined: false });
     await render(<StatusScreen />);

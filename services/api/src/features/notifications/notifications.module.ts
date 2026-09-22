@@ -4,6 +4,7 @@ import { smsProviderFactory, SMS_PROVIDER } from '../auth';
 import { DriversModule } from '../drivers';
 import { GeoModule } from '../geo';
 import { PlatformConfigModule } from '../platform-config';
+import { PushModule } from '../push';
 import { RealtimeModule } from '../realtime';
 import { NotificationsRepository } from './notifications.repository';
 import { RideNotificationsService } from './ride-notifications.service';
@@ -33,11 +34,21 @@ import { TrackingService } from './tracking/tracking.service';
  * `RealtimeModule` supplies `RealtimeService` for the `dispatch:sms_failed`
  * console alert (#18) — mirroring how `DispatchModule` gets its emits.
  *
+ * `PushModule` supplies `PUSH_PROVIDER` for #17's rider arrival push — the
+ * same provider-only slice the drivers nudge uses, imported rather than
+ * re-bound so one `PUSH_PROVIDER=expo` switch covers both senders.
+ *
  * No `imports` entry for `KV_STORE` (the view throttle): `KvModule` is
  * `@Global()`.
  */
 @Module({
-  imports: [DriversModule, GeoModule, PlatformConfigModule, RealtimeModule],
+  imports: [
+    DriversModule,
+    GeoModule,
+    PlatformConfigModule,
+    PushModule,
+    RealtimeModule,
+  ],
   controllers: [TrackingController],
   providers: [
     RideNotificationsService,

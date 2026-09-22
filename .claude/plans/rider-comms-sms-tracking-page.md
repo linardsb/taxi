@@ -365,7 +365,7 @@ The Manual E2E task above; plus `curl -s localhost:<API_PORT>/track/<token>` for
 - [ ] AC #1 — 100% of phone bookings produce confirmation + tracking-link SMS ≤ 30 s from booking save (link rides IN the confirmation SMS, sent synchronously-adjacent at creation; measured via `ride.notifications.sms_sent` logs vs `rides.created_at`)
 - [ ] AC #2 — page shows plate + driver + live position for the full active lifecycle, then a terminal "completed" state
 - [ ] AC #3 — ≥1 expected + 1 edge (expired token) + 1 failure (SMS provider down → booking still succeeds, alarm to console) test
-- [ ] SMS budget policy: 2 SMS/ride app channel (confirmed + arrived), 3 phone channel (+ driver-assigned with link) — asserted in specs
+- [ ] SMS budget policy: 2 SMS/ride app channel (confirmed + arrived), 3 phone channel (+ driver-assigned with link) — asserted in specs — **SUPERSEDED for the app channel by #135 (2026-09-22): 1 SMS/ride app channel (confirmed only); the arrival moment moved in-app. Phone stays at 3.**
 - [ ] No rider PII on the page beyond nothing-at-all (page shows only driver/vehicle/position/ETA/dispatch phone — the ticket permits first name; we expose none)
 - [ ] All strings via the new shared catalog; theme via `themeCssVars()`; ≥44 px targets; visible focus; aria-live status
 - [ ] `pnpm turbo run typecheck lint test build --force` green

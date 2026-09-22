@@ -325,7 +325,7 @@ describe('tracking + ride SMS (integration)', () => {
       expect((await view(token)).state).toBe(step);
     }
 
-    // The arrival SMS goes to every channel (AC #1).
+    // The arrival SMS goes to PHONE bookings only since #135 (AC #1).
     await waitForSms(p(50), 3);
     expect(smsTo(p(50))[2]).toContain(d.plate);
 
@@ -351,7 +351,7 @@ describe('tracking + ride SMS (integration)', () => {
     expect(smsTo(p(50))).toHaveLength(3);
   });
 
-  it('app booking: 2 SMS, no link, no driver_assigned (edge — budget row)', async () => {
+  it('app booking: 1 SMS, no link, no status SMS — the arrival arrives as a PUSH (edge — budget row, AC #1, #17)', async () => {
     const d = await onlineDriver(2, {
       lat: CENTRE_PICKUP.location.lat + 0.001,
       lng: CENTRE_PICKUP.location.lng,
@@ -370,6 +370,18 @@ describe('tracking + ride SMS (integration)', () => {
     await waitForSms(p(51), 1);
     expect(smsTo(p(51))[0]).not.toContain('/t/');
 
+    // #17: the rider registers their phone the way the app does on every
+    // signed-in start. Done through the real route rather than a direct
+    // column write, so this case also covers `PUT /riders/me/push-token`
+    // end-to-end — guard, role, zod pipe and all.
+    const pushToken = 'ExponentPushToken[integration00000051]';
+    await http
+      .put('/riders/me/push-token')
+      .set('authorization', r.auth)
+      .send({ token: pushToken })
+      .expect(204);
+    ctx.push.sent.length = 0;
+
     await acceptBy(ride.id, d.auth);
     for (const step of ['arriving', 'arrived'] as const) {
       await http
@@ -378,16 +390,43 @@ describe('tracking + ride SMS (integration)', () => {
         .expect(201);
     }
 
-    // arrived SMS arrives; driver_assigned never does.
-    await waitForSms(p(51), 2);
+    // #135: the arrival SMS is the app rider's no longer — `/book/status`
+    // shows it while the app is open — so the confirmation is the whole of
+    // their SMS budget. `waitForSms` polls for AT LEAST N and so cannot
+    // assert an absence; what replaces it has to settle instead.
+    //
+    // THE 100 ms IS A HEURISTIC, NOT A FENCE, and nothing here can make it
+    // one: `RideTransitionService.emitStatus` dispatches the notification
+    // path detached (`void this.notifications.onStatus(...)`, :131), so the
+    // 201 above does not await the send. A slow enough runner would read an
+    // as-yet-undelivered second SMS as an absence. The REAL guard against a
+    // weakened guard is `ride-notifications.service.spec.ts:296-303`, where
+    // `onStatus` is awaited against an in-memory provider and the same
+    // absence is deterministic. This case is the end-to-end companion.
+    //
+    // The `view()` round trip is deliberately ahead of the count rather than
+    // after it: it is a real request through the same app, so it settles
+    // strictly more than 100 ms of idle. It also asserts what it says — the
+    // app rider's ride stays trackable, which #17's share-trip reuses.
+    expect((await view(ride.trackingToken!)).state).toBe('arrived');
     await new Promise((resolve) => setTimeout(resolve, 100));
     const bodies = smsTo(p(51));
-    expect(bodies).toHaveLength(2);
-    expect(bodies[1]).toContain(d.plate);
-    expect(bodies[1]).not.toContain('/t/');
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).not.toContain('/t/');
+    // The survivor is the CONFIRMATION, not the arrival: only the two
+    // driver-details templates carry a plate.
+    expect(bodies[0]).not.toContain(d.plate);
 
-    // The app rider's ride is still trackable — #17's share-trip reuses this.
-    expect((await view(ride.trackingToken!)).state).toBe('arrived');
+    // #17: what the rider DOES get at arrival. Exactly one push — `accepted`
+    // is deliberately silent for app riders, so a second here would mean the
+    // assignment hop started pushing too.
+    const pushes = ctx.push.sent.filter((s) => s.token === pushToken);
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0]!.message.body).toContain(d.plate);
+    expect(pushes[0]!.message.data).toEqual({
+      kind: 'ride_arrived',
+      rideId: ride.id,
+    });
   });
 
   it('terminal ride outliving the 24 h grace answers 410 (edge — AC #3)', async () => {

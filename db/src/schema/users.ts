@@ -22,6 +22,17 @@ export const users = pgTable('users', {
    */
   paymentCustomerRef: text('payment_customer_ref'),
   paymentInstrumentRef: text('payment_instrument_ref'),
+  /**
+   * The rider's Expo push token (#17), NULL until their app registers one and
+   * NULLed again when Expo answers `device_not_registered`. Same shape as
+   * `drivers.push_token`, and deliberately a second column rather than a shared
+   * one: a driver's token belongs to the driver row that `drivers` owns, and
+   * one person can hold both roles on two phones.
+   *
+   * Never on `userSchema` — a provider handle on the wire user object is how it
+   * ends up in a log, exactly as for the two payment refs above.
+   */
+  pushToken: text('push_token'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
