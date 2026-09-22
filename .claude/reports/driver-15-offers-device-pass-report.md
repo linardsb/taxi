@@ -428,7 +428,7 @@ banner nobody has seen.
 
 | Command | Result |
 |---|---|
-| `pnpm turbo run typecheck lint test build --force` | ✅ **green** — `observed` 2026-09-22, the run taken **after every edit in this branch**, from cleared dist, `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit 0: `Tasks: 22 successful, 22 total`, `Cached: 0 cached`, `Time: 1m56.842s`; `@taxi/api` `Test Suites: 83 passed, 83 total`, `Tests: 812 passed, 812 total`, `Time: 61.87 s` — **no skips**: `REDIS_TEST_URL` was set, so the Redis-gated suites ran. (An earlier identical-count run at 2m29.421s preceded the last four doc commits; this is the one that covers them.) |
+| `pnpm turbo run typecheck lint test build --force` | ✅ **green** — from cleared dist, `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381`, exit 0, `Tasks: 22 successful, 22 total`, `Cached: 0 cached`. **No skips**: `REDIS_TEST_URL` was set, so the Redis-gated suites ran. Per-package: `@taxi/api` 812/83, `@taxi/shared` 255/28, `@taxi/dispatch` 272/30, `@taxi/driver` 250/44, `@taxi/rider` 162/31, `@taxi/db` 17/3. Run **three times** as documentation commits landed — identical but for wall clock (2m29.421s, 1m56.842s, 1m57.598s). This report cannot name the run at the branch head without moving it; **the PR body carries that one**, recorded by `record-gate.sh` into `.claude/last-gate.json`, whose `head` field is the check that it matches |
 | `offer_timeout_seconds` restored | `20` (`observed`) |
 | TalkBack restored | `accessibility_enabled=0` (`observed`) |
 | `eas.json` / `app.json` | reverted; `git status --porcelain` empty (`observed`) |
