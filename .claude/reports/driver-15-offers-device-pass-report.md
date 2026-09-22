@@ -155,8 +155,77 @@ Consequence for the run, stated before it starts so no ✅ implies more than it 
   card, and that a cold-start tap hydrates the card from the payload. Those are the halves
   of steps 4 and 10 that the device is supposed to answer, and they stay **unrun**.
 
-Binding the real Expo provider would need an FCM credential and a push registration the
-emulator has no account for; that is #14's ground, not #15's.
+Binding the real Expo provider would not rescue it either, and this is the stronger half:
+**the app cannot obtain a push token at all on this build.** `observed` 2026-09-22 in
+`logcat`, on first launch:
+
+```
+W ReactNativeJS: 'push: registration failed', 'Unable to get Firebase Messaging instance.
+Did you configure `googleServicesFile` path in app config? ... Default FirebaseApp is not
+initialized in this process lv.saktacab.driver.'
+```
+
+`app.json` declares no `googleServicesFile` and the repo carries no `google-services.json`,
+so there is no FCM sender and no token to register. The push legs are therefore blocked on
+**two independent counts** — the api binds a stub that delivers nothing, and the device has
+no push token to deliver to. Either alone would be enough. Setting up FCM credentials is
+#14's ground (it owns the offline nudge), not #15's.
+
+This was found on #224's APK while the #15 build was still queued, so it is a property of
+the app configuration rather than of either build.
+
+### The harness was validated on #224's APK while the build queued
+
+`observed` 2026-09-22: #224's `preview` APK (`bcd04c21`, artifact still live) carries
+`http://10.0.2.2:3001` and was installed on `sakta224` to prove the route end to end before
+the #15 build landed. It launched, restored its session from #224's run, and rendered home
+with «Today: €0.00 · Rides: 0».
+
+That string is itself the proof the api was reached: `earningsBody()` returns `null` (a
+spinner) while loading and the em dash `'—'` on a failed first load, so a **composed**
+string means `GET /drivers/me/earnings/today` returned a body.
+
+**No #15 step result is taken from this APK.** It predates `packages/shared`'s moves
+(#245 `5e45d49`, #135 `001d1c7`) and is here only to de-risk the harness — that the
+emulator reaches the api, that the session survives, and that the app starts without a
+crash. Screenshots: `pass-evidence-harness-01.png` (splash), `-02.png` (home).
+
+### Two setup corrections the runbook owes its next reader
+
+**1. The locale line needs a reboot.** `driver-device-day.md:548` says to run
+`adb shell settings put system system_locales lv-LV` "first if you want the LV strings".
+`observed` 2026-09-22: that alone is **not** sufficient. With `system_locales=lv-LV` and
+`persist.sys.locale=lv-LV` both set and the app force-stopped and relaunched, the dump still
+read EN:
+
+```
+'Go online'   'Earnings. Today: €0.00 · Rides: 0'   'Vehicle: EMU224'   'Sign out'
+```
+
+After `adb reboot` (booted in 9 s from the already-warm VM), the same dump read LV:
+
+```
+'Iet tiešsaistē'   'Ieņēmumi. Šodien: €0.00 · Braucieni: 0'   'Auto: EMU224'   'Iziet'
+```
+
+`ro.product.locale` stays `en-US` throughout and is not the lever. Restarting the app is not
+enough because `persist.sys.locale` only propagates on boot.
+
+**2. The `content-desc` collapse is partial, and the dump alone cannot settle it.** The
+plan's T6 asks to assert that "exactly one node carries the composed name, and the
+`EarningsCard`'s child `Text` is **not** separately exposed". `observed` on the home dump,
+the two halves come apart:
+
+```
+class=android.widget.Button   text=''                          desc='Ieņēmumi. Šodien: €0.00 · Braucieni: 0'
+class=android.widget.TextView text='Šodien: €0.00 · Braucieni: 0'  desc=''
+```
+
+Exactly one node carries the **composed name** — that half holds. But the child `TextView`
+**is still present in the accessibility tree** with its own text, so "not separately
+exposed" is not established by the dump. Whether TalkBack gives it its own focus stop is a
+question about focus order, which `content-desc` cannot answer and T7's log can. Recorded
+here so the ✅ on the name leg is not read as covering the focus leg.
 
 ## Deviations from the plan
 
