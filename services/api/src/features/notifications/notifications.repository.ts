@@ -93,6 +93,45 @@ export class NotificationsRepository {
   }
 
   /**
+   * The rider's push token and language (#17). Separate from `riderContact`
+   * rather than folded into it: the SMS path reads a phone and must never
+   * carry a provider handle it has no use for, and the push path reads a
+   * token and never needs the phone. One row either way.
+   *
+   * `pushToken` is NULL until the rider app registers one — an ordinary state,
+   * not an error. The caller logs `no_token` and moves on.
+   */
+  async riderPushTarget(
+    riderId: string,
+  ): Promise<{ pushToken: string | null; language: Language } | undefined> {
+    const [row] = await this.db
+      .select({ pushToken: users.pushToken, language: users.language })
+      .from(users)
+      .where(eq(users.id, riderId))
+      .limit(1);
+    if (!row) return undefined;
+    return {
+      pushToken: row.pushToken,
+      language: storedLanguageSchema.parse(row.language),
+    };
+  }
+
+  /**
+   * Writes the rider's token, or NULLs it when Expo says the device is gone.
+   * The notifications slice owns the NULLing because it owns the send that
+   * learns the token is dead; the riders slice owns the registration write.
+   */
+  async setRiderPushToken(
+    riderId: string,
+    token: string | null,
+  ): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ pushToken: token })
+      .where(eq(users.id, riderId));
+  }
+
+  /**
    * Driver name/photo plus the plate the rider should match at the kerb —
    * read off the vehicle stamped on the ride at assignment (#86), never
    * re-derived from the driver's current fleet.

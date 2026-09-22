@@ -445,7 +445,12 @@ export interface TestApp {
   queue: InMemoryDispatchQueueStore;
   /** The SAME instance the app resolves — verified in `createTestApp`. */
   payments: RecordingPaymentsProvider;
-  /** What the offline nudge (#14) sent; `PushModule` exports the token, so the swap is sanctioned. */
+  /**
+   * What the offline nudge (#14), the offer push (#15) and the rider arrival
+   * push (#17) sent; `PushModule` exports the token, so the swap is
+   * sanctioned. Shared across senders — filter by token when a case cares
+   * which phone it went to.
+   */
   push: RecordingPushProvider;
   db: Db;
 }

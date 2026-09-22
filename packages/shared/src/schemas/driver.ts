@@ -70,17 +70,10 @@ export const driverMeSchema = z.object({
 });
 export type DriverMe = z.infer<typeof driverMeSchema>;
 
-/**
- * `ExponentPushToken[...]` (classic) or `ExpoPushToken[...]` — both are minted
- * by `getExpoPushTokenAsync` (#14). Deliberately NOT on `driverProfileSchema`:
- * a provider handle on the wire profile is how it ends up in a log (the
- * `users.payment_customer_ref` precedent in db/src/schema/users.ts).
- */
-export const expoPushTokenSchema = z
-  .string()
-  .regex(/^Expo(nent)?PushToken\[[A-Za-z0-9_-]{1,64}\]$/);
-export const pushTokenUpdateSchema = z.object({ token: expoPushTokenSchema });
-export type PushTokenUpdate = z.infer<typeof pushTokenUpdateSchema>;
+// `expoPushTokenSchema` / `pushTokenUpdateSchema` moved to `schemas/push-token.ts`
+// at #17's rider arrival push — a push token belongs to a phone, not to a role,
+// and the rider slice registers the same shape. Both still reach every consumer
+// through the `@taxi/shared` barrel, so no import moved.
 
 /**
  * GET /drivers/me/earnings/today — the home card (#14). `day` is in the city's

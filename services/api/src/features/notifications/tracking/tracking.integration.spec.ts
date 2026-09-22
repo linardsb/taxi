@@ -351,7 +351,7 @@ describe('tracking + ride SMS (integration)', () => {
     expect(smsTo(p(50))).toHaveLength(3);
   });
 
-  it('app booking: 1 SMS, no link, no driver_assigned, no driver_arrived (edge — budget row, AC #1)', async () => {
+  it('app booking: 1 SMS, no link, no status SMS — the arrival arrives as a PUSH (edge — budget row, AC #1, #17)', async () => {
     const d = await onlineDriver(2, {
       lat: CENTRE_PICKUP.location.lat + 0.001,
       lng: CENTRE_PICKUP.location.lng,
@@ -369,6 +369,18 @@ describe('tracking + ride SMS (integration)', () => {
 
     await waitForSms(p(51), 1);
     expect(smsTo(p(51))[0]).not.toContain('/t/');
+
+    // #17: the rider registers their phone the way the app does on every
+    // signed-in start. Done through the real route rather than a direct
+    // column write, so this case also covers `PUT /riders/me/push-token`
+    // end-to-end — guard, role, zod pipe and all.
+    const pushToken = 'ExponentPushToken[integration00000051]';
+    await http
+      .put('/riders/me/push-token')
+      .set('authorization', r.auth)
+      .send({ token: pushToken })
+      .expect(204);
+    ctx.push.sent.length = 0;
 
     await acceptBy(ride.id, d.auth);
     for (const step of ['arriving', 'arrived'] as const) {
@@ -404,6 +416,17 @@ describe('tracking + ride SMS (integration)', () => {
     // The survivor is the CONFIRMATION, not the arrival: only the two
     // driver-details templates carry a plate.
     expect(bodies[0]).not.toContain(d.plate);
+
+    // #17: what the rider DOES get at arrival. Exactly one push — `accepted`
+    // is deliberately silent for app riders, so a second here would mean the
+    // assignment hop started pushing too.
+    const pushes = ctx.push.sent.filter((s) => s.token === pushToken);
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0]!.message.body).toContain(d.plate);
+    expect(pushes[0]!.message.data).toEqual({
+      kind: 'ride_arrived',
+      rideId: ride.id,
+    });
   });
 
   it('terminal ride outliving the 24 h grace answers 410 (edge — AC #3)', async () => {

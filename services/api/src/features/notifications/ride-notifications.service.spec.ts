@@ -3,6 +3,9 @@ import {
   SMS_DRIVER_NAME_MAX_CHARS,
   SMS_ETA_MAX_DISPLAY_MINUTES,
   TRACKING_LINK_HOST_MAX_CHARS,
+  type PushDeliveryResult,
+  type PushMessage,
+  type PushProvider,
   type Ride,
   type RideStatus,
   type SmsProvider,
@@ -22,6 +25,8 @@ const RIDER_ID = '99999999-8888-4777-8666-555555555555';
 const DRIVER_ID = 'bb1f2c3e-4b5a-6c7d-8e9f-0a1b2c3d4e12';
 const VEHICLE_ID = 'cc2e3d4f-5a6b-4c7d-8e9f-1b2c3d4e5f01';
 const TOKEN = 'Ab3_-6qhTGplK0vw'; // 16 base64url chars, post-#136
+/** A rider's registered Expo token (#17) — `expoPushTokenSchema`'s shape. */
+const PUSH_TOKEN = 'ExponentPushToken[rider0000000000000]';
 const BASE_URL = 'http://localhost:3000';
 /** What `trackingLink` emits from BASE_URL: no scheme (#136). */
 const SMS_HOST = 'localhost:3000';
@@ -89,11 +94,19 @@ function build(
      * make every other case here stop representing what developers run.
      */
     baseUrl?: string;
+    /** The rider's stored Expo token; null = registered none (#17). */
+    riderPushToken?: string | null;
+    /** What the provider answers. Default: delivered. */
+    pushResult?: PushDeliveryResult;
+    pushThrows?: boolean;
   } = {},
 ) {
   const calls: string[] = [];
   const sent: { phone: string; body: string }[] = [];
   const emitted: { event: string; payload: unknown }[] = [];
+  const pushed: { token: string; message: PushMessage }[] = [];
+  /** Every `setRiderPushToken` write, so a dead-token NULLing is observable. */
+  const tokenWrites: (string | null)[] = [];
 
   const sms = {
     send: (phone: string, body: string) => {
@@ -126,6 +139,23 @@ function build(
         plate: options.plate ?? 'AB-1234',
       });
     },
+    riderPushTarget: () => {
+      calls.push('repo.riderPushTarget');
+      return Promise.resolve({
+        // `undefined` means "not specified" — the useful default is a rider
+        // who HAS registered, since that is the path #17 exists for.
+        pushToken:
+          options.riderPushToken === undefined
+            ? PUSH_TOKEN
+            : options.riderPushToken,
+        language: options.language ?? 'lv',
+      });
+    },
+    setRiderPushToken: (_riderId: string, token: string | null) => {
+      calls.push('repo.setRiderPushToken');
+      tokenWrites.push(token);
+      return Promise.resolve();
+    },
   } as unknown as NotificationsRepository;
 
   const locations = {
@@ -154,17 +184,29 @@ function build(
     DEFAULT_CITY_ID: '00000000-0000-4000-8000-000000000001',
   } as Env;
 
+  const push = {
+    send: (token: string, message: PushMessage) => {
+      calls.push('push.send');
+      if (options.pushThrows) return Promise.reject(new Error('expo down'));
+      pushed.push({ token, message });
+      return Promise.resolve(options.pushResult ?? { ok: true });
+    },
+  } as unknown as PushProvider;
+
   return {
     service: new RideNotificationsService(
       sms,
       repository,
       locations,
       realtime,
+      push,
       env,
     ),
     sent,
     calls,
     emitted,
+    pushed,
+    tokenWrites,
   };
 }
 
@@ -298,15 +340,99 @@ describe('RideNotificationsService.onStatus', () => {
     expect(calls).toEqual(['repo.rideById']);
   });
 
-  it('arrived + app channel → NO driver_arrived SMS (expected — AC #1)', async () => {
-    const { service, sent, calls } = build({
+  it('arrived + app channel → NO SMS, a PUSH instead (expected — AC #1, #17)', async () => {
+    const { service, sent, pushed, calls } = build({
       details: notifiable({ status: 'arrived', bookingChannel: 'app' }),
     });
 
     await service.onStatus(transitioned('arrived'), 'arriving');
 
+    // The segment #135 saved stays saved — the push replaces the SMS, it does
+    // not join it.
     expect(sent).toHaveLength(0);
-    expect(calls).toEqual(['repo.rideById']);
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0]!.token).toBe(PUSH_TOKEN);
+    expect(pushed[0]!.message.body).toContain('AB-1234');
+    // The tap has to land on THIS ride, so the id travels in `data`.
+    expect(pushed[0]!.message.data).toEqual({
+      kind: 'ride_arrived',
+      rideId: RIDE_ID,
+    });
+    // Placement, still pinned — but the arrival case now legitimately reads
+    // two more rows, because a push needs a token and a plate. It is the
+    // SMS path's reads it must not do: no `riderContact` (no phone is
+    // needed) and no `locations.positionOf` (no ETA in an arrival message).
+    expect(calls).toEqual([
+      'repo.rideById',
+      'repo.riderPushTarget',
+      `repo.driverCard(${VEHICLE_ID})`,
+      'push.send',
+    ]);
+  });
+
+  it('arrived + app channel + NO registered token → nothing at all, no throw (edge — #17)', async () => {
+    // The ordinary state for a rider who declined the permission, or whose
+    // app predates registration. Not an alarm, and not a reason to fall back
+    // to the SMS — that would re-spend the segment on every un-registered
+    // rider, which is most of them on day one.
+    const { service, sent, pushed, calls } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'app' }),
+      riderPushToken: null,
+    });
+
+    await service.onStatus(transitioned('arrived'), 'arriving');
+
+    expect(sent).toHaveLength(0);
+    expect(pushed).toHaveLength(0);
+    // Stops at the token read — no plate lookup for a push that cannot go.
+    expect(calls).toEqual(['repo.rideById', 'repo.riderPushTarget']);
+  });
+
+  it('a dead device NULLs the stored token, so the next arrival skips early (edge — #17)', async () => {
+    const { service, tokenWrites } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'app' }),
+      pushResult: { ok: false, reason: 'device_not_registered' },
+    });
+
+    await service.onStatus(transitioned('arrived'), 'arriving');
+
+    expect(tokenWrites).toEqual([null]);
+  });
+
+  it('a transient push failure leaves the token alone (edge — #17)', async () => {
+    // `provider_error` is everything transient AND everything unrecognised
+    // (the seam's own words). Forgetting a good token on an Expo 500 would
+    // silently unsubscribe a rider from every future arrival.
+    const { service, pushed, tokenWrites } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'app' }),
+      pushResult: { ok: false, reason: 'provider_error' },
+    });
+
+    await service.onStatus(transitioned('arrived'), 'arriving');
+
+    // Asserted first, and not decoration: without it this case is green on
+    // code that never pushes at all, since "no send" also writes no token.
+    expect(pushed).toHaveLength(1);
+    expect(tokenWrites).toEqual([]);
+  });
+
+  it('a THROWING push provider never reaches the caller (failure — #17)', async () => {
+    // `emitStatus` fires this path detached (`void this.notifications...`),
+    // so a rejection here would be an unhandled rejection, which crashes the
+    // process under Node's default. The arrival transition itself has already
+    // committed and must not be affected either way.
+    const { service, sent, calls } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'app' }),
+      pushThrows: true,
+    });
+
+    await expect(
+      service.onStatus(transitioned('arrived'), 'arriving'),
+    ).resolves.toBeUndefined();
+    expect(sent).toHaveLength(0);
+    // Same reason as the case above: a `resolves` assertion is satisfied by
+    // code that does nothing. This pins that the throw was actually reached.
+    expect(calls).toContain('push.send');
   });
 
   it('arrived + phone channel → driver_arrived SMS, unchanged (expected — AC #2)', async () => {

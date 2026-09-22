@@ -6,6 +6,7 @@ import {
   type RideStatus,
   SMS_ETA_MAX_DISPLAY_MINUTES,
   type SmsKind,
+  type PushProvider,
   type SmsProvider,
   smsSegments,
   trackingLink,
@@ -13,6 +14,7 @@ import {
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { maskPhone, SMS_PROVIDER } from '../auth';
 import { DRIVER_LOCATION_STORE, type DriverLocationStore } from '../drivers';
+import { PUSH_PROVIDER } from '../push';
 import { RealtimeService } from '../realtime';
 import type { TransitionedRide } from '../rides';
 import { estimateEtaMinutes } from './notifications.policy';
@@ -54,6 +56,7 @@ export class RideNotificationsService {
     @Inject(DRIVER_LOCATION_STORE)
     private readonly locations: DriverLocationStore,
     private readonly realtime: RealtimeService,
+    @Inject(PUSH_PROVIDER) private readonly push: PushProvider,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
@@ -115,11 +118,20 @@ export class RideNotificationsService {
       if (!details || !details.driverId) return;
       // An app rider sees both moments on `/book/status` while the app is
       // OPEN — `accepted` reads «Auto ir atrasts», `arrived` «Auto ir klāt»
-      // (`status-screen.tsx` statusKey) — so neither message is theirs
-      // (#135, SMS volume lever 1). Backgrounded they see neither: rider
-      // push is #17 and has not shipped, which is the regression AC #5
-      // prices. Phone bookings (#63) keep everything — SMS is their only
-      // channel.
+      // (`status-screen.tsx` statusKey) — so neither SMS is theirs (#135,
+      // SMS volume lever 1). Phone bookings (#63) keep everything — SMS is
+      // their only channel.
+      //
+      // BACKGROUNDED is what #17's push closes. The screen is a foreground
+      // signal, so before this branch an app rider at the kerb with the phone
+      // in their pocket was told nothing at all — the regression #135's AC #5
+      // priced and deliberately shipped behind a human decision. The arrival
+      // push is the SMS's replacement, not an addition: one message either
+      // way, and the app channel still costs no SMS segment.
+      //
+      // `driver_assigned` stays silent for app riders. It is not a duplicate
+      // of nothing — the rider is still IN the app, having just booked — and
+      // a push per status hop is how an alarm budget gets spent on noise.
       //
       // `=== 'app'` rather than `!== 'phone'`: a channel we cannot vouch for
       // gets the SMS (fail open), which is also the AC's "channel unknown →
@@ -128,7 +140,10 @@ export class RideNotificationsService {
       // tracking link from any channel that is not `phone`. Whoever adds a
       // third channel has to settle both, and a `web` rider would otherwise
       // be denied the link at booking and handed it at assignment.
-      if (details.bookingChannel === 'app') return;
+      if (details.bookingChannel === 'app') {
+        if (kind === 'driver_arrived') await this.pushArrival(details);
+        return;
+      }
 
       const rider = await this.repository.riderContact(ride.riderId);
       if (!rider) return;
@@ -165,6 +180,81 @@ export class RideNotificationsService {
       );
     } catch (error) {
       this.logSendFailed(ride.id, kind, error, from);
+    }
+  }
+
+  /**
+   * The app rider's arrival push (#17) — the replacement for the SMS #135
+   * stopped, and the ONLY signal that reaches a backgrounded rider.
+   *
+   * NEVER THROWS, like every other path in this class: `onStatus` already
+   * wraps its body, and this is called from inside that `try`, but a push is
+   * best-effort and must not cost the rider anything else if Expo is down. A
+   * failure here is a log line and nothing more — there is no SMS fallback,
+   * deliberately: falling back would re-spend the segment #135 saved on every
+   * Expo hiccup, and the rider still has the screen when they open the app.
+   *
+   * `no_token` is the ORDINARY case, not an alarm — a rider who declined the
+   * permission, or whose app predates registration, simply has none.
+   */
+  private async pushArrival(details: NotifiableRide): Promise<void> {
+    const at = new Date().toISOString();
+    try {
+      const target = await this.repository.riderPushTarget(details.riderId);
+      if (!target?.pushToken) {
+        this.logger.log({
+          event: 'ride.notifications.push_skipped',
+          rideId: details.id,
+          kind: 'driver_arrived',
+          reason: 'no_token',
+          at,
+        });
+        return;
+      }
+      // The plate, read the same way the SMS read it — off the vehicle
+      // stamped on the ride at assignment (#86), never the driver's current
+      // fleet. `driverId` is non-null here: `onStatus` returned above if not.
+      const card = await this.repository.driverCard(
+        details.driverId!,
+        details.vehicleId,
+      );
+      const result = await this.push.send(target.pushToken, {
+        title: formatMessage(target.language, 'push.rider_arrived_title'),
+        body: formatMessage(target.language, 'push.rider_arrived_body', {
+          plate: card.plate ?? '—',
+        }),
+        // Strings only — Expo forwards `data` verbatim. The ride id is what
+        // the app needs to route a tap to the right `/book/status`.
+        data: { kind: 'ride_arrived', rideId: details.id },
+      });
+      if (result.ok) {
+        this.logger.log({
+          event: 'ride.notifications.push_sent',
+          rideId: details.id,
+          kind: 'driver_arrived',
+          language: target.language,
+          at,
+        });
+        return;
+      }
+      if (result.reason === 'device_not_registered') {
+        await this.repository.setRiderPushToken(details.riderId, null);
+      }
+      this.logger.warn({
+        event: 'ride.notifications.push_failed',
+        rideId: details.id,
+        kind: 'driver_arrived',
+        reason: result.reason,
+        at,
+      });
+    } catch (error) {
+      this.logger.warn({
+        event: 'ride.notifications.push_failed',
+        rideId: details.id,
+        kind: 'driver_arrived',
+        reason: error instanceof Error ? error.message : 'unknown',
+        at,
+      });
     }
   }
 
