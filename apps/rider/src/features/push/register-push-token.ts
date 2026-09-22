@@ -1,3 +1,4 @@
+import { PUSH_CHANNEL_ID } from '@taxi/shared';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { AppState, Platform } from 'react-native';
@@ -10,10 +11,12 @@ export type PushRegistration = 'registered' | 'no_project' | 'unavailable';
  * The Android channel the arrival push lands on — `channelId` in the api's
  * Expo request (`expo-push.provider.ts`). The api sends one channel id for
  * every push it makes, so this name is a CONTRACT with it, not a local
- * choice: rename it here and Android silently drops the notification into
- * the default channel with default importance.
+ * choice: drift here and Android silently drops the notification into the
+ * default channel with default importance. It therefore re-exports the seam's
+ * `PUSH_CHANNEL_ID` rather than repeating the literal — which is what the api
+ * and the driver app each used to do too.
  */
-export const RIDE_CHANNEL = 'presence';
+export const RIDE_CHANNEL = PUSH_CHANNEL_ID;
 
 /**
  * Mints the phone's Expo push token and registers it (#17). Runs on every
