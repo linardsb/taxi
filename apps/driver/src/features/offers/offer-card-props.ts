@@ -95,8 +95,14 @@ export function offerCardProps(
     // accept instruction is appended LAST so nobody is told to tap before
     // hearing whether the fare is cash. Glance mode hides the addresses
     // visually only; audio keeps them, because speed is not blindness.
+    //
+    // No `seconds` in here (#263): a name that changes every tick fires a
+    // content-changed event every tick, and TalkBack re-reads all seven
+    // segments on each one — which saturated the speech queue and starved the
+    // throttled countdown announcements in `OfferCard`. Time left reaches the
+    // audio channel through those announcements only.
     a11yLabel: [
-      t('driver.offer.a11y_card', { amount: fare, net, seconds }),
+      t('driver.offer.a11y_card', { amount: fare, net }),
       payment,
       pickup,
       destination,

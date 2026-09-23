@@ -286,7 +286,7 @@ export const lv = {
   'driver.home.status_offline': 'Bezsaistē',
   // Label form («Braucieni: 7»), not «7 braucieni» — sidesteps LV plural
   // forms; logged in .claude/references/ui-decisions.md.
-  'driver.home.today': 'Šodien: {amount} · Braucieni: {rides}',
+  'driver.home.today': 'Norēķināts šodien: {amount} · Braucieni: {rides}',
   'driver.home.last_fix': 'Pēdējā pozīcija pirms {seconds} s',
   'driver.home.queued': 'Rindā: {count}',
   'driver.home.pill_live': 'Tiešraide',
@@ -336,7 +336,7 @@ export const lv = {
   'driver.offer.revoked_expired': 'Piedāvājuma laiks beidzās',
   'driver.offer.revoked_cancelled': 'Brauciens tika atcelts',
   'driver.offer.a11y_card':
-    'Jauns brauciens. Cena {amount}, jūs saņemat {net}. Atlikušas {seconds} sekundes.',
+    'Jauns brauciens. Cena {amount}, jūs saņemat {net}.',
   // Kept separate and appended LAST: the card is one accessible node, so the
   // instruction must not land before the fare, payment method and addresses.
   'driver.offer.a11y_accept': 'Pieskarieties, lai pieņemtu.',
@@ -363,7 +363,7 @@ export const lv = {
   'driver.earnings.receipt_paid': 'Pasažieris samaksāja: {amount}',
   'driver.earnings.receipt_commission': 'Sakta ({pct}%): {amount}',
   'driver.earnings.receipt_net': 'Jūs saņemat: {amount}',
-  'driver.earnings.none_yet': 'Šodien vēl nav pabeigtu braucienu',
+  'driver.earnings.none_yet': 'Šodien vēl nav norēķinātu braucienu',
   'driver.action.earnings': 'Ieņēmumi',
   'driver.error.offer_not_pending': 'Šis piedāvājums vairs nav aktīvs',
   'driver.error.ride_not_accepted': 'Brauciens vairs nav statusā «pieņemts»',
