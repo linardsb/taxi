@@ -563,4 +563,4 @@ State comes from the #15 device-pass recipe, `.claude/plans/driver-15-offers-dev
   - a case pinning that `toDriverRide` leaves the other ride fields untouched.
   - The set pins are in `schemas-driver-ride.test.ts`.
 - **The AC6 revert probe** spread a literal `rider` key into `findForRider`'s return, instead of calling `toDriverRide`. That is equivalent for a key-presence assertion. Result: RED, then GREEN.
-- **AC8 (Level 4) is owed.** It needs an EAS `preview` APK of this branch, which runs on the user's Expo account and is the user's call.
+- **AC8 (Level 4)** ran on `sakta224` with an EAS `preview` APK of this branch: steps 1–5 pass, step 6 is owed by #257. Detail in the report's D8.

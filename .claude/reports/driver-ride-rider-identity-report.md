@@ -1,6 +1,6 @@
 # Implementation Report — the driver's ride read carries rider identity (#261)
 
-**Plan**: `.claude/plans/driver-ride-rider-identity.md`   **Branch**: `feature/driver-ride-rider-identity-261` (worktree `~/taxi-worktrees/wt-261`)   **Status**: PARTIAL — code, tests and gate complete; AC8 (Level 4 on `sakta224`) not run
+**Plan**: `.claude/plans/driver-ride-rider-identity.md`   **Branch**: `feature/driver-ride-rider-identity-261` (worktree `~/taxi-worktrees/wt-261`)   **Status**: COMPLETE — code, tests, gate and AC8 steps 1–5 on `sakta224`; step 6 (iOS) owed by #257
 
 ## Summary
 
@@ -62,6 +62,7 @@ A driver's `GET /rides/:rideId` and `POST /rides/:rideId/complete` now return a 
   - `Tasks: 22 successful, 22 total`, `Time: 2m25.878s`.
   - `@taxi/api`: `Test Suites: 84 passed, 84 total`, `Tests: 833 passed, 833 total`. No test reported as skipped: the only `skipped` strings in the log are three log-event names.
   - `@taxi/driver`: `260 passed`. `@taxi/shared`: `258 passed`.
+- **Gate re-run after the rebase** (`observed`, 2026-09-23, same command, this worktree): exit 0, `Tasks: 22 successful, 22 total`, `Time: 1m34.699s`. `@taxi/api` `84 passed` suites and `833 passed, 833 total` tests; driver `260 passed`; shared `258 passed`; rider `162 passed`; dispatch `272 passed`; db `17 passed`.
 - **Lint.** `@taxi/api lint` prints 13 `no-unsafe-argument` warnings, all in `*.integration.spec.ts` files. They are pre-existing, and none is in a line this diff adds.
 - **AC9.** `git diff origin/main -- services/api | grep logger` shows only the `Logger` dependency and the moved `ride.read.join_failed` warn, which carries `rideId`, `driverId`, `reason` and `at`, unchanged. No new log field, and no phone or name.
 
@@ -74,7 +75,7 @@ A driver's `GET /rides/:rideId` and `POST /rides/:rideId/complete` now return a 
 | AC5 | ✅ client-gate test, revert-probed |
 | AC6 | ✅ revert probe RED → GREEN |
 | AC7 | ✅ gate above |
-| AC8 | ❌ **not run**, see Deviations D8 |
+| AC8 | ✅ steps 1–5 on `sakta224` (D8); step 6 owed by #257 |
 | AC9 | ✅ |
 
 **UX states (active-ride screen):**
@@ -116,13 +117,25 @@ A driver's `GET /rides/:rideId` and `POST /rides/:rideId/complete` now return a 
   - A `callRider` case in `nav-links.test.ts`.
   - A case pinning that the projection leaves the other ride fields untouched.
 - **D7: the AC6 probe injected a literal `rider` key** into `findForRider`'s return rather than calling `toDriverRide(...)`. The assertion is on key presence, so the two are equivalent for what it pins.
-- **D8: AC8 (Level 4 on `sakta224`) was not run.**
-  - The blocker is the APK, not the emulator. The emulator is at `/usr/local/share/android-commandlinetools/emulator/emulator` (`observed`; it is not on `PATH`), and `sakta224` exists. But the app installed on it predates this branch.
-  - Running the change needs an EAS `preview` build of THIS branch with `EXPO_PUBLIC_API_URL=http://10.0.2.2:3001`, per `docs/runbooks/driver-device-day.md` §"Running the steps on an emulator".
-  - That build runs on the user's Expo account, so queuing it is the user's call. Its duration is `expected` at about 20 min, from the #225 and #232 builds; nothing was timed in this session.
-  - Steps 1–5 are therefore owed, and step 6 (iOS `tel:` prompt, VoiceOver) stays owed by #257 as planned.
-  - Offline and the iOS second tap are unverified on a device.
-- **D9: branch shape.** The plan lives on `docs/plan-261-rider-identity` (open PR #270). This branch was cut from `origin/main` at `0401cd7`, and the plan commit was cherry-picked (`1f3b7b9`), so the plan rides into this PR. If #270 merges first, the cherry-pick becomes an identical-content duplicate.
+- **D8: AC8 ran in a second session, on 2026-09-23 (times UTC).**
+  - **APK.** EAS `preview` build of `342d3fa`, finished 10:54:58Z. Its bundle carries `http://10.0.2.2:3001` and the «Zvanīt pasažierim» string (`strings` on `assets/index.android.bundle`, `observed`). Installed on `sakta224` at 17:35:20Z. After the rebase (D9), `git diff --stat 342d3fa HEAD` is empty, so the APK is the code under review.
+  - **api.** `wt-261`'s `dist/main.js` on port 3001, started 10:40:55Z, after the 10:37Z commit.
+  - **Setup, not product paths.** Step 1's `display_name` was already set on `+37120000003`. The rider session came from the stub OTP. The driver row was stuck at `status = 'on_ride'` with no active ride, left over from #15's pass (its last ride was retired at 15:37Z on 2026-09-22), so dispatch had no candidate (`dispatch.ride.unclaimed`, `offerAttempts: 0`). It was reset to `online` by direct `UPDATE` on the dev DB. The ride's own completion later returned the driver to `online` through the product path, so this is dev-data residue, not a #261 finding.
+  - **Ride** `28e3a4d1-3876-460f-898b-beef27a72ca0`, booked with `POST /rides` as the rider, each tap checked against `rides.status`:
+
+    | Step | Result | Artifact (`observed`) |
+    |---|---|---|
+    | 1 | ✅ | `users.display_name = 'Anna Bērziņa'` for `+37120000003` |
+    | 2 | ✅ | at `accepted`: «Pasažieris: Anna Bērziņa» and «Zvanīt pasažierim», screencap `ac8-step2-accepted.png` |
+    | 3 | ✅ | tap → `com.google.android.dialer` resumed with `dat=tel:+37120000003`, number prefilled, screencap `ac8-step3-dialler.png` |
+    | 4 | ✅ | `arriving` → `arrived` → `in_progress` by tap, no relaunch; at `in_progress` the dump has «Pasažieris: Anna Bērziņa» and no «Zvanīt pasažierim» node |
+    | 5 | ✅ | at `arriving`, TalkBack focus on the button: `Speaking fragment text="Zvanīt pasažierim"`, then `text="Poga. Zvana Anna Bērziņa"` (`TYPE_VIEW_ACCESSIBILITY_FOCUSED`); no digits spoken. The dump's `content-desc` is «Zvanīt pasažierim» |
+    | 6 | owed | iOS `tel:` prompt and VoiceOver, by #257's hardware blocker |
+
+  - Artifacts sit in that session's scratchpad and are not committed.
+  - Still unverified on a device: offline, and the iOS second tap.
+  - The ride was then completed from the app, reaching `completed` with the driver back at `online`.
+- **D9: branch shape.** The branch was cut from `origin/main` at `0401cd7` with the plan cherry-picked. #270 then merged the same plan (byte-identical to the cherry-pick), so the branch was rebased with `git rebase --onto origin/main 1f3b7b9`, dropping the duplicate.
 - **D10: the set-membership pins live in `schemas-driver-ride.test.ts`**, not in `ride-state-machine.test.ts`. The plan allowed either.
 
 ## Issues encountered
