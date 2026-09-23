@@ -242,7 +242,7 @@ it includes `debug`).
 |---|---|---|---|---|
 | 1 | Sign in on the driver phone (`+371…`, role driver; read the code from `auth.otp.stub_sent`). Tap the availability toggle ON | phone | Status reads «Tiešsaistē», pill «Tiešraide» — `Online` / `Live` on an EN phone, the app follows the **device** locale (`deviceLanguage()`, `expo-localization`). Grant background location when asked. **A notification-permission prompt appears too** — §2's `init` writes `extra.eas.projectId`, so `registerPushToken` clears the `:26-31` guard and reaches `requestPermissionsAsync` (`register-push-token.ts:41`); `POST_NOTIFICATIONS` is declared (`apps/driver/app.json:40`), so on Android 13+ that is a real dialog. Grant or deny — no token is minted without FCM either way (`:43-53`), which is what step 7 depends on | |
 | 2 | **HARD GATE.** Open `/dispatch`, find that driver on the board | api console + `/dispatch` | `driver.location.ping_accepted` for that `driverId` every ~4 s — **time it by the line's `clientAt`, not its `at`** (see the note below) — and the driver visible on the board. **If the driver is not visible and pinging before any ride exists, STOP** — see the verdict rule | |
-| 3 | Create a ride for that driver: a dispatcher phone order (`/dispatch` → new booking), then **accept the offer card if it appears**; if it does not, open the ride's row → **Assign** → pick that driver. **On a stack with no `GOOGLE_MAPS_API_KEY`, force-assign is the ONLY path** — the new-order form's address boxes read «Adrešu meklēšana nedarbojas» and the api answers `StubMapsProvider has no address search: set GOOGLE_MAPS_API_KEY to bind GooglePlacesProvider (#19)`, so no phone order can be placed through the form at all (`observed` 2026-09-18). `POST /dispatch/bookings` with explicit pickup/destination coordinates bypasses the geocoder and is what #224's run used; its `Idempotency-Key` header must be a **uuid**, and any other string fails as a bare `Invalid uuid` with an empty `path`. **Then open `t/<token>` in a tab and leave it open** — you need it on screen before step 5 starts | phone + `/dispatch` + api console | A phone order goes through `RidesService.request()` and lands at `requested`, so `DispatchSweeper` offers it to the best candidate on its next tick (`dispatch.sweeper.ts:112`). With this phone as the only online driver an offer card will very likely arrive first. Force-assign (`POST /dispatch/rides/:rideId/assign`, `dispatch.controller.ts:95`) is the fallback, not the only path. Board row reaches an accepted state. The token is in the api console: `auth.sms.stub_sent` logs the SMS **body in full**, deliberately, and the tracking link is in it (`stub-sms.provider.ts:28-37`, `body` at `:35`) — tokens are minted inside the booking flow, never by the seed | |
+| 3 | Create a ride for that driver: a dispatcher phone order (`/dispatch` → new booking), then **accept the offer card if it appears**; if it does not, open the ride's row → **Assign** → pick that driver. **On a stack with no `GOOGLE_MAPS_API_KEY`, force-assign is the ONLY path** — the new-order form's address boxes read «Adrešu meklēšana nedarbojas» and the api answers `StubMapsProvider has no address search: set GOOGLE_MAPS_API_KEY to bind GooglePlacesProvider (#19)`, so no phone order can be placed through the form at all (`observed` 2026-09-18). `POST /dispatch/bookings` with explicit pickup/destination coordinates bypasses the geocoder and is what #224's run used; its `Idempotency-Key` header must be a **uuid**, and any other string fails as a bare `Invalid uuid` with an empty `path`. **Then open `t/<token>` in a tab and leave it open** — you need it on screen before step 5 starts | phone + `/dispatch` + api console | A phone order goes through `RidesService.request()` and lands at `requested`, so `DispatchSweeper` offers it to the best candidate on its next tick (`dispatch.sweeper.ts:112`). With this phone as the only online driver an offer card will very likely arrive first. Force-assign (`POST /dispatch/rides/:rideId/assign`, `dispatch.controller.ts:95`) is the fallback, not the only path. Board row reaches an accepted state. The token is in the api console: `auth.sms.stub_sent` logs the SMS **body in full**, deliberately, and the tracking link is in it (`stub-sms.provider.ts:30-41`, `send()`; `body` at `:37`, the event name at `:35`) — tokens are minted inside the booking flow, never by the seed | |
 | 4 | On the phone, note the time. **Tap the availability toggle OFF** | phone | The toggle **springs back to ON**; a blue info banner «Jūs pašlaik izpildāt braucienu.» appears (`You are on a ride right now.` on an EN phone) | |
 | 5 | Watch for **90 s** without touching the phone | **api console (primary)** | **The stream does not stop**: `driver.location.ping_accepted` for that `driverId` still arriving at t+90 s, with no sustained `clientAt` silence — **one gap just over the 12 s threshold is a re-read, not a ❌; the ❌ is a stream that goes quiet and stays quiet** (see the two notes below — both the field and the threshold matter, and the note carries the arithmetic behind 12 s). 90 s clears the 60 s `findNearby` freshness window — a stream that only survives 30 s proves nothing. **`/dispatch` corroborates, it does not decide**: since #234 the board's «Šoferi» panel says «Raida» while the stream is alive and flips to «Klusē MM:SS» once the last fix reaches `DRIVER_LOCATION_TTL_SECONDS` (60 s) — **at** 60 s, not after it (`board-state.ts`'s `>=`). So a **still pin is still not a failure** — the pin never moves on a stationary phone — and a «Klusē» row is a ❌ **only while the board itself is not stale**: check the top of `/dispatch` first, because the age it counts is a browser clock against a frozen field, so a console that has lost its own socket freezes every driver's `lastSeenAt` identically. If the banner «Nav jaunu datu» (or «Bezsaistē») is up, the rows read «Nav signāla» and say nothing about the phone — that is the console reporting its own deafness, and the api console is the surface to read. The api console stays primary because it timestamps every accepted fix and so is the only surface that proves the 4 s cadence rather than just its absence — see the note below | |
 | 6 | During that same 90 s, watch the `t/<token>` tab you opened at step 3. Record what it showed | `t/<token>` (corroboration) | The «position updated HH:MM» line keeps ticking (`tracking-map.tsx:334-335`). **Minutes, not seconds** — `timeOf` at `:178-182` is `toLocaleTimeString(…, { hour: '2-digit', minute: '2-digit' })`, so across a 90 s watch this line changes once or twice and a reader looking for a seconds field will call a healthy page frozen (`observed` 2026-09-18, #224: it advanced 22:21 → 22:23 → 22:24). It advances on a **fresh fix**, not on movement, so it reads correctly with the phone flat on a table. Since #234 it is no longer the only in-product surface that renders freshness — `/dispatch`'s driver panel does too — but **do not go looking there for a ticking counter on a passing run**: that panel's seconds-resolution `MM:SS` is the SILENCE age and appears only once a stream has already stopped («Klusē 01:30»). While the stream is alive it shows the static word «Raida» with no number (`console.driver_streaming` carries no `{age}` placeholder). So on a healthy 90 s watch this `HH:MM` line is the one that moves and the board's is the one that does not — the opposite of what "seconds rather than minutes" would suggest. The `t/<token>` page stays the rider-side surface, and it is what a person can watch without a terminal | |
@@ -358,11 +358,175 @@ check is not expressible as #141 failing, and the day can legitimately stop at t
 | What | Owner |
 |---|---|
 | The full driver device pass, §C steps 1–13 (sign-in, streaming, dead zone, process kill, dark sweep, expired token, earnings, i18n, TalkBack banner, background-permission refusal) | #14 — `.claude/plans/driver-app-auth-online-location.md:812` §Level 4 §C |
-| Three ear-checks: #161's two earnings-label states, F4's offer-card label, and N3 — whether `earnings-card.tsx:17`'s `polite` live region is still announced inside a collapsed `Pressable` | `.claude/references/ui-decisions.md:17`; N3 from `.claude/code-reviews/pr-163-review.md:183` |
-| The offers / active-ride device pass | #16 — `.claude/plans/driver-offers-active-ride.md:506` §Level 4 |
+| Three ear-checks: #161's two earnings-label states, F4's offer-card label, and N3 — whether `earnings-card.tsx:17`'s `polite` live region is still announced inside a collapsed `Pressable` | **TalkBack legs closed 2026-09-22** — all three names read, N3 answered as a defect ([#262](https://github.com/linardsb/taxi/issues/262)) and the offer-card label as another ([#263](https://github.com/linardsb/taxi/issues/263)); see §"The offers / active-ride pass (#15)" below. **VoiceOver still owed** ([#257](https://github.com/linardsb/taxi/issues/257)). `.claude/references/ui-decisions.md:17`; N3 from `.claude/code-reviews/pr-163-review.md:183` |
+| The offers / active-ride device pass | #15 — **run 2026-09-22 on the emulator; see §"The offers / active-ride pass (#15)" below for what passed, what is partial and what is unrun. #15 stays open.** `.claude/plans/driver-offers-active-ride.md:506` §Level 4 |
 | The GPS field drive (#4, deferred 2026-08-26) | `docs/spikes/04-gps-field-test.md` §Field protocol |
 
 ---
+
+## The offers / active-ride pass (#15)
+
+Run 2026-09-22 on AVD `sakta224`. The steps are **not** restated here: they are
+`.claude/plans/driver-offers-active-ride.md:506` §Level 4, steps 1–13, cited by number
+exactly as §Emulator route below cites §Steps. The command-level record is
+`.claude/reports/driver-15-offers-device-pass-report.md`.
+
+### Result
+
+| Field | Value |
+|---|---|
+| Run by | Claude (agent-driven, `adb`), #15 |
+| Platform | Android emulator, AVD `sakta224` (API 36 `google_apis` x86_64, Pixel 7, 1080×2400) — **no phone** |
+| App | Two passes: #224's `bcd04c21…` (commit `4e6ffb68`) while the #15 build queued 52 min 29 s and built 14 min 34 s (`derived` from EAS timestamps: `enqueuedAt` 14:15:00.283Z → `workerStartedAt` 15:07:29.726Z → `completedAt` 15:22:03.251Z; queue measured from `enqueuedAt`, not `createdAt`), then the **#15 build `e1afc69a…`**. The a11y legs and steps 1, 2 and 3a ran on the first; steps 3b, 5–8, 11 and 13 on the second. Step 10's passing half is not assigned to either, since its evidence has no timestamp; 4, 9 and 12 ran on neither |
+| Date | 2026-09-22 |
+| Outcome | **The a11y half is complete. The functional core is green on the #15 build** — accept, the four-step walk, the receipt, reassignment and cold-start-mid-ride all pass, and so does force-assign's no-card half. Six steps are not green (4, 7, 9, 10, 12, 13), each explained under the table — step 7's cause not isolated |
+
+§Level 4 steps — 1, 2, 3a on #224's APK; 3b, 5–8, 11, 13 on the #15 build; 10 not assigned to a pass; 4, 9, 12 unrun:
+
+| # | 1 | 2 | 3a | 3b | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | ✅ | — | ⚠️ | ✅ | — | ⚠️ |
+
+⚠️ step 7: the no-card half passed — no offer card was shown. The **opens** half did not run:
+the already-open app routed to the ride only after a relaunch. Cause **not isolated** — a
+dropped socket is the obvious guess and does not fit, since step 8's reassignment arrived
+over the same socket in real time minutes later.
+⚠️ step 10: reopen re-asserts online ✅; its push half is unrun. ⚠️ step 13: the two payment
+hard rules are verified, the one-time change banner is not. — = unrun (4 and 10's push
+halves need FCM, #14; 9 needs the `geo fix` velocity route; 12 needs the second AVD).
+
+**Two things the walk settled that are worth keeping:**
+
+- The receipt reconciles to the cent: «€9.01 → Sakta (15%) €1.35 → Jūs saņemat €7.66»
+  against the `split` row `901 | 15 | 135 | 766`.
+- **Today's earnings count SETTLED money, not completed rides.** A ride at `completed` reads
+  `earnedCents: 0` and writes no `ledger_entries`; `POST /rides/:rideId/settle` moves it to
+  `settled`, writes the ledger, and the card then reads «Šodien: €7.66 · Braucieni: 1». The
+  driver app has no settle call, so do not read a €0.00 card after a fare as a bug without
+  checking the ride's status first.
+
+The owed ear-checks (§"Also on this day", row 2) are **closed for TalkBack**:
+
+| Leg | Result |
+|---|---|
+| Earnings link accessible name — loading / failed / ready | ✅ ✅ ✅ |
+| The grouping collapses to one focus stop | ✅ |
+| Offer card spoken, composed order, payment before the accept prompt | ✅ |
+| No double «Ieņēmumi» | ✅ |
+| N3 — the `polite` live region inside the collapsed `Pressable` | ❌ **never announced** → [#262](https://github.com/linardsb/taxi/issues/262) |
+| The once-a-second label mutation re-announcing (Q5) | ❌ **it does, and it starves the countdown** → [#263](https://github.com/linardsb/taxi/issues/263) |
+| VoiceOver | owed — [#257](https://github.com/linardsb/taxi/issues/257) |
+
+### Presence must be established through the app, never by SQL
+
+`update drivers set status='online'` puts the **row** online and writes **nothing to Redis**.
+`findNearby` reads Redis, so every booking then goes `dispatch.ride.unclaimed` with
+`offerAttempts: 0` while the driver looks online in every query you would think to run.
+Check with
+`redis-cli SISMEMBER drivers:online:<cityId> <driverId>` — it returns `0` — and fix it by
+toggling offline→online in the app. `observed` 2026-09-22; it cost two bookings.
+
+Related: a driver whose last position is older than `DRIVER_LOCATION_TTL_SECONDS` (60) is
+dropped from `findNearby` even while present in the online set. On this emulator the
+location stream stalls intermittently, so confirm a fresh
+`driver.location.ping_accepted` in the api console **immediately before** booking anything
+that must be offered.
+
+### Setup deltas this pass discovered
+
+**An APK from an earlier commit is not reusable, and the failure is silent.** #136 shortened
+the tracking token from 22 base64url characters to 16. `schemas/ride.ts` imports
+`trackingTokenSchema` from `schemas/tracking.ts`, so **`rideSchema` changed without
+`schemas/ride.ts` changing a byte**. An older bundle rejects every ride payload and the app
+shows only its generic «Kaut kas nogāja greizi» — no hint that a schema is at fault. Check
+the transitive closure of what a contract imports, not the file's own diff, before reusing a
+build.
+
+**Raising the offer window needs no restart.** `PlatformConfigRepository.forCity()` is a
+bare `select().limit(1)` with no cache, so
+`update platform_config set offer_timeout_seconds = 180;` reaches the next offer's wire
+`expiresAt` immediately. `observed`: the card's first frame read «Atlikušas 162 s».
+**Put it back to 20 afterwards** — nothing will tell you it is still raised. It does not
+distort the unclaimed alert: `alertUnclaimed` iterates `findAwaitingDispatch`, whose
+predicate is `status = 'requested'` (`rides.repository.ts:205`), and a ride with a live
+offer is at `offered`.
+
+**`psql -U postgres` does not work here.** The compose user is `taxi`
+(`docker-compose.yml:5`): `docker exec taxi-db-1 psql -U taxi -d taxi`.
+
+**The locale line needs a reboot.** `settings put system system_locales lv-LV` alone leaves
+the app in EN even after a force-stop and relaunch; `persist.sys.locale` only propagates on
+boot. `adb reboot` first, then the LV strings the §Steps cells quote actually appear
+(9 s to `sys.boot_completed` on a warm VM).
+
+### Driving TalkBack from `adb`
+
+TalkBack is on the `google_apis` image already — no Play Store image needed.
+
+```bash
+PKG=com.google.android.marvin.talkback
+adb shell settings put secure enabled_accessibility_services $PKG/$PKG.TalkBackService
+adb shell settings put secure accessibility_enabled 1
+# restore afterwards (an empty-string `put` fails with `Bad arguments`):
+adb shell settings delete secure enabled_accessibility_services
+adb shell settings put secure accessibility_enabled 0
+```
+
+**Its utterance log can be turned on without touching the Settings UI.** TalkBack's
+`LogUtils` gates on its own preference rather than on `Log.isLoggable`, so `setprop` does
+nothing — but `adb root` works on this image and the preference is just a file:
+
+```bash
+adb root
+printf '%s' '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<map><string name="pref_log_level">2</string></map>' > /tmp/tb.xml   # 2 = VERBOSE
+adb push /tmp/tb.xml /data/local/tmp/tb.xml
+adb shell "cp /data/local/tmp/tb.xml /data/data/$PKG/shared_prefs/${PKG}_preferences.xml \
+  && chown \$(stat -c '%u:%g' /data/data/$PKG) /data/data/$PKG/shared_prefs/${PKG}_preferences.xml"
+adb shell am force-stop $PKG   # then re-enable as above
+```
+
+Every spoken string then appears as
+`V talkback: SpeechControllerImpl: Speaking fragment text="…", locale=…, event=… subtype=…`.
+The key name `pref_log_level` is `observed` in the APK's own string table
+(`adb pull /product/app/talkback/talkback.apk`, `strings | grep -iE '^pref.*log'`).
+The file survives a reboot.
+
+**Read the `subtype`, not just the text.** `TYPE_ANNOUNCEMENT` is a deliberate
+`announceForAccessibility` call; `TYPE_VIEW_ACCESSIBILITY_FOCUSED` is a focus read;
+`TYPE_WINDOW_CONTENT_CHANGED` is the platform re-reading a node whose name changed. Counting
+utterances without splitting by subtype conflates a throttled announcement with a
+re-announcement, which is the whole of #263.
+
+**Moving accessibility focus:** `input keyevent KEYCODE_DPAD_DOWN` (or `KEYCODE_TAB`).
+`input swipe` is **not** recognised as a TalkBack gesture in any shape tried, and
+`input tap` **activates** the control rather than focusing it — the opposite of a finger
+under explore-by-touch. An agent tapping under TalkBack moves between screens instead of
+exploring one.
+
+### What still cannot be reached here
+
+- **Both push legs (steps 4 and 10's push half).** Blocked twice over: the api binds
+  `StubPushProvider`, which delivers nothing, **and** the app cannot register for FCM at all
+  — `app.json` declares no `googleServicesFile`, so `logcat` carries
+  `push: registration failed … Default FirebaseApp is not initialized` and the api logs
+  `dispatch.offer.push_skipped reason:'no_token'`. Both halves are #14's ground.
+- **Step 9's speed**, by the recipe in §"Injecting a position": `set-test-provider-location`
+  takes only `--location`, `--accuracy` and `--time`, and the app reads speed straight off
+  the fix (`location-task.ts:43-53`). Use `adb emu geo fix <lng> <lat> <alt> <sats>
+  <velocity-in-knots>` instead — the only mechanism here that carries a speed.
+  `derived`: `GLANCE_SPEED_MPS = 10/3.6` = 10 km/h = **5.40 knots** at 1 kn = 1.852 km/h, so
+  20 knots clears the threshold 3.7-fold.
+- **`uiautomator dump` on the offer card** — §Emulator route below records the same refusal
+  for the OTP resend timer; on this card the flash and the countdown never let it settle
+  either. `screencap` plus fixed coordinates is the only route.
+- **`uiautomator dump` on HOME, while the driver is online.** Same
+  `ERROR: could not get idle state.`, and this one is easy to miss because the same screen
+  dumps perfectly when the driver is **offline**. The diagnostics line
+  («Pēdējā pozīcija pirms N s · Rindā: N») re-renders once a second whenever the stream is
+  up, which is a third continuous source alongside the card's flash and countdown. Every
+  successful home dump in this pass — all three earnings-label states — was taken with the
+  driver offline. Go offline to dump home, or drive it from `screencap`.
 
 ## Emulator route
 
