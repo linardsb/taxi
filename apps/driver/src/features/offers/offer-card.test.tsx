@@ -21,11 +21,7 @@ const card = (over: Partial<OfferCardProps> = {}): OfferCardProps => ({
   countdown: t('driver.offer.countdown', { seconds: 18 }),
   glance: false,
   queue: null,
-  a11yLabel: t('driver.offer.a11y_card', {
-    amount: '€12.40',
-    net: '€10.54',
-    seconds: 18,
-  }),
+  a11yLabel: t('driver.offer.a11y_card', { amount: '€12.40', net: '€10.54' }),
   accepting: false,
   ...over,
 });
