@@ -336,7 +336,7 @@ export const lv = {
   'driver.offer.revoked_expired': 'Piedāvājuma laiks beidzās',
   'driver.offer.revoked_cancelled': 'Brauciens tika atcelts',
   'driver.offer.a11y_card':
-    'Jauns brauciens. Cena {amount}, jūs saņemat {net}. Atlikušas {seconds} sekundes.',
+    'Jauns brauciens. Cena {amount}, jūs saņemat {net}.',
   // Kept separate and appended LAST: the card is one accessible node, so the
   // instruction must not land before the fare, payment method and addresses.
   'driver.offer.a11y_accept': 'Pieskarieties, lai pieņemtu.',

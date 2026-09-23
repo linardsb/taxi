@@ -274,8 +274,7 @@ export const ru = {
   'driver.offer.revoked_taken': 'Заказ взял другой водитель',
   'driver.offer.revoked_expired': 'Время предложения истекло',
   'driver.offer.revoked_cancelled': 'Заказ отменён',
-  'driver.offer.a11y_card':
-    'Новый заказ. Цена {amount}, вы получаете {net}. Осталось {seconds} секунд.',
+  'driver.offer.a11y_card': 'Новый заказ. Цена {amount}, вы получаете {net}.',
   'driver.offer.a11y_accept': 'Нажмите, чтобы принять.',
   'driver.queue.position': 'В очереди: {position} из {size} · {zone}',
   'driver.ride.title_accepted': 'Заказ принят',

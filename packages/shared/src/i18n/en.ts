@@ -268,8 +268,7 @@ export const en = {
   'driver.offer.revoked_taken': 'Another driver took this ride',
   'driver.offer.revoked_expired': 'The offer expired',
   'driver.offer.revoked_cancelled': 'The ride was cancelled',
-  'driver.offer.a11y_card':
-    'New ride. Fare {amount}, you keep {net}. {seconds} seconds left.',
+  'driver.offer.a11y_card': 'New ride. Fare {amount}, you keep {net}.',
   'driver.offer.a11y_accept': 'Tap to accept.',
   'driver.queue.position': 'Queue: {position} of {size} · {zone}',
   'driver.ride.title_accepted': 'Ride accepted',

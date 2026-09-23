@@ -124,6 +124,22 @@ describe('offerCardProps (#15)', () => {
     expect(props!.a11yLabel).not.toMatch(/\.\./);
   });
 
+  it('the accessible name does not change as the countdown ticks (#263, edge)', () => {
+    // A name that mutates every second makes TalkBack re-read the whole card
+    // on each change and starves the throttled countdown announcements.
+    const pending = pendingFor({ commissionPctOverride: null });
+    const at18 = offerCardProps(shown(pending), null, t)!;
+    const at3 = offerCardProps(
+      shown(pending, { remainingMs: 2_100 }),
+      null,
+      t,
+    )!;
+    expect(at18.seconds).toBe(18);
+    expect(at3.seconds).toBe(3);
+    expect(at3.a11yLabel).toBe(at18.a11yLabel);
+    expect(at18.a11yLabel).not.toMatch(/18/);
+  });
+
   it('a 0% override renders «you keep €12.40 (100%)» — never a hardcoded 85 (edge)', () => {
     const props = offerCardProps(
       shown(pendingFor({ commissionPctOverride: 0 })),
