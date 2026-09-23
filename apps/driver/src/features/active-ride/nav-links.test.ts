@@ -1,5 +1,6 @@
 import { Linking } from 'react-native';
 import {
+  callRider,
   canOpenWaze,
   googleMapsLink,
   openNavigation,
@@ -54,5 +55,15 @@ describe('nav links (#15)', () => {
     expect(await canOpenWaze(PICKUP)).toBe(false);
     jest.spyOn(Linking, 'canOpenURL').mockResolvedValueOnce(true);
     expect(await canOpenWaze(PICKUP)).toBe(true);
+  });
+
+  it('rings the rider on tel:, and swallows a device with no dialler (#261)', async () => {
+    const openURL = jest
+      .spyOn(Linking, 'openURL')
+      .mockImplementationOnce(() => Promise.resolve(true))
+      .mockImplementationOnce(() => Promise.reject(new Error('no dialler')));
+    await callRider('+37120000003');
+    expect(openURL).toHaveBeenLastCalledWith('tel:+37120000003');
+    await expect(callRider('+37120000003')).resolves.toBeUndefined();
   });
 });

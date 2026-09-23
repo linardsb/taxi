@@ -9,6 +9,7 @@ import {
 import {
   rideCancelSchema,
   ridePaymentMethodUpdateSchema,
+  type DriverRide,
   type JwtClaims,
   type Ride,
   type RideCancel,
@@ -70,7 +71,7 @@ export class RideLifecycleController {
   complete(
     @CurrentUser() user: JwtClaims,
     @Param('rideId', ParseUUIDPipe) rideId: string,
-  ): Promise<{ ride: Ride }> {
+  ): Promise<{ ride: DriverRide }> {
     return this.lifecycle.complete(user.sub, rideId);
   }
 

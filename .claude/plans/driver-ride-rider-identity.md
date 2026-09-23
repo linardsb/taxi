@@ -545,3 +545,22 @@ State comes from the #15 device-pass recipe, `.claude/plans/driver-15-offers-dev
 **Rejected: masked relay now.** It is the better privacy answer and it is worth a spike later. The PRD's budget guardrail (<€100/mo) and the absence of a telephony seam make it a ticket of its own (D1).
 
 ## AMENDMENTS
+
+### 2026-09-23: as shipped (from `.claude/reports/driver-ride-rider-identity-report.md`)
+
+- **SUPERSEDED: task "UPDATE `ride-lifecycle.service.ts`".** Changing the service in place would have come to at least 502 lines (`derived`: +1 import, +1 import, +3 from `complete`'s wrapped signature, +1 or more for the lookup, on the observed 496). So the task's own fallback shipped instead:
+  - `findForDriver` moved whole into `driver-ride.ts` as `readDriverRide(deps, driverId, rideId)`, with its docblock carried over verbatim and `this.logger` passed in.
+  - The service keeps a one-statement `findForDriver` that calls it, and is now 467 lines (`observed`).
+  - `toDriverRide` stays pure and sits beside it.
+- **`complete` looks up the identity** with `this.lifecycle.findRiderIdentity(ride.riderId)`. `findRiderIdentity` was added to the `as unknown as` lifecycle mock in `ride-lifecycle.service.spec.ts`; typecheck cannot flag that mock.
+- **Files not named in the plan:**
+  - `earnings-screen.test.tsx`: the fixture cast becomes `DriverRide`.
+  - `rides/index.ts`: the docblock line that said rider identity was absent now names the `rider` block.
+  - `active-ride-screen.test.tsx:172`: `await screen.unmount()`. The un-awaited RNTL 14 promise left the next test with an empty tree.
+- **Tests beyond the plan's cases:**
+  - a screen case where the phone is null inside the window;
+  - a `callRider` case in `nav-links.test.ts`;
+  - a case pinning that `toDriverRide` leaves the other ride fields untouched.
+  - The set pins are in `schemas-driver-ride.test.ts`.
+- **The AC6 revert probe** spread a literal `rider` key into `findForRider`'s return, instead of calling `toDriverRide`. That is equivalent for a key-presence assertion. Result: RED, then GREEN.
+- **AC8 (Level 4) is owed.** It needs an EAS `preview` APK of this branch, which runs on the user's Expo account and is the user's call.

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { rideOffers, rides, type Db } from '@taxi/db';
+import { rideOffers, rides, users, type Db } from '@taxi/db';
 import {
   fareSplitSchema,
   type FareSplit,
@@ -44,6 +44,18 @@ export class RideLifecycleRepository {
       })
       .from(rides)
       .where(eq(rides.id, rideId))
+      .limit(1);
+    return row;
+  }
+
+  /** The rider's phone and display name, for `toDriverRide` (#261). */
+  async findRiderIdentity(
+    riderId: string,
+  ): Promise<{ phone: string; displayName: string | null } | undefined> {
+    const [row] = await this.db
+      .select({ phone: users.phone, displayName: users.displayName })
+      .from(users)
+      .where(eq(users.id, riderId))
       .limit(1);
     return row;
   }

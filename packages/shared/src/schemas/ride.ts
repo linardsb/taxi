@@ -18,6 +18,7 @@ import {
 import { RIDE_STATUSES } from '../ride-state-machine';
 import { addressPointSchema } from './geo';
 import { trackingTokenSchema } from './tracking';
+import { phoneSchema } from './user';
 
 export const rideOptionsSchema = z.object({
   childSeat: z.boolean().default(false),
@@ -271,6 +272,21 @@ export const rideSchema = z.object({
   updatedAt: z.coerce.date(),
 });
 export type Ride = z.infer<typeof rideSchema>;
+
+/**
+ * What a DRIVER's read of their own ride adds (#261). Both fields are
+ * nullable and window-gated server-side (`RIDER_*_VISIBLE_STATUSES`), never
+ * merely absent: a null says "not now", and the parse fails loudly if the
+ * block is missing. The rider's own read never carries it.
+ */
+export const driverRideRiderSchema = z.object({
+  displayName: z.string().min(1).max(120).nullable(),
+  phone: phoneSchema.nullable(),
+});
+export const driverRideSchema = rideSchema.extend({
+  rider: driverRideRiderSchema,
+});
+export type DriverRide = z.infer<typeof driverRideSchema>;
 
 /**
  * `ride.driverId` is the denormalized field #6 indexes; `assignment.driverId`

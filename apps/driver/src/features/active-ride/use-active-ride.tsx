@@ -1,9 +1,9 @@
 import {
-  rideSchema,
+  driverRideSchema,
   RT,
   RT_EVENT_SCHEMAS,
+  type DriverRide,
   type PaymentMethodType,
-  type Ride,
 } from '@taxi/shared';
 import { useRouter } from 'expo-router';
 import {
@@ -45,8 +45,8 @@ const ActiveRideContext = createContext<ActiveRideContextValue | null>(null);
 
 /** `POST /rides/:id/complete` → `{ ride }`; the api-client keeps zod out, so a hand parser. */
 const completeResponse = {
-  parse: (input: unknown): { ride: Ride } => ({
-    ride: rideSchema.parse((input as { ride?: unknown } | null)?.ride),
+  parse: (input: unknown): { ride: DriverRide } => ({
+    ride: driverRideSchema.parse((input as { ride?: unknown } | null)?.ride),
   }),
 };
 
@@ -107,7 +107,7 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
         const seq = (seqRef.current += 1);
         try {
           const ride = await api.request('GET', `/rides/${effect.rideId}`, {
-            schema: rideSchema,
+            schema: driverRideSchema,
           });
           // A newer read, or a step, has happened since this one was issued.
           if (seq !== seqRef.current) return;

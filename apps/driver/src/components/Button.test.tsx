@@ -25,4 +25,22 @@ describe('Button', () => {
     await fireEvent(button, 'blur');
     expect(StyleSheet.flatten(button.props.style).outlineWidth).toBeUndefined();
   });
+
+  it('passes an accessibility hint through, and none when not given (edge)', async () => {
+    await render(
+      <Button
+        label="Call"
+        accessibilityHint="Calls Anna"
+        onPress={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Call' }).props.accessibilityHint,
+    ).toBe('Calls Anna');
+    await screen.unmount();
+    await render(<Button label="Save" onPress={() => undefined} />);
+    expect(
+      screen.getByRole('button', { name: 'Save' }).props.accessibilityHint,
+    ).toBeUndefined();
+  });
 });

@@ -53,3 +53,12 @@ export async function openNavigation(link: NavLink): Promise<void> {
 export function canOpenWaze(target: LatLng): Promise<boolean> {
   return Linking.canOpenURL(wazeLink(target).url).catch(() => false);
 }
+
+/**
+ * Rings the rider (#261). `tel:` needs no `canOpenURL` pre-check; a device
+ * with no dialler (tablet, simulator) rejects, and that is swallowed — there
+ * is nothing a banner could fix. Never throws.
+ */
+export function callRider(phone: string): Promise<void> {
+  return Linking.openURL(`tel:${phone}`).catch(() => undefined);
+}

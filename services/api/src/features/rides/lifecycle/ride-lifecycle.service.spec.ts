@@ -110,6 +110,7 @@ function build(
     writeSettledSplit,
     updatePaymentMethod,
     revokePendingOffers,
+    findRiderIdentity: jest.fn(() => Promise.resolve(undefined)),
   } as unknown as RideLifecycleRepository;
 
   const findWithQuote = jest.fn(() =>
