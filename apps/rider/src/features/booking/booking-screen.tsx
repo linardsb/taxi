@@ -7,7 +7,7 @@ import {
 } from '@taxi/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import {
   Banner,
   Button,
@@ -24,6 +24,7 @@ import {
 } from '@/features/places';
 import { isBookable } from './booking-draft';
 import { PaymentChips } from './payment-chips';
+import { usePickupPinPreference } from './pickup-pin-preference';
 import { QuoteCard } from './quote-card';
 import { useBookingDraft } from './use-booking-draft';
 import { useBookRide } from './use-book-ride';
@@ -50,7 +51,8 @@ export function BookingScreen() {
   useScreenFocus(heading);
   const { draft, dispatch } = useBookingDraft();
   const { places, save } = useSavedPlaces();
-  const { book, busy, error } = useBookRide(draft);
+  const pin = usePickupPinPreference();
+  const { book, busy, error } = useBookRide(draft, pin.value);
   useQuote(draft, dispatch);
 
   const [label, setLabel] = useState('');
@@ -218,11 +220,31 @@ export function BookingScreen() {
             dispatch({ type: 'setPaymentMethod', paymentMethod })
           }
         />
+
+        {/* The PIN switch (#258) does NOT rotate the idempotency key, like
+            payment (`booking-draft.ts` rule 2): a lost response, a flip, then a
+            retry replays the PIN-less ride, and the status screen honestly
+            shows no PIN. Disabled while `busy` narrows that to a lost
+            response. */}
+        <View style={styles.switchRow} testID="pickup-pin-row">
+          <Text style={styles.switchLabel}>{t('rider.book.pickup_pin')}</Text>
+          <Switch
+            value={pin.value}
+            onValueChange={pin.set}
+            disabled={!pin.loaded || busy}
+            accessibilityLabel={t('rider.book.pickup_pin')}
+            accessibilityHint={t('rider.book.pickup_pin_hint')}
+            trackColor={{ true: colors.accent, false: colors.border }}
+          />
+        </View>
+        <Text style={styles.sectionTitle}>
+          {t('rider.book.pickup_pin_hint')}
+        </Text>
       </ScrollView>
       <Button
         label={busy ? t('rider.book.confirming') : t('rider.book.confirm')}
         onPress={() => void confirm()}
-        disabled={!isBookable(draft)}
+        disabled={!isBookable(draft) || !pin.loaded}
         loading={busy}
         size="lg"
       />
@@ -235,4 +257,11 @@ const styles = StyleSheet.create({
   body: { gap: spacing.md, paddingBottom: spacing.md },
   section: { gap: spacing.xs },
   sectionTitle: { fontSize: fontSize.sm, color: colors.fgMuted },
+  switchRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  switchLabel: { flex: 1, fontSize: fontSize.md, color: colors.fg },
 });

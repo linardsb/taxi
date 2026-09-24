@@ -22,6 +22,7 @@ import { KV_STORE, type KeyValueStore } from '../../common/kv/kv.store';
 import { mintTrackingToken, RideNotificationsService } from '../notifications';
 import { PricingService } from '../pricing';
 import { RealtimeService } from '../realtime';
+import { mintPickupPin } from './pickup-pin';
 import { entryStatusFor } from './ride-entry';
 import type { RiderVisibleRide } from './rider-visible-ride';
 import {
@@ -195,11 +196,12 @@ export class RidesService {
    * for the rider), and the alternative — a status filter here — would decide by
    * guesswork which statuses may still move, when E8 says they can move backward.
    *
-   * WHAT ACTUALLY CROSSES THE WIRE, rather than a list of what does not: the
-   * `rides` row as `toRide` projects it, with `split` FORCED NULL — so `id`,
+   * WHAT ACTUALLY CROSSES THE WIRE: the `rides` row as `toRide` projects it,
+   * `split` FORCED NULL, plus `pickupPin` (#258) from `findWithQuote`'s sibling
+   * field — the rider's own PIN, on this read only, never on `Ride` — so `id`,
    * `orderId`, `status`, `riderId`, `driverId`, `geozoneId`, `paymentMethod`,
-   * the rider's own `request`, the `quote`, `bookingChannel`, `trackingToken`
-   * and the timestamps. `assignment` is `null` because `toRide` hardcodes it, so
+   * `request`, `quote`, `bookingChannel`, `trackingToken`, `pickupPin` and the
+   * timestamps. `assignment` is `null` because `toRide` hardcodes it, so
    * a dispatcher's free-text override reason cannot reach a rider. `driverId` is
    * a bare uuid and NOT driver identity — no name, no plate, no phone, no
    * position, no ETA; those are #17's. `split` is stripped rather than merely
@@ -241,8 +243,8 @@ export class RidesService {
     // fallback is unreachable (nothing deletes a ride) and exists so a missing
     // row degrades to the pre-join snapshot rather than a 404 the caller has
     // already been told does not apply.
-    const fresh = await this.rides.findWithQuote(rideId);
-    return { ...(fresh ?? found).ride, split: null };
+    const snap = (await this.rides.findWithQuote(rideId)) ?? found;
+    return { ...snap.ride, split: null, pickupPin: snap.pickupPin };
   }
 
   /**
@@ -266,6 +268,7 @@ export class RidesService {
         quote,
         bookingChannel,
         trackingToken: mintTrackingToken(),
+        pickupPin: request.options.pickupPin ? mintPickupPin() : null,
       });
 
       // ---- POST-COMMIT: nothing below may throw out of this method ----

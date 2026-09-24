@@ -824,3 +824,12 @@ Why it is not 10: the last point sits outside the plan.
   - Added T18 (emulator run of the driver flow) and AC13.
   - Filed #276 for the owed screen-reader legs.
   - Added the gate re-run budget and the risk register.
+- 2026-09-24 — as shipped (implementation report `.claude/reports/pickup-pin-report.md` § Deviations). These supersede the task text they name:
+  - T2a: the `riderRideSchema` cases live in `schemas-ride-record.test.ts` (it has the full ride fixture), not `schemas-ride-request.test.ts`.
+  - T6: the extraction kept two private one-line wrappers (`logApplied`/`logRejected` → `logTransitionApplied`/`logTransitionRejected`). The service landed at 449 lines, not ~435, and at **497** after T7; the next edit to it needs another extraction.
+  - T9: the PIN branch is a private `arrivalBody(rideId, language, plate)` helper on `RideNotificationsService`, not an inline ternary.
+  - T10: the file's phone range is `+371320` and its plate prefix `PK` (`PN` belongs to `driver-presence`). Leak checks walk the body for string values equal to the PIN and non-boolean `pickupPin` values, instead of `JSON.stringify(...).includes(pin)`, which false-positives on timestamps and on the legitimate boolean `request.options.pickupPin`.
+  - T12: the switch's role, label, hint and 44 px row (`testID="pickup-pin-row"`) are asserted in `booking-screen.test.tsx`; `accessibility.test.tsx` is unchanged.
+  - T14: the 4-digit check uses `pickupPinSchema.safeParse`, not a local regex.
+  - T16: `docs/runbooks/rider-a11y-walkthrough.md` gained step 13 (the #276 rows).
+  - T18: EAS `0df8edea-…`, APK baked to `:3021` (3001 held by another session's api); `eas init` permission additions reverted before building. Step (e) found that TalkBack linear navigation skips the disabled Start button — logged for #276, not fixed here.

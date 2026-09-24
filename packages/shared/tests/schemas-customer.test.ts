@@ -33,7 +33,11 @@ describe('dispatcherBookingBodySchema', () => {
     expect(parsed.stops).toEqual([]);
     expect(parsed.category).toBe('standard');
     expect(parsed.vehicleCount).toBe(1);
-    expect(parsed.options).toEqual({ childSeat: false, femaleDriver: false });
+    expect(parsed.options).toEqual({
+      childSeat: false,
+      femaleDriver: false,
+      pickupPin: false,
+    });
     expect(parsed.dispatcherNote).toBeNull();
   });
 

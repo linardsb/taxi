@@ -27,6 +27,7 @@ import { useRideStatus } from './use-ride-status';
 function statusKey(
   status: RideStatus | null,
   stillSearching: boolean,
+  hasPin: boolean,
 ): MessageKey {
   if (status === null || status === 'requested' || status === 'scheduled') {
     return stillSearching
@@ -35,7 +36,9 @@ function statusKey(
   }
   if (status.startsWith('cancelled')) return 'rider.status.cancelled';
   if (isOver(status)) return 'rider.status.completed';
-  if (status === 'arrived') return 'rider.status.arrived';
+  if (status === 'arrived') {
+    return hasPin ? 'rider.status.arrived_pin' : 'rider.status.arrived';
+  }
   return 'rider.status.matched';
 }
 
@@ -48,6 +51,14 @@ function statusKey(
  */
 function isOver(status: RideStatus): boolean {
   return status === 'completed' || status === 'settled';
+}
+
+/**
+ * `4821` → `4 8 2 1`, so a screen reader says four digits rather than «četri
+ * tūkstoši astoņi simti…» — and a rider reads it out the same way (#258).
+ */
+function spaced(pin: string): string {
+  return pin.split('').join(' ');
 }
 
 /**
@@ -74,16 +85,18 @@ export function StatusScreen() {
   useScreenFocus(heading);
   const params = useLocalSearchParams<{ rideId?: string }>();
   const rideId = params.rideId ?? null;
-  const { status, stillSearching, connected, joined } = useRideStatus(rideId);
+  const { status, stillSearching, connected, joined, pickupPin } =
+    useRideStatus(rideId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
 
-  const key = statusKey(status, stillSearching);
+  const key = statusKey(status, stillSearching, pickupPin !== null);
   // No elapsed-minutes placeholder: a counter rendered once at 60 s and never
   // updated would say "1 min" to a rider who has waited five, and keeping it
   // honest costs a ticking timer plus an announcement every minute. The message
   // only has to mean "we are still looking".
-  const line = t(key);
+  // The PIN rides in the arrival line, so the one announcement speaks it (#258).
+  const line = t(key, { pin: spaced(pickupPin ?? '') });
 
   // A ride that has ended, one way or the other. The only control that makes
   // sense is a way back: `/book/status` is reached by `router.replace`, so there
@@ -91,6 +104,12 @@ export function StatusScreen() {
   // is a button whose only possible outcome is a 409.
   const over =
     status !== null && (status.startsWith('cancelled') || isOver(status));
+  // Shown from booking until the driver starts the ride — the one moment it is
+  // for. No announcement of its own: the arrival line above already speaks it.
+  const pinText =
+    pickupPin !== null && status !== null && !over && status !== 'in_progress'
+      ? t('rider.status.pin', { pin: spaced(pickupPin) })
+      : null;
 
   async function cancel() {
     if (rideId === null) return;
@@ -117,6 +136,15 @@ export function StatusScreen() {
         {t('rider.status.title')}
       </Text>
       <Banner tone="info" text={line} testID="status-line" />
+      {pinText !== null ? (
+        <Text
+          style={styles.pin}
+          testID="pickup-pin"
+          accessibilityLabel={pinText}
+        >
+          {pinText}
+        </Text>
+      ) : null}
       {/* `!joined` as well as `!connected`: the socket and the ride-room join
           are two different requests (`useRideStatus`), and a connected socket
           whose join read failed hears nothing. Showing the live state on the
@@ -147,4 +175,5 @@ export function StatusScreen() {
 
 const styles = StyleSheet.create({
   title: { fontSize: fontSize.xl, fontWeight: '700', color: colors.fg },
+  pin: { fontSize: fontSize.xl, fontWeight: '700', color: colors.fg },
 });

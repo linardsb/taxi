@@ -9,10 +9,12 @@ import {
 import {
   rideCancelSchema,
   ridePaymentMethodUpdateSchema,
+  rideStartSchema,
   type JwtClaims,
   type Ride,
   type RideCancel,
   type RidePaymentMethodUpdate,
+  type RideStart,
 } from '@taxi/shared';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../../auth';
@@ -58,8 +60,9 @@ export class RideLifecycleController {
   async start(
     @CurrentUser() user: JwtClaims,
     @Param('rideId', ParseUUIDPipe) rideId: string,
+    @Body(new ZodValidationPipe(rideStartSchema)) body: RideStart,
   ): Promise<{ ok: true }> {
-    await this.lifecycle.driverStep('start', user.sub, rideId);
+    await this.lifecycle.start(user.sub, rideId, body.pin);
     return { ok: true };
   }
 

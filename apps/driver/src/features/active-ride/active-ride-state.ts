@@ -2,6 +2,7 @@ import {
   ACTIVE_DRIVER_RIDE_STATUSES,
   DRIVER_STEPS,
   isCancelled,
+  pickupPinSchema,
   type DriverStep,
   type MessageKey,
   type PaymentMethodType,
@@ -55,7 +56,8 @@ export type ActiveRideEvent =
     }
   | { type: 'loaded'; ride: Ride }
   | { type: 'load_failed'; code: string }
-  | { type: 'step_pressed' }
+  /** `pin` matters only on a pinned ride's start (#258); every other step ignores it. */
+  | { type: 'step_pressed'; pin?: string }
   | { type: 'step_done'; step: DriverStep }
   | { type: 'step_failed'; code: string }
   | { type: 'completed'; ride: Ride }
@@ -69,7 +71,13 @@ export type ActiveRideEvent =
 
 export type ActiveRideEffect =
   | { type: 'fetch_ride'; rideId: string }
-  | { type: 'post_step'; step: Exclude<DriverStep, 'complete'>; rideId: string }
+  | {
+      type: 'post_step';
+      step: Exclude<DriverStep, 'complete'>;
+      rideId: string;
+      /** The rider's pickup PIN, on a pinned ride's start only (#258). */
+      pin?: string;
+    }
   | { type: 'post_complete'; rideId: string }
   | { type: 'route_ride' }
   | { type: 'route_home' }
@@ -84,6 +92,14 @@ const noop = (state: ActiveRideState): ActiveRideDecision => ({
   state,
   effects: [],
 });
+
+/**
+ * Whether the driver must type the rider's pickup PIN before Start (#258):
+ * the ride was booked with the option and the car is at the pickup.
+ */
+export function needsPin(ride: Ride): boolean {
+  return ride.status === 'arrived' && ride.request.options.pickupPin;
+}
 
 /** The one step legal from `status` — the api's table, by import. */
 export function stepFor(status: RideStatus): DriverStep | null {
@@ -225,13 +241,22 @@ export function decide(
       if (state.busy || !state.ride || state.ended) return noop(state);
       const step = stepFor(state.ride.status);
       if (!step) return noop(state);
+      // A pinned start without 4 digits never leaves the phone — the button is
+      // disabled anyway, and a bodiless start would only earn a 422.
+      const pinned = step === 'start' && needsPin(state.ride);
+      if (pinned && !pickupPinSchema.safeParse(event.pin).success) {
+        return noop(state);
+      }
       const busy = { ...state, busy: true, errorCode: null };
+      const rideId = state.ride.id;
       return {
         state: busy,
         effects: [
           step === 'complete'
-            ? { type: 'post_complete', rideId: state.ride.id }
-            : { type: 'post_step', step, rideId: state.ride.id },
+            ? { type: 'post_complete', rideId }
+            : pinned
+              ? { type: 'post_step', step, rideId, pin: event.pin }
+              : { type: 'post_step', step, rideId },
         ],
       };
     }

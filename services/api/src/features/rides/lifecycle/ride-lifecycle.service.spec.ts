@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type { Db } from '@taxi/db';
 import type { FareSplit, Ride, RideStatus } from '@taxi/shared';
@@ -75,6 +76,7 @@ function build(
     revoked?: { offerId: string; driverId: string }[];
     paymentUpdated?: boolean;
     found?: { ride: Ride } | undefined;
+    gate?: { pin: string | null; failures: number };
   } = {},
 ) {
   const events: string[] = [];
@@ -104,12 +106,21 @@ function build(
   const revokePendingOffers = jest.fn(() =>
     Promise.resolve(over.revoked ?? []),
   );
+  const lockPickupPin = jest.fn(() =>
+    Promise.resolve(over.gate ?? { pin: null, failures: 0 }),
+  );
+  const recordPickupPinFailure = jest.fn(() => {
+    events.push('write:pin_failure');
+    return Promise.resolve();
+  });
   const lifecycle = {
     findForAction,
     findAcceptedOfferSplit,
     writeSettledSplit,
     updatePaymentMethod,
     revokePendingOffers,
+    lockPickupPin,
+    recordPickupPinFailure,
   } as unknown as RideLifecycleRepository;
 
   const findWithQuote = jest.fn(() =>
@@ -183,6 +194,8 @@ function build(
     transitionInTx,
     transition,
     emitStatus,
+    lockPickupPin,
+    recordPickupPinFailure,
     claimForRide,
     releaseFromRide,
     emitToDriver,
@@ -209,7 +222,7 @@ describe('RideLifecycleService', () => {
       });
 
       await expect(
-        service.driverStep('start', DRIVER_ID, RIDE_ID),
+        service.start(DRIVER_ID, RIDE_ID, undefined),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(transition).not.toHaveBeenCalled();
     });
@@ -220,9 +233,117 @@ describe('RideLifecycleService', () => {
       });
 
       await expect(
-        service.driverStep('start', DRIVER_ID, RIDE_ID),
+        service.start(DRIVER_ID, RIDE_ID, undefined),
       ).rejects.toThrow('ride_not_arrived');
       expect(transition).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('start (#258)', () => {
+    const arrived = () => lifecycleRide({ status: 'arrived' });
+    const find = (spy: jest.SpyInstance, event: string) =>
+      (spy.mock.calls as [Record<string, unknown>][])
+        .map(([payload]) => payload)
+        .find((payload) => payload.event === event);
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('starts a pinned ride on the right PIN, emitting after the commit (expected)', async () => {
+      const { service, events, transitionInTx, emitStatus } = build({
+        ride: arrived(),
+        gate: { pin: '0042', failures: 0 },
+      });
+
+      await service.start(DRIVER_ID, RIDE_ID, '0042');
+
+      expect(transitionInTx).toHaveBeenCalledWith(
+        {},
+        RIDE_ID,
+        'arrived',
+        'in_progress',
+      );
+      expect(emitStatus).toHaveBeenCalledWith(
+        transitioned('in_progress'),
+        'arrived',
+      );
+      expect(events).toEqual(['tx:begin', 'tx:commit', 'emit:status']);
+    });
+
+    it('counts a wrong PIN and throws 422 only after the commit (failure)', async () => {
+      const {
+        service,
+        events,
+        transitionInTx,
+        emitStatus,
+        recordPickupPinFailure,
+      } = build({ ride: arrived(), gate: { pin: '0042', failures: 0 } });
+
+      await expect(service.start(DRIVER_ID, RIDE_ID, '9999')).rejects.toThrow(
+        new UnprocessableEntityException('pickup_pin_incorrect'),
+      );
+
+      expect(recordPickupPinFailure).toHaveBeenCalledTimes(1);
+      expect(transitionInTx).not.toHaveBeenCalled();
+      expect(emitStatus).not.toHaveBeenCalled();
+      // The increment is inside the transaction and the transaction COMMITTED:
+      // a throw inside it would have rolled the counter back.
+      expect(events).toEqual(['tx:begin', 'write:pin_failure', 'tx:commit']);
+    });
+
+    it('422s a pinned start with no PIN and spends no attempt (failure)', async () => {
+      const { service, recordPickupPinFailure, transitionInTx } = build({
+        ride: arrived(),
+        gate: { pin: '0042', failures: 0 },
+      });
+
+      await expect(
+        service.start(DRIVER_ID, RIDE_ID, undefined),
+      ).rejects.toThrow('pickup_pin_required');
+      expect(recordPickupPinFailure).not.toHaveBeenCalled();
+      expect(transitionInTx).not.toHaveBeenCalled();
+    });
+
+    it('409s a locked ride even on the right PIN and writes nothing (edge)', async () => {
+      const { service, recordPickupPinFailure, transitionInTx } = build({
+        ride: arrived(),
+        gate: { pin: '0042', failures: 5 },
+      });
+
+      const attempt = service.start(DRIVER_ID, RIDE_ID, '0042');
+      await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+      await expect(attempt).rejects.toThrow('pickup_pin_locked');
+      expect(recordPickupPinFailure).not.toHaveBeenCalled();
+      expect(transitionInTx).not.toHaveBeenCalled();
+    });
+
+    it('starts an un-pinned ride with no PIN, as before #258 (expected)', async () => {
+      const { service, transitionInTx } = build({ ride: arrived() });
+
+      await service.start(DRIVER_ID, RIDE_ID, undefined);
+
+      expect(transitionInTx).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs the verdict as the cause and never the PIN (failure-shaped)', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const { service } = build({
+        ride: arrived(),
+        gate: { pin: '0042', failures: 0 },
+      });
+
+      await expect(service.start(DRIVER_ID, RIDE_ID, '7777')).rejects.toThrow();
+      await service.start(DRIVER_ID, RIDE_ID, '0042');
+
+      expect(find(warn, 'ride.lifecycle.transition_rejected')).toMatchObject({
+        actor: 'driver',
+        from: 'arrived',
+        to: 'in_progress',
+        cause: 'pickup_pin_incorrect',
+      });
+      const everything = JSON.stringify([warn.mock.calls, log.mock.calls]);
+      expect(everything).not.toContain('0042');
+      expect(everything).not.toContain('7777');
     });
   });
 
@@ -654,7 +775,7 @@ describe('RideLifecycleService', () => {
       });
 
       await expect(
-        service.driverStep('start', DRIVER_ID, RIDE_ID),
+        service.start(DRIVER_ID, RIDE_ID, undefined),
       ).rejects.toThrow('ride_not_arrived');
 
       // Same event, different cause — the guard saw the wrong status, rather

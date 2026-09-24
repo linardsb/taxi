@@ -10,9 +10,9 @@ import {
 import { Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { Banner, Button, Screen } from '@/components';
+import { Banner, Button, Screen, TextField } from '@/components';
 import { errorMessageKey, useT } from '@/features/i18n';
-import { stepFor, TITLE_KEY } from './active-ride-state';
+import { needsPin, stepFor, TITLE_KEY } from './active-ride-state';
 import {
   canOpenWaze,
   googleMapsLink,
@@ -54,6 +54,9 @@ export function ActiveRideScreen() {
   const target = ride ? navTarget(ride) : null;
   const targetKey = target ? `${target.lat},${target.lng}` : null;
   const [wazeAvailable, setWazeAvailable] = useState(false);
+  // The rider's pickup PIN as typed (#258). Kept after a 422 so the driver
+  // corrects rather than retypes; a new ride remounts the screen and clears it.
+  const [pin, setPin] = useState('');
   useEffect(() => {
     if (!target) return;
     let live = true;
@@ -159,7 +162,8 @@ export function ActiveRideScreen() {
         <Banner
           tone="danger"
           text={t(errorMessageKey(state.errorCode))}
-          action={{ label: t('driver.action.retry'), onPress: step }}
+          // Retry resends the typed PIN — a bare `step` would post none.
+          action={{ label: t('driver.action.retry'), onPress: () => step(pin) }}
           secondary={{ label: t('driver.ride.reload'), onPress: reload }}
           testID="ride-error"
         />
@@ -181,11 +185,24 @@ export function ActiveRideScreen() {
           </Text>
         ) : null}
       </View>
+      {/* No autoFocus: a field grabbing focus the moment the status flips
+          would cut TalkBack off mid-announcement. */}
+      {needsPin(ride) ? (
+        <TextField
+          label={t('driver.ride.pin_label')}
+          value={pin}
+          onChangeText={(v) => setPin(v.replace(/\D/g, ''))}
+          keyboardType="number-pad"
+          maxLength={4}
+          testID="pickup-pin-input"
+        />
+      ) : null}
       {currentStep ? (
         <Button
           size="lg"
           label={t(STEP_KEY[currentStep])}
-          onPress={step}
+          onPress={() => step(pin)}
+          disabled={needsPin(ride) && pin.length !== 4}
           loading={state.busy}
           testID="ride-step"
         />

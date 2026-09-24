@@ -99,6 +99,8 @@ function build(
     /** What the provider answers. Default: delivered. */
     pushResult?: PushDeliveryResult;
     pushThrows?: boolean;
+    /** The ride's pickup PIN (#258); null = booked without one. */
+    pickupPin?: string | null;
   } = {},
 ) {
   const calls: string[] = [];
@@ -130,6 +132,10 @@ function build(
       return Promise.resolve(
         'details' in options ? options.details : notifiable(),
       );
+    },
+    pickupPin: () => {
+      calls.push('repo.pickupPin');
+      return Promise.resolve(options.pickupPin ?? null);
     },
     driverCard: (_driverId: string, vehicleId: string | null) => {
       calls.push(`repo.driverCard(${vehicleId})`);
@@ -446,6 +452,41 @@ describe('RideNotificationsService.onStatus', () => {
     expect(sent[0]!.body).toContain('AB-1234');
     // The arrival template carries no link — only the two LINKED ones do.
     expect(sent[0]!.body).not.toContain('/t/');
+  });
+
+  it('arrived + phone channel + pickup PIN → the PIN arrival SMS (expected — #258)', async () => {
+    const { service, sent } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'phone' }),
+      pickupPin: '0042',
+    });
+
+    await service.onStatus(transitioned('arrived'), 'arriving');
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.body).toBe('Jūsu taksometrs (AB-1234) ir klāt. PIN: 0042');
+  });
+
+  it('arrived + phone channel, no PIN → the plain arrival text (regression — #258)', async () => {
+    const { service, sent } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'phone' }),
+      pickupPin: null,
+    });
+
+    await service.onStatus(transitioned('arrived'), 'arriving');
+
+    expect(sent[0]!.body).toBe('Jūsu taksometrs (AB-1234) ir klāt.');
+  });
+
+  it('arrived + app channel with a PIN → no SMS and no PIN read (edge — #135 holds)', async () => {
+    const { service, sent, calls } = build({
+      details: notifiable({ status: 'arrived', bookingChannel: 'app' }),
+      pickupPin: '0042',
+    });
+
+    await service.onStatus(transitioned('arrived'), 'arriving');
+
+    expect(sent).toHaveLength(0);
+    expect(calls).not.toContain('repo.pickupPin');
   });
 
   it('any other transition is a no-op — not even a repository read (edge)', async () => {

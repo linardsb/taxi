@@ -1,5 +1,6 @@
 import {
   act,
+  fireEvent,
   render,
   screen,
   userEvent,
@@ -8,7 +9,8 @@ import {
 } from '@testing-library/react-native';
 import { formatMessage } from '@taxi/shared';
 import * as Location from 'expo-location';
-import { AccessibilityInfo } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AccessibilityInfo, StyleSheet } from 'react-native';
 import { ApiError } from '@/features/auth';
 import {
   SAVED_PLACE_LABEL_MAX,
@@ -16,6 +18,7 @@ import {
   clearSavedPlaces,
 } from '@/features/places';
 import { BookingScreen } from './booking-screen';
+import { PICKUP_PIN_KEY } from './pickup-pin-preference';
 
 const mockRequest = jest.fn();
 const mockSessionContext = {
@@ -72,6 +75,7 @@ describe('BookingScreen', () => {
   let focusSpy: jest.SpyInstance;
   beforeEach(async () => {
     await clearSavedPlaces();
+    await AsyncStorage.removeItem(PICKUP_PIN_KEY);
     mockRequest.mockReset();
     (push as jest.Mock).mockReset();
     (replace as jest.Mock).mockReset();
@@ -116,6 +120,58 @@ describe('BookingScreen', () => {
       }),
     );
     expect(announce).toHaveBeenCalledWith(t('rider.a11y.ride_requested'));
+  });
+
+  it('offers a labelled pickup-PIN switch that toggles and is remembered (expected — #258)', async () => {
+    await renderScreen();
+
+    const toggle = await screen.findByRole('switch', {
+      name: t('rider.book.pickup_pin'),
+    });
+    expect(toggle.props.accessibilityHint).toBe(
+      t('rider.book.pickup_pin_hint'),
+    );
+    // The 44 px floor is on the row the switch sits in (AC10).
+    expect(
+      StyleSheet.flatten(screen.getByTestId('pickup-pin-row').props.style)
+        .minHeight,
+    ).toBeGreaterThanOrEqual(44);
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle.props.value).toBe(false);
+
+    await fireEvent(toggle, 'valueChange', true);
+
+    expect(
+      screen.getByRole('switch', { name: t('rider.book.pickup_pin') }).props
+        .value,
+    ).toBe(true);
+    expect(await AsyncStorage.getItem(PICKUP_PIN_KEY)).toBe('1');
+  });
+
+  it('keeps Book disabled until the stored PIN choice has loaded (edge — E2)', async () => {
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue(dropoffParams);
+    mockRequest.mockResolvedValueOnce({ quote: QUOTE });
+    let resolve!: (v: string | null) => void;
+    const getItem = AsyncStorage.getItem as jest.Mock;
+    const stored = getItem.getMockImplementation()!;
+    getItem.mockImplementation((key: string) =>
+      key === PICKUP_PIN_KEY
+        ? new Promise<string | null>((r) => (resolve = r))
+        : stored(key),
+    );
+
+    await renderScreen();
+    await screen.findByTestId('quote-card');
+
+    // A live quote, so only the unread preference holds Book back: an
+    // opted-in rider tapping now would book an unprotected ride.
+    const bookButton = () =>
+      screen.getByRole('button', { name: t('rider.book.confirm') });
+    expect(bookButton()).toBeDisabled();
+
+    await act(async () => resolve('1'));
+    expect(bookButton()).toBeEnabled();
+    getItem.mockImplementation(stored);
   });
 
   it('completes with location permission REFUSED — pickup is typed instead (edge — E11, D7)', async () => {

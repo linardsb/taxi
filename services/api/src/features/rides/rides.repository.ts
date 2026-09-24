@@ -77,6 +77,8 @@ export interface CreateRideInput {
   bookingChannel: BookingChannel;
   /** Minted by the caller (notifications' `mintTrackingToken`) — every ride gets one. */
   trackingToken: string;
+  /** Minted by the caller (`mintPickupPin`, #258); null when not opted in. */
+  pickupPin: string | null;
 }
 
 /**
@@ -164,6 +166,7 @@ export class RidesRepository {
           totalCents: input.quote.totalCents,
           bookingChannel: input.bookingChannel,
           trackingToken: input.trackingToken,
+          pickupPin: input.pickupPin,
         })
         .returning();
 
@@ -304,10 +307,16 @@ export class RidesRepository {
    * The quote is returned alongside the `Ride` rather than read off `ride.quote`
    * because `rideSchema` types that field `FareQuote | null`; handing callers a
    * non-nullable quote is what keeps `buildOffer` free of a `!`.
+   *
+   * `pickupPin` (#258) is a SIBLING of `ride`, never inside it: `toRide` must
+   * not project it, because every caller but the rider read hands `ride`
+   * straight to a driver, a dispatcher or the settlement response.
    */
   async findWithQuote(
     rideId: string,
-  ): Promise<{ ride: Ride; quote: FareQuote } | undefined> {
+  ): Promise<
+    { ride: Ride; quote: FareQuote; pickupPin: string | null } | undefined
+  > {
     const [row] = await this.db
       .select()
       .from(rides)
@@ -346,7 +355,7 @@ export class RidesRepository {
     // data bug and must fail here, not on a driver's offer card.
     if (quote.model !== 'rider_bid') assertFareQuoteConsistent(quote);
 
-    return { ride: toRide(row, quote), quote };
+    return { ride: toRide(row, quote), quote, pickupPin: row.pickupPin };
   }
 
   /**

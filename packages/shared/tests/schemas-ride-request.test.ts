@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  pickupPinSchema,
   rideCancelSchema,
+  rideOptionsSchema,
   ridePaymentMethodUpdateSchema,
   rideQuoteBodySchema,
   rideQuotePreviewSchema,
   rideRequestBodySchema,
   rideRequestSchema,
+  rideStartSchema,
 } from '../src/schemas/ride';
 
 const riga = { lat: 56.9496, lng: 24.1052 };
@@ -84,7 +87,11 @@ describe('rideRequestBodySchema', () => {
     const parsed = rideRequestBodySchema.parse(body);
     expect(parsed.stops).toEqual([]);
     expect(parsed.category).toBe('standard');
-    expect(parsed.options).toEqual({ childSeat: false, femaleDriver: false });
+    expect(parsed.options).toEqual({
+      childSeat: false,
+      femaleDriver: false,
+      pickupPin: false,
+    });
     expect(parsed.vehicleCount).toBe(1);
   });
 
@@ -170,7 +177,11 @@ describe('rideQuoteBodySchema', () => {
     const parsed = rideQuoteBodySchema.parse(quoteBody);
     expect(parsed.stops).toEqual([]);
     expect(parsed.category).toBe('standard');
-    expect(parsed.options).toEqual({ childSeat: false, femaleDriver: false });
+    expect(parsed.options).toEqual({
+      childSeat: false,
+      femaleDriver: false,
+      pickupPin: false,
+    });
   });
 
   it('strips paymentMethod rather than rejecting it — `.pick()` is non-strict (edge)', () => {
@@ -229,5 +240,44 @@ describe('rideQuotePreviewSchema', () => {
 
   it('refuses a preview with no quote (failure)', () => {
     expect(rideQuotePreviewSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('rideOptionsSchema.pickupPin (#258)', () => {
+  it('defaults to off (expected)', () => {
+    expect(rideOptionsSchema.parse({}).pickupPin).toBe(false);
+  });
+
+  it('parses a legacy options object with no pickupPin to false, never undefined (edge)', () => {
+    expect(
+      rideOptionsSchema.parse({ childSeat: true, femaleDriver: false }),
+    ).toEqual({ childSeat: true, femaleDriver: false, pickupPin: false });
+  });
+});
+
+describe('pickupPinSchema (#258)', () => {
+  it.each(['0000', '4821'])('accepts %s (expected)', (pin) => {
+    expect(pickupPinSchema.parse(pin)).toBe(pin);
+  });
+
+  it.each(['482', '48211', 'a821', ' 482', 4821])(
+    'rejects %j (failure)',
+    (pin) => {
+      expect(pickupPinSchema.safeParse(pin).success).toBe(false);
+    },
+  );
+});
+
+describe('rideStartSchema (#258)', () => {
+  it('parses an absent body (Express 5: undefined) to no PIN (edge)', () => {
+    expect(rideStartSchema.parse(undefined)).toEqual({});
+  });
+
+  it('keeps a leading-zero PIN as a string (expected)', () => {
+    expect(rideStartSchema.parse({ pin: '0042' })).toEqual({ pin: '0042' });
+  });
+
+  it('rejects a short PIN (failure)', () => {
+    expect(rideStartSchema.safeParse({ pin: '42' }).success).toBe(false);
   });
 });

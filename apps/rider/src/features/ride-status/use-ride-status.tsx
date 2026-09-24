@@ -1,6 +1,6 @@
 import {
   RT,
-  rideSchema,
+  riderRideSchema,
   rideStatusEventSchema,
   type RideStatus,
 } from '@taxi/shared';
@@ -57,6 +57,11 @@ export interface RideStatusState {
    * stops the screen reassuring a rider it is live while no event can reach it.
    */
   joined: boolean;
+  /**
+   * The rider's pickup PIN (#258), or null when they did not opt in. From the
+   * REST read only — no socket event carries it.
+   */
+  pickupPin: string | null;
 }
 
 /**
@@ -113,6 +118,7 @@ export function useRideStatus(rideId: string | null): RideStatusState {
     previousStatus: null,
     connected: false,
     joined: false,
+    pickupPin: null,
   });
   const [elapsed, setElapsed] = useState(false);
 
@@ -150,9 +156,20 @@ export function useRideStatus(rideId: string | null): RideStatusState {
       const at = applied;
       const id = ++issued;
       void api
-        .request('GET', `/rides/${rideId}`, { schema: rideSchema })
+        .request('GET', `/rides/${rideId}`, { schema: riderRideSchema })
         .then((ride) => {
           if (disposed) return;
+          // BEFORE the staleness guard below, null included. The PIN never
+          // changes, so a stale read's PIN is still the right one — and the
+          // guard drops exactly the read that matters: an `offered` event
+          // beating both cold-start reads, the normal order right after
+          // booking. Behind it the rider would see no PIN until a reconnect,
+          // and the driver could lock out a ride the rider could have started.
+          setState((s) =>
+            s.pickupPin === ride.pickupPin
+              ? s
+              : { ...s, pickupPin: ride.pickupPin },
+          );
           retryDelay = READ_RETRY_MS;
           // The join only happened for a socket that was already connected when
           // the server ran it, which is exactly a read from the live epoch.
@@ -217,6 +234,9 @@ export function useRideStatus(rideId: string | null): RideStatusState {
       unhook();
       socket.removeAllListeners();
       socket.disconnect();
+      // In the cleanup, not the body (`react-hooks/set-state-in-effect`): a
+      // `rideId` change must not carry the previous ride's PIN onto the next.
+      setState((s) => (s.pickupPin === null ? s : { ...s, pickupPin: null }));
     };
   }, [api, onBeforeSignOut, rideId, session, signOut]);
 
