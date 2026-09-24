@@ -128,23 +128,33 @@ describe('BookingScreen', () => {
     const toggle = await screen.findByRole('switch', {
       name: t('rider.book.pickup_pin'),
     });
+    // The row IS the switch (PR #277 M2): the one pressable, 44 px target
+    // (AC10) and the one screen-reader stop — the native Switch, the label and
+    // the visible hint are not separate stops, so nothing is read twice.
+    expect(toggle.props.testID).toBe('pickup-pin-row');
+    expect(screen.getAllByRole('switch')).toHaveLength(1);
+    // The visible hint stays on screen but out of the accessibility tree.
+    expect(
+      screen.getByText(t('rider.book.pickup_pin_hint'), {
+        includeHiddenElements: true,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText(t('rider.book.pickup_pin_hint'))).toBeNull();
     expect(toggle.props.accessibilityHint).toBe(
       t('rider.book.pickup_pin_hint'),
     );
-    // The 44 px floor is on the row the switch sits in (AC10).
     expect(
-      StyleSheet.flatten(screen.getByTestId('pickup-pin-row').props.style)
-        .minHeight,
+      StyleSheet.flatten(toggle.props.style).minHeight,
     ).toBeGreaterThanOrEqual(44);
     await waitFor(() => expect(toggle).toBeEnabled());
-    expect(toggle.props.value).toBe(false);
+    expect(toggle).not.toBeChecked();
 
-    await fireEvent(toggle, 'valueChange', true);
+    // Tapping the label's row toggles it, not only the 31 pt native switch.
+    await fireEvent.press(toggle);
 
     expect(
-      screen.getByRole('switch', { name: t('rider.book.pickup_pin') }).props
-        .value,
-    ).toBe(true);
+      screen.getByRole('switch', { name: t('rider.book.pickup_pin') }),
+    ).toBeChecked();
     expect(await AsyncStorage.getItem(PICKUP_PIN_KEY)).toBe('1');
   });
 

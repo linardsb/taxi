@@ -7,7 +7,14 @@ import {
 } from '@taxi/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import {
   Banner,
   Button,
@@ -225,19 +232,39 @@ export function BookingScreen() {
             payment (`booking-draft.ts` rule 2): a lost response, a flip, then a
             retry replays the PIN-less ride, and the status screen honestly
             shows no PIN. Disabled while `busy` narrows that to a lost
-            response. */}
-        <View style={styles.switchRow} testID="pickup-pin-row">
+            response.
+            The whole row is the switch (PR #277 M2): one 44 px touch target
+            with the label, and one screen-reader stop that says label, state
+            and hint once. The native `Switch` and the visible hint are hidden
+            from that tree so neither is read a second time. */}
+        <Pressable
+          style={styles.switchRow}
+          onPress={() => pin.set(!pin.value)}
+          disabled={!pin.loaded || busy}
+          accessibilityRole="switch"
+          accessibilityLabel={t('rider.book.pickup_pin')}
+          accessibilityHint={t('rider.book.pickup_pin_hint')}
+          accessibilityState={{
+            checked: pin.value,
+            disabled: !pin.loaded || busy,
+          }}
+          testID="pickup-pin-row"
+        >
           <Text style={styles.switchLabel}>{t('rider.book.pickup_pin')}</Text>
           <Switch
             value={pin.value}
             onValueChange={pin.set}
             disabled={!pin.loaded || busy}
-            accessibilityLabel={t('rider.book.pickup_pin')}
-            accessibilityHint={t('rider.book.pickup_pin_hint')}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
             trackColor={{ true: colors.accent, false: colors.border }}
           />
-        </View>
-        <Text style={styles.sectionTitle}>
+        </Pressable>
+        <Text
+          style={styles.sectionTitle}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
           {t('rider.book.pickup_pin_hint')}
         </Text>
       </ScrollView>
