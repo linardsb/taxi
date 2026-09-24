@@ -124,6 +124,7 @@ function build(
     writeSettledSplit,
     updatePaymentMethod,
     revokePendingOffers,
+    findRiderIdentity: jest.fn(() => Promise.resolve(undefined)),
     lockPickupPin,
     recordPickupPinFailure,
   } as unknown as RideLifecycleRepository;

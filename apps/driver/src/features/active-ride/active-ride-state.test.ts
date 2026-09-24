@@ -1,7 +1,7 @@
 import {
-  rideSchema,
+  driverRideSchema,
   splitFare,
-  type Ride,
+  type DriverRide,
   type RideAssignedEvent,
   type RideStatus,
   type RideStatusEvent,
@@ -23,8 +23,8 @@ const ME = 'd0000000-0000-4000-8000-000000000001';
 const OTHER_DRIVER = 'd0000000-0000-4000-8000-000000000002';
 const AT = '2026-09-04T10:00:00.000Z';
 
-const ride = (over: Partial<Ride> = {}): Ride =>
-  rideSchema.parse({
+const ride = (over: Partial<DriverRide> = {}): DriverRide =>
+  driverRideSchema.parse({
     id: RIDE_ID,
     orderId: '11111111-2222-4333-8444-555555555555',
     status: 'accepted',
@@ -45,6 +45,7 @@ const ride = (over: Partial<Ride> = {}): Ride =>
     },
     createdAt: AT,
     updatedAt: AT,
+    rider: { displayName: 'Anna', phone: '+37120000003' },
     ...over,
   });
 

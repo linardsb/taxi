@@ -1,6 +1,7 @@
-import { drivers, rideOffers, rides } from '@taxi/db';
+import { drivers, rideOffers, rides, users } from '@taxi/db';
 import {
   authSessionSchema,
+  driverRideSchema,
   IDEMPOTENCY_KEY_HEADER,
   rideCreatedSchema,
   rideSchema,
@@ -339,14 +340,14 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
     // CONTROL: settled in the database, so a null below is a projection.
     expect((await rideRow(ride.id)).commissionCents).not.toBeNull();
 
-    const asRider = rideSchema.parse(
-      (
-        await http
-          .get(`/rides/${ride.id}`)
-          .set('authorization', r.auth)
-          .expect(200)
-      ).body,
-    );
+    const riderRes = await http
+      .get(`/rides/${ride.id}`)
+      .set('authorization', r.auth)
+      .expect(200);
+    // On the RAW body: `rideSchema.parse` strips unknown keys, so asserting on
+    // the parsed object would pass against a leak of the driver's block (#261).
+    expect(riderRes.body).not.toHaveProperty('rider');
+    const asRider = rideSchema.parse(riderRes.body);
     expect(asRider.status).toBe('completed');
     expect(asRider.split).toBeNull();
 
@@ -365,6 +366,58 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
       asDriver.split!.commissionCents + asDriver.split!.driverNetCents,
     ).toBe(asDriver.split!.totalCents);
     expect(asDriver.split!.totalCents).toBe(asDriver.quote!.totalCents);
+  });
+
+  it('gives the driver the rider block inside its windows, and nothing after (expected + edge — #261)', async () => {
+    const d = await onlineDriver(6, near(CENTRE_PICKUP.location, 0.001, 0));
+    const r = await rider(54);
+    // No product path sets a rider name yet (#269), so the test writes it.
+    await ctx.db
+      .update(users)
+      .set({ displayName: 'Anna Bērziņa' })
+      .where(eq(users.id, r.id));
+
+    const ride = await bookAndAccept(r.auth, d.auth);
+    const riderBlock = async () =>
+      driverRideSchema.parse(
+        (
+          await http
+            .get(`/rides/${ride.id}`)
+            .set('authorization', d.auth)
+            .expect(200)
+        ).body,
+      ).rider;
+    const both = { displayName: 'Anna Bērziņa', phone: p(54) };
+
+    expect(await riderBlock()).toEqual(both);
+    for (const step of ['arriving', 'arrived'] as const) {
+      await http
+        .post(`/rides/${ride.id}/${step}`)
+        .set('authorization', d.auth)
+        .expect(201);
+      expect(await riderBlock()).toEqual(both);
+    }
+
+    // Edge: the rider is in the car — the name stays, the phone does not.
+    await http
+      .post(`/rides/${ride.id}/start`)
+      .set('authorization', d.auth)
+      .expect(201);
+    expect(await riderBlock()).toEqual({
+      displayName: 'Anna Bērziņa',
+      phone: null,
+    });
+
+    // Edge: the ride is over — both withheld, on the reply and on a re-read.
+    const completed = await http
+      .post(`/rides/${ride.id}/complete`)
+      .set('authorization', d.auth)
+      .expect(201);
+    const nothing = { displayName: null, phone: null };
+    expect(
+      driverRideSchema.parse((completed.body as { ride: unknown }).ride).rider,
+    ).toEqual(nothing);
+    expect(await riderBlock()).toEqual(nothing);
   });
 
   it('refuses a dispatcher token on this route (failure)', async () => {

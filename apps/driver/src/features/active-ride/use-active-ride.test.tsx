@@ -8,7 +8,12 @@ import {
 } from '@testing-library/react-native';
 import { useEffect } from 'react';
 import { Text } from 'react-native';
-import { formatMessage, rideSchema, splitFare, type Ride } from '@taxi/shared';
+import {
+  formatMessage,
+  driverRideSchema,
+  splitFare,
+  type DriverRide,
+} from '@taxi/shared';
 import { ApiError } from '@/features/auth';
 import type { RuntimeListener } from '@/features/location';
 import { ActiveRideScreen } from './active-ride-screen';
@@ -60,8 +65,8 @@ const t = (
   params?: Record<string, string | number>,
 ) => formatMessage('lv', key, params);
 
-const ride = (over: Partial<Ride> = {}): Ride =>
-  rideSchema.parse({
+const ride = (over: Partial<DriverRide> = {}): DriverRide =>
+  driverRideSchema.parse({
     id: RIDE_ID,
     orderId: '11111111-2222-4333-8444-555555555555',
     status: 'accepted',
@@ -85,6 +90,7 @@ const ride = (over: Partial<Ride> = {}): Ride =>
     },
     createdAt: '2026-09-04T10:00:00.000Z',
     updatedAt: '2026-09-04T10:00:00.000Z',
+    rider: { displayName: 'Anna', phone: '+37120000003' },
     ...over,
   });
 
@@ -113,7 +119,7 @@ function makeSocket() {
 
 /** The api as the reducer meets it: a GET answers `current`, steps answer per `steps`. */
 function apiAnswers(
-  current: () => Ride,
+  current: () => DriverRide,
   steps: Record<string, () => Promise<unknown>> = {},
 ) {
   mockRequest.mockImplementation((method: string, path: string) => {
@@ -325,8 +331,8 @@ describe('ActiveRideProvider (#15)', () => {
    * has already passed and earns a 409 on a perfectly healthy ride.
    */
   it('a GET that was in flight before a step cannot revert it (edge — overlapping reads)', async () => {
-    let releaseStale: (r: Ride) => void = () => undefined;
-    const stale = new Promise<Ride>((resolve) => {
+    let releaseStale: (r: DriverRide) => void = () => undefined;
+    const stale = new Promise<DriverRide>((resolve) => {
       releaseStale = resolve;
     });
     let getCalls = 0;

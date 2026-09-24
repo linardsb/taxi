@@ -40,6 +40,29 @@ export const ACTIVE_DRIVER_RIDE_STATUSES = [
 ] as const satisfies readonly RideStatus[];
 
 /**
+ * When a driver may see the rider's phone (#261, D1): from acceptance until
+ * the rider is in the car. Pre-pickup only — once `in_progress` the number
+ * has no job left, and the api returns null. The driver app gates on this
+ * SAME set, because its reducer moves `ride.status` locally without a re-read.
+ */
+export const RIDER_PHONE_VISIBLE_STATUSES = [
+  'accepted',
+  'arriving',
+  'arrived',
+] as const satisfies readonly RideStatus[];
+
+/** When a driver may see the rider's name: the whole active ride (#261). */
+export const RIDER_NAME_VISIBLE_STATUSES = ACTIVE_DRIVER_RIDE_STATUSES;
+
+/** Membership in a status set; widened so a narrow `as const` tuple accepts any status. */
+export function isInStatusSet(
+  set: readonly RideStatus[],
+  status: RideStatus,
+): boolean {
+  return set.includes(status);
+}
+
+/**
  * What Dina's live board carries (#18): everything between creation and a
  * terminal state. `scheduled` is deliberately absent — a scheduled ride is
  * not yet live work — and so are `completed`/`settled`/cancellations.

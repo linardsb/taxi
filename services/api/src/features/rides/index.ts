@@ -29,9 +29,10 @@
  *   the stripped split in the type. The DRIVER branch
  *   (`RideLifecycleService.findForDriver`) returns the same row WITH the split
  *   once settled — it is their own commission line — and 404s a ride that is
- *   not theirs with the same shape as a missing one. Still absent for the
- *   driver: rider identity (name, phone) — a separate ticket. A dispatcher
- *   read stays unassigned; the board carries what Dina needs.
+ *   not theirs with the same shape as a missing one. Since #261 it also
+ *   carries a `rider` block (name, phone), each field null outside its status
+ *   window — `readDriverRide` / `toDriverRide` in `lifecycle/driver-ride.ts`.
+ *   A dispatcher read stays unassigned; the board carries what Dina needs.
  * - `cancelled_by_system` STILL HAS NO PRODUCTION TRIGGER. The actor is
  *   supported end to end and covered by a spec. #12 was expected to be its
  *   caller via a payment pre-authorization failure, and is NOT: that ticket
