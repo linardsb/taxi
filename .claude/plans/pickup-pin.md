@@ -188,7 +188,7 @@ This is the first 422 in the api (no `UnprocessableEntityException` under `servi
 /active-ride {status: arrived, ride.request.options.pickupPin}
    └─ [Pasažiera PIN kods  (number-pad, maxLength 4)]
    └─ [Sākt braucienu] (disabled until 4 digits) ──► 201 → title «Brauciens notiek»
-                                                  ──► 422 incorrect → Banner «Nepareizs PIN kods.» (field keeps the digits; Retry resends them)
+                                                  ──► 422 incorrect → Banner «Nepareizs PIN kods.» (field keeps the digits; no Retry, and Start stays off until the digits differ — PR #277 M1)
                                                   ──► 409 locked → Banner «PIN bloķēts. Zvaniet dispečerim.»
 ```
 
@@ -200,7 +200,7 @@ This is the first 422 in the api (no `UnprocessableEntityException` under `servi
 | Rider PIN block | Hidden until a read returns the PIN | `pickupPin === null` → no block, no PIN in the banner | Read fails → existing «Atjaunojam savienojumu…» banner, retry with backoff (unchanged) | Same as error |
 | Driver PIN field | Existing ride spinner | Ride without the option → no field, Start works as today | 422/409 → danger Banner with the catalog copy | Start fails `generic`/offline → Banner Retry resends the typed PIN |
 
-**Touch targets & focus**: the switch sits in a row with `minHeight: 44` (the driver `pill` style precedent, `active-ride-screen.tsx:220`); `TextField` and `Button` already meet 44 px. The PIN field has an `accessibilityLabel` and a visible label; the switch has `accessibilityLabel` = label and `accessibilityHint` = the hint copy.
+**Touch targets & focus**: the switch sits in a row with `minHeight: 44` (the driver `pill` style precedent, `active-ride-screen.tsx:220`); `TextField` and `Button` already meet 44 px. The PIN field has an `accessibilityLabel` and a visible label; the switch has `accessibilityLabel` = label and `accessibilityHint` = the hint copy. *Amended by PR #277 M2:* the row itself is a `Pressable` with role `switch`, the label, hint and `checked` state, so the 44 px floor is on the touch target and the screen reader stops once; the native `Switch` and the visible hint are hidden from the accessibility tree.
 
 **Friction audit** (`derived`: counted from the breadboards above)
 
@@ -476,7 +476,7 @@ T16–T18.
   6. **Concurrency** (edge; the lock's proof). **Deterministic by construction, not by timing.** Firing requests in parallel does not guarantee they overlap. If they happen to run one after another, the version without the lock also returns 5/5, and the test proves nothing. So the test forces the overlap:
      1. With failures = 0, the test opens its own transaction on `ctx.db` and takes the ride row with `SELECT … FOR UPDATE`. It holds the lock through a promise that it resolves later.
      2. It fires **8** wrong-PIN starts without awaiting them.
-     3. It polls `SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()` every 25 ms until the count is 8 (3 s timeout, with a message naming the count reached).
+     3. It polls `SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()` (narrowed by PR #277 L3 with `AND query ILIKE '%pickup_pin%'`) every 25 ms until the count is 8 (3 s timeout, with a message naming the count reached).
         - With the production lock, the 8 wait on their own `FOR UPDATE`.
         - Without it, each has already computed `incorrect` and waits on its `UPDATE … + 1`.
         - Either way, all 8 are proven in flight before any of them proceeds.
@@ -528,6 +528,7 @@ T16–T18.
     - `accessibilityLabel={t('rider.book.pickup_pin')}` and `accessibilityHint={t('rider.book.pickup_pin_hint')}`
     - `trackColor` from theme tokens
     - Under it, the hint as muted text.
+    - *Amended by PR #277 M2:* the row became the `Pressable` switch (role, label, hint, `checked`/`disabled` state, `onPress` toggles); the inner `Switch` and the visible hint are hidden from the accessibility tree.
   - The Book button: `disabled={!isBookable(draft) || !pin.loaded}`.
   - `use-book-ride.ts`: `useBookRide(draft, pickupPin: boolean)`, with the body gaining `options: { pickupPin }` and `pickupPin` in the `useCallback` deps.
   - Tests:
@@ -596,12 +597,12 @@ T16–T18.
     - `label={t('driver.ride.pin_label')}`, `value={pin}`, `onChangeText={(v) => setPin(v.replace(/\D/g, ''))}`
     - `keyboardType="number-pad"`, `maxLength={4}`, `testID="pickup-pin-input"`
   - The primary button: `onPress={() => step(pin)}` and `disabled={needsPin(ride) && pin.length !== 4}`.
-  - The error Banner's Retry (`:162`) becomes `onPress: () => step(pin)`, so the retry resends the typed PIN rather than posting none.
+  - The error Banner's Retry (`:162`) becomes `onPress: () => step(pin)`, so the retry resends the typed PIN rather than posting none. *Amended by PR #277 M1:* not for a `pickup_pin_*` code — each resend of refused digits spends one of the 5 attempts — so those banners carry no Retry, and Start stays disabled on the refused digits (`rejectedPin`) and after `pickup_pin_locked` (`pinLocked`).
   - Tests in `active-ride-screen.test.tsx`:
     - A pinned arrived ride shows the field, and Start is disabled at 3 digits and enabled at 4 (expected + edge).
     - Pressing Start calls `step('0042')` (expected).
     - An un-pinned arrived ride shows no field, and Start is enabled (regression).
-    - `errorCode: 'pickup_pin_incorrect'` renders `driver.error.pickup_pin_incorrect`'s copy, and Retry calls `step` with the typed PIN (failure).
+    - `errorCode: 'pickup_pin_incorrect'` renders `driver.error.pickup_pin_incorrect`'s copy, and Retry calls `step` with the typed PIN (failure). *Amended by PR #277 M1:* no Retry on a PIN verdict; Start off until the digits differ; Retry-with-PIN is asserted on a network error instead (E10).
     - The field has an accessible label.
 - **GOTCHA**:
   - No `autoFocus` (see the friction audit).
@@ -739,7 +740,7 @@ Everything here is performable with what ships plus the seed. `pnpm dev` runs th
 - [ ] **AC6** Five wrong entries lock the start (409 `pickup_pin_locked`, even for the right PIN). Exactly five are counted when 8 attempts are forced to overlap, and the same test goes red with the lock removed. Cancel still works.
 - [ ] **AC7** A phone booking with a PIN gets `sms.driver_arrived_pin` at `arrived`, one segment at the maximum plate in lv/ru/en (47/43/45 chars, `derived`, pinned by the budget test). App bookings get no arrival SMS (#135).
 - [ ] **AC8** The rider's arrival announcement speaks the PIN digit by digit, and the PIN block has a screen-reader label with spaced digits.
-- [ ] **AC9** The driver enters the PIN in a labelled number field. Start is enabled at 4 digits, and Retry resends the PIN.
+- [ ] **AC9** The driver enters the PIN in a labelled number field. Start is enabled at 4 digits, and Retry resends the PIN (after a network or generic error only — PR #277 M1: a PIN verdict gets no Retry, and the refused digits cannot be resent).
 - [ ] **AC10** Every new interactive element is ≥ 44 px with a label, and every string comes from the LV/RU/EN catalogs.
 - [ ] **AC11** The metrics-ledger row, the ride-state-machine reference and the ui-decisions log are updated.
 - [ ] **AC12** `pnpm turbo run typecheck lint test build --force` green with `REDIS_TEST_URL` set, and every capped file ≤ 500 lines (`observed` in the report).
@@ -826,7 +827,7 @@ Why it is not 10: the last point sits outside the plan.
   - Added the gate re-run budget and the risk register.
 - 2026-09-24 — as shipped (implementation report `.claude/reports/pickup-pin-report.md` § Deviations). These supersede the task text they name:
   - T2a: the `riderRideSchema` cases live in `schemas-ride-record.test.ts` (it has the full ride fixture), not `schemas-ride-request.test.ts`.
-  - T6: the extraction kept two private one-line wrappers (`logApplied`/`logRejected` → `logTransitionApplied`/`logTransitionRejected`). The service landed at 449 lines, not ~435, and at **497** after T7; the next edit to it needs another extraction.
+  - T6: the extraction kept two private one-line wrappers (`logApplied`/`logRejected` → `logTransitionApplied`/`logTransitionRejected`). The service landed at 449 lines, not ~435, and at **497** after T7 (**499** after PR #277 L1); the next edit to it needs another extraction.
   - T9: the PIN branch is a private `arrivalBody(rideId, language, plate)` helper on `RideNotificationsService`, not an inline ternary.
   - T10: the file's phone range is `+371320` and its plate prefix `PK` (`PN` belongs to `driver-presence`). Leak checks walk the body for string values equal to the PIN and non-boolean `pickupPin` values, instead of `JSON.stringify(...).includes(pin)`, which false-positives on timestamps and on the legitimate boolean `request.options.pickupPin`.
   - T12: the switch's role, label, hint and 44 px row (`testID="pickup-pin-row"`) are asserted in `booking-screen.test.tsx`; `accessibility.test.tsx` is unchanged.

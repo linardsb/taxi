@@ -4,7 +4,7 @@
 
 ## Summary
 
-A rider can opt in per booking to a 4-digit pickup PIN. The api mints it at creation with `randomInt`, stores it in `rides.pickup_pin`, and returns it only on the rider's own `GET /rides/:id` (`riderRideSchema`). It sits as a sibling field and never goes on `Ride`. `POST /rides/:id/start` on a pinned ride now runs through `RideLifecycleService.start`: a row lock (`SELECT … FOR UPDATE`), a pure verdict, then either a committed failure increment or the transition. It answers 422 `pickup_pin_required` / `pickup_pin_incorrect`, or 409 `pickup_pin_locked` after 5 wrong entries. Phone riders get `sms.driver_arrived_pin`. The rider app has a remembered switch, shows the PIN and speaks it in the arrival banner. The driver app has a number field that gates Start and travels with Retry.
+A rider can opt in per booking to a 4-digit pickup PIN. The api mints it at creation with `randomInt`, stores it in `rides.pickup_pin`, and returns it only on the rider's own `GET /rides/:id` (`riderRideSchema`). It sits as a sibling field and never goes on `Ride`. `POST /rides/:id/start` on a pinned ride now runs through `RideLifecycleService.start`: a row lock (`SELECT … FOR UPDATE`), a pure verdict, then either a committed failure increment or the transition. It answers 422 `pickup_pin_required` / `pickup_pin_incorrect`, or 409 `pickup_pin_locked` after 5 wrong entries. Phone riders get `sms.driver_arrived_pin`. The rider app has a remembered switch, shows the PIN and speaks it in the arrival banner. The driver app has a number field that gates Start and travels with Retry after a network or generic error; after PR #277 M1 a PIN verdict gets no Retry, and Start stays off on refused digits and after a lock.
 
 ## Tasks completed
 
@@ -44,13 +44,13 @@ A rider can opt in per booking to a 4-digit pickup PIN. The api mints it at crea
   - With `.for('update')`: 5× `422 pickup_pin_incorrect` + 3× `409 pickup_pin_locked`, column = 5. The whole file passed 3 runs of 3.
   - With `.for('update')` deleted: red. `Received: ["422 pickup_pin_incorrect" ×8]`, expected 5 of them. Restored afterwards and verified: `grep -c "for('update')"` = 1.
   - 8 attempts; the poll did not starve the pool, so no drop to 7.
-- rider: `pickup-pin-preference.test.tsx` (5); `use-book-ride.test.tsx` (+1, and the existing body assertion now carries `options: { pickupPin: false }`); `booking-screen.test.tsx` (+2: labelled switch with hint, 44 px row, toggle persists `'1'`; Book disabled until the stored value loads, with a live quote); `use-ride-status.test.tsx` (+2: E1 race, null PIN); `status-screen.test.tsx` (+4).
+- rider: `pickup-pin-preference.test.tsx` (5); `use-book-ride.test.tsx` (+1, and the existing body assertion now carries `options: { pickupPin: false }`); `booking-screen.test.tsx` (+2: labelled switch with hint, 44 px row, toggle persists `'1'` — reworked by PR #277 M2 to assert the row is the one pressable switch; Book disabled until the stored value loads, with a live quote); `use-ride-status.test.tsx` (+2: E1 race, null PIN); `status-screen.test.tsx` (+4).
   - **E1 mutation check (`observed`)**: moving the PIN write behind the staleness guard turns "keeps the PIN when a ride:status event lands before the read resolves" red (1 failed). Restored.
 - driver: `active-ride-state.test.ts` (+6: `needsPin`, pinned start carries PIN, 2 digits posts nothing, un-pinned sends no PIN, `pickup_pin_incorrect`/`locked` do not reconcile); `active-ride-screen.test.tsx` (+6); `use-active-ride.test.tsx` (+2: POST body `{ pin }`, un-pinned POST passes `undefined`).
 
 ## Validation results
 
-- **Gate** `REDIS_PORT=6381 COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force`, run from cleared `dist` and `apps/dispatch/.next`. Result: **22 successful, 22 total**, exit 0, 1m34s (`observed`, run 2). Per package:
+- **Gate** `REDIS_PORT=6381 COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://localhost:6381 pnpm turbo run typecheck lint test build --force`, run from cleared `dist` and `apps/dispatch/.next`. Result: **22 successful, 22 total**, exit 0 (`observed`). The run quoted here is the one `record-gate.sh --clean` recorded in `.claude/last-gate.json` at head `75091df`: 1m38.523s. The earlier 1m34s ("run 2") was at an uncommitted tree and named no head (PR #277 L4). Per package, at `75091df`; the gate after the round-1 fixes is in `.claude/reports/pr-277-review-fixes.md`:
 
   | Package | Result |
   |---|---|
@@ -70,7 +70,7 @@ A rider can opt in per booking to a 4-digit pickup PIN. The api mints it at crea
   | `lv.ts` | 491 |
   | `rides.service.ts` | 484 |
   | `rides.repository.ts` | 473 |
-  | `ride-lifecycle.service.ts` | **497** |
+  | `ride-lifecycle.service.ts` | **497** (499 after PR #277 L1) |
   | `booking-screen.tsx` | 267 |
   | `use-ride-status.tsx` | 262 |
   | `active-ride-state.ts` | 399 |
@@ -111,8 +111,8 @@ This branch's api was booted from `services/api/dist` on port 3021 (3001 is anot
 |---|---|
 | (a) | At `arrived` the PIN field is visible and Start is disabled. ✅ |
 | (b) | `uiautomator` dump (scratchpad `ui-arrived.xml`): `<node resource-id="pickup-pin-input" class="android.widget.EditText" content-desc="Pasažiera PIN kods" enabled="true" …/>` and `<node resource-id="ride-step" class="android.widget.Button" content-desc="Sākt braucienu" enabled="false" …>`. ✅ |
-| (c) | Typed `1111` → Start `enabled="true"` → tap → banner «Nepareizs PIN kods.» with Retry; the field keeps `1111`. ✅ |
-| (d) | Replaced with the right PIN (`5412`) and pressed **Retry** (not Start), so this also proves AC9's "Retry resends the PIN" on device → title «Brauciens notiek». The api log for that ride: `transition_applied` ×2 (`arriving`, `arrived`), `transition_rejected` `pickup_pin_incorrect` ×1, `transition_applied` `in_progress`; **0** log entries contain `5412`. ✅ |
+| (c) | Typed `1111` → Start `enabled="true"` → tap → banner «Nepareizs PIN kods.» with Retry; the field keeps `1111`. ✅ *Predates PR #277 M1: that banner no longer carries Retry.* |
+| (d) | Replaced with the right PIN (`5412`) and pressed **Retry** (not Start), so this also proves AC9's "Retry resends the PIN" on device → title «Brauciens notiek». *Predates PR #277 M1: Retry after a PIN verdict no longer exists, so this row no longer describes the shipped build; the corrected-PIN path is now Start, and its on-device re-check is owed (see `pr-277-review-fixes.md`).* The api log for that ride: `transition_applied` ×2 (`arriving`, `arrived`), `transition_rejected` `pickup_pin_incorrect` ×1, `transition_applied` `in_progress`; **0** log entries contain `5412`. ✅ |
 | (e) | TalkBack **is** on this `google_apis` image and was driven from `adb` (verbose utterance log, focus moved by `DPAD`). The field reads «Pasažiera PIN kods», «Rediģēšana» / «Rediģēšanas lodziņš». **Finding:** linear focus navigation skips the **disabled** Start button in both directions (field ↔ «Atvērt Google Maps»), so a TalkBack driver never hears that Start exists or why it is unavailable. It is not a regression (the plan wants Start disabled until 4 digits), but it is an a11y gap on a screen that must be fully usable by screen reader. Logged for #276 rather than fixed here. ⚠️ |
 
 - **Friction met on the way (not this ticket's code):**
@@ -126,7 +126,7 @@ This branch's api was booted from `services/api/dist` on port 3021 (3001 is anot
 ## Deviations from the plan
 
 - **T2a**: the `riderRideSchema` cases live in `schemas-ride-record.test.ts`, not `schemas-ride-request.test.ts`. That file already builds a full ride fixture.
-- **T6**: the service line count after extraction was 449 (`observed`), not ~435. The plan's −61 did not count the two private wrappers kept to preserve call-site shape. Calling the functions directly was tried and came out longer (463) once prettier wrapped the calls. After T7 the file is **497/500**. The next edit to it will need another extraction.
+- **T6**: the service line count after extraction was 449 (`observed`), not ~435. The plan's −61 did not count the two private wrappers kept to preserve call-site shape. Calling the functions directly was tried and came out longer (463) once prettier wrapped the calls. After T7 the file is **497/500**; **499/500** after PR #277 L1. The next edit to it will need another extraction.
 - **T7**: I folded the plan's "remove a docblock line" into the start docblock to stay under the cap. The `if (verdict === 'incorrect')` body is unbraced for the same reason. Behaviour is as specified.
 - **T9**: the PIN branch is a private `arrivalBody(rideId, language, plate)` helper instead of an inline `await` in the ternary. It does the same read and gives the same bodies.
 - **T10 leak checks**: instead of `JSON.stringify(body)` not containing the PIN, the check walks the body and fails on any string value equal to the PIN (or containing `PIN: <pin>`) and on any non-boolean `pickupPin` value. There are two reasons:
@@ -134,7 +134,7 @@ This branch's api was booted from `services/api/dist` on port 3021 (3001 is anot
   - `request.options.pickupPin` (the boolean opt-in) is a legitimate key on every ride.
   - The top-level `not.toHaveProperty('pickupPin')` assertions are kept as specified.
 - **T10**: the spec's phone range is `+371320`, and its plates use the `PK` prefix. The first gate showed that `PN` belongs to `driver-presence`.
-- **T12**: `accessibility.test.tsx` is unchanged. The switch's role, label, hint and 44 px row are asserted in `booking-screen.test.tsx` instead: rendering `BookingScreen` in the sweep file needs the session, router and places mocks that file does not carry. The row has `testID="pickup-pin-row"` for that assertion.
+- **T12**: `accessibility.test.tsx` is unchanged. The switch's role, label, hint and 44 px row are asserted in `booking-screen.test.tsx` instead: rendering `BookingScreen` in the sweep file needs the session, router and places mocks that file does not carry. The row has `testID="pickup-pin-row"` for that assertion; since PR #277 M2 that row is the `Pressable` switch itself.
 - **T11**: the "unmount before the read resolves" test cannot fail on a missing `cancelled` guard. React 18+ no longer warns on a set-state after unmount, so the test asserts only that nothing logs an error. The guard is in the code, but no test proves it.
 - **T14**: the 4-digit check uses `pickupPinSchema.safeParse` rather than a local regex, so there is one definition.
 - **T15**: two extra tests: non-digits stripped, and no field before `arrived` on a pinned ride.
@@ -142,7 +142,7 @@ This branch's api was booted from `services/api/dist` on port 3021 (3001 is anot
 - **UX states**:
   - Booking switch: loading (switch and Book disabled until read), error (read throws → off, loaded), offline (n/a) — all built.
   - Rider PIN block: loading (hidden until a read), empty (null → no block, plain arrival line), error/offline (existing banner, unchanged) — all built.
-  - Driver PIN field: empty (un-pinned → no field), error (422/409 banner with catalog copy), offline (Retry resends the typed PIN) — all built.
+  - Driver PIN field: empty (un-pinned → no field), error (422/409 banner with catalog copy), offline (Retry resends the typed PIN; a PIN verdict gets no Retry since PR #277 M1) — all built.
 
 ## Issues encountered
 
