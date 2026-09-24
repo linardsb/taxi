@@ -522,7 +522,10 @@ describe('pickup PIN (integration, #258)', () => {
     let waiting = 0;
     while (waiting < ATTEMPTS) {
       const result = await ctx.db.execute<{ n: number }>(
-        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+        // Only this test's statements: another session's waiter on the shared
+        // test DB would otherwise fill the count early (PR #277 L3). Both the
+        // lock read and the increment name `pickup_pin_*` columns.
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database() AND query ILIKE '%pickup_pin%'`,
       );
       waiting = result.rows[0]!.n;
       if (waiting >= ATTEMPTS) break;
@@ -553,6 +556,69 @@ describe('pickup PIN (integration, #258)', () => {
     expect((await rideRow(ride.id)).pickupPinFailures).toBe(5);
 
     await start(ride.id, d.auth, pickupPin!).expect(409);
+  });
+
+  /**
+   * PR #277 L1: the rider cancels between the start's status guard and its
+   * row lock. The holder stands in for that cancel: it holds the row, the
+   * wrong-PIN start blocks on `lockPickupPin`, and the holder commits a
+   * cancelled status (a direct write — only the commit order matters here).
+   * The start must read that status under the lock and answer the lost race,
+   * not charge a failure to a cancelled ride.
+   */
+  it('a ride cancelled while the start waits on the lock is a lost race, not a wrong PIN (edge — PR #277 L1)', async () => {
+    const d = await onlineDriver(10);
+    const r = await rider(70);
+    const ride = await book(r.auth, { pickupPin: true });
+    const { pickupPin } = await riderRead(ride.id, r.auth);
+    await accept(ride, d.auth);
+    await toArrived(ride.id, d.auth);
+
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let held!: () => void;
+    const isHeld = new Promise<void>((resolve) => (held = resolve));
+    const holder = ctx.db.transaction(async (tx) => {
+      await tx
+        .select({ id: rides.id })
+        .from(rides)
+        .where(eq(rides.id, ride.id))
+        .for('update');
+      held();
+      await released;
+      await tx
+        .update(rides)
+        .set({ status: 'cancelled_by_rider' })
+        .where(eq(rides.id, ride.id));
+    });
+    await isHeld;
+
+    const attempt = start(ride.id, d.auth, wrongPin(pickupPin!)).then(
+      (res) => res,
+    );
+    const deadline = Date.now() + 3_000;
+    for (;;) {
+      const result = await ctx.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database() AND query ILIKE '%pickup_pin%'`,
+      );
+      if (result.rows[0]!.n >= 1) break;
+      if (Date.now() > deadline) {
+        release();
+        await holder;
+        await attempt;
+        throw new Error('the start never reached the row lock in 3 s');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    release();
+    await holder;
+    const res = await attempt;
+
+    expect(`${res.status} ${(res.body as { message: string }).message}`).toBe(
+      '409 ride_transition_conflict',
+    );
+    expect((await rideRow(ride.id)).pickupPinFailures).toBe(0);
   });
 
   it('starts an un-pinned ride with no body, and its rider read says null (expected — regression)', async () => {

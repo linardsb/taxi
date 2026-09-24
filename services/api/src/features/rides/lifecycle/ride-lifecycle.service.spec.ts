@@ -76,7 +76,7 @@ function build(
     revoked?: { offerId: string; driverId: string }[];
     paymentUpdated?: boolean;
     found?: { ride: Ride } | undefined;
-    gate?: { pin: string | null; failures: number };
+    gate?: { pin: string | null; failures: number; status?: RideStatus };
   } = {},
 ) {
   const events: string[] = [];
@@ -107,7 +107,12 @@ function build(
     Promise.resolve(over.revoked ?? []),
   );
   const lockPickupPin = jest.fn(() =>
-    Promise.resolve(over.gate ?? { pin: null, failures: 0 }),
+    Promise.resolve({
+      pin: null,
+      failures: 0,
+      status: 'arrived',
+      ...over.gate,
+    }),
   );
   const recordPickupPinFailure = jest.fn(() => {
     events.push('write:pin_failure');
@@ -314,6 +319,25 @@ describe('RideLifecycleService', () => {
       await expect(attempt).rejects.toThrow('pickup_pin_locked');
       expect(recordPickupPinFailure).not.toHaveBeenCalled();
       expect(transitionInTx).not.toHaveBeenCalled();
+    });
+
+    it('a ride cancelled between the guard and the lock is a lost race, not a charged wrong PIN (edge — PR #277 L1)', async () => {
+      const { service, recordPickupPinFailure, transitionInTx } = build({
+        ride: arrived(),
+        gate: { pin: '0042', failures: 0, status: 'cancelled_by_rider' },
+        transitioned: undefined,
+      });
+
+      await expect(service.start(DRIVER_ID, RIDE_ID, '9999')).rejects.toThrow(
+        new ConflictException('ride_transition_conflict'),
+      );
+      expect(recordPickupPinFailure).not.toHaveBeenCalled();
+      expect(transitionInTx).toHaveBeenCalledWith(
+        {},
+        RIDE_ID,
+        'arrived',
+        'in_progress',
+      );
     });
 
     it('starts an un-pinned ride with no PIN, as before #258 (expected)', async () => {

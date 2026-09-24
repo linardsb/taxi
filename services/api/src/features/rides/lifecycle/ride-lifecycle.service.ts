@@ -130,9 +130,11 @@ export class RideLifecycleService {
 
     const result = await this.db.transaction(async (tx) => {
       const gate = await this.lifecycle.lockPickupPin(tx, rideId);
-      // `undefined` is unreachable (the guard just read the row); `open` there
-      // is safe only because `transitionInTx` is conditional on `from`.
-      const verdict = gate ? pickupPinVerdict(gate, pin) : 'open';
+      // No verdict on a ride gone (`undefined`) or moved off `from` since the
+      // guard: `open` hands it to `transitionInTx`, conditional on `from`, which
+      // answers a lost race — and no failure is charged to a cancelled ride.
+      const verdict =
+        gate?.status === from ? pickupPinVerdict(gate, pin) : 'open';
       if (verdict === 'incorrect')
         await this.lifecycle.recordPickupPinFailure(tx, rideId);
       if (verdict !== 'open') return { verdict, moved: undefined };

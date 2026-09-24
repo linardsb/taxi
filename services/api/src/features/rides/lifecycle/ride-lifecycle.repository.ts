@@ -106,14 +106,22 @@ export class RideLifecycleRepository {
    * The ride's pickup-PIN gate (#258), read with `SELECT … FOR UPDATE` inside
    * the caller's transaction. The row lock is what serialises concurrent start
    * attempts: without it N parallel requests all read the same `failures` and
-   * the 5-attempt cap becomes N guesses per round trip.
+   * the 5-attempt cap becomes N guesses per round trip. `status` is read under
+   * the same lock, so a ride cancelled since the caller's guard is not charged
+   * a failure (PR #277 L1).
    */
   async lockPickupPin(
     tx: DbTx,
     rideId: string,
-  ): Promise<{ pin: string | null; failures: number } | undefined> {
+  ): Promise<
+    { pin: string | null; failures: number; status: RideStatus } | undefined
+  > {
     const [row] = await tx
-      .select({ pin: rides.pickupPin, failures: rides.pickupPinFailures })
+      .select({
+        pin: rides.pickupPin,
+        failures: rides.pickupPinFailures,
+        status: rides.status,
+      })
       .from(rides)
       .where(eq(rides.id, rideId))
       .for('update');
