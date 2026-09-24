@@ -68,6 +68,20 @@ export class NotificationsRepository {
     return row ? toNotifiable(row) : undefined;
   }
 
+  /**
+   * The ride's pickup PIN (#258), for the phone rider's arrival SMS only. NOT
+   * on `NotifiableRide`: the tracking view reads that type, and the tracking
+   * page is shared with non-riders.
+   */
+  async pickupPin(rideId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ pin: rides.pickupPin })
+      .from(rides)
+      .where(eq(rides.id, rideId))
+      .limit(1);
+    return row?.pin ?? null;
+  }
+
   async rideByToken(token: string): Promise<NotifiableRide | undefined> {
     const [row] = await this.db
       .select()

@@ -89,6 +89,19 @@ export const rides = pgTable(
      * creation. Nullable: legacy rows never got one — untrackable by design.
      */
     trackingToken: text('tracking_token'),
+    /**
+     * The rider's 4-digit pickup PIN (#258), minted once at creation when the
+     * booking opted in. NULL = no PIN (not opted in, or a legacy row). A
+     * secret: never logged, and never projected onto `Ride`.
+     */
+    pickupPin: text('pickup_pin'),
+    /**
+     * Wrong PIN entries so far, capped by `PICKUP_PIN_MAX_ATTEMPTS` in the api.
+     * Never reset: `arrived` has no dispatcher release, so no second driver
+     * ever inherits a half-spent counter. The default states a fact about a
+     * new row, as `booking_channel`'s does.
+     */
+    pickupPinFailures: integer('pickup_pin_failures').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

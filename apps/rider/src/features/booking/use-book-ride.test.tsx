@@ -37,8 +37,14 @@ const RIDE = { ride: { id: 'ride-1' }, split: {} };
 
 let lastRideId: string | null | undefined;
 
-function Harness({ draft = DRAFT }: { draft?: BookingDraft }) {
-  const { book, busy, error } = useBookRide(draft);
+function Harness({
+  draft = DRAFT,
+  pickupPin = false,
+}: {
+  draft?: BookingDraft;
+  pickupPin?: boolean;
+}) {
+  const { book, busy, error } = useBookRide(draft, pickupPin);
   return (
     <>
       <Pressable
@@ -80,11 +86,28 @@ describe('useBookRide', () => {
           pickup: DRAFT.pickup,
           destination: DRAFT.dropoff,
           paymentMethod: 'cash',
+          options: { pickupPin: false },
         },
       }),
     );
     expect(announce).toHaveBeenCalledWith(
       formatMessage('lv', 'rider.a11y.ride_requested'),
+    );
+  });
+
+  it('sends the pickup-PIN opt-in when the rider switched it on (expected — #258)', async () => {
+    mockRequest.mockResolvedValue(RIDE);
+    await render(<Harness pickupPin />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'book' }));
+
+    await waitFor(() => expect(lastRideId).toBe('ride-1'));
+    expect(mockRequest).toHaveBeenCalledWith(
+      'POST',
+      '/rides',
+      expect.objectContaining({
+        body: expect.objectContaining({ options: { pickupPin: true } }),
+      }),
     );
   });
 

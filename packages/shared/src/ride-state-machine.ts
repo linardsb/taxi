@@ -145,6 +145,9 @@ export const ALLOWED_TRANSITIONS: Readonly<
     'cancelled_by_dispatcher',
   ],
   arrived: [
+    // No `requested` (dispatcher release) here, and #258 relies on it: the
+    // pickup-PIN failure counter never resets. Adding a release edge to this
+    // row must reset `rides.pickup_pin_failures` in the same write.
     'in_progress',
     'cancelled_by_rider',
     'cancelled_by_driver',

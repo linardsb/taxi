@@ -215,6 +215,49 @@ describe('ActiveRideProvider (#15)', () => {
     ).toBe(2);
   });
 
+  it('a pinned start POSTs the PIN; a plain step POSTs no body (expected — #258)', async () => {
+    const base = ride({ status: 'arrived' });
+    const pinned = {
+      ...base,
+      request: {
+        ...base.request,
+        options: { ...base.request.options, pickupPin: true },
+      },
+    };
+    apiAnswers(() => pinned);
+    await mount();
+    await act(async () => ctx!.open(RIDE_ID));
+    await screen.findByTestId('pickup-pin-input');
+
+    await fireEvent.changeText(screen.getByTestId('pickup-pin-input'), '0042');
+    await fireEvent.press(screen.getByTestId('ride-step'));
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(
+        'POST',
+        `/rides/${RIDE_ID}/start`,
+        { body: { pin: '0042' } },
+      ),
+    );
+  });
+
+  it('an un-pinned step still POSTs with no body at all (regression — #258)', async () => {
+    apiAnswers(() => ride({ status: 'arrived' }));
+    await mount();
+    await act(async () => ctx!.open(RIDE_ID));
+    await screen.findByTestId('ride-step');
+
+    await fireEvent.press(screen.getByTestId('ride-step'));
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(
+        'POST',
+        `/rides/${RIDE_ID}/start`,
+        undefined,
+      ),
+    );
+  });
+
   it('complete renders the receipt from the split the api returned (expected)', async () => {
     const settled = ride({
       status: 'completed',

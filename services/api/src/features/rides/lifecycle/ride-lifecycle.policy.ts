@@ -51,3 +51,29 @@ export function cancelledStatusFor(actor: LifecycleActor): RideStatus {
  */
 export const PAYMENT_METHOD_EDITABLE_STATUSES: readonly RideStatus[] =
   RIDE_STATUSES.filter((s) => !isPaymentMethodLocked(s) && !isTerminal(s));
+
+/**
+ * Wrong pickup-PIN entries a ride tolerates before its start locks (#258).
+ * Source: `docs/research/rider-ux-evidence.md` §6.1 ("5 attempts"). Brute-force
+ * ceiling, `derived`: 5 ÷ 10,000 = 0.05 % per ride, assuming a uniformly minted
+ * PIN and 5 distinct guesses — which the row lock in `start()` makes the true
+ * maximum even under parallel requests.
+ */
+export const PICKUP_PIN_MAX_ATTEMPTS = 5;
+
+export type PickupPinVerdict = 'open' | 'required' | 'incorrect' | 'locked';
+
+/**
+ * Whether a `start` may proceed on this ride's PIN gate. Order matters: a ride
+ * without a PIN ignores any entry; a locked ride refuses even the right PIN;
+ * only then is the entry compared — as strings, so `'42'` never equals `'0042'`.
+ */
+export function pickupPinVerdict(
+  gate: { pin: string | null; failures: number },
+  entered: string | undefined,
+): PickupPinVerdict {
+  if (gate.pin === null) return 'open';
+  if (gate.failures >= PICKUP_PIN_MAX_ATTEMPTS) return 'locked';
+  if (entered === undefined) return 'required';
+  return entered === gate.pin ? 'open' : 'incorrect';
+}

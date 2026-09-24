@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import type { Db } from '@taxi/db';
 import {
@@ -30,24 +31,19 @@ import {
   type LifecycleRide,
 } from './ride-lifecycle.repository';
 import {
+  logTransitionApplied,
+  logTransitionRejected,
+  type LoggableRide,
+  type RejectionCause,
+} from './ride-lifecycle.logging';
+import {
   cancelledStatusFor,
+  pickupPinVerdict,
   type LifecycleActor,
 } from './ride-lifecycle.policy';
 
 /** What a revoked offer needs for its `ride:offer_revoked`. */
 type RevokedRef = { offerId: string; driverId: string };
-
-/**
- * Why the machine said no. A CLOSED set, deliberately: the cancellation
- * `reason` beside it is rider-authored free text and must never reach a log
- * (`.claude/references/logging-standard.md`), so making this a union rather
- * than a `string` turns that mistake into a compiler error.
- */
-type RejectionCause =
-  'not_in_expected_status' | 'illegal_transition' | 'lost_race';
-
-/** Anything this slice logs about. Both ride shapes satisfy it structurally. */
-type LoggableRide = { id: string; orderId: string; driverId: string | null };
 
 /**
  * The ride from `accepted` onward: the driver's four steps, all four
@@ -87,14 +83,15 @@ export class RideLifecycleService {
   }
 
   /**
-   * `accepted → arriving → arrived → in_progress`.
+   * `accepted → arriving → arrived`.
    *
-   * The fourth step is `complete()`: it settles money and returns the ride, so
-   * it does not fit this method's shape. `Exclude` is what makes that a
-   * compiler error rather than a runtime surprise.
+   * The third step is `start()`: it verifies the pickup PIN (#258). The fourth
+   * is `complete()`: it settles money and returns the ride. Neither fits this
+   * method's shape, and `Exclude` makes calling them here a compiler error
+   * rather than an ungated path.
    */
   async driverStep(
-    step: Exclude<DriverStep, 'complete'>,
+    step: Exclude<DriverStep, 'complete' | 'start'>,
     driverId: string,
     rideId: string,
   ): Promise<void> {
@@ -114,6 +111,53 @@ export class RideLifecycleService {
     }
 
     this.logApplied(moved, 'driver', driverId, from, to);
+  }
+
+  /**
+   * `arrived → in_progress`, gated by the ride's pickup PIN (#258). One
+   * transaction: lock the row, take the verdict, then either count a wrong
+   * entry or transition. A PIN verdict is RETURNED, never thrown inside — a
+   * throw rolls back the failure increment and the counter would never move.
+   */
+  async start(
+    driverId: string,
+    rideId: string,
+    pin: string | undefined,
+  ): Promise<void> {
+    const { ride, from, to } = await this.guardDriverStep(
+      'start',
+      driverId,
+      rideId,
+    );
+
+    const result = await this.db.transaction(async (tx) => {
+      const gate = await this.lifecycle.lockPickupPin(tx, rideId);
+      // No verdict on a ride gone (`undefined`) or moved off `from` since the
+      // guard: `open` hands it to `transitionInTx`, conditional on `from`, which
+      // answers a lost race — and no failure is charged to a cancelled ride.
+      const verdict =
+        gate?.status === from ? pickupPinVerdict(gate, pin) : 'open';
+      if (verdict === 'incorrect')
+        await this.lifecycle.recordPickupPinFailure(tx, rideId);
+      if (verdict !== 'open') return { verdict, moved: undefined };
+      const moved = await this.transitions.transitionInTx(tx, rideId, from, to);
+      return { verdict, moved };
+    });
+
+    // ── committed ── (a failure increment is durable even though we now throw)
+    if (result.verdict !== 'open') {
+      const code = `pickup_pin_${result.verdict}` as const;
+      this.logRejected(ride, 'driver', driverId, to, code);
+      throw result.verdict === 'locked'
+        ? new ConflictException(code)
+        : new UnprocessableEntityException(code);
+    }
+    if (!result.moved) {
+      this.logRejected(ride, 'driver', driverId, to, 'lost_race');
+      throw new ConflictException('ride_transition_conflict');
+    }
+    this.transitions.emitStatus(result.moved, from);
+    this.logApplied(result.moved, 'driver', driverId, from, to);
   }
 
   /**
@@ -403,16 +447,6 @@ export class RideLifecycleService {
     }
   }
 
-  /**
-   * `actorId` is WHICH person, not just which role: a dispatcher cancelling a
-   * moving ride is the one ownership-bypassing action here, and `actor:
-   * 'dispatcher'` alone does not say which of them did it.
-   *
-   * `reason` is rider/driver/dispatcher-authored free text (280 chars,
-   * `rideCancelSchema`) and is therefore reduced to a BOOLEAN. "Waiting at
-   * Brīvības iela 42, call me on 26123456" is an address and an unmasked phone
-   * number, both of which `.claude/references/logging-standard.md` forbids.
-   */
   private logApplied(
     ride: LoggableRide,
     actor: LifecycleActor,
@@ -421,29 +455,9 @@ export class RideLifecycleService {
     to: RideStatus,
     reason: string | null = null,
   ): void {
-    this.logger.log({
-      event: 'ride.lifecycle.transition_applied',
-      rideId: ride.id,
-      orderId: ride.orderId,
-      driverId: ride.driverId,
-      actor,
-      actorId,
-      from,
-      to,
-      hasReason: reason !== null,
-      at: new Date().toISOString(),
-    });
+    logTransitionApplied(this.logger, ride, actor, actorId, from, to, reason);
   }
 
-  /**
-   * `from` is the ride's ACTUAL status as last read, never the one the step
-   * expected — logging the expected one would claim the ride was in the state
-   * we wanted it to be in, which is the opposite of useful at 02:00.
-   *
-   * On `lost_race` that read is by definition already stale: the conditional
-   * UPDATE matched no row precisely because somebody else moved the ride
-   * between the read and the write. `from` is what we saw, and `cause` says so.
-   */
   private logRejected(
     ride: LifecycleRide,
     actor: LifecycleActor,
@@ -451,17 +465,6 @@ export class RideLifecycleService {
     to: RideStatus,
     cause: RejectionCause,
   ): void {
-    this.logger.warn({
-      event: 'ride.lifecycle.transition_rejected',
-      rideId: ride.id,
-      orderId: ride.orderId,
-      driverId: ride.driverId,
-      actor,
-      actorId,
-      from: ride.status,
-      to,
-      cause,
-      at: new Date().toISOString(),
-    });
+    logTransitionRejected(this.logger, ride, actor, actorId, to, cause);
   }
 }

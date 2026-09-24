@@ -2,6 +2,7 @@ import {
   ACTIVE_DRIVER_RIDE_STATUSES,
   DRIVER_STEPS,
   isCancelled,
+  pickupPinSchema,
   type DriverRide,
   type DriverStep,
   type MessageKey,
@@ -33,6 +34,15 @@ export interface ActiveRideState {
   errorCode: string | null;
   /** The socket said `completed` before the REST answer; a re-read owes the receipt. */
   awaitingReceipt: boolean;
+  /**
+   * The pickup PIN on the start in flight, and the one the api last refused
+   * (#258). Every entry costs one of the ride's 5 attempts, so the exact
+   * digits it refused are never sent again, and after `pickup_pin_locked`
+   * nothing is (PR #277 M1).
+   */
+  sentPin: string | null;
+  rejectedPin: string | null;
+  pinLocked: boolean;
 }
 
 export const initialActiveRide: ActiveRideState = {
@@ -45,6 +55,9 @@ export const initialActiveRide: ActiveRideState = {
   ended: null,
   errorCode: null,
   awaitingReceipt: false,
+  sentPin: null,
+  rejectedPin: null,
+  pinLocked: false,
 };
 
 export type ActiveRideEvent =
@@ -55,7 +68,8 @@ export type ActiveRideEvent =
     }
   | { type: 'loaded'; ride: DriverRide }
   | { type: 'load_failed'; code: string }
-  | { type: 'step_pressed' }
+  /** `pin` matters only on a pinned ride's start (#258); every other step ignores it. */
+  | { type: 'step_pressed'; pin?: string }
   | { type: 'step_done'; step: DriverStep }
   | { type: 'step_failed'; code: string }
   | { type: 'completed'; ride: DriverRide }
@@ -69,7 +83,13 @@ export type ActiveRideEvent =
 
 export type ActiveRideEffect =
   | { type: 'fetch_ride'; rideId: string }
-  | { type: 'post_step'; step: Exclude<DriverStep, 'complete'>; rideId: string }
+  | {
+      type: 'post_step';
+      step: Exclude<DriverStep, 'complete'>;
+      rideId: string;
+      /** The rider's pickup PIN, on a pinned ride's start only (#258). */
+      pin?: string;
+    }
   | { type: 'post_complete'; rideId: string }
   | { type: 'route_ride' }
   | { type: 'route_home' }
@@ -84,6 +104,27 @@ const noop = (state: ActiveRideState): ActiveRideDecision => ({
   state,
   effects: [],
 });
+
+/**
+ * Whether the driver must type the rider's pickup PIN before Start (#258):
+ * the ride was booked with the option and the car is at the pickup.
+ */
+export function needsPin(ride: DriverRide): boolean {
+  return ride.status === 'arrived' && ride.request.options.pickupPin;
+}
+
+/**
+ * Whether `pin` may be sent as the pickup PIN: 4 digits, not the entry the api
+ * just refused, and the ride not locked. The screen disables Start on it and
+ * the reducer drops a press that fails it — one rule for both.
+ */
+export function pinSendable(state: ActiveRideState, pin: string | undefined) {
+  return (
+    pickupPinSchema.safeParse(pin).success &&
+    !state.pinLocked &&
+    pin !== state.rejectedPin
+  );
+}
 
 /** The one step legal from `status` — the api's table, by import. */
 export function stepFor(status: RideStatus): DriverStep | null {
@@ -225,13 +266,26 @@ export function decide(
       if (state.busy || !state.ride || state.ended) return noop(state);
       const step = stepFor(state.ride.status);
       if (!step) return noop(state);
-      const busy = { ...state, busy: true, errorCode: null };
+      // A pinned start without 4 digits never leaves the phone — the button is
+      // disabled anyway, and a bodiless start would only earn a 422. Nor does
+      // a refused PIN resent, or any PIN once locked: each costs an attempt.
+      const pinned = step === 'start' && needsPin(state.ride);
+      if (pinned && !pinSendable(state, event.pin)) return noop(state);
+      const busy = {
+        ...state,
+        busy: true,
+        errorCode: null,
+        sentPin: pinned ? (event.pin ?? null) : null,
+      };
+      const rideId = state.ride.id;
       return {
         state: busy,
         effects: [
           step === 'complete'
-            ? { type: 'post_complete', rideId: state.ride.id }
-            : { type: 'post_step', step, rideId: state.ride.id },
+            ? { type: 'post_complete', rideId }
+            : pinned
+              ? { type: 'post_step', step, rideId, pin: event.pin }
+              : { type: 'post_step', step, rideId },
         ],
       };
     }
@@ -249,7 +303,16 @@ export function decide(
     }
 
     case 'step_failed': {
-      const failed = { ...state, busy: false, errorCode: event.code };
+      const failed = {
+        ...state,
+        busy: false,
+        errorCode: event.code,
+        rejectedPin:
+          event.code === 'pickup_pin_incorrect'
+            ? state.sentPin
+            : state.rejectedPin,
+        pinLocked: state.pinLocked || event.code === 'pickup_pin_locked',
+      };
       if (event.code === 'ride_not_yours' || event.code === 'ride_not_found') {
         return {
           state: { ...failed, ended: { kind: 'released', reason: null } },

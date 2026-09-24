@@ -6,7 +6,7 @@ import {
   type PaymentMethodType,
   type RideStatus,
 } from '@taxi/shared';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type DbTx } from '../../../common/db/db.module';
 import { PAYMENT_METHOD_EDITABLE_STATUSES } from './ride-lifecycle.policy';
 
@@ -111,6 +111,43 @@ export class RideLifecycleRepository {
         commissionCents: split.commissionCents,
         driverNetCents: split.driverNetCents,
       })
+      .where(eq(rides.id, rideId));
+  }
+
+  /**
+   * The ride's pickup-PIN gate (#258), read with `SELECT … FOR UPDATE` inside
+   * the caller's transaction. The row lock is what serialises concurrent start
+   * attempts: without it N parallel requests all read the same `failures` and
+   * the 5-attempt cap becomes N guesses per round trip. `status` is read under
+   * the same lock, so a ride cancelled since the caller's guard is not charged
+   * a failure (PR #277 L1).
+   */
+  async lockPickupPin(
+    tx: DbTx,
+    rideId: string,
+  ): Promise<
+    { pin: string | null; failures: number; status: RideStatus } | undefined
+  > {
+    const [row] = await tx
+      .select({
+        pin: rides.pickupPin,
+        failures: rides.pickupPinFailures,
+        status: rides.status,
+      })
+      .from(rides)
+      .where(eq(rides.id, rideId))
+      .for('update');
+    return row;
+  }
+
+  /**
+   * One wrong PIN entry. Must run in a transaction that COMMITS — the caller
+   * throws its 422 only after the commit, or the counter would never move.
+   */
+  async recordPickupPinFailure(tx: DbTx, rideId: string): Promise<void> {
+    await tx
+      .update(rides)
+      .set({ pickupPinFailures: sql`${rides.pickupPinFailures} + 1` })
       .where(eq(rides.id, rideId));
   }
 

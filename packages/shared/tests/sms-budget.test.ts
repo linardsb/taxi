@@ -141,3 +141,26 @@ describe('the linked rider SMS at the maximum of every bound', () => {
     expect(smsSegments(body), body).toBe(2);
   });
 });
+
+/**
+ * #258: the phone rider's arrival SMS with the pickup PIN. Same additive
+ * argument as above, with two terms: `fixed + |plate| + |pin|`, the PIN a
+ * fixed 4 digits. Fixed parts (placeholders removed): lv 33, ru 29, en 31, so
+ * `derived` lv 33+10+4 = 47, ru 29+10+4 = 43, en 31+10+4 = 45 — well inside
+ * one segment (70 UCS-2 for lv/ru, 160 GSM-7 for en).
+ */
+const PIN_ARRIVAL_LENGTH: Record<Language, number> = { lv: 47, ru: 43, en: 45 };
+
+describe('the PIN arrival SMS at the maximum of every bound', () => {
+  for (const language of LANGUAGES) {
+    it(`bills ${language} sms.driver_arrived_pin as one segment (expected)`, () => {
+      const body = formatMessage(language, 'sms.driver_arrived_pin', {
+        plate: 'A'.repeat(PLATE_MAX_CHARS),
+        pin: '0000',
+      });
+      expect(body, body).not.toContain('{');
+      expect(body).toHaveLength(PIN_ARRIVAL_LENGTH[language]);
+      expect(smsSegments(body), body).toBe(1);
+    });
+  }
+});
