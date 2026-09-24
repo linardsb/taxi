@@ -22,6 +22,8 @@ export interface ButtonProps {
   accessibilityState?: AccessibilityState;
   /** `lg` is the 56 px toggle; `md` is the 44 px minimum everywhere else. */
   size?: 'md' | 'lg';
+  /** Read after the label; never put data the label must not speak here. */
+  accessibilityHint?: string;
   testID?: string;
 }
 
@@ -42,6 +44,7 @@ export function Button({
   accessibilityRole = 'button',
   accessibilityState,
   size = 'md',
+  accessibilityHint,
   testID,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
@@ -53,6 +56,7 @@ export function Button({
       testID={testID}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{
         disabled: isDisabled,
         busy: loading,

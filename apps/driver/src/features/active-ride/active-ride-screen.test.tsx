@@ -1,13 +1,15 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
   within,
 } from '@testing-library/react-native';
+import { Linking } from 'react-native';
 import {
   formatMessage,
-  rideSchema,
-  type Ride,
+  driverRideSchema,
+  type DriverRide,
   type RideStatus,
 } from '@taxi/shared';
 import { ActiveRideScreen } from './active-ride-screen';
@@ -20,8 +22,8 @@ const t = (
 
 const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
 
-const ride = (over: Partial<Ride> = {}): Ride =>
-  rideSchema.parse({
+const ride = (over: Partial<DriverRide> = {}): DriverRide =>
+  driverRideSchema.parse({
     id: RIDE_ID,
     orderId: '11111111-2222-4333-8444-555555555555',
     status: 'accepted',
@@ -47,6 +49,7 @@ const ride = (over: Partial<Ride> = {}): Ride =>
     },
     createdAt: '2026-09-04T10:00:00.000Z',
     updatedAt: '2026-09-04T10:00:00.000Z',
+    rider: { displayName: 'Anna', phone: '+37120000003' },
     ...over,
   });
 
@@ -303,8 +306,81 @@ describe('ActiveRideScreen (#15)', () => {
     expect(screen.getByTestId('redirect')).toHaveTextContent('/home');
 
     mockState = { ...initialActiveRide, rideId: RIDE_ID, loading: true };
-    screen.unmount();
+    await screen.unmount();
     await render(<ActiveRideScreen />);
     expect(screen.getByTestId('ride-loading')).toBeTruthy();
+  });
+});
+
+describe('ActiveRideScreen rider identity (#261)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockState = initialActiveRide;
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('at arrived shows the name and a call button that dials the rider (expected)', async () => {
+    const openURL = jest
+      .spyOn(Linking, 'openURL')
+      .mockImplementation(() => Promise.resolve(true));
+    mockState = showing('arrived');
+    await render(<ActiveRideScreen />);
+    expect(screen.getByTestId('rider-name')).toHaveTextContent(
+      t('driver.ride.rider_name', { name: 'Anna' }),
+    );
+    const call = screen.getByRole('button', {
+      name: t('driver.ride.call_rider'),
+    });
+    // The number is dialled, never spoken: it is in neither label nor hint.
+    expect(call.props.accessibilityLabel).not.toMatch(/\d/);
+    expect(call.props.accessibilityHint).toBe(
+      t('driver.ride.call_rider_hint', { name: 'Anna' }),
+    );
+    await fireEvent.press(call);
+    expect(openURL).toHaveBeenCalledWith('tel:+37120000003');
+  });
+
+  it('hides the call button at in_progress although the phone is still in memory (edge — the client gate)', async () => {
+    // What a local `step_done` leaves behind: status moved, block not re-read.
+    mockState = showing('in_progress');
+    expect(mockState.ride?.rider.phone).toBe('+37120000003');
+    await render(<ActiveRideScreen />);
+    expect(screen.queryByTestId('call-rider')).toBeNull();
+    expect(screen.getByTestId('rider-name')).toHaveTextContent(
+      t('driver.ride.rider_name', { name: 'Anna' }),
+    );
+  });
+
+  it('with no name shows no name line and no hint, and a refused dialler is swallowed (failure)', async () => {
+    const openURL = jest
+      .spyOn(Linking, 'openURL')
+      .mockImplementation(() => Promise.reject(new Error('no dialler')));
+    mockState = showing('accepted', {
+      ride: ride({
+        status: 'accepted',
+        rider: { displayName: null, phone: '+37120000003' },
+      }),
+    });
+    await render(<ActiveRideScreen />);
+    expect(screen.queryByTestId('rider-name')).toBeNull();
+    const call = screen.getByTestId('call-rider');
+    expect(call.props.accessibilityHint).toBeUndefined();
+    await fireEvent.press(call);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(openURL).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('ride-error')).toBeNull();
+  });
+
+  it('with no phone in the window shows no call button (edge)', async () => {
+    mockState = showing('arriving', {
+      ride: ride({
+        status: 'arriving',
+        rider: { displayName: 'Anna', phone: null },
+      }),
+    });
+    await render(<ActiveRideScreen />);
+    expect(screen.queryByTestId('call-rider')).toBeNull();
   });
 });

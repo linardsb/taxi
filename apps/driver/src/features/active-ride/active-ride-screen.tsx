@@ -2,7 +2,10 @@ import {
   colors,
   fontSize,
   formatEur,
+  isInStatusSet,
   radius,
+  RIDER_NAME_VISIBLE_STATUSES,
+  RIDER_PHONE_VISIBLE_STATUSES,
   spacing,
   type MessageKey,
   type Ride,
@@ -14,6 +17,7 @@ import { Banner, Button, Screen, TextField } from '@/components';
 import { errorMessageKey, useT } from '@/features/i18n';
 import { needsPin, pinSendable, stepFor, TITLE_KEY } from './active-ride-state';
 import {
+  callRider,
   canOpenWaze,
   googleMapsLink,
   openNavigation,
@@ -140,6 +144,15 @@ export function ActiveRideScreen() {
   const currentStep = stepFor(ride.status);
   const title = TITLE_KEY[ride.status] ?? 'driver.ride.title_accepted';
   const method = paymentMethodLabel(ride.paymentMethod, t);
+  // The client half of #261's windows: `step_done` moves `ride.status` without
+  // a re-read, so the phone read at `arrived` is still in memory after
+  // «Sākt braucienu». This gate on the SAME shared sets is what hides it.
+  const riderName = isInStatusSet(RIDER_NAME_VISIBLE_STATUSES, ride.status)
+    ? ride.rider.displayName
+    : null;
+  const riderPhone = isInStatusSet(RIDER_PHONE_VISIBLE_STATUSES, ride.status)
+    ? ride.rider.phone
+    : null;
   return (
     <Screen>
       <Text style={styles.title} accessibilityRole="header">
@@ -174,6 +187,11 @@ export function ActiveRideScreen() {
         />
       ) : null}
       <View style={styles.details}>
+        {riderName ? (
+          <Text style={styles.detail} testID="rider-name">
+            {t('driver.ride.rider_name', { name: riderName })}
+          </Text>
+        ) : null}
         <Text style={styles.detail}>
           {t('driver.offer.pickup', { address: ride.request.pickup.address })}
         </Text>
@@ -210,6 +228,19 @@ export function ActiveRideScreen() {
           disabled={needsPin(ride) && !pinSendable(state, pin)}
           loading={state.busy}
           testID="ride-step"
+        />
+      ) : null}
+      {riderPhone ? (
+        <Button
+          variant="secondary"
+          label={t('driver.ride.call_rider')}
+          accessibilityHint={
+            riderName
+              ? t('driver.ride.call_rider_hint', { name: riderName })
+              : undefined
+          }
+          onPress={() => void callRider(riderPhone)}
+          testID="call-rider"
         />
       ) : null}
       <View style={styles.nav}>

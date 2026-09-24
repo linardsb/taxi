@@ -12,8 +12,8 @@ import {
   idempotencyKeySchema,
   rideQuoteBodySchema,
   rideRequestBodySchema,
+  type DriverRide,
   type JwtClaims,
-  type Ride,
   type RideCreated,
   type RideQuoteBody,
   type RideQuotePreview,
@@ -108,7 +108,7 @@ export class RidesController {
   read(
     @CurrentUser() user: JwtClaims,
     @Param('rideId', ParseUUIDPipe) rideId: string,
-  ): Promise<Ride | RiderVisibleRide> {
+  ): Promise<DriverRide | RiderVisibleRide> {
     return user.role === 'driver'
       ? this.lifecycle.findForDriver(user.sub, rideId)
       : this.rides.findForRider(user.sub, rideId);

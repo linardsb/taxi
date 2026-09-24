@@ -3,10 +3,10 @@ import {
   DRIVER_STEPS,
   isCancelled,
   pickupPinSchema,
+  type DriverRide,
   type DriverStep,
   type MessageKey,
   type PaymentMethodType,
-  type Ride,
   type RideAssignedEvent,
   type RideStatus,
   type RideStatusEvent,
@@ -14,7 +14,7 @@ import {
 
 export type Ended =
   | { kind: 'released' | 'cancelled'; reason: string | null }
-  | { kind: 'completed'; ride: Ride };
+  | { kind: 'completed'; ride: DriverRide };
 
 export interface ActiveRideState {
   rideId: string | null;
@@ -25,7 +25,7 @@ export interface ActiveRideState {
    * announced exactly once (R2/Q8).
    */
   expectedPaymentMethod: PaymentMethodType | null;
-  ride: Ride | null;
+  ride: DriverRide | null;
   loading: boolean;
   /** A step is in flight — the primary button spins and ignores taps. */
   busy: boolean;
@@ -66,13 +66,13 @@ export type ActiveRideEvent =
       rideId: string;
       expectedPaymentMethod?: PaymentMethodType;
     }
-  | { type: 'loaded'; ride: Ride }
+  | { type: 'loaded'; ride: DriverRide }
   | { type: 'load_failed'; code: string }
   /** `pin` matters only on a pinned ride's start (#258); every other step ignores it. */
   | { type: 'step_pressed'; pin?: string }
   | { type: 'step_done'; step: DriverStep }
   | { type: 'step_failed'; code: string }
-  | { type: 'completed'; ride: Ride }
+  | { type: 'completed'; ride: DriverRide }
   | { type: 'status'; event: RideStatusEvent }
   | { type: 'assigned'; event: RideAssignedEvent; myDriverId: string }
   | { type: 'socket_connected' }
@@ -109,7 +109,7 @@ const noop = (state: ActiveRideState): ActiveRideDecision => ({
  * Whether the driver must type the rider's pickup PIN before Start (#258):
  * the ride was booked with the option and the car is at the pickup.
  */
-export function needsPin(ride: Ride): boolean {
+export function needsPin(ride: DriverRide): boolean {
   return ride.status === 'arrived' && ride.request.options.pickupPin;
 }
 
