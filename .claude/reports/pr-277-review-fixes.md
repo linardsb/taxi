@@ -2,7 +2,7 @@
 
 **Review:** https://github.com/linardsb/taxi/pull/277#issuecomment-5811251088 (head `75091df`).
 **Triage** (Linards, 2026-09-24): fix M1 M2 L1 L3 L4; L2 → #275's checklist; L5 informational.
-**Fix commits:** `ff661dd` (M1), `163cf05` (M2), `54304c4` (L1, L3), `dfc6d6a` (plan/report amendments, L4). This report is committed after `dfc6d6a` and touches only `.claude/reports/`.
+**Fix commits:** `ff661dd` (M1), `163cf05` (M2), `54304c4` (L1, L3), `dfc6d6a` (plan/report amendments, L4). Commits after `dfc6d6a` touch only `.claude/reports/`.
 
 ## Fixed
 
@@ -13,9 +13,9 @@
 - **Tests:**
   - `active-ride-state.test.ts`: "a refused PIN is never resent; different digits are", "once locked, no PIN is sent, even after the banner is reloaded away", "a network failure does not mark the PIN refused".
   - `active-ride-screen.test.tsx`: the wrong-PIN test rewritten (no Retry, Start off on `9999`, on at `9998`), the locked test extended (no Retry, Start off with fresh digits), and a new E10 test on `network_error`.
-- **Probes** (`observed`, 2026-09-24):
+- **Probes** (`observed`, 2026-09-24, `npx jest src/features/active-ride` in `apps/driver`):
   - Screen restored to `75091df` and the reducer guard reverted to the schema-only check: `Tests: 4 failed, 58 passed, 62 total`. The network-error regression test passes on both, as it should.
-  - E10 handler mutated to `step()`: `1 failed, 15 passed, 16 total`.
+  - E10 handler mutated to `step()`, with `npx jest src/features/active-ride/active-ride-screen`: `1 failed, 15 passed, 16 total`.
 - **New failure mode of the mechanism:** the lock lives only in memory. After an app restart `pinLocked` is false, and the first Start gets a 409 `pickup_pin_locked` that sets it again. The server refuses a locked ride before counting, so no attempt is spent.
 
 ### M2 — rider PIN switch target and screen-reader reading
@@ -26,7 +26,7 @@
   - the hint is present only with `includeHiddenElements`;
   - the row's `minHeight` is at least 44;
   - pressing the row checks it and persists `'1'`.
-- **Probe** (`observed`): screen restored to `75091df`: `1 failed, 12 passed` (`Expected: "pickup-pin-row"`, `Received: undefined`).
+- **Probe** (`observed`, `npx jest src/features/booking/booking-screen` in `apps/rider`): screen restored to `75091df`: `1 failed, 12 passed` (`Expected: "pickup-pin-row"`, `Received: undefined`).
 - **Double toggle check** (`observed`): tapping the nested native `Switch` should not also fire the row's `onPress`. `react-native/Libraries/Components/Switch/Switch.js:257-258` sets `onStartShouldSetResponder={returnsTrue}` and `onResponderTerminationRequest={returnsFalse}`, so the Switch keeps the touch. This is a source read, not a device run.
 
 ### L1 — PIN verdict did not re-check status under the lock
@@ -34,14 +34,14 @@
 - **Fix:** `lockPickupPin` also selects `status`. `start()` takes a verdict only when `gate?.status === from`. Otherwise it passes `open` to `transitionInTx`, which is conditional on `from` and returns nothing. The result is 409 `ride_transition_conflict` with cause `lost_race`, and no failure is charged.
 - **Deviation from the review's fix:** the review asked for `ride_not_arrived`. The lost-race conflict was chosen instead because it is what actually happened, and because the driver reducer re-reads the ride on both codes (`active-ride-state.ts` `step_failed`), so no client needs the other code. It also kept the service at **499/500** lines.
 - **Tests:**
-  - `ride-lifecycle.service.spec.ts`: "a ride cancelled between the guard and the lock is a lost race, not a charged wrong PIN". Unfixed line: `Received message: "pickup_pin_incorrect"`, 1 failed.
-  - `ride-pickup-pin.integration.spec.ts`: new case, **the review's scenario reproduced.** A holder takes the row lock, a wrong-PIN start blocks on it, then the holder commits `status = 'cancelled_by_rider'` and releases. Fixed: `9 passed` with 409 and `pickupPinFailures = 0`. Unfixed line: `Expected: "409 ride_transition_conflict"`, `Received: "422 pickup_pin_incorrect"`. Both `observed`, run alone with `COMPOSE_PROJECT_NAME=taxi`.
+  - `ride-lifecycle.service.spec.ts`: "a ride cancelled between the guard and the lock is a lost race, not a charged wrong PIN". Probe: `npx jest src/features/rides/lifecycle/ride-lifecycle.service.spec.ts` in `services/api`, fixed `30 passed`. Unfixed line: `Received message: "pickup_pin_incorrect"`, 1 failed.
+  - `ride-pickup-pin.integration.spec.ts`: new case, **the review's scenario reproduced.** A holder takes the row lock, a wrong-PIN start blocks on it, then the holder commits `status = 'cancelled_by_rider'` and releases. Fixed: `9 passed` with 409 and `pickupPinFailures = 0`. Unfixed line: `Expected: "409 ride_transition_conflict"`, `Received: "422 pickup_pin_incorrect"`. Both `observed`, via `COMPOSE_PROJECT_NAME=taxi npx jest src/features/rides/lifecycle/ride-pickup-pin.integration.spec.ts` in `services/api`, with no other gate running.
   - The first draft of this test used `rider(59)`, which collided with the spec's `dispatcher(59)` on `users_phone_unique`. It now uses `rider(70)`, which no other fixture in the file uses.
 
 ### L3 — lock-waiter count spanned the whole database
 
 - **Fix:** the poll adds `AND query ILIKE '%pickup_pin%'`. Both the lock read and the unlocked increment name `pickup_pin_*` columns. The new L1 case uses the same filter.
-- **Probes** (`observed`):
+- **Probes** (`observed`, the same integration command as L1, before the L1 case was added):
   - with the lock: `8 passed, 8 total`;
   - `.for('update')` deleted: `Expected length: 5`, `Received length: 8`. The narrowed filter still counts this test's waiters, and the mutation stays red. Restored.
 - **Reduced claim:** no waiter from another session was reproduced. The fix narrows the count to this test's statement text. It does not prove that a concurrent session's waiter is now excluded. A second session running this same spec at the same time would still match.
@@ -53,7 +53,10 @@
 ## Deferred
 
 - **L2 (Low):** appended as a checklist line under "Review carry-over" on #275, which is open and is the dispatch-console PIN ticket (`gh issue edit 275 --body-file`, 2026-09-24).
-- **L5 (informational):** conflicts with #274 in four files. Whichever PR merges second rebases and re-runs the gate. `ride-lifecycle.service.ts` grew from 497 to 499 lines this round. The review measured the merged file at 468 lines, so the estimate is 468 + 2 = 470 (`derived`, assuming both added lines merge cleanly). Re-measure at the rebase.
+- **L5 (informational):** re-measured after the fixes (`observed`). The command was `git merge-tree --write-tree --name-only HEAD e5abea0`, where `e5abea0` is #274's head (open, `feature/driver-ride-rider-identity-261`), run at `6527037`.
+  - The same four files conflict as in the review: `active-ride-state.ts`, `ride-lifecycle.controller.ts`, `ride-lifecycle.service.spec.ts` and `rides.controller.ts`.
+  - `ride-lifecycle.service.ts` still merges cleanly, at **470** lines (`git show <tree>:… | wc -l`). That is under the cap.
+  - Whichever PR merges second rebases and re-runs the gate.
 
 ## Needs a manual look
 
@@ -89,14 +92,21 @@ Commands run in the worktree after the amendments. Hits listed are the ones stil
   - plan:743 is AC9, amended;
   - report:115 is row (d), annotated as predating M1;
   - report:145 is amended.
-  - PR body: lines 20 and 67 had it; rewritten in this round's `gh pr edit`.
+  - Live PR body, after this round's `gh pr edit` (`gh pr view 277 --json body --jq .body | grep -n Retry`):
+    - :20 is the driver summary, rewritten: Retry only after network or generic errors;
+    - :69 is the emulator run, annotated as predating M1.
 - **Service length 497.** `grep -n "497" …`:
   - plan:830 and report:73/129 now carry 499;
-  - PR body line 69: 497 → 499.
-- **Gate duration 1m34.** `grep -n "1m34" …`: report:53 only, now framed as the superseded run. PR body: none.
-- **Waiter query.** `grep -n "wait_event_type" …`: plan:479, amended with the L3 filter. PR body: none.
+  - Live PR body: only :71, `499/500`.
+- **Gate duration 1m34.** `grep -n "1m34" …`: report:53 only, now framed as the superseded run. Live PR body: none.
+- **Waiter query.** `grep -n "wait_event_type" …`: plan:479, amended with the L3 filter. Live PR body: none.
 - **Switch row.** `grep -n "minHeight: 44\|44 px row" …`:
   - plan:203 and plan:525 are amended with an M2 note beneath;
   - plan:833 and report:137 are still true, because the 44 px row is now the pressable;
   - report:47 is amended;
-  - PR body line 78: rewritten.
+  - Live PR body, `grep -n "44 px"`: :19 (the new rider summary) and :80 (T12, with an M2 note). Both are true.
+- **Docs and references this PR adds.** `git diff origin/main..HEAD -- docs .claude/references`, with added lines grepped for `switch|hint|retry|pickup_pin|PIN`:
+  - `rider-a11y-walkthrough.md` step 13 expects "the switch reads its label, state and hint". That is truer after M2 than before.
+  - `ui-decisions.md` "hint as a muted line beneath" still holds: the hint is still visible, only hidden from the accessibility tree.
+  - `ride-state-machine.md` and `ux-metrics-ledger.md` describe the api codes and log causes, which are unchanged.
+  - No stale line.
