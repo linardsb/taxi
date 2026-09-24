@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   formatMessage,
   RT,
+  type Language,
   type Ride,
   type RideStatus,
   SMS_ETA_MAX_DISPLAY_MINUTES,
@@ -34,7 +35,9 @@ import { smsDriverName } from './sms-templates';
  * arrival messages go only to PHONE bookings (#63) — an app rider sees both
  * moments on the ride-status screen WHILE THE APP IS OPEN. Backgrounded, they
  * see neither: rider push is #17 and has not shipped. Budget: 1 SMS/ride app
- * channel, 3 phone channel.
+ * channel, 3 phone channel. A phone ride booked with a pickup PIN (#258) gets
+ * `sms.driver_arrived_pin` in place of the plain arrival text — same moment,
+ * same budget line, and still one segment (`sms-budget.test.ts`).
  *
  * NEVER THROWS, structurally: both entry points wrap their whole body — an
  * SMS failure never fails a booking. The `sms_send_failed` ERROR log is the
@@ -169,7 +172,7 @@ export class RideNotificationsService {
                   )
                 : '',
             })
-          : formatMessage(rider.language, 'sms.driver_arrived', { plate });
+          : await this.arrivalBody(ride.id, rider.language, plate);
 
       await this.sendSms(
         ride.id,
@@ -181,6 +184,18 @@ export class RideNotificationsService {
     } catch (error) {
       this.logSendFailed(ride.id, kind, error, from);
     }
+  }
+
+  /** The phone rider's arrival text, with their pickup PIN when they have one (#258). */
+  private async arrivalBody(
+    rideId: string,
+    language: Language,
+    plate: string,
+  ): Promise<string> {
+    const pin = await this.repository.pickupPin(rideId);
+    return pin === null
+      ? formatMessage(language, 'sms.driver_arrived', { plate })
+      : formatMessage(language, 'sms.driver_arrived_pin', { plate, pin });
   }
 
   /**

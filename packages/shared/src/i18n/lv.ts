@@ -19,6 +19,7 @@ export const lv = {
   // No period after `min`: it is 1 character of a budget with 1 to spare.
   'sms.driver_assigned': 'Šoferis {driver}, {plate}, ~{eta} min {link}',
   'sms.driver_arrived': 'Jūsu taksometrs ({plate}) ir klāt.',
+  'sms.driver_arrived_pin': 'Jūsu taksometrs ({plate}) ir klāt. PIN: {pin}',
   // Deliberately diacritic-free: GSM-7 keeps the OTP at 1 billed segment.
   'sms.otp_code': 'Sakta Cab kods: {code}',
   'page.title': 'Jūsu brauciens',
@@ -346,6 +347,7 @@ export const lv = {
   'driver.ride.title_arriving': 'Ceļā pie pasažiera',
   'driver.ride.title_arrived': 'Esat klāt',
   'driver.ride.title_in_progress': 'Brauciens notiek',
+  'driver.ride.pin_label': 'Pasažiera PIN kods',
   'driver.ride.step_arriving': 'Braucu pie pasažiera',
   'driver.ride.step_arrived': 'Esmu klāt',
   'driver.ride.step_start': 'Sākt braucienu',
@@ -374,6 +376,8 @@ export const lv = {
     'Statuss tikko mainījās. Ielādējiet vēlreiz.',
   'driver.error.ride_not_yours': 'Šis brauciens nav piešķirts jums',
   'driver.error.ride_not_found': 'Brauciens nav atrasts',
+  'driver.error.pickup_pin_incorrect': 'Nepareizs PIN kods.',
+  'driver.error.pickup_pin_locked': 'PIN bloķēts. Zvaniet dispečerim.',
   // `rider.*` is rendered by apps/rider (#16). Error keys are the api's snake
   // codes verbatim, so a screen renders `rider.error.<code>` and falls back to
   // `rider.error.generic` for one it has never met — the same contract the
@@ -422,6 +426,8 @@ export const lv = {
   'rider.book.payment_label': 'Apmaksa',
   'rider.book.payment_cash': 'Skaidrā naudā',
   'rider.book.payment_card': 'Ar karti',
+  'rider.book.pickup_pin': 'PIN kods iekāpšanai',
+  'rider.book.pickup_pin_hint': 'Šoferis ievadīs jūsu PIN pirms brauciena.',
   'rider.book.confirm': 'Pasūtīt',
   'rider.book.confirming': 'Pasūta…',
   'rider.address.title_pickup': 'Iekāpšanas vieta',
@@ -443,6 +449,8 @@ export const lv = {
   // bookings, so this string is the app rider's only arrival signal until
   // #17 ships push — a backgrounded rider still hears nothing.
   'rider.status.arrived': 'Auto ir klāt',
+  'rider.status.arrived_pin': 'Auto ir klāt. PIN: {pin}',
+  'rider.status.pin': 'Jūsu PIN kods: {pin}',
   'rider.status.cancelled': 'Brauciens ir atcelts',
   'rider.status.completed': 'Brauciens ir pabeigts',
   'rider.status.cancel': 'Atcelt braucienu',

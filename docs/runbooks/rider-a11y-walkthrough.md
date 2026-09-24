@@ -166,3 +166,17 @@ announcement at all.
 - **Pass:** the banner text is spoken once — **not twice**, and not zero times.
 - **Record the answer here**, and update `Banner.tsx`'s docblock either way. This
   closes PR #139 review finding F47.
+
+### 13 — Pickup PIN (#258, owed by #276)
+
+The PIN's spoken form is proven only by RNTL (`status-screen.test.tsx`: the
+label is `Jūsu PIN kods: 0 0 4 2`, the arrival banner carries `PIN: 0 0 4 2`).
+No rider device build exists (no `apps/rider/eas.json`), and iOS is behind the
+Xcode ceiling, so neither screen reader has heard it.
+
+- **Gesture:** on `/book`, find the «PIN kods iekāpšanai» switch, turn it on,
+  book; on `/book/status`, swipe to the PIN line; wait for `arrived`.
+- **Pass (TalkBack and VoiceOver):** the switch reads its label, state and hint;
+  the PIN line reads four separate digits; the arrival announcement speaks
+  «Auto ir klāt. PIN: …» once, digit by digit.
+- **Record the answer here** and close the matching leg of #276.

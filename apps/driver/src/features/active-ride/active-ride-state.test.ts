@@ -9,6 +9,7 @@ import {
 import {
   decide,
   initialActiveRide,
+  needsPin,
   stepFor,
   type ActiveRideEffect,
   type ActiveRideState,
@@ -239,6 +240,114 @@ describe('decide — the four steps', () => {
       code: 'ride_not_yours',
     });
     expect(failed.state.ended).toEqual({ kind: 'released', reason: null });
+  });
+});
+
+describe('decide — the pickup PIN (#258)', () => {
+  const pinned = (): ActiveRideState => {
+    const openedState = decide(initialActiveRide, {
+      type: 'open',
+      rideId: RIDE_ID,
+    }).state;
+    const base = ride({ status: 'arrived' });
+    return decide(openedState, {
+      type: 'loaded',
+      ride: {
+        ...base,
+        request: {
+          ...base.request,
+          options: { ...base.request.options, pickupPin: true },
+        },
+      },
+    }).state;
+  };
+
+  it('needsPin is true only on a pinned ride at arrived (expected)', () => {
+    expect(needsPin(pinned().ride!)).toBe(true);
+    expect(needsPin(showing('arrived').ride!)).toBe(false);
+    expect(needsPin({ ...pinned().ride!, status: 'arriving' })).toBe(false);
+  });
+
+  it('a pinned start carries the PIN (expected)', () => {
+    const pressed = decide(pinned(), { type: 'step_pressed', pin: '0042' });
+    expect(pressed.effects).toEqual([
+      { type: 'post_step', step: 'start', rideId: RIDE_ID, pin: '0042' },
+    ]);
+  });
+
+  it('a pinned start with fewer than 4 digits posts nothing (edge)', () => {
+    const pressed = decide(pinned(), { type: 'step_pressed', pin: '42' });
+    expect(pressed.effects).toEqual([]);
+    expect(pressed.state.busy).toBe(false);
+  });
+
+  it('an un-pinned start sends no PIN, even if one is passed (regression)', () => {
+    const pressed = decide(showing('arrived'), {
+      type: 'step_pressed',
+      pin: '0042',
+    });
+    expect(pressed.effects).toEqual([
+      { type: 'post_step', step: 'start', rideId: RIDE_ID },
+    ]);
+  });
+
+  it.each(['pickup_pin_incorrect', 'pickup_pin_locked'])(
+    'a %s shows its code and does NOT re-read — it is no status mismatch (failure)',
+    (code) => {
+      const pressed = decide(pinned(), {
+        type: 'step_pressed',
+        pin: '9999',
+      }).state;
+      const failed = decide(pressed, { type: 'step_failed', code });
+      expect(failed.state.errorCode).toBe(code);
+      expect(failed.state.ended).toBeNull();
+      expect(failed.effects).toEqual([]);
+    },
+  );
+
+  it('a refused PIN is never resent; different digits are (failure + expected)', () => {
+    const pressed = decide(pinned(), { type: 'step_pressed', pin: '9999' });
+    const failed = decide(pressed.state, {
+      type: 'step_failed',
+      code: 'pickup_pin_incorrect',
+    }).state;
+    expect(failed.rejectedPin).toBe('9999');
+
+    const again = decide(failed, { type: 'step_pressed', pin: '9999' });
+    expect(again.effects).toEqual([]);
+    expect(again.state.busy).toBe(false);
+
+    const corrected = decide(failed, { type: 'step_pressed', pin: '9998' });
+    expect(corrected.effects).toEqual([
+      { type: 'post_step', step: 'start', rideId: RIDE_ID, pin: '9998' },
+    ]);
+  });
+
+  it('once locked, no PIN is sent, even after the banner is reloaded away (edge)', () => {
+    const pressed = decide(pinned(), { type: 'step_pressed', pin: '9999' });
+    const locked = decide(pressed.state, {
+      type: 'step_failed',
+      code: 'pickup_pin_locked',
+    }).state;
+    const reloaded = decide(locked, { type: 'reload_pressed' }).state;
+    expect(reloaded.errorCode).toBeNull();
+
+    const tried = decide(reloaded, { type: 'step_pressed', pin: '1234' });
+    expect(tried.effects).toEqual([]);
+  });
+
+  it('a network failure does not mark the PIN refused — Retry may resend it (regression)', () => {
+    const pressed = decide(pinned(), { type: 'step_pressed', pin: '0042' });
+    const failed = decide(pressed.state, {
+      type: 'step_failed',
+      code: 'network_error',
+    }).state;
+    expect(failed.rejectedPin).toBeNull();
+    expect(
+      decide(failed, { type: 'step_pressed', pin: '0042' }).effects,
+    ).toEqual([
+      { type: 'post_step', step: 'start', rideId: RIDE_ID, pin: '0042' },
+    ]);
   });
 });
 

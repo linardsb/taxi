@@ -28,6 +28,7 @@ const mockStatus = {
   stillSearching: false,
   connected: true,
   joined: true,
+  pickupPin: null as string | null,
 };
 jest.mock('./use-ride-status', () => ({
   useRideStatus: () => mockStatus,
@@ -56,6 +57,7 @@ describe('StatusScreen', () => {
       stillSearching: false,
       connected: true,
       joined: true,
+      pickupPin: null,
     });
     announce = jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
@@ -113,6 +115,40 @@ describe('StatusScreen', () => {
     await render(<StatusScreen />);
     expect(screen.getByText(t('rider.status.arrived'))).toBeTruthy();
     expect(screen.queryByText(t('rider.status.matched'))).toBeNull();
+    expect(announce).toHaveBeenCalledWith(t('rider.status.arrived'));
+  });
+
+  it('shows the PIN, digit by digit, once a car is found (expected — #258)', async () => {
+    Object.assign(mockStatus, { status: 'accepted', pickupPin: '0042' });
+    await render(<StatusScreen />);
+
+    const pin = screen.getByTestId('pickup-pin');
+    expect(pin.props.accessibilityLabel).toBe('Jūsu PIN kods: 0 0 4 2');
+    expect(screen.getByText('Jūsu PIN kods: 0 0 4 2')).toBeTruthy();
+  });
+
+  it('speaks the PIN in the one arrival announcement (expected — #258 AC8)', async () => {
+    Object.assign(mockStatus, { status: 'arrived', pickupPin: '0042' });
+    await render(<StatusScreen />);
+
+    const line = t('rider.status.arrived_pin', { pin: '0 0 4 2' });
+    expect(line).toContain('PIN: 0 0 4 2');
+    expect(announce).toHaveBeenCalledWith(line);
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the PIN once the ride is under way (edge — #258)', async () => {
+    Object.assign(mockStatus, { status: 'in_progress', pickupPin: '0042' });
+    await render(<StatusScreen />);
+
+    expect(screen.queryByTestId('pickup-pin')).toBeNull();
+  });
+
+  it('shows no PIN and the plain arrival line for a ride without one (regression — #258)', async () => {
+    Object.assign(mockStatus, { status: 'arrived', pickupPin: null });
+    await render(<StatusScreen />);
+
+    expect(screen.queryByTestId('pickup-pin')).toBeNull();
     expect(announce).toHaveBeenCalledWith(t('rider.status.arrived'));
   });
 

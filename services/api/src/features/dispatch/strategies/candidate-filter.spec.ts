@@ -76,7 +76,9 @@ describe('toCandidates', () => {
         attrs(2, { isFemale: null }), // "not stated" is not a yes
         attrs(3, { isFemale: true }),
       ],
-      request({ options: { childSeat: false, femaleDriver: true } }),
+      request({
+        options: { childSeat: false, femaleDriver: true, pickupPin: false },
+      }),
       DEBT_LIMIT,
     );
 
@@ -98,7 +100,9 @@ describe('toCandidates', () => {
     const found = toCandidates(
       [nearby(1, 100), nearby(2, 200)],
       [attrs(1), attrs(2)],
-      request({ options: { childSeat: true, femaleDriver: false } }),
+      request({
+        options: { childSeat: true, femaleDriver: false, pickupPin: false },
+      }),
       DEBT_LIMIT,
     );
 
