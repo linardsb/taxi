@@ -48,8 +48,9 @@ jest.mock('./socket', () => ({ createRiderSocket: () => mockSocket }));
 
 const RIDE_ID = '2f1b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
 
-const rideAt = (status: string) => ({
+const rideAt = (status: string, pickupPin: string | null = null) => ({
   id: RIDE_ID,
+  pickupPin,
   status,
   riderId: mockSession.user.id,
   driverId: null,
@@ -70,7 +71,8 @@ const event = (status: string, previousStatus: string | null) => ({
 });
 
 function Probe() {
-  const { status, stillSearching, connected, joined } = useRideStatus(RIDE_ID);
+  const { status, stillSearching, connected, joined, pickupPin } =
+    useRideStatus(RIDE_ID);
   return (
     <>
       <Text>{`${status ?? 'none'}|${stillSearching ? 'still' : 'not'}|${
@@ -82,6 +84,7 @@ function Probe() {
           assertion in this file into something that no longer reads as a
           status. */}
       <Text>{`joined:${joined ? 'yes' : 'no'}`}</Text>
+      <Text>{`pin:${pickupPin ?? 'none'}`}</Text>
     </>
   );
 }
@@ -190,6 +193,36 @@ describe('useRideStatus', () => {
     await act(async () => settle(rideAt('requested')));
 
     expect(screen.getByText('accepted|not|up')).toBeTruthy();
+  });
+
+  it('keeps the PIN when a ride:status event lands before the read resolves (edge — #258 E1)', async () => {
+    // Both cold-start reads held open, so `offered` beats them home — the
+    // normal order right after booking. The staleness guard drops their
+    // STATUS; it must not drop the PIN, which never changes.
+    const settles: ((ride: unknown) => void)[] = [];
+    mockRequest.mockImplementation(
+      () => new Promise((resolve) => settles.push(resolve)),
+    );
+    await render(<Probe />);
+    await act(async () => mockHandlers.get('connect')!(undefined));
+    await act(async () =>
+      mockHandlers.get(RT.rideStatus)!(event('offered', 'requested')),
+    );
+    await screen.findByText('offered|not|up');
+
+    await act(async () => {
+      for (const settle of settles) settle(rideAt('requested', '0042'));
+    });
+
+    expect(screen.getByText('pin:0042')).toBeTruthy();
+    expect(screen.getByText('offered|not|up')).toBeTruthy();
+  });
+
+  it('has no PIN for a ride booked without one (expected — #258)', async () => {
+    await render(<Probe />);
+    await screen.findByText('requested|not|down');
+
+    expect(screen.getByText('pin:none')).toBeTruthy();
   });
 
   it('follows a status that moves BACKWARD (edge — E8)', async () => {

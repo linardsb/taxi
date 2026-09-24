@@ -33,8 +33,11 @@ export interface ActiveRideContextValue {
   state: ActiveRideState;
   /** Start showing `rideId`; the offer card passes its payment-method snapshot. */
   open(rideId: string, expectedPaymentMethod?: PaymentMethodType): void;
-  /** The one primary button: whichever step `ride.status` allows. */
-  step(): void;
+  /**
+   * The one primary button: whichever step `ride.status` allows. `pin` is the
+   * rider's pickup PIN, sent only on a pinned ride's start (#258).
+   */
+  step(pin?: string): void;
   reload(): void;
   dismissNotice(): void;
   /** The done / back-to-home button on an ended ride. */
@@ -121,7 +124,15 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
       case 'post_step':
         seqRef.current += 1;
         try {
-          await api.request('POST', `/rides/${effect.rideId}/${effect.step}`);
+          // No body unless there is a PIN: the api-client sets no
+          // content-type for an absent body, the bodiless start #258 keeps.
+          await api.request(
+            'POST',
+            `/rides/${effect.rideId}/${effect.step}`,
+            effect.pin === undefined
+              ? undefined
+              : { body: { pin: effect.pin } },
+          );
           dispatch({ type: 'step_done', step: effect.step });
         } catch (error) {
           dispatch({ type: 'step_failed', code: codeOf(error) });
@@ -220,7 +231,7 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
     [dispatch],
   );
   const step = useCallback(
-    () => dispatch({ type: 'step_pressed' }),
+    (pin?: string) => dispatch({ type: 'step_pressed', pin }),
     [dispatch],
   );
   const reload = useCallback(

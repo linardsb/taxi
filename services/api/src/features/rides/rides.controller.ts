@@ -24,6 +24,7 @@ import { CurrentUser, Roles } from '../auth';
 import { IdempotencyKeyHeader } from './idempotency-key.decorator';
 import { RideLifecycleService } from './lifecycle/ride-lifecycle.service';
 import { RideQuoteService } from './ride-quote.service';
+import type { RiderVisibleRide } from './rider-visible-ride';
 import { RidesService } from './rides.service';
 
 /**
@@ -107,7 +108,7 @@ export class RidesController {
   read(
     @CurrentUser() user: JwtClaims,
     @Param('rideId', ParseUUIDPipe) rideId: string,
-  ): Promise<Ride> {
+  ): Promise<Ride | RiderVisibleRide> {
     return user.role === 'driver'
       ? this.lifecycle.findForDriver(user.sub, rideId)
       : this.rides.findForRider(user.sub, rideId);

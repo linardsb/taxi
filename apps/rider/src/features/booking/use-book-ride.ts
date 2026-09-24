@@ -40,7 +40,7 @@ export interface BookRide {
  * new one would book a second car, which is precisely the failure
  * `RIDE_IDEMPOTENCY_PENDING` exists to prevent.
  */
-export function useBookRide(draft: BookingDraft): BookRide {
+export function useBookRide(draft: BookingDraft, pickupPin: boolean): BookRide {
   const { api } = useSession();
   const t = useT();
   const [busy, setBusy] = useState(false);
@@ -58,6 +58,7 @@ export function useBookRide(draft: BookingDraft): BookRide {
               pickup: draft.pickup,
               destination: draft.dropoff,
               paymentMethod: draft.paymentMethod,
+              options: { pickupPin },
             },
             headers: { [IDEMPOTENCY_KEY_HEADER]: draft.idempotencyKey },
             schema: rideCreatedSchema,
@@ -78,7 +79,7 @@ export function useBookRide(draft: BookingDraft): BookRide {
     } finally {
       setBusy(false);
     }
-  }, [api, draft, t]);
+  }, [api, draft, pickupPin, t]);
 
   return { book, busy, error };
 }

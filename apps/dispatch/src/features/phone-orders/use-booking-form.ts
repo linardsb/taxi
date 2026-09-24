@@ -310,7 +310,8 @@ export function useBookingForm(offline: boolean): BookingForm {
         destination: draft.destination.point,
         stops: [],
         category: 'standard',
-        options: { childSeat: false, femaleDriver: false },
+        // Hard false until Dina's form gets its checkbox (#275).
+        options: { childSeat: false, femaleDriver: false, pickupPin: false },
         paymentMethod: draft.paymentMethod,
         vehicleCount: 1,
       };

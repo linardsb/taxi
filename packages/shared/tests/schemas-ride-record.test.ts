@@ -8,6 +8,7 @@ import {
   rideAssignmentSchema,
   rideCreatedSchema,
   rideSchema,
+  riderRideSchema,
 } from '../src/schemas/ride';
 
 const riga = { lat: 56.9496, lng: 24.1052 };
@@ -171,5 +172,45 @@ describe('rideCreatedSchema', () => {
 
   it('requires the split — a created ride always carries its preview (failure)', () => {
     expect(rideCreatedSchema.safeParse({ ride }).success).toBe(false);
+  });
+});
+
+describe('riderRideSchema (#258)', () => {
+  const ride = {
+    id: uuid,
+    orderId: otherUuid,
+    status: 'accepted',
+    riderId: uuid,
+    driverId: otherUuid,
+    paymentMethod: 'cash',
+    request: {
+      riderId: uuid,
+      pickup: { location: riga, address: 'Brīvības iela 1, Rīga' },
+      destination: {
+        location: { lat: 56.9236, lng: 23.9711 },
+        address: 'Lidosta RIX',
+      },
+      paymentMethod: 'cash',
+    },
+    quote,
+    createdAt: '2026-08-03T10:00:00.000Z',
+    updatedAt: '2026-08-03T10:00:00.000Z',
+  };
+
+  it('carries a leading-zero PIN (expected)', () => {
+    expect(
+      riderRideSchema.parse({ ...ride, pickupPin: '0042' }).pickupPin,
+    ).toBe('0042');
+  });
+
+  it('carries null for a ride booked without the option (edge)', () => {
+    expect(riderRideSchema.parse({ ...ride, pickupPin: null }).pickupPin).toBe(
+      null,
+    );
+  });
+
+  it('is the only ride schema with the PIN: rideSchema strips it (failure)', () => {
+    const parsed = rideSchema.parse({ ...ride, pickupPin: '0042' });
+    expect(parsed).not.toHaveProperty('pickupPin');
   });
 });

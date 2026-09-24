@@ -22,6 +22,12 @@ import { trackingTokenSchema } from './tracking';
 export const rideOptionsSchema = z.object({
   childSeat: z.boolean().default(false),
   femaleDriver: z.boolean().default(false),
+  /**
+   * Opt-in per booking (#258): when true the api mints a 4-digit pickup PIN at
+   * creation and the driver must enter it before `start`. Only the flag rides
+   * on the request; the PIN itself never does (see `riderRideSchema`).
+   */
+  pickupPin: z.boolean().default(false),
 });
 export type RideOptions = z.infer<typeof rideOptionsSchema>;
 
@@ -78,7 +84,11 @@ export const rideRequestSchema = z.object({
   stops: z.array(addressPointSchema).max(5).default([]),
   destination: addressPointSchema,
   category: z.enum(RIDE_CATEGORIES).default('standard'),
-  options: rideOptionsSchema.default({ childSeat: false, femaleDriver: false }),
+  options: rideOptionsSchema.default({
+    childSeat: false,
+    femaleDriver: false,
+    pickupPin: false,
+  }),
   paymentMethod: z.enum(PAYMENT_METHOD_TYPES),
   /** Set for "izsaukumi uz laiku" — scheduled rides enter the machine as `scheduled`. */
   scheduledFor: z.coerce.date().optional(),
@@ -351,6 +361,38 @@ export const rideCancelSchema = z.object({
   reason: z.string().max(280).nullable().default(null),
 });
 export type RideCancel = z.infer<typeof rideCancelSchema>;
+
+/** A pickup PIN (#258): exactly 4 digits, kept as a string so `0042` survives. */
+export const pickupPinSchema = z.string().regex(/^\d{4}$/);
+export type PickupPin = z.infer<typeof pickupPinSchema>;
+
+/**
+ * The `POST /rides/:rideId/start` body (#258). `pin` is required only on a ride
+ * booked with `options.pickupPin`; the api decides that, not the schema.
+ *
+ * `.default({})` is load-bearing: Express 5 leaves `req.body` undefined when no
+ * JSON body is sent, so a bodiless start (every un-pinned ride) parses to "no
+ * PIN". The actor comes from the JWT, as with `rideCancelSchema`.
+ */
+export const rideStartSchema = z
+  .object({ pin: pickupPinSchema.optional() })
+  .default({});
+export type RideStart = z.infer<typeof rideStartSchema>;
+
+/**
+ * The rider's own `GET /rides/:rideId` (#258): a `Ride` plus its pickup PIN
+ * (null when the rider did not opt in).
+ *
+ * This is the ONLY schema that carries the PIN. `rideSchema` must never gain
+ * it: the driver read, `complete`, `settle` and the dispatcher's `RideCreated`
+ * are all `rideSchema`, and leaving the PIN off it keeps them clean by
+ * construction — a forgotten path strips it rather than leaks it. `.extend`
+ * keeps a plain `ZodObject`.
+ */
+export const riderRideSchema = rideSchema.extend({
+  pickupPin: pickupPinSchema.nullable(),
+});
+export type RiderRide = z.infer<typeof riderRideSchema>;
 
 /**
  * The `POST /rides` response (#9).
