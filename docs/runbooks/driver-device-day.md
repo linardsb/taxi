@@ -417,6 +417,20 @@ The owed ear-checks (§"Also on this day", row 2) are **closed for TalkBack**:
 | The once-a-second label mutation re-announcing (Q5) | ❌ **it does, and it starves the countdown** → [#263](https://github.com/linardsb/taxi/issues/263) |
 | VoiceOver | owed — [#257](https://github.com/linardsb/taxi/issues/257) |
 
+**#276's TalkBack pass (2026-09-24)**, a debug build from `d6deaa6` via `expo run:android`
+(`BUILD SUCCESSFUL in 6m 10s` warm; the EAS APK must be uninstalled first,
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). Full log: [#276's run comment](https://github.com/linardsb/taxi/issues/276#issuecomment-5820940274).
+
+| Leg | Result |
+|---|---|
+| Offer card read once, not re-read per tick (after #263) | ✅ |
+| Countdown announcements | ❌ queued behind the 19.7 s card read, all spoken after `dispatch.offer.expired` → [#279](https://github.com/linardsb/taxi/issues/279) |
+| Earnings announcement once on spinner→value (after #262) | ✅ |
+| Earnings link, ready state | ✅ (loading and failed not reached this pass) |
+| PIN field label, disabled Start «Sākt braucienu, Poga. atspējots» | ✅ (PR #277's "Start is skipped" not reproduced) |
+| PIN value re-read | ❌ unspaced `0042`; keystroke chatter unconfirmed → [#280](https://github.com/linardsb/taxi/issues/280) |
+| Error `Banner` («Nav savienojuma ar serveri.») | ❌ not announced; the iOS-only guard, fix owned by #259 T0 |
+
 ### Presence must be established through the app, never by SQL
 
 `update drivers set status='online'` puts the **row** online and writes **nothing to Redis**.
@@ -503,6 +517,33 @@ re-announcement, which is the whole of #263.
 `input tap` **activates** the control rather than focusing it — the opposite of a finger
 under explore-by-touch. An agent tapping under TalkBack moves between screens instead of
 exploring one.
+
+**Raw touches DO reach explore-by-touch** (`observed` 2026-09-24, #276). `input` injects above
+the accessibility input filter; `sendevent` on the virtio touchscreen enters below it, like a
+finger. After `adb root`, push this to `/data/local/tmp/touch.sh` and run it with
+`adb shell sh /data/local/tmp/touch.sh <mode> …` (screen px, 1080 × 2400):
+
+```sh
+D=/dev/input/event2   # virtio_input_multi_touch_1; axes 0..32767 (getevent -pl)
+sx() { echo $(( $1 * 32767 / 1080 )); }; sy() { echo $(( $1 * 32767 / 2400 )); }
+down() { sendevent $D 3 57 7; sendevent $D 3 53 $(sx $1); sendevent $D 3 54 $(sy $2); sendevent $D 3 58 200; sendevent $D 3 48 5; sendevent $D 0 0 0; }
+move() { sendevent $D 3 53 $(sx $1); sendevent $D 3 54 $(sy $2); sendevent $D 0 0 0; }
+up() { sendevent $D 3 57 -1; sendevent $D 0 0 0; }
+case $1 in
+ explore) down $2 $3; sleep 0.4; move $(( $2 + 1 )) $3; sleep 0.3; up;;          # focus + read one node
+ swipe) down $2 $3; move $(( ($2 + $4) / 2 )) $(( ($3 + $5) / 2 )); move $4 $5; up;; # next/previous item
+esac
+```
+
+- **`ABS_MT_PRESSURE` (58) and `ABS_MT_TOUCH_MAJOR` (48) are required.** Without them the events
+  reach the device (`getevent` shows them) and TalkBack ignores them.
+- **Two move frames, no more.** Each `sendevent` is its own process, so six frames made the
+  swipe too slow to classify and it read as exploration. `swipe 200 1600 900 1600` is "next",
+  the reverse is "previous".
+- **Activation did not work this way.** A raw double-tap never activated the focused button.
+  Turn TalkBack off, `input tap`, and turn it back on.
+- The pressure events once opened Android's stylus tutorial over the app. Dismiss it with
+  «Atcelt».
 
 ### What still cannot be reached here
 
