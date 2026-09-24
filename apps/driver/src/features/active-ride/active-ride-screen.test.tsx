@@ -191,7 +191,7 @@ describe('ActiveRideScreen (#15)', () => {
       expect(screen.queryByTestId('pickup-pin-input')).toBeNull();
     });
 
-    it('a wrong PIN shows its copy and Retry resends the typed PIN (failure)', async () => {
+    it('a wrong PIN shows its copy, offers no Retry, and Start waits for different digits (failure)', async () => {
       mockState = pinnedAt('arrived');
       const view = await render(<ActiveRideScreen />);
       await fireEvent.changeText(
@@ -199,7 +199,10 @@ describe('ActiveRideScreen (#15)', () => {
         '9999',
       );
 
-      mockState = pinnedAt('arrived', { errorCode: 'pickup_pin_incorrect' });
+      mockState = pinnedAt('arrived', {
+        errorCode: 'pickup_pin_incorrect',
+        rejectedPin: '9999',
+      });
       await view.rerender(<ActiveRideScreen />);
 
       expect(
@@ -207,16 +210,45 @@ describe('ActiveRideScreen (#15)', () => {
           t('driver.error.pickup_pin_incorrect'),
         ),
       ).toBeTruthy();
+      // Every resend of the refused digits would cost an attempt (PR #277 M1).
+      expect(
+        screen.queryByRole('button', { name: t('driver.action.retry') }),
+      ).toBeNull();
       // The digits survive the 422, so the driver corrects rather than retypes.
       expect(screen.getByTestId('pickup-pin-input').props.value).toBe('9999');
+      expect(screen.getByTestId('ride-step')).toBeDisabled();
+
+      await fireEvent.changeText(
+        screen.getByTestId('pickup-pin-input'),
+        '9998',
+      );
+      expect(screen.getByTestId('ride-step')).toBeEnabled();
+      await fireEvent.press(screen.getByTestId('ride-step'));
+      expect(mockStep).toHaveBeenCalledWith('9998');
+    });
+
+    it('a network error keeps Retry, and Retry resends the typed PIN (failure — E10)', async () => {
+      mockState = pinnedAt('arrived');
+      const view = await render(<ActiveRideScreen />);
+      await fireEvent.changeText(
+        screen.getByTestId('pickup-pin-input'),
+        '0042',
+      );
+
+      mockState = pinnedAt('arrived', { errorCode: 'network_error' });
+      await view.rerender(<ActiveRideScreen />);
+
       await fireEvent.press(
         screen.getByRole('button', { name: t('driver.action.retry') }),
       );
-      expect(mockStep).toHaveBeenCalledWith('9999');
+      expect(mockStep).toHaveBeenCalledWith('0042');
     });
 
-    it('a locked ride says to call dispatch (failure)', async () => {
-      mockState = pinnedAt('arrived', { errorCode: 'pickup_pin_locked' });
+    it('a locked ride says to call dispatch and Start stays off (failure)', async () => {
+      mockState = pinnedAt('arrived', {
+        errorCode: 'pickup_pin_locked',
+        pinLocked: true,
+      });
       await render(<ActiveRideScreen />);
 
       expect(
@@ -224,6 +256,14 @@ describe('ActiveRideScreen (#15)', () => {
           t('driver.error.pickup_pin_locked'),
         ),
       ).toBeTruthy();
+      expect(
+        screen.queryByRole('button', { name: t('driver.action.retry') }),
+      ).toBeNull();
+      await fireEvent.changeText(
+        screen.getByTestId('pickup-pin-input'),
+        '1234',
+      );
+      expect(screen.getByTestId('ride-step')).toBeDisabled();
     });
   });
 

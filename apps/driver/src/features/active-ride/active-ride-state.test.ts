@@ -304,6 +304,51 @@ describe('decide — the pickup PIN (#258)', () => {
       expect(failed.effects).toEqual([]);
     },
   );
+
+  it('a refused PIN is never resent; different digits are (failure + expected)', () => {
+    const pressed = decide(pinned(), { type: 'step_pressed', pin: '9999' });
+    const failed = decide(pressed.state, {
+      type: 'step_failed',
+      code: 'pickup_pin_incorrect',
+    }).state;
+    expect(failed.rejectedPin).toBe('9999');
+
+    const again = decide(failed, { type: 'step_pressed', pin: '9999' });
+    expect(again.effects).toEqual([]);
+    expect(again.state.busy).toBe(false);
+
+    const corrected = decide(failed, { type: 'step_pressed', pin: '9998' });
+    expect(corrected.effects).toEqual([
+      { type: 'post_step', step: 'start', rideId: RIDE_ID, pin: '9998' },
+    ]);
+  });
+
+  it('once locked, no PIN is sent, even after the banner is reloaded away (edge)', () => {
+    const pressed = decide(pinned(), { type: 'step_pressed', pin: '9999' });
+    const locked = decide(pressed.state, {
+      type: 'step_failed',
+      code: 'pickup_pin_locked',
+    }).state;
+    const reloaded = decide(locked, { type: 'reload_pressed' }).state;
+    expect(reloaded.errorCode).toBeNull();
+
+    const tried = decide(reloaded, { type: 'step_pressed', pin: '1234' });
+    expect(tried.effects).toEqual([]);
+  });
+
+  it('a network failure does not mark the PIN refused — Retry may resend it (regression)', () => {
+    const pressed = decide(pinned(), { type: 'step_pressed', pin: '0042' });
+    const failed = decide(pressed.state, {
+      type: 'step_failed',
+      code: 'network_error',
+    }).state;
+    expect(failed.rejectedPin).toBeNull();
+    expect(
+      decide(failed, { type: 'step_pressed', pin: '0042' }).effects,
+    ).toEqual([
+      { type: 'post_step', step: 'start', rideId: RIDE_ID, pin: '0042' },
+    ]);
+  });
 });
 
 describe('decide — ride:status reconciliation', () => {

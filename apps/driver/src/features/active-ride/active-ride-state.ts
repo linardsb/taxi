@@ -34,6 +34,15 @@ export interface ActiveRideState {
   errorCode: string | null;
   /** The socket said `completed` before the REST answer; a re-read owes the receipt. */
   awaitingReceipt: boolean;
+  /**
+   * The pickup PIN on the start in flight, and the one the api last refused
+   * (#258). Every entry costs one of the ride's 5 attempts, so the exact
+   * digits it refused are never sent again, and after `pickup_pin_locked`
+   * nothing is (PR #277 M1).
+   */
+  sentPin: string | null;
+  rejectedPin: string | null;
+  pinLocked: boolean;
 }
 
 export const initialActiveRide: ActiveRideState = {
@@ -46,6 +55,9 @@ export const initialActiveRide: ActiveRideState = {
   ended: null,
   errorCode: null,
   awaitingReceipt: false,
+  sentPin: null,
+  rejectedPin: null,
+  pinLocked: false,
 };
 
 export type ActiveRideEvent =
@@ -99,6 +111,19 @@ const noop = (state: ActiveRideState): ActiveRideDecision => ({
  */
 export function needsPin(ride: Ride): boolean {
   return ride.status === 'arrived' && ride.request.options.pickupPin;
+}
+
+/**
+ * Whether `pin` may be sent as the pickup PIN: 4 digits, not the entry the api
+ * just refused, and the ride not locked. The screen disables Start on it and
+ * the reducer drops a press that fails it — one rule for both.
+ */
+export function pinSendable(state: ActiveRideState, pin: string | undefined) {
+  return (
+    pickupPinSchema.safeParse(pin).success &&
+    !state.pinLocked &&
+    pin !== state.rejectedPin
+  );
 }
 
 /** The one step legal from `status` — the api's table, by import. */
@@ -242,12 +267,16 @@ export function decide(
       const step = stepFor(state.ride.status);
       if (!step) return noop(state);
       // A pinned start without 4 digits never leaves the phone — the button is
-      // disabled anyway, and a bodiless start would only earn a 422.
+      // disabled anyway, and a bodiless start would only earn a 422. Nor does
+      // a refused PIN resent, or any PIN once locked: each costs an attempt.
       const pinned = step === 'start' && needsPin(state.ride);
-      if (pinned && !pickupPinSchema.safeParse(event.pin).success) {
-        return noop(state);
-      }
-      const busy = { ...state, busy: true, errorCode: null };
+      if (pinned && !pinSendable(state, event.pin)) return noop(state);
+      const busy = {
+        ...state,
+        busy: true,
+        errorCode: null,
+        sentPin: pinned ? (event.pin ?? null) : null,
+      };
       const rideId = state.ride.id;
       return {
         state: busy,
@@ -274,7 +303,16 @@ export function decide(
     }
 
     case 'step_failed': {
-      const failed = { ...state, busy: false, errorCode: event.code };
+      const failed = {
+        ...state,
+        busy: false,
+        errorCode: event.code,
+        rejectedPin:
+          event.code === 'pickup_pin_incorrect'
+            ? state.sentPin
+            : state.rejectedPin,
+        pinLocked: state.pinLocked || event.code === 'pickup_pin_locked',
+      };
       if (event.code === 'ride_not_yours' || event.code === 'ride_not_found') {
         return {
           state: { ...failed, ended: { kind: 'released', reason: null } },

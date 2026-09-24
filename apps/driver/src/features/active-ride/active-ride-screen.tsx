@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Banner, Button, Screen, TextField } from '@/components';
 import { errorMessageKey, useT } from '@/features/i18n';
-import { needsPin, stepFor, TITLE_KEY } from './active-ride-state';
+import { needsPin, pinSendable, stepFor, TITLE_KEY } from './active-ride-state';
 import {
   canOpenWaze,
   googleMapsLink,
@@ -55,7 +55,7 @@ export function ActiveRideScreen() {
   const targetKey = target ? `${target.lat},${target.lng}` : null;
   const [wazeAvailable, setWazeAvailable] = useState(false);
   // The rider's pickup PIN as typed (#258). Kept after a 422 so the driver
-  // corrects rather than retypes; a new ride remounts the screen and clears it.
+  // corrects rather than retypes (Start stays off until it differs); a new ride remounts the screen and clears it.
   const [pin, setPin] = useState('');
   useEffect(() => {
     if (!target) return;
@@ -162,8 +162,13 @@ export function ActiveRideScreen() {
         <Banner
           tone="danger"
           text={t(errorMessageKey(state.errorCode))}
-          // Retry resends the typed PIN — a bare `step` would post none.
-          action={{ label: t('driver.action.retry'), onPress: () => step(pin) }}
+          // No Retry on a PIN verdict: resending the refused digits would
+          // spend another of the ride's 5 attempts (PR #277 M1).
+          action={
+            state.errorCode.startsWith('pickup_pin_')
+              ? undefined
+              : { label: t('driver.action.retry'), onPress: () => step(pin) }
+          }
           secondary={{ label: t('driver.ride.reload'), onPress: reload }}
           testID="ride-error"
         />
@@ -202,7 +207,7 @@ export function ActiveRideScreen() {
           size="lg"
           label={t(STEP_KEY[currentStep])}
           onPress={() => step(pin)}
-          disabled={needsPin(ride) && pin.length !== 4}
+          disabled={needsPin(ride) && !pinSendable(state, pin)}
           loading={state.busy}
           testID="ride-step"
         />
