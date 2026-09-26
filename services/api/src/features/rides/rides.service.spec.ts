@@ -59,6 +59,9 @@ const split = {
   driverNetCents: 1_105,
 } as FareSplit;
 
+/** A priced route, as `PricingService.quote` returns it (#260). */
+const TRIP = { distanceMeters: 11_655, durationSeconds: 1_049 };
+
 function build(
   options: {
     realtimeThrows?: boolean;
@@ -72,7 +75,7 @@ function build(
   /** One shared log, so ORDER is assertable and not just occurrence. */
   const calls: string[] = [];
   const emitted: { event: string; payload: Record<string, unknown> }[] = [];
-  let created: { status: string } | undefined;
+  let created: { status: string; trip?: unknown } | undefined;
 
   /** What the fake repository has "committed", by id — what a replay reads. */
   const committed = new Map<string, { ride: Ride; quote: FareQuote }>();
@@ -87,7 +90,7 @@ function build(
       calls.push('pricing.quote');
       if (options.pricingThrows) throw new Error('maps provider is down');
       if (options.deferQuote) await quoteGate;
-      return { quote, split };
+      return { quote, split, trip: TRIP };
     },
     previewSplit: () => {
       calls.push('pricing.previewSplit');
@@ -96,7 +99,11 @@ function build(
   } as unknown as PricingService;
 
   const rides = {
-    create: (input: { status: string; request?: { riderId?: string } }) => {
+    create: (input: {
+      status: string;
+      request?: { riderId?: string };
+      trip?: unknown;
+    }) => {
       calls.push('rides.create');
       created = input;
       // A FRESH id per call, deliberately: with a constant, "the repeat
@@ -177,6 +184,7 @@ function build(
       joinAdvance = status;
     },
     createdStatus: () => created?.status,
+    createdTrip: () => created?.trip,
     countOf: (call: string) => calls.filter((c) => c === call).length,
   };
 }
@@ -362,6 +370,14 @@ describe('RidesService', () => {
       }),
     );
     logged.mockRestore();
+  });
+
+  it("stores the priced route's trip on the ride (#260, expected)", async () => {
+    const { service, createdTrip } = build();
+
+    await req(service);
+
+    expect(createdTrip()).toEqual(TRIP);
   });
 
   it('returns the committed ride even when the socket emit fails (failure)', async () => {

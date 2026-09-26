@@ -260,6 +260,7 @@ export const en = {
   'driver.offer.pickup': 'Pickup: {address}',
   'driver.offer.destination': 'Destination: {address}',
   'driver.offer.eta': 'To pickup ~{minutes} min · {km} km',
+  'driver.offer.trip': 'Trip ~{minutes} min · {km} km · {rate}/km',
   'driver.offer.payment_cash': 'Cash',
   'driver.offer.payment_card': 'Card',
   'driver.offer.countdown': '{seconds} s left',

@@ -134,6 +134,29 @@ describe('rideOfferSchema', () => {
     split: splitFare(2000, { pct: 15, source: 'platform_base' }),
   };
 
+  it('carries the routed trip in whole units (#260, expected)', () => {
+    const trip = { distanceMeters: 11_655, durationSeconds: 1_049 };
+    expect(rideOfferSchema.parse({ ...base, trip }).trip).toEqual(trip);
+  });
+
+  it('reads an offer from an api that predates `trip` as `trip: null` (#260, edge)', () => {
+    // A new driver binary must still draw the card, not drop the offer.
+    expect(rideOfferSchema.parse(base).trip).toBeNull();
+  });
+
+  it('refuses a fractional or negative trip (#260, failure)', () => {
+    const trip = (over: object) => ({
+      ...base,
+      trip: { distanceMeters: 1000, durationSeconds: 60, ...over },
+    });
+    expect(
+      rideOfferSchema.safeParse(trip({ distanceMeters: 1.5 })).success,
+    ).toBe(false);
+    expect(
+      rideOfferSchema.safeParse(trip({ durationSeconds: -1 })).success,
+    ).toBe(false);
+  });
+
   it('parses a full offer carrying both the fare and the split (expected)', () => {
     const parsed = rideOfferSchema.parse(base);
     // The transparency wedge: the driver sees what the rider pays AND the cut.

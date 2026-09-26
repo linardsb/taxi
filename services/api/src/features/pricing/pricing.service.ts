@@ -9,6 +9,7 @@ import {
   type MapsProvider,
   type PricingStrategy,
   type RideRequest,
+  type TripEstimate,
 } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { MAPS_PROVIDER } from '../geo';
@@ -32,7 +33,7 @@ export class PricingService {
 
   async quote(
     request: RideRequest,
-  ): Promise<{ quote: FareQuote; split: FareSplit }> {
+  ): Promise<{ quote: FareQuote; split: FareSplit; trip: TripEstimate }> {
     // Read BEFORE the maps call: this throws hard on a missing row (the
     // config-not-constant rule), and an unseeded environment should not spend
     // a paid route call only to 500 three lines later.
@@ -72,7 +73,14 @@ export class PricingService {
       at: new Date().toISOString(),
     });
 
-    return { quote, split };
+    // The route the price came from, kept so the ride can store it (#260) and
+    // the offer card never needs a second paid route call. No polyline:
+    // nothing persists it.
+    const trip: TripEstimate = {
+      distanceMeters: route.distanceMeters,
+      durationSeconds: route.durationSeconds,
+    };
+    return { quote, split, trip };
   }
 
   /**

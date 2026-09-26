@@ -4,6 +4,7 @@ import {
   rideRequestSchema,
   type FareQuote,
   type PlatformConfig,
+  type TripEstimate,
 } from '@taxi/shared';
 import type { Env } from '../../common/config/env.schema';
 import type { DriverMatchAttributes, DriversService } from '../drivers';
@@ -35,6 +36,9 @@ const request = () =>
     destination: { location: { lat: 56.9236, lng: 23.9711 }, address: 'RIX' },
     paymentMethod: 'cash',
   });
+
+/** The ride's stored trip (#260) — the override's offer must carry it. */
+const TRIP: TripEstimate = { distanceMeters: 11_655, durationSeconds: 1_049 };
 
 /** €13.00 — the seeded centre→RIX fare. */
 const quote: FareQuote = {
@@ -83,7 +87,11 @@ const input = () => ({
 function build(
   over: {
     /** `undefined` models an unknown or never-quoted ride. */
-    found?: { ride: { request: ReturnType<typeof request> }; quote: FareQuote };
+    found?: {
+      ride: { request: ReturnType<typeof request> };
+      quote: FareQuote;
+      trip: TripEstimate | null;
+    };
     /** `[]` models an unknown driver. */
     driverAttrs?: DriverMatchAttributes[];
     /** First hop. `undefined` = the ride was NOT in `requested` (mid-cascade). */
@@ -125,7 +133,9 @@ function build(
   );
   const findWithQuote = jest.fn(() =>
     Promise.resolve(
-      'found' in over ? over.found : { ride: { request: request() }, quote },
+      'found' in over
+        ? over.found
+        : { ride: { request: request() }, quote, trip: TRIP },
     ),
   );
   const rides = { findWithQuote, assignDriver } as unknown as RidesRepository;
@@ -246,6 +256,7 @@ describe('ForceAssignService', () => {
         status: 'accepted',
         source: 'dispatcher',
         etaSeconds: 0,
+        trip: TRIP, // #260: the override's offer carries the stored trip too
       }),
       expect.anything(),
     );
