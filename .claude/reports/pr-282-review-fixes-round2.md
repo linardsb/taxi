@@ -26,7 +26,7 @@
 
 **Departure from the review's H1 fix**: the review keys on `state.rideId === route.rideId`. The plan keys on "the provider holds any ride". Case the equality test misses: an announce entry for ride A left in the shade (tray entries are never dismissed, `push-registrar.tsx:39-44`) and tapped while the provider holds ride B. Under equality it falls to the gate and becomes the review's own "worse variant". Under "any ride held" it lands on B, and the reducer ignores A's dispatch (`state.ride?.id !== rideId`). Truthiness, not `!== null`, because the existing mock returns `state: {}` (`push-registrar.test.tsx:48`), whose `rideId` is `undefined`.
 
-**Round-1 report corrected in place**: its `:52` (M1 "a warm tap refetches `/me`") is struck through and marked wrong with a pointer here; the `router.navigate('/active-ride')` sweep row is marked superseded; the L6 row as above.
+**Round-1 report corrected in place**: its `:25`, `:27` and `:50` (the unreachable offline test and the `replace('/')` tap) are marked superseded; its `:52` (M1 "a warm tap refetches `/me`") is struck through and marked wrong with a pointer here; the `router.navigate('/active-ride')` sweep row is marked superseded; the L6 row as above.
 
 ## New failure mode of the High fix (skill step 4)
 
@@ -47,6 +47,7 @@ Run in `wt-259` on 2026-09-26 on the final edit. PR body read with `gh pr view 2
 | `grep -n "offline after a 429\|offline)" $P` | 367 (the sentence saying that case could not reach the window) | 0 |
 | `grep -n "through the gate" $P` | 923 (round-1 amendment, now marked superseded) | 0. The round-1 section says "M1 is fixed in T14", true as history; a round-2 section is added |
 | `grep -n "Banner.tsx:42" $P` | 204 (`:42-51`, the whole component in the reference list; still correct) | 0 |
+| `grep -n "replace('/')\|offline" .claude/reports/pr-282-review-fixes.md` (round-1 report, not `$P`) | 24 (presence `marked_offline`, unrelated), 25 (H2 offline test), 27 (M1 `replace('/')`), 50 (H2 offline failure mode). 25, 27 and 50 now end "**Superseded** by round 2 …". 52 is struck through separately. | — |
 | `grep -c "^### T" $P` | 21, unchanged | "21 task headings". Still true. |
 | `grep -n "909\|two files" <body>` | — | "two files, +996 … +909 … +87": stale after this commit, re-derived and edited after push |
 
