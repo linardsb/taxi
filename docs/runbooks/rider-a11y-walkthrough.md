@@ -27,9 +27,15 @@ acceptance criterion (plan risk R5).
 - **VoiceOver (iOS): not performable on this machine.** The build machine is an
   iMac19,1, which cannot run Tahoe, so Xcode 26.3 is the ceiling; Expo SDK 57
   needs 26.4 to compile `expo-modules-jsi` for iOS. `observed` 2026-08-25.
-- **TalkBack (Android): no emulator available.** `~/Library/Android/sdk/emulator`
-  does not exist and Android Studio is not installed — `observed` 2026-09-02,
-  during this ticket. `adb` is present but has nothing to talk to.
+- **TalkBack (Android): reachable since 2026-09-18.** AVD `sakta224` (set-up in
+  `docs/runbooks/driver-device-day.md` §Emulator route) ships TalkBack. The rider
+  app has no `eas.json`, so it is built locally: in `apps/rider`, with
+  `JAVA_HOME` on the JDK 17 bundle, `ANDROID_HOME`/`ANDROID_SDK_ROOT` on the SDK
+  root, `EXPO_PUBLIC_API_URL=http://10.0.2.2:<port>` and `CI=1`, run
+  `npx expo run:android` (`BUILD SUCCESSFUL in 12m 50s` cold, `observed`
+  2026-09-24). Driving TalkBack from `adb`: the same runbook, §Driving TalkBack.
+  Only step 13 has been run so far (2026-09-24, #276). The table above stays
+  "not yet run" until every step has.
 
 What ships as the gate instead is the RNTL suite: every assertable property in
 the spec below is an automated assertion in `apps/rider/src/**/*.test.tsx`, and
@@ -180,3 +186,14 @@ Xcode ceiling, so neither screen reader has heard it.
   the PIN line reads four separate digits; the arrival announcement speaks
   «Auto ir klāt. PIN: …» once, digit by digit.
 - **Record the answer here** and close the matching leg of #276.
+
+**TalkBack, 2026-09-24** (`d6deaa6`, `sakta224`, lv-LV; TTS input text from the
+VERBOSE log, audio not heard):
+
+- Switch ✅: «PIN kods iekāpšanai» · «ieslēgts.» · «Slēdzis. Šoferis ievadīs jūsu PIN pirms brauciena.»
+- PIN line: TTS receives «Jūsu PIN kods: 0 0 4 2». Owed: a listen to confirm four digits.
+- Arrival ❌: «Auto ir klāt. PIN: 0 0 4 2» shows on screen, and nothing is spoken.
+  `Banner`'s live region never fires (`nodeLiveRegion=0` on every event). The fix
+  (`announceForAccessibility` on Android too) is #259's T0.
+- Address search needs `GOOGLE_MAPS_API_KEY`; without it, book with
+  `POST /rides` and open `saktacabrider://book/status?rideId=<id>`.
