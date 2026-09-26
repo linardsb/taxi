@@ -126,6 +126,7 @@ export class DispatchService {
       rideId: ride.id,
       request: found.ride.request,
       quote: found.quote,
+      trip: found.trip,
       candidate,
       driverAttrs,
       config,

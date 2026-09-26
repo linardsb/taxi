@@ -97,7 +97,7 @@ export type { RiderVisibleRide } from './rider-visible-ride';
  */
 export { RidesRepository } from './rides.repository';
 export type { BoardRide } from './board-ride';
-export type { AwaitingRide } from './rides.repository';
+export type { AwaitingRide } from './ride-row';
 export { RideTransitionService } from './ride-transition.service';
 export type { DbTx, TransitionedRide } from './ride-transition.service';
 /**

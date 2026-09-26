@@ -42,6 +42,7 @@ const offer = (over: Partial<RideOffer> = {}): RideOffer => ({
     },
   },
   split: splitFare(1240, { pct: 15, source: 'platform_base' }),
+  trip: null,
   ...over,
 });
 

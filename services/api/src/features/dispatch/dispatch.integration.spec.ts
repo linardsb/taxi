@@ -975,6 +975,38 @@ describe('dispatch (integration)', () => {
     expect(event.quote.totalCents).toBe(event.split.totalCents);
     // The operative method rides on the wire (#15) — `bookRide` books cash.
     expect(event.paymentMethod).toBe('cash');
+    // The ride's stored trip arrives on the card (#260).
+    expect(event.trip).toEqual(await storedTrip(ride.id));
+    expect(event.trip!.distanceMeters).toBeGreaterThan(0);
+  });
+
+  /** The `rides` row's trip pair, as `findWithQuote` would project it (#260). */
+  async function storedTrip(rideId: string) {
+    const [row] = await ctx.db
+      .select({
+        distanceMeters: rides.tripDistanceMeters,
+        durationSeconds: rides.tripDurationSeconds,
+      })
+      .from(rides)
+      .where(eq(rides.id, rideId));
+    return row;
+  }
+
+  it('still dispatches a ride priced before trips were stored, with `trip: null` (#260, edge)', async () => {
+    const d = await onlineDriver(120, near(CENTRE_PICKUP.location, 0.001, 0));
+    const sock = await driverSocket(d.id);
+    const ride = await bookRide(121, CENTRE_PICKUP);
+    await ctx.db
+      .update(rides)
+      .set({ tripDistanceMeters: null, tripDurationSeconds: null })
+      .where(eq(rides.id, ride.id));
+
+    const offered = waitFor<RideOfferEvent>(sock, RT.rideOffer, ride.id);
+    await sweeper.tick();
+
+    const event = await offered;
+    expect(event.driverId).toBe(d.id);
+    expect(event.trip).toBeNull();
   });
 
   /** The push tail is fire-and-forget after `tick()`; poll rather than race it. */
@@ -1018,6 +1050,9 @@ describe('dispatch (integration)', () => {
     expect(carried.id).toBe(row!.id);
     expect(carried.driverId).toBe(d.id);
     expect(carried.paymentMethod).toBe('cash');
+    // The push carries the trip too, so a killed app draws the same card (#260).
+    expect(carried.trip).toEqual(await storedTrip(ride.id));
+    expect(carried.trip!.distanceMeters).toBeGreaterThan(0);
     // The body names the driver's NET, formatted by the shared `formatEur`.
     expect(pushed.message.body).toContain(
       formatEur(carried.split.driverNetCents),

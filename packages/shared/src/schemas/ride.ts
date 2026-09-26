@@ -190,6 +190,20 @@ export const rideAssignmentSchema = z
   });
 export type RideAssignment = z.infer<typeof rideAssignmentSchema>;
 
+/**
+ * The routed trip, pickup → stops → destination, as the maps seam measured
+ * it when the ride was priced (#260). A property of the ROUTE the price was
+ * derived from, not of the quote: `FareQuote` stays money-only, so no
+ * pricing strategy has to echo a measurement it did not make.
+ *
+ * Whole units, as `RouteResult` promises and `CachingMapsProvider` enforces.
+ */
+export const tripEstimateSchema = z.object({
+  distanceMeters: z.number().int().nonnegative(),
+  durationSeconds: z.number().int().nonnegative(),
+});
+export type TripEstimate = z.infer<typeof tripEstimateSchema>;
+
 /** What a driver is shown before accepting — the offer cascade's unit of work. */
 export const rideOfferSchema = z.object({
   id: z.string().uuid(),
@@ -212,6 +226,13 @@ export const rideOfferSchema = z.object({
   quote: fareQuoteSchema,
   /** What the driver keeps, with the commission line explicit ("you keep 85%"). */
   split: fareSplitSchema,
+  /**
+   * The trip the card turns into duration and €/km (#260). Null for a ride
+   * priced before the columns existed. Defaulted, unlike the wire-only
+   * `paymentMethod`, so a new driver binary reading an older api still draws
+   * the card (without the line) instead of dropping the offer.
+   */
+  trip: tripEstimateSchema.nullable().default(null),
   /** 1-based position when this offer came from a geozone queue (S7-2). */
   queuePosition: z.number().int().min(1).optional(),
 });

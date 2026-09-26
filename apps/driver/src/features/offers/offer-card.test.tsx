@@ -15,6 +15,7 @@ const card = (over: Partial<OfferCardProps> = {}): OfferCardProps => ({
   pickup: t('driver.offer.pickup', { address: 'Brīvības iela 1' }),
   destination: t('driver.offer.destination', { address: 'Teika' }),
   eta: t('driver.offer.eta', { minutes: 5, km: '1.0' }),
+  trip: t('driver.offer.trip', { minutes: 18, km: '11.7', rate: '€0.90' }),
   km: 1,
   payment: t('driver.offer.payment_cash'),
   seconds: 18,
@@ -57,6 +58,27 @@ describe('OfferCard (#15)', () => {
     expect(screen.getByText(t('driver.offer.payment_cash'))).toBeTruthy();
   });
 
+  it('shows the trip line under the destination (#260, expected)', async () => {
+    await render(
+      <OfferCard card={card()} onAccept={jest.fn()} onDecline={jest.fn()} />,
+    );
+    expect(screen.getByTestId('offer-trip')).toHaveTextContent(
+      'Brauciens ~18 min · 11.7 km · €0.90/km',
+    );
+  });
+
+  it('draws no trip line for a ride with no stored trip (#260, edge)', async () => {
+    await render(
+      <OfferCard
+        card={card({ trip: null })}
+        onAccept={jest.fn()}
+        onDecline={jest.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('offer-trip')).toBeNull();
+    expect(screen.getByTestId('offer-details')).toBeTruthy();
+  });
+
   it('glance mode drops the addresses, ETA and queue but keeps the payment pill (edge)', async () => {
     await render(
       <OfferCard
@@ -66,6 +88,7 @@ describe('OfferCard (#15)', () => {
       />,
     );
     expect(screen.queryByTestId('offer-details')).toBeNull();
+    expect(screen.queryByTestId('offer-trip')).toBeNull();
     expect(screen.queryByText('Rindā: 2. no 5 · rix')).toBeNull();
     expect(screen.getByTestId('offer-payment')).toBeTruthy();
     expect(screen.getByTestId('offer-fare')).toBeTruthy();

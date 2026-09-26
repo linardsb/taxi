@@ -17,6 +17,8 @@ export interface OfferCardProps {
   pickup: string;
   destination: string;
   eta: string;
+  /** Trip duration · km · €/km (#260); null when there is nothing true to show. */
+  trip: string | null;
   /** Straight-line km from the phone's newest fix; null without one. */
   km: number | null;
   payment: string;
@@ -49,6 +51,25 @@ export function youKeepLabel(offer: RideOffer, t: T): string {
   });
 }
 
+/**
+ * «Brauciens ~18 min · 11.7 km · €0.90/km» (#260), or null when there is
+ * nothing true to show: no stored trip, or a zero-length one (no rate).
+ * €/km is the driver's NET per routed trip km — user decision 2026-09-26;
+ * the pickup leg is excluded because its km is straight-line and absent
+ * without a fix. Integer cents, rounded once, before `formatEur` truncates.
+ */
+export function tripLabel(offer: RideOffer, t: T): string | null {
+  const trip = offer.trip;
+  if (!trip || trip.distanceMeters === 0) return null;
+  return t('driver.offer.trip', {
+    minutes: Math.ceil(trip.durationSeconds / 60),
+    km: (trip.distanceMeters / 1000).toFixed(1),
+    rate: formatEur(
+      Math.round((offer.split.driverNetCents * 1000) / trip.distanceMeters),
+    ),
+  });
+}
+
 /** The pure state → view mapper; `null` when there is no card to draw. */
 export function offerCardProps(
   state: OfferState,
@@ -73,6 +94,7 @@ export function offerCardProps(
     minutes: Math.ceil(offer.etaSeconds / 60),
     km: km === null ? '—' : km.toFixed(1),
   });
+  const trip = tripLabel(offer, t);
   const payment = paymentMethodLabel(pending.paymentMethod, t);
   const queue = queueLabel(state.queue, t);
   return {
@@ -81,6 +103,7 @@ export function offerCardProps(
     pickup,
     destination,
     eta,
+    trip,
     km,
     payment,
     seconds,
@@ -106,6 +129,7 @@ export function offerCardProps(
       payment,
       pickup,
       destination,
+      trip,
       eta,
       queue,
       t('driver.offer.a11y_accept'),

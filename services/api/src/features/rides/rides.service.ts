@@ -259,7 +259,7 @@ export class RidesService {
     bookingChannel: BookingChannel,
   ): Promise<RideCreated> {
     try {
-      const { quote, split } = await this.pricing.quote(request);
+      const { quote, split, trip } = await this.pricing.quote(request);
 
       const ride = await this.rides.create({
         orderId: randomUUID(),
@@ -269,6 +269,7 @@ export class RidesService {
         bookingChannel,
         trackingToken: mintTrackingToken(),
         pickupPin: request.options.pickupPin ? mintPickupPin() : null,
+        trip,
       });
 
       // ---- POST-COMMIT: nothing below may throw out of this method ----

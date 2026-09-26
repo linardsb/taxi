@@ -102,6 +102,14 @@ export const rides = pgTable(
      * new row, as `booking_channel`'s does.
      */
     pickupPinFailures: integer('pickup_pin_failures').notNull().default(0),
+    /**
+     * The routed trip the ride was priced off (#260), whole metres and seconds
+     * from the maps seam. NULL on rows priced before this column — read back as
+     * "no trip" (`findWithQuote` projects it only when BOTH are set). Written
+     * once at creation, never updated.
+     */
+    tripDistanceMeters: integer('trip_distance_meters'),
+    tripDurationSeconds: integer('trip_duration_seconds'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

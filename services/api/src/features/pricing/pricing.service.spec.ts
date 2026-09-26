@@ -130,6 +130,14 @@ describe('PricingService', () => {
     expect(split.driverNetCents).toBe(1_300);
   });
 
+  it("returns the route's distance and duration as the trip, without the polyline (#260, expected)", async () => {
+    const { service } = build();
+
+    const { trip } = await service.quote(request);
+
+    expect(trip).toEqual({ distanceMeters: 10_000, durationSeconds: 1_200 });
+  });
+
   it('throws when a rogue strategy returns an inconsistent quote (failure)', async () => {
     const inconsistent: FareQuote = {
       model: 'upfront_fixed',
