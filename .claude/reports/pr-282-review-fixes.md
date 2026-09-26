@@ -49,7 +49,7 @@
 - **H1.** The Banner and the reducer effect now hold two expressions of the same copy, and they can drift. Test (T0 VALIDATE): a `use-active-ride.test.tsx` case asserts that the runner speaks the Banner's exact text for `payment_changed` and `cancelled`.
 - **H2.** A silence flag left over from a 429 could mute the next, different error. Test (T0 P6): an offline failure after a 429 is announced once.
 - **H3.** Clearing `result` unmounts the rider's Banner for the round trip, which moves TalkBack focus if focus was on it. This is `expected`, not run. T11's GOTCHA states it, and T24 (c) records where focus lands. The driver side has no remount.
-- **M1** (not a High): through the gate, a warm tap refetches `/me`. Offline, the driver lands on the gate's error Banner until Retry. Every non-offer tap already does this, so it is accepted.
+- **M1** (not a High): ~~through the gate, a warm tap refetches `/me`. Offline, the driver lands on the gate's error Banner until Retry. Every non-offer tap already does this, so it is accepted.~~ **Wrong** (PR #282 review round 2 H1): the gate does not refetch `/me`; it redirects from the cache, which sends a warm driver to `/home`. Corrected in `pr-282-review-fixes-round2.md`.
 
 ## Retired-claim sweep
 
@@ -57,12 +57,12 @@ Run in `wt-259` on 2026-09-24, on the final edit. `P` is the plan. A hit number 
 
 | Command | Hits in the plan | Hits in the PR body |
 |---|---|---|
-| `grep -n "live region" $P` | 127 (R11 history), 351–352 (T0's retire list), 795 (T23 c: "the live region is gone"), 900 and 908 (amendments). None claims the live region speaks. | 1, "the rider app's `Banner` live region never fired". Still true. |
+| `grep -n "live region" $P` | 127 (R11 history), 351–352 (T0's retire list), 795 (T23 c: "the live region is gone"), 900 (amendments). (908 says `live-region`, which this grep does not match: round 2 L6.) None claims the live region speaks. | 1, "the rider app's `Banner` live region never fired". Still true. |
 | `grep -n "402" $P` | 908 only ("404, not 402") | 0 |
 | `grep -n "iOS-only\|iOS only" $P` | 0 | 0 |
 | `grep -n "already holds" $P` | 0 | 0 |
 | `grep -n "at !== \|!== state.lastAnnounceAt" $P` | 0 | 0 |
-| `grep -n "router.navigate('/active-ride')" $P` | 647, in the "**Not** …" sentence only | 0 |
+| `grep -n "router.navigate('/active-ride')" $P` | 647, in the "**Not** …" sentence only. **Superseded** by round 2 H1: T14 now calls it for a warm tap. | 0 |
 | `grep -n "T19)" $P` | 0 | 0 |
 | `grep -n "drop the reducer effect\|drop all four\|drop both" $P` (the first draft's H1 fix) | 0 | 0 |
 | `grep -n "key={" $P` (the first draft's H3 driver fix) | 0 | 0 |

@@ -316,7 +316,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 ### T0 FIX `Banner` speaks on Android, both apps (run in planning: R11)
 
 - **IMPLEMENT**:
-  - In `apps/rider/src/components/Banner.tsx:52-56` and `apps/driver/src/components/Banner.tsx:42-46`, drop the `Platform.OS === 'ios'` guard so `AccessibilityInfo.announceForAccessibility(text)` runs on both platforms.
+  - In `apps/rider/src/components/Banner.tsx:52-56` and `apps/driver/src/components/Banner.tsx:43-47`, drop the `Platform.OS === 'ios'` guard so `AccessibilityInfo.announceForAccessibility(text)` runs on both platforms.
   - Remove `accessibilityLiveRegion="polite"` from the `View`. It never reaches the platform node (R11, `nodeLiveRegion=0`), and if a future RN made it work, Android would speak every banner twice.
   - Add `announce?: boolean` (default `true`) to `BannerProps` in both apps, and skip the effect when it is `false`. This is for a caller whose event already has a mount-independent announcer (P1–P4, and T12's notice), and for one whose text changes on a timer (P6).
   - Rewrite both docblocks. Replace the `expected, NOT observed` paragraph with the R11 evidence (variants, `TYPE_ANNOUNCEMENT`, API 36), and keep the "ONLY ANNOUNCER" rule. Drop the now-unused `Platform` import if nothing else uses it.
@@ -325,7 +325,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - **Focused-node double read** (`expected`, not yet run): when TalkBack's focus is on the banner's own text node, TalkBack also speaks that node's content change. That was seen once in a discarded stale-bundle run (the `v3b` log), where the change was spoken as `TYPE_WINDOW_CONTENT_CHANGED`. T23/T24 check whether the new code then speaks twice.
   - **Caller audit** (PR #282 review H1/H2, re-derived at `d6deaa6`). After T0 every `Banner` speaks on Android. So every place that speaks the same event a second way, or re-renders a Banner's `text` on a timer, speaks twice or repeatedly on TalkBack too. Several already do so on iOS: the one-announcer rule does **not** already hold there. Sources: `grep -rn "<Banner" apps/rider/src apps/driver/src` and `grep -rn "announceForAccessibility" apps/rider/src apps/driver/src`, both excluding tests.
   - **Which of the two speakers stays.** Keep the one that speaks regardless of which screen is mounted. The driver's reducers run in app-wide providers. The Banners render only on their own screen, and that screen can be unmounted while the state is live:
-    - The driver app's root is a plain `Stack` (`app/_layout.tsx:28`), with no `BackHandler` or `usePreventRemove` anywhere in `apps/driver/src`. Hardware back from `/active-ride` pops to `/home` while `state.rideId` is still set (`derived` from the code, not run).
+    - The driver app's root is a plain `Stack` (`apps/driver/src/app/_layout.tsx:28`), with no `BackHandler` or `usePreventRemove` anywhere in `apps/driver/src`, and `ActiveRideProvider` wraps it (`:25-31`). For a ride entered through an offer (`/home` → `/offer`, replaced by `/active-ride`), hardware back from `/active-ride` pops to `/home` while `state.rideId` is still set (`derived` from the code, not run). After a cold start the gate's `<Redirect>` replaces `/`, so back leaves the app instead (round 2 L3). Either way the screen unmounts while the provider lives on, which is what the rule rests on.
     - `marked_offline` can land while `/active-ride` is up, where the home Banner is not mounted.
 
     Dropping the reducer effect would therefore silence a release or cancel that arrives while the driver is on `/home`. Today that is spoken.
@@ -337,7 +337,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
     | P2 | driver `ended-banner` for released (`active-ride-screen.tsx:103-113`) | reducer `announce` `driver.ride.released` at `active-ride-state.ts:224`, `:260`, `:319`, `:369` | `announce={false}` on the `ended-banner`. The effects stay as they are |
     | P3 | driver `ended-banner` for cancelled | reducer `announce` `driver.ride.cancelled` at `:230`, `:379`, bare key | the same `announce={false}`. The effect carries `reason: e.reason` at `:379` and `null` at `:230`, and the runner speaks `t('driver.ride.cancelled', { reason: reason ?? '' }).trim()`, the Banner's own expression |
     | P4 | driver completed-without-split Banner (`active-ride-screen.tsx:95-99`) | reducer `announce` `driver.ride.completed_title` at `:216`, `:350` | `announce={false}` on that Banner. The effects stay: they already speak its exact text, and they also cover the Receipt path, which has no Banner |
-    | P6 | rider error Banner in `search-sheet.tsx:281-285`, text `${t(error)} ${t('rider.book.retry_in', { seconds: cooldown })}` | itself: `cooldown` ticks every 1 s (`:103`), and Banner's effect is keyed on `[text]` | keep the visible ticking text. The Banner gets `announce={false}` while its error came from a 429, so neither the ticks nor the end of the countdown re-speak it; other errors still announce. At each 429 (`:182`, `:231`), announce once with the seconds from the response: `` `${t(key)} ${t('rider.book.retry_in', { seconds: err.retryAfterSeconds })}` ``. The comment at `:98-99` promises the rider is told how long, and a Banner reduced to `t(error)` would drop that |
+    | P6 | rider error Banner in `search-sheet.tsx:281-285`, text `${t(error)} ${t('rider.book.retry_in', { seconds: cooldown })}` | itself: `cooldown` ticks every 1 s (`:103`), and Banner's effect is keyed on `[text]` | keep the visible ticking text. **One flag**, `rateLimited` (PR #282 review round 2 M1): set it only in the `retryAfterSeconds` branch (`:182`, `:231`), next to `setCooldown`, and announce there once with the seconds from the response: `` `${t(key)} ${t('rider.book.retry_in', { seconds: err.retryAfterSeconds })}` ``. Clear it at every `setError` (`:171`, `:181`, `:212`, `:230`, `:249`, `:257`); at `:181` and `:230` the clear comes before the branch that sets it. The Banner gets `announce={!rateLimited}` and carries the countdown suffix only while `rateLimited && coolingDown`. So a later error inside the cooldown (the location failure at `:257`, reachable because «Use current location» is disabled only on `busy`, `:290-296`) speaks once with no ticking suffix, and a 429 with no `retryAfterSeconds` (code `'generic'` when the body fails `apiErrorBodySchema`, `auth/api-client.ts:119-127`) leaves the flag unset and its Banner speaks. Do not key the flag on `err.status`. The comment at `:98-99` promises the rider is told how long, and a Banner reduced to `t(error)` would drop that |
     | P7 | rider quote-failed Banner (`booking-screen.tsx:212-219`, the api's own cause) | `use-quote.ts:56` announces «Cenu neizdevās aprēķināt» | drop the hook's failure announce. Both render only on `/book`, so the more specific Banner stays. Keep the success announce at `:45`, which has no Banner |
 
     Callers checked and **kept** (one speaker, or two distinct messages in sequence):
@@ -362,7 +362,10 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
     - Add: `announce={false}` makes no call on either platform, and the `View` has no `accessibilityLiveRegion` prop.
   - Pair tests. Each fails on the unfixed code first:
     - P1–P4: a screen test per Banner (`payment-changed`, `ended-banner` released and cancelled, completed-without-split) renders it and expects **no** `announceForAccessibility` call. A reducer test expects the `payment_changed` effect to carry `method` and the `status`-cancelled effect to carry `reason`. A `use-active-ride.test.tsx` case expects the runner to speak the Banner's exact text for both.
-    - P6: in `search-sheet.test.tsx`, a 429 with `retryAfterSeconds: 5`, then fake timers advanced 3 s. Expect `announceForAccessibility` called **exactly once**, with text containing `5`, and the on-screen countdown to read `2`. Advance past the countdown and expect still one call. Then a non-429 failure (offline) → announced once. This pins the fix's own failure mode: a silence flag left over from a 429 would mute the next, different error.
+    - P6, in `search-sheet.test.tsx`:
+      - a 429 with `retryAfterSeconds: 5`, then fake timers advanced 3 s. Expect `announceForAccessibility` called **exactly once**, with text containing `5`, and the on-screen countdown to read `2`. Advance past the countdown and expect still one call.
+      - the fix's own failure mode (round 2 M1, hole 1): a 429 with `retryAfterSeconds: 5`, +1 s, then «Use current location» with the position mocked to `null`. Expect **two calls in total**: the 429's direct announce, then `rider.book.location_unavailable`'s text with no countdown suffix. Advance 3 s more: no further calls. Red under round 1's rule, where the location Banner inherits the ticking suffix and re-speaks each second. The earlier "offline after a 429" case could not reach this window, because the field does not search while cooling down (`:111`).
+      - hole 2: a 429 whose body fails `apiErrorBodySchema` (no `retryAfterSeconds`, code `'generic'`). Expect exactly one call, the `generic` text. Red if the flag is keyed on `err.status`.
     - P7: `use-quote.test.tsx`: a failed quote makes no `rider.a11y.quote_failed` announce.
   - Then run each app's full suite. Every other changed assertion is explained in the report.
 - **SATISFIES**: AC9, AC14, AC15
@@ -596,7 +599,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - A helper `isNewer(at, last) = last === null || at > last`. `toISOString()` strings are fixed-width UTC, so string order is time order. It replaces a plain `!==` (PR #282 review L5): a push for an older request that lands after a newer socket event must not fire the notice and haptic again.
   - Event `{ type: 'announce_requested'; rideId: string; at: string }`. It applies only when `state.ride?.id === rideId && state.ride.status === 'arrived' && isNewer(at, state.lastAnnounceAt)`. Then `notice: 'announce_requested'`, `lastAnnounceAt: at`, and effects `[{ type: 'haptic' }, { type: 'announce', key: 'driver.ride.announce_requested' }]`. Otherwise noop.
   - `loaded`: after the existing logic, if the ride is `arrived`, `ride.announceRequestedAt !== null` and `isNewer(ride.announceRequestedAt, state.lastAnnounceAt)` → apply the same notice, `lastAnnounceAt`, haptic and announce. This is the replay leg.
-  - Clear `notice: 'announce_requested'` whenever the ride leaves `arrived`, in **both** places (PR #282 review M2):
+  - Clear the notice whenever the ride leaves `arrived`, **only if** `notice === 'announce_requested'` (a `payment_changed` notice keeps its own lifetime), in **both** places (PR #282 review M2):
     - `step_done` when `to !== 'arrived'`. «Sākt braucienu» moves `ride.status` to `in_progress` itself (`:293-303`), so the `ride:status` that follows finds the state already off `arrived`, and a rule on the socket event alone never fires.
     - a `status` event that leaves `arrived`, for a transition the driver did not make (a release or a cancel by dispatch).
   - Effect `{ type: 'haptic' }`.
@@ -607,6 +610,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 - **GOTCHA**:
   - **The reducer effect is the notice's one announcer, and T13's Banner is silent** (`announce={false}`). It follows T0's rule: the Banner renders only on `/active-ride`, and the reducer runs whichever screen is up. Because the effect fires once per newer `at`, a second request while the notice is still up is spoken again. That is PR #282 review H3's driver side, which needs no `key` remount.
   - Reuse the jest mock of `expo-haptics` that `use-offer-alerts` tests already rely on.
+  - **The notice slot is shared** (PR #282 review round 2 L2). `announce_requested` overwrites a `payment_changed` notice the driver has not dismissed. That is cosmetic: the payment pill still shows the method (`active-ride-screen.tsx:161-165`), and P1's reducer effect already spoke the change.
 - **VALIDATE**: `pnpm --filter @taxi/driver test -- active-ride` with cases:
   - socket event at `arrived` → notice and haptic
   - the same `at` a second time → noop (the dedupe)
@@ -617,6 +621,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - `arriving` → noop; another `rideId` → noop
   - `step_done` from `arrived` to `in_progress` with the notice up → notice cleared (M2; red under a `status`-only rule)
   - a `status` event leaving `arrived` clears the notice
+  - a `payment_changed` notice survives a `status` event leaving `arrived` (the clear is conditional)
   - a bad payload → warn, no dispatch
   - `announcePrompt` as a table over status × flag × name
 - **SATISFIES**: AC7, AC8
@@ -643,18 +648,28 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 - **IMPLEMENT**:
   - `route-notification.ts`: `NotificationRoute` gains `{ kind: 'announce'; rideId: string; at: string }`. When `data.kind === announcePushDataSchema.shape.kind.value` and `announcePushDataSchema.safeParse(data)` succeeds, return it. When it fails, return `{ kind: 'gate' }`.
   - `register-push-token.ts:91-92`: quiet when `(route.kind === 'offer' || route.kind === 'announce') && AppState.currentState === 'active'`. Extend the docblock: in the foreground, the socket and the reducer notice already did the job.
-  - `push-registrar.tsx`: `const { announceRequested } = useActiveRide()`.
-    - `onTap`: `route.kind === 'announce'` → `announceRequested(route.rideId, route.at)`, then fall through to the existing `router.replace('/')`, the gate, as every non-offer tap does. **Not** `router.navigate('/active-ride')` (PR #282 review M1): on a cold start `state.rideId` is null until the gate opens the ride (`onboarding/gate-screen.tsx:25-27`), `/active-ride` redirects to `/home` meanwhile (`active-ride-screen.tsx:77`), and nothing routes back. `push-registrar.tsx:32-44` documents the same trap for offers. On a cold start the reducer ignores the dispatch (`state.ride?.id !== rideId`), and the replay leg delivers the notice at `loaded`. On a warm app the dispatch shows it, and the gate's same-ride `open` keeps `lastAnnounceAt` (T12), so the replay is a noop.
+  - `push-registrar.tsx`: `const { announceRequested, state: rideState } = useActiveRide()`. Keep `rideState` in a ref updated by an effect, the file's `tRef` pattern (`push-registrar.tsx:24-27`), so the handler effect's deps (`:58`) stay stable (PR #282 round 1 L1).
+    - `onTap`: `route.kind === 'announce'` → `announceRequested(route.rideId, route.at)`, then route on what the provider holds (PR #282 review round 2 H1):
+      - **the provider holds a ride** (`rideStateRef.current.rideId` truthy, the same test as `active-ride-screen.tsx:77`'s `!state.rideId`) → `router.navigate('/active-ride')`. That is safe: `/active-ride` redirects only when `rideId` is falsy. It covers a stale tray entry too: the announce for ride A tapped while the provider holds ride B lands on B, and the reducer ignores A's dispatch (`state.ride?.id !== rideId`).
+      - **it holds none** (a cold start) → `router.replace('/')`, the gate. `me` is fresh on a cold start, so the gate opens the ride (`onboarding/gate-screen.tsx:25-27`), and the replay leg delivers the notice at `loaded`.
+    - Why not the gate on a warm tap: the gate redirects from the `me` cache (`gate-screen.tsx:46-53`), which `useMe` loads once per sign-in (`onboarding/use-me.tsx:75-91`). Accepting an offer never updates it (`offers/use-offers.tsx:135-137`). So a ride accepted in this session has `me.activeRideId === null`, `nextRoute` returns `/home` (`onboarding-state.ts:18-19`), and `/home` has no way back to `/active-ride`. A driver who cold-started during ride A and then accepted B has `me.activeRideId === A`, and the gate's `open(A)` drops B from the provider (`active-ride-state.ts:191-194`).
+    - Why not `/active-ride` on a cold start (round 1 M1): `state.rideId` is null until the gate opens the ride, so `/active-ride` redirects to `/home` and nothing routes back. `push-registrar.tsx:32-44` documents the same trap for offers.
     - `onReceived`: `announce` → `announceRequested(route.rideId, route.at)`. This covers a foreground app whose socket is reconnecting, exactly as the offer comment at `:52-53` argues.
 - **GOTCHA**:
   - `announceRequested` dedupes on `at` (T12), so socket plus push plus replay give one notice.
   - Import `useActiveRide` from `@/features/active-ride`, whose barrel already exports it (`index.ts:21`).
-  - The `useActiveRide` mock at `push-registrar.test.tsx:44-49` returns `{ open, state }` only. Add `announceRequested: mockAnnounceRequested`, or every registrar test fails on the destructure.
-  - Add `announceRequested` to the handler effect's deps (`push-registrar.tsx:58`). T12 makes it stable.
+  - The `useActiveRide` mock at `push-registrar.test.tsx:44-49` returns `{ open: mockOpen, state: {} }` only. Add `announceRequested: mockAnnounceRequested`, or every registrar test fails on the destructure. Make its `state` a per-test variable with `rideId: null` as the default. Test with truthiness, not `!== null`: the current `state: {}` has `rideId` undefined, which `!== null` would read as a held ride.
+  - Add `announceRequested` to the handler effect's deps (`push-registrar.tsx:58`). T12 makes it stable. Do **not** add `rideState`: read it through the ref.
+  - **This fix's own failure mode**: a ref that is never updated after the first render keeps `rideId: null`, and every warm tap goes to the gate again. The rerender case below pins it.
+  - A warm tap with **no** ride held (the ride already closed) goes to the gate, whose `me` cache may still name an old ride. That is the path every non-offer tap takes today, and the gate's fetch then shows that ride as ended. Accepted, not changed here.
 - **VALIDATE**: `pnpm --filter @taxi/driver test -- push` with cases:
   - `routeNotification` for a valid announce envelope, a malformed one (→ gate) and an offer (unchanged)
   - the handler is quiet for `announce` when active and loud when backgrounded
-  - the registrar's `onTap` for `announce` dispatches `announceRequested(rideId, at)` and calls `router.replace('/')`, never `navigate('/active-ride')`
+  - the registrar's `onTap` for `announce` always dispatches `announceRequested(rideId, at)`, then:
+    - warm: the mock at `push-registrar.test.tsx:44-49` returns `state: { rideId }` equal to the push's → `navigate('/active-ride')`, no `replace`. Red on round 1's `replace('/')`.
+    - stale tray entry: `state: { rideId: 'other' }` → `navigate('/active-ride')`
+    - cold: `rideId: null` → `replace('/')`, no `navigate`
+    - the ref: render with `rideId: null`, rerender with a ride, then fire the tap → `navigate('/active-ride')`. Red if the ref's update effect is missing.
 - **SATISFIES**: AC7
 
 ### T15 UPDATE `apps/dispatch` literal
@@ -748,6 +763,7 @@ It asserts:
 | The rider presses again, or gets a second 429 | T11 (announced twice) |
 | A second request while the driver's notice is up | T12 (a newer `at` → `announce` again) |
 | Push tap on a cold-started driver app | T14 (`replace('/')`; replay at `loaded`) |
+| Push tap on a warm driver app holding a ride | T14 (`navigate('/active-ride')`; the dispatch shows the notice), T23 (e4) owed by #14 |
 | A Banner paired with another announcement, or re-rendered on a timer | T0 (P1–P4, P6, P7) |
 | Hardware back to `/home` mid-ride, then a release, cancel or request | T0 rule and T12: the reducer speaks, not the unmounted Banner |
 | Phone booking with the flag | T8 |
@@ -800,9 +816,10 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
        - release: `POST /dispatch/rides/:id/assign` to another driver;
        - cancel: the dispatcher cancels.
 
-       - release **after `adb shell input keyevent KEYCODE_BACK`** from `/active-ride`: confirm by `uiautomator dump` that `/home` is showing, then release. Expect still exactly one utterance, from the reducer. This runs T0's `derived` claim that back leaves the ride state live.
+       - release **after `adb shell input keyevent KEYCODE_BACK`** from `/active-ride`: confirm by `uiautomator dump` that `/home` is showing, then release. Expect still exactly one utterance, from the reducer. This runs T0's `derived` claim that back leaves the ride state live. **Enter this ride by accepting an offer** (driver online, rider books, driver accepts), not by force-assign before launch: after a cold start the gate's `<Redirect>` replaces `/`, and back leaves the app instead of reaching `/home` (round 2 L3).
 
-       Use a fresh ride for each, force-assigned before launch. P1 (`payment_changed`) is not staged on device. It needs the rider to switch method between the offer and the driver's first read, and the method locks at accept. Its evidence is T0's unit test (`derived` from the same Banner mechanism as P2/P3).
+       Use a fresh ride for each. The release and cancel triggers are force-assigned before launch. P1 (`payment_changed`) is not staged on device. It needs the rider to switch method between the offer and the driver's first read, and the method locks at accept. Its evidence is T0's unit test (`derived` from the same Banner mechanism as P2/P3).
+     - (e4) **Announce push tap from the shade** (PR #282 review round 2 H1): background the app at `arrived` with the ride entered through an offer, tap the announce notification from the shade, and confirm by `uiautomator dump` that `/active-ride` is showing with the `announce-requested` Banner. **Not performable on `sakta224` until #14**: an Android build has no `googleServicesFile`, so no push reaches the shade. Record it as owed by #14; until then T14's unit cases (warm, stale tray, cold, the ref) are the evidence (`expected` on device).
      - (f) Restore: TalkBack off, log pref removed, animations on, and the driver `offline`. End the ride through the app or cancel it as the dispatcher.
    - The haptic is not observable on the emulator; record it as `expected`, with T12's unit test as the evidence.
 3. **T24 — rider app with TalkBack.** Recipe (`observed` 2026-09-24):
@@ -843,7 +860,7 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
 - [ ] **AC12**: #275 and #14 carry the comments.
 - [ ] **AC13**: T22 and T23 are run on `sakta224` with artifacts, including TalkBack utterances. T24 is run, or recorded with its error and added to #276. **Owed elsewhere, and unperformable on this Mac:**
   - **iOS VoiceOver**, for both apps: the Xcode 26.3 ceiling (`observed` 2026-08-25) cannot build SDK 57. Owed by #257 (driver) and #276 (rider).
-  - **Android push delivery**: no `googleServicesFile`. Owed by #14.
+  - **Android push delivery**: no `googleServicesFile`. Owed by #14, together with T23 (e4), the announce push tap from the shade.
 
   Property-first check: *does a screen reader reach and speak the new controls, and does a missed request reach the driver?*
   - TalkBack's utterance log answers the first half on Android, and is run here.
@@ -851,7 +868,7 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
   - The harness push recording answers the push leg's correctness, and is run here.
   - Only the iOS speech leg and FCM delivery are without an oracle here.
 
-- [ ] **AC14**: on Android, a new or changed `Banner` text is spoken as a `TYPE_ANNOUNCEMENT` in both apps. It was observed for the rider in planning (R11), and T23 (c) and T24 (c) observe it for the driver and the rider on this branch.
+- [ ] **AC14**: on Android, a new or changed `Banner` text is spoken, unless the caller passes `announce={false}` (T0), as a `TYPE_ANNOUNCEMENT` in both apps. It was observed for the rider in planning (R11), and T23 (c) and T24 (c) observe it for the driver and the rider on this branch.
 - [ ] **AC15**: T0's caller audit leaves no event spoken twice and no Banner re-announced on a timer. P1–P4, P6 and P7 each have a unit test that failed first. On device, T23 (e3) counts one `TYPE_ANNOUNCEMENT` each for a release and a cancel.
 
 ---
@@ -903,7 +920,11 @@ A 10 would need the new code written and run, which is implementation, not plann
   - H2 (P6) keeps the countdown visible and announces the wait once, from the 429. The review's fix would have dropped the seconds.
   - P7, the rider's quote failure, was found while re-deriving H1. The review's presence pair is kept, because on `/active-ride` its announce is the only speaker. AC15 and T23 (e3) are added.
   - H3: T11 clears `result` before each send. On the driver side, T12's reducer effect speaks every newer `at`, so no `key` remount is needed.
-  - M1: T14's announce tap goes through the gate.
+  - M1: T14's announce tap goes through the gate. (Superseded by round 2 H1: only a cold-start tap does.)
   - M2: T12 clears the notice in `step_done` too.
   - L1–L7: spec breakages listed (T6, T14); live-region text retired; `Banner.test` citations corrected; the lv figure is 404, not 402; the dedupe is `isNewer`, not `!==`; T3 corrects the stale doc-sync comment rather than keeping its rule; D2 cites the push leg and T8 asserts it.
   - The `payment_changed` "Not fixing" bullet is gone, because T0 P1 fixes it. The `ui-decisions.md` reference now says T17 instead of T19.
+- 2026-09-26 (PR #282 review, round 2): both findings re-checked against `d6deaa6` before editing, and both reproduce.
+  - H1: round 1's M1 fix (announce tap → the gate) strands a warm driver on `/home`, because the gate redirects from a `me` cache that an offer accept never updates. T14 now navigates to `/active-ride` when the provider holds a ride and goes to the gate only when it holds none (a cold start). The provider state is read through a ref. T23 (e4) adds the shade-tap step, owed by #14 on Android.
+  - M1: T0 P6's silence rule is one `rateLimited` flag, set with the cooldown and cleared at every `setError`. It covers a later error inside the cooldown and a 429 with no seconds.
+  - L1–L6: AC14 names `announce={false}`; T12's notice clear is conditional and the shared slot is stated; T0's back claim is scoped to offer-entered rides and T23 (e3) enters its back ride through an offer; the `_layout.tsx` path and driver `Banner.tsx:43-47` are corrected; the round-1 report's sweep row is corrected.
