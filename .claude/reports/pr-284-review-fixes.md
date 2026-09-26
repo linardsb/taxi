@@ -56,4 +56,4 @@ The plan's "Prototype evidence" rows (driver 284) are dated prototype runs, not 
 | `@taxi/rider` | 176 passed (32 suites) |
 | `@taxi/api` | 868 passed, 868 total (87 suites, Redis set, none skipped) |
 
-The first attempt of this run (14:42:07Z) was red on `@taxi/driver#lint` only: prettier formatting in the new test. `prettier --write` on the three touched source files, then the run above. The tree it ran on is the committed tree apart from this report.
+The first attempt of this run (14:42:07Z) was red on `@taxi/driver#lint` only: prettier formatting in the new test. `prettier --write` on the three touched source files, then the run above. The tree it ran on is `d65e252` apart from two docs files written after it: this report, and the round-1 line appended to `offer-card-trip-estimate-260-report.md:61`.
