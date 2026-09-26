@@ -89,6 +89,7 @@ const wire = (): RideOfferEvent => {
       },
     },
     split: splitFare(1240, { pct: 15, source: 'platform_base' }),
+    trip: null,
     paymentMethod: 'cash',
   };
 };

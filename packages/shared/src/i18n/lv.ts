@@ -327,6 +327,7 @@ export const lv = {
   'driver.offer.pickup': 'Iekāpšana: {address}',
   'driver.offer.destination': 'Galamērķis: {address}',
   'driver.offer.eta': 'Līdz pasažierim ~{minutes} min · {km} km',
+  'driver.offer.trip': 'Brauciens ~{minutes} min · {km} km · {rate}/km',
   'driver.offer.payment_cash': 'Skaidrā naudā',
   'driver.offer.payment_card': 'Ar karti',
   'driver.offer.countdown': 'Atlikušas {seconds} s',

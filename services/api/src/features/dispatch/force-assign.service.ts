@@ -73,6 +73,7 @@ export class ForceAssignService {
       rideId: input.rideId,
       request: found.ride.request,
       quote: found.quote,
+      trip: found.trip,
       candidate: {
         driverId: input.driverId,
         // `DriverCandidate.location` is not carried onto the offer; the pickup

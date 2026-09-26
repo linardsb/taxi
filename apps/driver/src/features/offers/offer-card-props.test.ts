@@ -33,9 +33,13 @@ const config = platformConfigSchema.parse({
 
 const PICKUP = { lat: 56.9496, lng: 24.1052 };
 
+/** The stub's centre→RIX route (`api-rides-pricing.md`: 11 655 m, 1 049 s). */
+const TRIP = { distanceMeters: 11_655, durationSeconds: 1_049 };
+
 function pendingFor(
   driver: { commissionPctOverride: number | null },
   over: Partial<PendingOffer> = {},
+  trip: { distanceMeters: number; durationSeconds: number } | null = null,
 ): PendingOffer {
   const split = splitFare(1240, resolveCommissionPct(driver, config));
   const offer = rideOfferSchema.parse({
@@ -56,6 +60,7 @@ function pendingFor(
       breakdown: { baseCents: 300, distanceCents: 640, timeCents: 300 },
     },
     split,
+    trip,
   });
   return {
     offer,
@@ -79,6 +84,103 @@ const shown = (
 });
 
 describe('offerCardProps (#15)', () => {
+  it('shows trip duration, km and the NET per routed km (#260, expected)', () => {
+    const props = offerCardProps(
+      shown(pendingFor({ commissionPctOverride: null }, {}, TRIP)),
+      null,
+      t,
+    )!;
+    // ceil(1049 / 60) = 18; 11655 m → 11.7; round(1054 × 1000 / 11655) =
+    // round(90.43) = 90 cents — net, not the €12.40 fare.
+    expect(props.trip).toBe('Brauciens ~18 min · 11.7 km · €0.90/km');
+    // After the destination, before the pickup ETA, in the one a11y node.
+    const label = props.a11yLabel;
+    expect(label.indexOf('Teika')).toBeLessThan(label.indexOf('Brauciens'));
+    expect(label.indexOf('Brauciens')).toBeLessThan(
+      label.indexOf(t('driver.offer.eta', { minutes: 5, km: '—' })),
+    );
+  });
+
+  it('reads the rate off the net, so a 0% override rates the full fare (#260, edge)', () => {
+    const props = offerCardProps(
+      shown(pendingFor({ commissionPctOverride: 0 }, {}, TRIP)),
+      null,
+      t,
+    )!;
+    // round(1240 × 1000 / 11655) = round(106.39) = 106 cents.
+    expect(props.trip).toBe('Brauciens ~18 min · 11.7 km · €1.06/km');
+  });
+
+  it('omits the line for a ride with no stored trip (#260, edge)', () => {
+    const props = offerCardProps(
+      shown(pendingFor({ commissionPctOverride: null }, {}, null)),
+      null,
+      t,
+    )!;
+    expect(props.trip).toBeNull();
+    expect(props.a11yLabel).not.toContain('Brauciens');
+  });
+
+  it('omits the line for a zero-length trip rather than dividing by zero (#260, edge)', () => {
+    const props = offerCardProps(
+      shown(
+        pendingFor(
+          { commissionPctOverride: null },
+          {},
+          {
+            distanceMeters: 0,
+            durationSeconds: 0,
+          },
+        ),
+      ),
+      null,
+      t,
+    )!;
+    expect(props.trip).toBeNull();
+    expect(props.a11yLabel).not.toMatch(/Infinity|NaN/);
+  });
+
+  it.each([40, 49])(
+    'omits the line for a %i m trip, which would print "0.0 km" beside a huge rate (#260, edge)',
+    (distanceMeters) => {
+      const props = offerCardProps(
+        shown(
+          pendingFor(
+            { commissionPctOverride: null },
+            {},
+            {
+              distanceMeters,
+              durationSeconds: 10,
+            },
+          ),
+        ),
+        null,
+        t,
+      )!;
+      expect(props.trip).toBeNull();
+      expect(props.a11yLabel).not.toContain('0.0 km');
+    },
+  );
+
+  it('draws the line from 50 m, the first length that prints "0.1 km" (#260, edge)', () => {
+    const props = offerCardProps(
+      shown(
+        pendingFor(
+          { commissionPctOverride: null },
+          {},
+          {
+            distanceMeters: 50,
+            durationSeconds: 10,
+          },
+        ),
+      ),
+      null,
+      t,
+    )!;
+    // round(1054 × 1000 / 50) = 21 080 cents.
+    expect(props.trip).toBe('Brauciens ~1 min · 0.1 km · €210.80/km');
+  });
+
   it('renders fare, you-keep and pct from a split built off the config row (expected)', () => {
     const props = offerCardProps(
       shown(pendingFor({ commissionPctOverride: null })),

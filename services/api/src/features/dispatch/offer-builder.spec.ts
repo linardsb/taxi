@@ -61,10 +61,14 @@ const attrs = (
   maxPassengerSeats: 4,
 });
 
+/** The stub's centre→RIX route (`api-rides-pricing.md`: 11 655 m, 1 049 s). */
+const trip = { distanceMeters: 11_655, durationSeconds: 1_049 };
+
 const base = {
   rideId: RIDE_ID,
   request: request(),
   quote,
+  trip,
   candidate: candidate(),
   driverAttrs: attrs(),
   config: config(),
@@ -73,6 +77,14 @@ const base = {
 };
 
 describe('buildOffer', () => {
+  it("carries the ride's trip onto the card (#260, expected)", () => {
+    expect(buildOffer(base).trip).toEqual(trip);
+  });
+
+  it('builds a legacy ride with no stored trip as `trip: null` (#260, edge)', () => {
+    expect(buildOffer({ ...base, trip: null }).trip).toBeNull();
+  });
+
   it('carries the FULL rider fare and the platform-base split (expected)', () => {
     const now = new Date('2026-08-05T10:00:00.000Z');
     const offer = buildOffer({ ...base, now });

@@ -11,6 +11,7 @@ import { and, eq, inArray, like } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { createTestApp, phoneFor, type TestApp } from '../../../test/harness';
+import { StubMapsProvider } from '../geo/stub-maps.provider';
 import { RIDE_QUOTE_MAX_PER_WINDOW } from './rides.policy';
 import { RidesRepository } from './rides.repository';
 
@@ -162,6 +163,15 @@ describe('rides (integration)', () => {
     expect(row!.status).toBe('requested');
     expect(row!.totalCents).toBe(ride.quote!.totalCents);
     expect(row!.pricingModel).toBe('upfront_fixed');
+    // The route the price came from (#260). The harness wraps the stub, which
+    // is deterministic; `> 0` so a pair of nulls cannot pass by equality.
+    const route = await new StubMapsProvider().route(
+      CENTRE.location,
+      RIX.location,
+    );
+    expect(row!.tripDistanceMeters).toBe(route.distanceMeters);
+    expect(row!.tripDurationSeconds).toBe(route.durationSeconds);
+    expect(row!.tripDistanceMeters).toBeGreaterThan(0);
     // The settled columns belong to #11 and must stay untouched here.
     expect(row!.commissionPct).toBeNull();
     expect(row!.commissionCents).toBeNull();

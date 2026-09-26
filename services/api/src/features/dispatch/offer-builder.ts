@@ -10,6 +10,7 @@ import {
   type PlatformConfig,
   type RideRequest,
   type RideOffer,
+  type TripEstimate,
 } from '@taxi/shared';
 import { randomUUID } from 'node:crypto';
 import type { DriverMatchAttributes } from '../drivers';
@@ -18,6 +19,8 @@ export interface BuildOfferInput {
   rideId: string;
   request: RideRequest;
   quote: FareQuote;
+  /** The ride's stored trip (#260); null for rides priced before it was stored. */
+  trip: TripEstimate | null;
   candidate: DriverCandidate;
   driverAttrs: DriverMatchAttributes;
   config: PlatformConfig;
@@ -61,6 +64,8 @@ export function buildOffer(input: BuildOfferInput): RideOffer {
     sentAt.getTime() + input.config.offerTimeoutSeconds * 1000,
   );
 
+  // `satisfies RideOffer` makes a forgotten key a COMPILE error: `trip`'s
+  // `.default(null)` would otherwise parse an omission silently to null (#260).
   const offer = rideOfferSchema.parse({
     id: randomUUID(),
     rideId: input.rideId,
@@ -74,10 +79,11 @@ export function buildOffer(input: BuildOfferInput): RideOffer {
     destination: input.request.destination,
     quote: input.quote,
     split,
+    trip: input.trip,
     ...(input.candidate.queuePosition === undefined
       ? {}
       : { queuePosition: input.candidate.queuePosition }),
-  });
+  } satisfies RideOffer);
 
   // Per its own docblock: "Call at the write and emit boundaries (#10/#11)".
   // `fareSplitSchema` proves the split is internally consistent but cannot see

@@ -23,7 +23,7 @@
 ### 1.3 What belongs on the offer card (converging evidence)
 - **WHAT:** (1) payout for this trip, (2) pickup ETA/distance — unpaid time is the hidden cost drivers resent most, (3) destination + trip duration, (4) effective rate (€/km — drivers compute it themselves when absent; Uber piloted printing per-km earnings on the card in Mexico, [Uber MX blog](https://www.uber.com/en-MX/blog/piloting-estimated-earnings-per-kilometer-on-trip-requests/)), (5) rider rating, (6) Lyft added est. $/hour on the accept screen Oct 2024 ([Lyft](https://www.lyft.com/blog/posts/driving-transparency-clear-communication-on-earnings-for-drivers)).
 - **EVIDENCE:** The CSCW paper's driver-stated needs list matches exactly: full addresses (not abbreviated), upfront earnings, rate breakdown, duration/distance, more decision time. Long pickups for short trips = 1,429 complaint comments on their own.
-- **APPLICABILITY: YES.** All fields are already in Sakta's data model. Show €/km computed client-side. Confidence: moderate (assembled from guides/excerpts, no single systematic source besides the CSCW paper).
+- **APPLICABILITY: YES.** Payout, pickup ETA/distance and destination were in Sakta's data model at the time of writing. Trip duration and distance were not: `fareQuoteSchema` holds money only. #260 added them as `rideOfferSchema.trip`. Rider rating still has no contract: the only `rating` in shared is the driver's own. Show €/km computed client-side. Confidence: moderate (assembled from guides/excerpts, no single systematic source besides the CSCW paper).
 
 ### 1.4 inDrive: driver sees what the passenger pays, always
 - **WHAT:** Bidding aside, inDrive's card shows the passenger's offered price and the deductions openly; commission ~10% globally, ~12% Europe.

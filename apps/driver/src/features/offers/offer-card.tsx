@@ -100,6 +100,14 @@ export function OfferCard({
             <Text style={[styles.detail, { color: fg }]}>
               {card.destination}
             </Text>
+            {card.trip ? (
+              <Text
+                style={[styles.detail, { color: muted }]}
+                testID="offer-trip"
+              >
+                {card.trip}
+              </Text>
+            ) : null}
             <Text style={[styles.detail, { color: muted }]}>{card.eta}</Text>
             {card.queue ? (
               <Text style={[styles.detail, { color: muted }]}>

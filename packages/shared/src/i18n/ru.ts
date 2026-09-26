@@ -266,6 +266,7 @@ export const ru = {
   'driver.offer.pickup': 'Посадка: {address}',
   'driver.offer.destination': 'Назначение: {address}',
   'driver.offer.eta': 'До пассажира ~{minutes} мин · {km} км',
+  'driver.offer.trip': 'Поездка ~{minutes} мин · {km} км · {rate}/км',
   'driver.offer.payment_cash': 'Наличные',
   'driver.offer.payment_card': 'Картой',
   'driver.offer.countdown': 'Осталось {seconds} с',
