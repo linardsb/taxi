@@ -165,7 +165,7 @@ describe('DispatchNotifier.emitOffer (#15)', () => {
     // pushes is the envelope's own size — so the case below is sized against a
     // measured overhead rather than an assumed one, and the two `expect`s that
     // follow re-derive it on every run instead of trusting this comment.
-    // `observed` (this run): 727 UTF-16 units, all ASCII.
+    // `observed` (this run): 739 UTF-16 units, all ASCII.
     const control = build();
     control.notifier.emitOffer(
       offer({ pickup: { location: { lat: 56.95, lng: 24.11 }, address: '' } }),
@@ -177,12 +177,12 @@ describe('DispatchNotifier.emitOffer (#15)', () => {
     // the only thing the byte guard buys over `json.length`, and Latvian and
     // Russian addresses are where it actually bites.
     const address = 'ā'.repeat(1_100);
-    // `derived` from `overhead`: 727 + 1,100 = 1,827 units — under the cap, so
+    // `derived` from `overhead`: 739 + 1,100 = 1,839 units — under the cap, so
     // a `.length`-based guard would KEEP the body and this test would fail…
     expect(overhead + address.length).toBeLessThanOrEqual(
       OFFER_PUSH_PAYLOAD_MAX_BYTES,
     );
-    // …while 727 + 2,200 = 2,927 BYTES is over it, so the real guard drops it.
+    // …while 739 + 2,200 = 2,939 BYTES is over it, so the real guard drops it.
     expect(overhead + Buffer.byteLength(address, 'utf8')).toBeGreaterThan(
       OFFER_PUSH_PAYLOAD_MAX_BYTES,
     );

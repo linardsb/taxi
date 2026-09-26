@@ -140,6 +140,47 @@ describe('offerCardProps (#15)', () => {
     expect(props.a11yLabel).not.toMatch(/Infinity|NaN/);
   });
 
+  it.each([40, 49])(
+    'omits the line for a %i m trip, which would print "0.0 km" beside a huge rate (#260, edge)',
+    (distanceMeters) => {
+      const props = offerCardProps(
+        shown(
+          pendingFor(
+            { commissionPctOverride: null },
+            {},
+            {
+              distanceMeters,
+              durationSeconds: 10,
+            },
+          ),
+        ),
+        null,
+        t,
+      )!;
+      expect(props.trip).toBeNull();
+      expect(props.a11yLabel).not.toContain('0.0 km');
+    },
+  );
+
+  it('draws the line from 50 m, the first length that prints "0.1 km" (#260, edge)', () => {
+    const props = offerCardProps(
+      shown(
+        pendingFor(
+          { commissionPctOverride: null },
+          {},
+          {
+            distanceMeters: 50,
+            durationSeconds: 10,
+          },
+        ),
+      ),
+      null,
+      t,
+    )!;
+    // round(1054 × 1000 / 50) = 21 080 cents.
+    expect(props.trip).toBe('Brauciens ~1 min · 0.1 km · €210.80/km');
+  });
+
   it('renders fare, you-keep and pct from a split built off the config row (expected)', () => {
     const props = offerCardProps(
       shown(pendingFor({ commissionPctOverride: null })),

@@ -53,14 +53,15 @@ export function youKeepLabel(offer: RideOffer, t: T): string {
 
 /**
  * «Brauciens ~18 min · 11.7 km · €0.90/km» (#260), or null when there is
- * nothing true to show: no stored trip, or a zero-length one (no rate).
+ * nothing true to show: no stored trip, or one under 50 m — it would print
+ * "0.0 km" beside a rate divided by the real metres (40 m → €263.50/km).
  * €/km is the driver's NET per routed trip km — user decision 2026-09-26;
  * the pickup leg is excluded because its km is straight-line and absent
  * without a fix. Integer cents, rounded once, before `formatEur` truncates.
  */
 export function tripLabel(offer: RideOffer, t: T): string | null {
   const trip = offer.trip;
-  if (!trip || trip.distanceMeters === 0) return null;
+  if (!trip || trip.distanceMeters < 50) return null;
   return t('driver.offer.trip', {
     minutes: Math.ceil(trip.durationSeconds / 60),
     km: (trip.distanceMeters / 1000).toFixed(1),

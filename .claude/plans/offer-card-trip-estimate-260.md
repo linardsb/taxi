@@ -71,7 +71,7 @@ The default has a cost: on its own, it would let a forgotten `trip:` key on the 
 - Formula: `Math.round(split.driverNetCents * 1000 / trip.distanceMeters)`, formatted with `formatEur`.
 - Example (`derived`): net 1054 c over 11 655 m gives 90.43, which rounds to 90 c, shown as `€0.90/km`.
 
-**D5 — the line is omitted when there is nothing true to show:** `trip === null` (legacy ride or old api), or `distanceMeters === 0` (pickup equals destination, which the stub can return; `api-rides-pricing.md:566` pins `route(p, p)` → `0/0`). The rest of the card is unchanged in both cases.
+**D5 — the line is omitted when there is nothing true to show:** `trip === null` (legacy ride or old api), or `distanceMeters < 50` (pickup equals destination, which the stub can return — `api-rides-pricing.md:566` pins `route(p, p)` → `0/0` — or a route so short that `toFixed(1)` prints "0.0 km" beside a rate divided by the real metres; amended after PR #284 review F1). The rest of the card is unchanged in both cases.
 
 Card rendering:
 
@@ -309,7 +309,7 @@ T10, T11.
   - `type RideRow` (now exported), the `AwaitingRide` interface with its docblock, `toAwaiting`, and `toRide` with its docblock;
   - the new `toTrip(row: Pick<RideRow, 'tripDistanceMeters' | 'tripDurationSeconds'>): TripEstimate | null`, projected as above.
 
-  Its file docblock mirrors `board-ride.ts:10-18`: these are projections, not queries, and they were split out when #260's columns took the repository to 489 of 500. In the repository:
+  Its file docblock mirrors `board-ride.ts:10-18`: these are projections, not queries, and they were split out when #260's columns took the repository from 473 to 498 of 500 with the projection inline. In the repository:
   - drop `rideRequestSchema` and `rideSchema` from the `@taxi/shared` import, since nothing left there uses them;
   - add `import { toAwaiting, toRide, toTrip, type AwaitingRide } from './ride-row';`;
   - return `trip: toTrip(row)` from `findWithQuote`.
@@ -377,14 +377,14 @@ T10, T11.
     ```ts
     /**
      * «Brauciens ~18 min · 11.7 km · €0.90/km» (#260), or null when there is
-     * nothing true to show: no stored trip, or a zero-length one (no rate).
+     * nothing true to show: no stored trip, or one under 50 m (PR #284 F1).
      * €/km is the driver's NET per routed trip km — user decision 2026-09-26;
      * the pickup leg is excluded because its km is straight-line and absent
      * without a fix. Integer cents, rounded once.
      */
     export function tripLabel(offer: RideOffer, t: T): string | null {
       const trip = offer.trip;
-      if (!trip || trip.distanceMeters === 0) return null;
+      if (!trip || trip.distanceMeters < 50) return null;
       return t('driver.offer.trip', {
         minutes: Math.ceil(trip.durationSeconds / 60),
         km: (trip.distanceMeters / 1000).toFixed(1),
@@ -447,7 +447,7 @@ jest in `services/api` (T4, T6, T7, T8; needs Postgres up even for unit specs) a
 |---|---|
 | Legacy ride, both columns NULL → offer still dispatched, `trip: null` | T9 (3) integration; T7 unit |
 | Old api payload with no `trip` key → driver app parses, `trip: null` | T1 shared test |
-| `distanceMeters === 0` → line omitted, no division | T10 unit |
+| `distanceMeters < 50` (0, 40, 49 m) → line omitted, no division, no "0.0 km"; 50 m draws "0.1 km" | T10 unit |
 | `trip === null` → line omitted from view and a11y label | T10, T11 unit |
 | Glance mode hides the line | T11 unit |
 | Fractional or negative figures refused by the contract | T1 shared test |
@@ -553,3 +553,4 @@ All three steps use what the repo ships today.
   - **T3:** the generated migration is `0013_concerned_wiccan.sql` (random name; same two `ADD COLUMN … integer` lines).
   - **T5:** `ride-row.ts`'s docblock figure corrected from the unshipped variant's 489 to "473 to 498 of its 500 lines after prettier" (inline projection).
   - **T7/T9 mutations:** run as one mutation spanning both halves, not restored in between; the five results are as the tasks predicted.
+- 2026-09-26: PR #284 review round 1 (`.claude/reports/pr-284-review-fixes.md`). **D5/T10:** the line is also omitted under 50 m, the first length `toFixed(1)` prints as "0.1 km" (F1). **T5:** docblock sentence above corrected from 489 to 473 → 498 (F3).
