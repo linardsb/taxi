@@ -104,7 +104,13 @@ function cascadeFor(
     offeredToDriverId: pending.driverId,
     offeredToName: nameOf(input.contacts, pending.driverId),
     expiresAt: pending.expiresAt.toISOString(),
-    nextDriverName: nextInQueue(holderZone, tried),
+    // Gated on the OFFER's source — the same fact `explanation` below reads —
+    // so the two halves of one cascade cannot disagree about whether queue
+    // mode ran (#124). See `nextInQueue` for why not the zone's flag.
+    nextDriverName:
+      pending.source === 'geozone_queue'
+        ? nextInQueue(holderZone, tried)
+        : null,
     attempts: offers.length,
     explanation: explainAssignment({
       strategy: pending.source,
@@ -162,11 +168,16 @@ function zoneHolding(
  * while still marked online — backgrounded, permission revoked, a swallowed
  * `ingest` — is unreachable outright and can still be named here.
  *
- * Null outside queue mode, and that is honest rather than lazy — under
- * auto-match "who is next" depends on where every candidate is when the offer
- * lapses, so any name here would be a guess dressed as the engine's intent.
- * Re-running the strategy per ride per 2 s frame to find out is not a trade
- * the board is worth.
+ * Reached only for a `geozone_queue` OFFER — the caller gates on the offer
+ * row's `source`, never on `zone.queueModeEnabled`. That flag is `false` in
+ * a zone that took the city default, and the default can be `geozone_queue`
+ * (#124): the strategy then ranks with the flag off, and gating here on the
+ * flag had the strip print «rinda #1» while refusing to name who is next.
+ * Null under auto-match is honest rather than lazy — "who is next" then
+ * depends on where every candidate is when the offer lapses, so any name
+ * here would be a guess dressed as the engine's intent. Re-running the
+ * strategy per ride per 2 s frame to find out is not a trade the board is
+ * worth.
  *
  * NO `MAX_OFFER_ATTEMPTS` GUARD, and that is a stated limitation rather than an
  * oversight. The engine's remaining budget is RELEASE-SCOPED: both call sites
@@ -192,7 +203,7 @@ function nextInQueue(
   zone: BoardZone | undefined,
   tried: ReadonlySet<string>,
 ): string | null {
-  if (!zone?.queueModeEnabled) return null;
+  if (!zone) return null;
   return (
     zone.entries.find((e) => e.status === 'online' && !tried.has(e.driverId))
       ?.name ?? null

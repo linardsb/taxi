@@ -1,8 +1,14 @@
-import { dispatchBoardEventSchema, type LatLng } from '@taxi/shared';
+import {
+  dispatchBoardEventSchema,
+  type DispatchMode,
+  type LatLng,
+  type PlatformConfig,
+} from '@taxi/shared';
 import type { Env } from '../../../common/config/env.schema';
 import { InMemoryDriverLocationStore } from '../../../../test/harness';
 import type { DriversService, DriverBoardContact } from '../../drivers';
 import type { GeozonesService, ResolvedGeozone } from '../../geozones';
+import type { PlatformConfigService } from '../../platform-config';
 import type { RealtimeService } from '../../realtime';
 import type { BoardRide, RidesRepository } from '../../rides';
 import type {
@@ -10,6 +16,9 @@ import type {
   DispatchRepository,
 } from '../dispatch.repository';
 import { InMemoryDispatchQueueStore } from '../queue/in-memory-dispatch-queue.store';
+import type { AutoMatchStrategy } from '../strategies/auto-match.strategy';
+import { DispatchStrategyResolver } from '../strategies/dispatch-strategy.resolver';
+import type { GeozoneQueueStrategy } from '../strategies/geozone-queue.strategy';
 import { BoardService } from './board.service';
 
 const CITY = '00000000-0000-4000-8000-000000000001';
@@ -79,6 +88,8 @@ function build(
     /** The city's zone CATALOG — what the grid draws, empty ranks included. */
     catalog?: ResolvedGeozone[];
     offers?: CascadeOfferRow[];
+    /** `platform_config.default_dispatch_mode` — the DB and zod defaults are `auto_match`. */
+    defaultDispatchMode?: DispatchMode;
   } = {},
 ) {
   const locations = new InMemoryDriverLocationStore();
@@ -122,6 +133,19 @@ function build(
 
   const env = { NODE_ENV: 'test', DEFAULT_CITY_ID: CITY } as Env;
 
+  const forCity = jest.fn(() =>
+    Promise.resolve({
+      defaultDispatchMode: over.defaultDispatchMode ?? 'auto_match',
+    } as PlatformConfig),
+  );
+  const config = { forCity } as unknown as PlatformConfigService;
+  // The REAL resolver over stub strategies, as its own spec builds it: the
+  // flag→default fallback is the rule under test, not something to mock.
+  const strategies = new DispatchStrategyResolver(
+    { mode: 'auto_match' } as AutoMatchStrategy,
+    { mode: 'geozone_queue' } as GeozoneQueueStrategy,
+  );
+
   const service = new BoardService(
     rides,
     drivers,
@@ -131,6 +155,8 @@ function build(
     dispatch,
     queue,
     env,
+    config,
+    strategies,
   );
   return {
     service,
@@ -139,6 +165,7 @@ function build(
     emitToDispatch,
     findBoardRides,
     findOffersForRides,
+    forCity,
     geozones,
   };
 }
@@ -323,6 +350,58 @@ describe('BoardService.buildBoardState', () => {
     );
     expect(frame.zones.map((z) => z.slug)).toEqual(['centrs', 'lidosta']);
     expect(frame.zones.every((z) => z.entries.length === 0)).toBe(true);
+  });
+
+  it('carries the mode dispatch runs in — auto_match for an unflagged zone under that default (expected)', async () => {
+    const { service } = build({ catalog: [zone({ queueModeEnabled: false })] });
+
+    const frame = dispatchBoardEventSchema.parse(
+      await service.buildBoardState(CITY),
+    );
+    expect(frame.zones[0]!.dispatchMode).toBe('auto_match');
+  });
+
+  it('ranks an unflagged zone whose city default is geozone_queue, in both halves of the frame — the #124 case (edge)', async () => {
+    // Needs an admin to set the city default (both DB and zod defaults are
+    // `auto_match`). Once set, `DispatchStrategyResolver.forZone` runs the
+    // queue strategy with the zone flag OFF — its docblock calls that
+    // deliberate — so the offer row is `source: 'geozone_queue'` with a real
+    // rank. The frame must agree with itself: the zone row's mode says queue,
+    // and the cascade names who is next. Before #124 the strip read «Centrs
+    // rinda #1» and named nobody, and the grid hid a rank dispatch honoured.
+    const { service, queue, forCity } = build({
+      rides: [boardRide({ status: 'offered' })],
+      catalog: [zone({ queueModeEnabled: false })],
+      contacts: [
+        contact({ driverId: DRIVER_A, name: 'Jānis Ozols' }),
+        contact({
+          driverId: DRIVER_B,
+          name: 'Anna Bērziņa',
+          phone: '+37129999002',
+        }),
+      ],
+      offers: [offer()],
+      defaultDispatchMode: 'geozone_queue',
+    });
+    jest.setSystemTime(new Date(NOW.getTime() - 2_820_000));
+    await queue.joinBack(ZONE_ID, DRIVER_A);
+    jest.setSystemTime(NOW);
+    await queue.joinBack(ZONE_ID, DRIVER_B);
+
+    const frame = dispatchBoardEventSchema.parse(
+      await service.buildBoardState(CITY),
+    );
+
+    expect(frame.zones[0]!.dispatchMode).toBe('geozone_queue');
+    expect(frame.rides[0]!.cascade).toMatchObject({
+      nextDriverName: 'Anna Bērziņa',
+      explanation: {
+        key: 'explain.geozone_queue',
+        params: { zone: 'Centrs', position: 1, minutes: 47, eta: 4 },
+      },
+    });
+    // One config read per frame — the `5 + N` in `buildBoardState`'s docblock.
+    expect(forCity).toHaveBeenCalledTimes(1);
   });
 
   it('reports queue rank and time-in-queue for each queued driver (expected)', async () => {

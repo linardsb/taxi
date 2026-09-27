@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   ASSIGNMENT_SOURCES,
   BOOKING_CHANNELS,
+  DISPATCH_MODES,
   DRIVER_STATUSES,
   PAYMENT_METHOD_TYPES,
   SMS_KINDS,
@@ -261,7 +262,14 @@ export const dispatchBoardEventSchema = z.object({
       geozoneId: z.string().uuid(),
       slug: z.string().min(1),
       name: z.string().min(1),
-      queueModeEnabled: z.boolean(),
+      /**
+       * The mode dispatch ACTUALLY runs in this zone — the resolver's answer,
+       * not the zone's `queueModeEnabled` flag. The flag is `false` in a zone
+       * that took the city default, and the default can be `geozone_queue`
+       * (#124): the strategy then enrols and ranks with the flag off, and a
+       * console reading the flag hid a rank dispatch was honouring.
+       */
+      dispatchMode: z.enum(DISPATCH_MODES),
       entries: z.array(
         z.object({
           driverId: z.string().uuid(),

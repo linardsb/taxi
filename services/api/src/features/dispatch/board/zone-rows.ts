@@ -1,4 +1,4 @@
-import type { DispatchBoardEvent } from '@taxi/shared';
+import type { DispatchBoardEvent, DispatchMode } from '@taxi/shared';
 import type { ResolvedGeozone } from '../../geozones';
 import type { QueueSnapshotEntry } from '../queue/dispatch-queue.store';
 
@@ -20,6 +20,13 @@ export interface BuildZoneRowsInput {
   contacts: ReadonlyMap<string, ZoneRowContact>;
   /** The frame's clock, passed in — this module never reads one. */
   nowMs: number;
+  /**
+   * The mode dispatch ACTUALLY runs in a zone — `DispatchStrategyResolver
+   * .forZone(zone, config).mode`, injected so this stays pure. Not derived
+   * from `zone.queueModeEnabled` here: that flag is `false` in a zone that
+   * took the city default, and the default can be `geozone_queue` (#124).
+   */
+  dispatchModeFor: (zone: ResolvedGeozone) => DispatchMode;
 }
 
 /**
@@ -38,7 +45,7 @@ export function buildZoneRows(input: BuildZoneRowsInput): BoardZone[] {
     geozoneId: zone.id,
     slug: zone.slug,
     name: zone.name,
-    queueModeEnabled: zone.queueModeEnabled,
+    dispatchMode: input.dispatchModeFor(zone),
     entries: (input.snapshots.get(zone.id) ?? []).flatMap((entry) => {
       const contact = input.contacts.get(entry.driverId);
       // A queued id with no drivers/users row would be an FK impossibility —

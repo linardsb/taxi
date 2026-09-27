@@ -38,7 +38,7 @@ const zone = (over: Partial<BoardZone> = {}): BoardZone => ({
   geozoneId: ZONE_ID,
   slug: 'centrs',
   name: 'Centrs',
-  queueModeEnabled: true,
+  dispatchMode: 'geozone_queue',
   entries: [
     {
       driverId: DRIVER_A,
@@ -120,12 +120,28 @@ describe('buildCascades', () => {
   it('names nobody next outside queue mode rather than guessing (edge)', () => {
     const cascade = build({
       offers: [offer({ source: 'auto_match', queuePosition: null })],
-      zones: [zone({ queueModeEnabled: false })],
+      zones: [zone({ dispatchMode: 'auto_match' })],
     }).get(RIDE);
 
     expect(cascade?.nextDriverName).toBeNull();
     // Nor does it claim a queue rank the offer never had.
     expect(cascade?.explanation?.key).toBe('explain.auto_match');
+  });
+
+  it('gates "who is next" on the offer’s source, the fact the explanation reads (edge)', () => {
+    // #124. The offer was written under queue mode — `source: 'geozone_queue'`
+    // with a real rank — and the zone row says otherwise. Producible: the city
+    // default flips between the offer write and this frame. It is also the
+    // shape the old `zone.queueModeEnabled` gate got wrong every frame, in a
+    // city defaulting to queue mode with the zone flag off. Both halves of one
+    // cascade must answer "did queue mode run" the same way: the strip says
+    // «rinda #1», so it names who is next.
+    const cascade = build({
+      zones: [zone({ dispatchMode: 'auto_match' })],
+    }).get(RIDE);
+
+    expect(cascade?.explanation?.key).toBe('explain.geozone_queue');
+    expect(cascade?.nextDriverName).toBe('Anna Bērziņa');
   });
 
   it('projects a dispatcher override as a settled assignment, not an offer (edge)', () => {

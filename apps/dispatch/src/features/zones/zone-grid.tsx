@@ -63,9 +63,9 @@ const visuallyHidden: React.CSSProperties = {
  * The status dot above can carry one because `role="img"` accepts a name; a
  * text node needs no role and no assumption.
  *
- * `queueModeEnabled: false` hides the number entirely rather than greying it:
- * a rank dispatch does not honour is worse than no rank, because it is one
- * drivers will still ring up to argue about.
+ * A zone dispatch does not rank hides the number entirely rather than
+ * greying it: a rank dispatch does not honour is worse than no rank, because
+ * it is one drivers will still ring up to argue about.
  */
 function QueueChip({
   entry,
@@ -144,6 +144,12 @@ function QueueChip({
 }
 
 function ZoneRow({ zone }: Readonly<{ zone: BoardZone }>) {
+  // The mode dispatch RUNS in this zone, not its `queueModeEnabled` flag: a
+  // zone that took a city default of `geozone_queue` is ranked with the flag
+  // off (#124). It is also the condition the cascade strip prints «rinda #N»
+  // under — its other two conjuncts, a zone name and a non-null position,
+  // hold here by construction.
+  const ranked = zone.dispatchMode === 'geozone_queue';
   return (
     <tr>
       <th scope="row" style={{ ...cell, fontWeight: 600 }}>
@@ -169,9 +175,7 @@ function ZoneRow({ zone }: Readonly<{ zone: BoardZone }>) {
       >
         {formatMessage(
           LANG,
-          zone.queueModeEnabled
-            ? 'console.zone_queue_mode'
-            : 'console.zone_queue_mode_off',
+          ranked ? 'console.zone_queue_mode' : 'console.zone_queue_mode_off',
         )}
       </td>
       <td style={cell}>
@@ -203,7 +207,7 @@ function ZoneRow({ zone }: Readonly<{ zone: BoardZone }>) {
               <QueueChip
                 key={entry.driverId}
                 entry={entry}
-                showPosition={zone.queueModeEnabled}
+                showPosition={ranked}
               />
             ))}
           </ol>

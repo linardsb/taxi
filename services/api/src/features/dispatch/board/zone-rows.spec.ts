@@ -1,3 +1,4 @@
+import type { DispatchMode } from '@taxi/shared';
 import type { ResolvedGeozone } from '../../geozones';
 import type { QueueSnapshotEntry } from '../queue/dispatch-queue.store';
 import { buildZoneRows, type ZoneRowContact } from './zone-rows';
@@ -36,6 +37,7 @@ const build = (over: {
   snapshots?: Array<[string, QueueSnapshotEntry[]]>;
   contacts?: ZoneRowContact[];
   nowMs?: number;
+  dispatchModeFor?: (zone: ResolvedGeozone) => DispatchMode;
 }) =>
   buildZoneRows({
     catalog: over.catalog ?? [zone()],
@@ -44,6 +46,7 @@ const build = (over: {
       (over.contacts ?? [contact()]).map((c) => [c.driverId, c]),
     ),
     nowMs: over.nowMs ?? NOW_MS,
+    dispatchModeFor: over.dispatchModeFor ?? (() => 'geozone_queue'),
   });
 
 describe('buildZoneRows', () => {
@@ -74,6 +77,30 @@ describe('buildZoneRows', () => {
 
     expect(rows.map((r) => r.slug)).toEqual(['centrs', 'lidosta']);
     expect(rows[1]!.entries).toEqual([]);
+  });
+
+  it('carries the mode dispatch runs in each zone, never the zone’s own flag (edge)', () => {
+    // #124: `queueModeEnabled: false` means "took the city default", and the
+    // default can be `geozone_queue`. This module never reads the flag — the
+    // row carries what the resolver decides, per zone.
+    const rows = build({
+      catalog: [
+        zone({ queueModeEnabled: false }),
+        zone({
+          id: ZONE_B,
+          slug: 'lidosta',
+          name: 'Lidosta',
+          queueModeEnabled: false,
+        }),
+      ],
+      dispatchModeFor: (z) =>
+        z.id === ZONE_A ? 'geozone_queue' : 'auto_match',
+    });
+
+    expect(rows.map((r) => [r.slug, r.dispatchMode])).toEqual([
+      ['centrs', 'geozone_queue'],
+      ['lidosta', 'auto_match'],
+    ]);
   });
 
   it('keeps the store’s positions verbatim, gap and all (edge)', () => {

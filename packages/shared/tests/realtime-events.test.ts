@@ -180,7 +180,7 @@ describe('dispatchBoardEventSchema', () => {
     geozoneId: uuid,
     slug: 'centrs',
     name: 'Centrs',
-    queueModeEnabled: true,
+    dispatchMode: 'geozone_queue',
     entries: [
       {
         driverId: otherUuid,
@@ -311,6 +311,18 @@ describe('dispatchBoardEventSchema', () => {
       dispatchBoardEventSchema.safeParse({
         ...base,
         drivers: [{ ...driver, status: 'napping' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a zone mode that is not a dispatch mode (failure)', () => {
+    // `dispatchMode` is the EFFECTIVE mode (#124) and draws on `DISPATCH_MODES`
+    // alone. `dispatcher` is a legal `AssignmentSource` and the nearest wrong
+    // value — an override is not a mode a zone can run in.
+    expect(
+      dispatchBoardEventSchema.safeParse({
+        ...base,
+        zones: [{ ...zone, dispatchMode: 'dispatcher' }],
       }).success,
     ).toBe(false);
   });
