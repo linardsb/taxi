@@ -1,6 +1,8 @@
 'use client';
 
+import { useLayoutEffect, useRef } from 'react';
 import {
+  DISPLAY_NAME_MAX,
   formatMessage,
   type AddressPoint,
   type CallerLookup,
@@ -58,6 +60,21 @@ export function CallerPanel({
   // `callerName` for a named rider (D2), so an editable field would drop her
   // edit without saying so.
   const knownName = lookup?.displayName ?? null;
+  const hasKnownName = knownName !== null;
+
+  // The lookup can land while Dina is typing in the name field. The swap
+  // unmounts whichever element held focus and drops it to `<body>`, outside
+  // `DialogShell`'s Escape and Tab handler (#290 F1). Hand focus to the element
+  // that took its place, but only when focus was actually lost: a lookup that
+  // lands while she is on the phone field must not pull her off it.
+  const nameSlot = useRef<HTMLElement | null>(null);
+  const hadKnownName = useRef(hasKnownName);
+  useLayoutEffect(() => {
+    if (hadKnownName.current === hasKnownName) return;
+    hadKnownName.current = hasKnownName;
+    const active = document.activeElement;
+    if (active === null || active === document.body) nameSlot.current?.focus();
+  }, [hasKnownName]);
 
   return (
     <section style={{ display: 'grid', gap: 'var(--spacing-sm)' }}>
@@ -112,6 +129,11 @@ export function CallerPanel({
       {knownName !== null ? (
         <p
           id="booking-caller-name-known"
+          ref={(node) => {
+            nameSlot.current = node;
+          }}
+          // Focusable by script only, so it can take over from the input.
+          tabIndex={-1}
           style={{ margin: 0, fontSize: 'var(--font-size-md)' }}
         >
           {formatMessage(LANG, 'console.caller_known_name', {
@@ -128,7 +150,13 @@ export function CallerPanel({
           </label>
           <input
             id="booking-caller-name"
+            ref={(node) => {
+              nameSlot.current = node;
+            }}
             value={callerName}
+            // The wire caps `callerName` at the same length and refuses more
+            // with a 400 (#290 F2), so the field cannot produce it.
+            maxLength={DISPLAY_NAME_MAX}
             onChange={(event) => onCallerNameChange(event.target.value)}
             style={{
               minHeight: 44,

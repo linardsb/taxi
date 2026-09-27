@@ -120,10 +120,11 @@ export const dispatcherBookingBodySchema = rideRequestBodySchema.extend({
   callerPhone: phoneSchema,
   /**
    * Fills the rider's name when it is empty, and never overwrites a set one
-   * (#269 D2). Normalised through `displayNameSchema` server-side; an unusable
-   * value means "no name", never a 400 (D4).
+   * (#269 D2). Normalised through `displayNameSchema` server-side; a blank or
+   * control-character value means "no name", never a 400 (D4). Over 120
+   * characters raw is still a 400: the console's field is capped to match.
    */
-  callerName: z.string().max(120).optional(),
+  callerName: z.string().max(DISPLAY_NAME_MAX).optional(),
   dispatcherNote: z.string().max(280).nullable().default(null),
 });
 export type DispatcherBookingBody = z.infer<typeof dispatcherBookingBodySchema>;

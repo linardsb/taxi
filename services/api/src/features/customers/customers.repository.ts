@@ -13,6 +13,14 @@ import { DRIZZLE } from '../../common/db/db.module';
 /** How many past jobs the caller panel offers for reuse (evidence F2.2). */
 export const RECENT_RIDES_LIMIT = 3;
 
+/**
+ * A Postgres regex for "nothing JS `trim()` would keep": the set
+ * `readDisplayName` reads as no name. `btrim` strips only spaces, so an NBSP or
+ * a tab row read as empty and was still refused by the fill (#290 F3).
+ */
+const BLANK_NAME_PATTERN =
+  '^[\\s\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]*$';
+
 type CustomerRow = typeof customers.$inferSelect;
 type SavedPlaceRow = typeof savedPlaces.$inferSelect;
 
@@ -90,7 +98,8 @@ export class CustomersRepository {
   /**
    * Dina's name for a caller, written ONLY where the rider has none (#269 D2).
    * One statement, so a rider's concurrent `PUT /riders/me/display-name` can
-   * never be overwritten (D3). A whitespace-only legacy value counts as empty.
+   * never be overwritten (D3). A whitespace-only legacy value counts as empty,
+   * by the same whitespace set `readDisplayName` trims.
    */
   async fillEmptyDisplayName(userId: string, name: string): Promise<void> {
     await this.db
@@ -99,7 +108,10 @@ export class CustomersRepository {
       .where(
         and(
           eq(users.id, userId),
-          or(isNull(users.displayName), sql`btrim(${users.displayName}) = ''`),
+          or(
+            isNull(users.displayName),
+            sql`${users.displayName} ~ ${BLANK_NAME_PATTERN}`,
+          ),
         ),
       );
   }

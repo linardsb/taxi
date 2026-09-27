@@ -29,7 +29,7 @@ A rider can set, change and remove the name the driver sees: a row on `/book` op
 
 ## Tests added
 
-All `observed` on this branch.
+All `observed` on this branch, at `103e9cb`. The PR #290 round-1 fixes change the fill's `btrim` arm to a regex and add tests; see `.claude/reports/pr-290-review-fixes.md` for those and their counts.
 
 - shared `schemas-display-name.test.ts`: trim (expected); 120 vs 121 units, `readDisplayName` blank/undefined/null/130-char, lookup default `displayName: null` (edge); `'   '`, `''`, `'An\u0000na'`, `'An\nna'` refused (failure). Package: 30 files, 290 tests green. (R3 recorded 284; the difference is the extra cases this branch adds, not a regression.)
 - api unit: `bookings.service.spec.ts` (one-argument `findOrCreateUser`, fill for new and existing rider, blank `callerName` → no fill and still booked, staff phone → no fill); `customers.service.spec.ts` (fixtures gain `displayName`, new `'  Anna '` → `'Anna'` edge). With `driver-ride.spec.ts` (no edits): 3 suites, 33 tests green.

@@ -711,3 +711,8 @@ The spikes also found the three test files the first draft missed (R7, R9). What
   - **T10**: the repeat-caller lookup case sets the name with `ctx.db.update` after its booking, which sends no `callerName`.
   - **T7**: the three 400 cases are one `it.each`, each row on its own phone (`p(9)`, `p(11)`, `p(12)`).
   - **Level 4**: not run, including step 5 (TalkBack), so AC7's TalkBack half is recorded as not run.
+
+- 2026-09-27: PR #290 review round 1 fixes (`.claude/reports/pr-290-review-fixes.md`). These supersede the task text above where they differ:
+  - **AC6** narrowed: a blank or control-character `callerName` never fails a phone booking. Over 120 characters raw is still a 400 on the unchanged wire schema; the console's `#booking-caller-name` now carries `maxLength={DISPLAY_NAME_MAX}` so it cannot produce one (F2). The T2 docblock and the T11 comment's "never a 400" read the same way.
+  - **T9**: `fillEmptyDisplayName` matches an empty name with a regex over the whitespace set JS `trim()` strips, not `btrim(…) = ''`, which strips only spaces (F3). T10's legacy case is an `it.each` over spaces, NBSP + tab, and ideographic space + BOM (`p(18)`, `p(20)`, `p(21)`).
+  - **T16**: the known-name `<p>` has `tabIndex={-1}`, and a layout effect hands focus to whichever of it and the input replaced the other when the swap dropped focus to `<body>` (F1).

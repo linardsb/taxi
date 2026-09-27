@@ -120,6 +120,7 @@ describe('NameScreen (#269)', () => {
     await press('rider.name.save');
 
     expect(screen.getByText(t('rider.error.offline'))).toBeTruthy();
+    expect(screen.getByDisplayValue('Anna')).toBeTruthy();
     expect(mockSetDisplayName).not.toHaveBeenCalled();
     expect(back).not.toHaveBeenCalled();
     // The retry sends the same text: the ref kept it.

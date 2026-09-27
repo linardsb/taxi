@@ -198,15 +198,25 @@ describe('POST /dispatch/bookings (#19)', () => {
     expect(await storedName(existing.id)).toBe('Anna');
   });
 
-  it('treats a legacy whitespace-only name as empty (edge — #269)', async () => {
-    const existing = await named(p(18), '  ');
+  // Every value JS `trim()` empties, because `readDisplayName` shows it as no
+  // name and Dina is offered the field. Postgres `btrim` strips only spaces,
+  // so NBSP and tab were refused by the fill (#290 F3).
+  it.each([
+    ['spaces', 18, '  '],
+    ['NBSP and tab', 20, '\u00a0\t'],
+    ['ideographic space and BOM', 21, '\u3000\ufeff'],
+  ])(
+    'treats a legacy whitespace-only name (%s) as empty (edge — #269)',
+    async (_label, n, legacy) => {
+      const existing = await named(p(n), legacy);
 
-    const res = await book(p(18), randomUUID(), { callerName: 'Anna' });
+      const res = await book(p(n), randomUUID(), { callerName: 'Anna' });
 
-    expect(res.status).toBe(201);
-    createdRides.push((res.body as { ride: { id: string } }).ride.id);
-    expect(await storedName(existing.id)).toBe('Anna');
-  });
+      expect(res.status).toBe(201);
+      createdRides.push((res.body as { ride: { id: string } }).ride.id);
+      expect(await storedName(existing.id)).toBe('Anna');
+    },
+  );
 
   it('books a new caller with a blank callerName and stores no name (failure — #269 D4)', async () => {
     const caller = p(19);
