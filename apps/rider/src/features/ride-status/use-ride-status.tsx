@@ -58,6 +58,15 @@ export interface RideStatusState {
    */
   joined: boolean;
   /**
+   * Whether the live link has been TRIED: a join has landed, a read has
+   * failed, or the socket reported `connect_error`. Never cleared for the
+   * ride. Before it, `!joined` means "not up yet", which is not news; after
+   * it, a missing link is a drop or a first link that failed, and the screen
+   * speaks it (PR #293 F1). Without it, every open spoke «Atjaunojam
+   * savienojumu…» on the first frame, before there was a link to lose.
+   */
+  linkAttempted: boolean;
+  /**
    * The rider's pickup PIN (#258), or null when they did not opt in. From the
    * REST read only — no socket event carries it.
    */
@@ -123,6 +132,7 @@ export function useRideStatus(rideId: string | null): RideStatusState {
     previousStatus: null,
     connected: false,
     joined: false,
+    linkAttempted: false,
     pickupPin: null,
     announceArrival: false,
   });
@@ -133,6 +143,8 @@ export function useRideStatus(rideId: string | null): RideStatusState {
 
     const apply = (status: RideStatus, previousStatus: RideStatus | null) =>
       setState((s) => ({ ...s, status, previousStatus }));
+    const attempted = () =>
+      setState((s) => (s.linkAttempted ? s : { ...s, linkAttempted: true }));
 
     /**
      * How many `ride:status` events this socket has applied. A read that
@@ -183,7 +195,7 @@ export function useRideStatus(rideId: string | null): RideStatusState {
           // The join only happened for a socket that was already connected when
           // the server ran it, which is exactly a read from the live epoch.
           if (readEpoch !== 0 && readEpoch === epoch) {
-            setState((s) => ({ ...s, joined: true }));
+            setState((s) => ({ ...s, joined: true, linkAttempted: true }));
           }
           if (applied !== at || id < newestRead) return;
           newestRead = id;
@@ -193,6 +205,7 @@ export function useRideStatus(rideId: string | null): RideStatusState {
           // A read from a superseded connection is not retried — the `connect`
           // that superseded it has already issued its own.
           if (disposed || readEpoch !== epoch) return;
+          attempted();
           retryTimer = setTimeout(() => refetch(readEpoch), retryDelay);
           retryDelay = Math.min(retryDelay * 2, READ_RETRY_MAX_MS);
         });
@@ -217,6 +230,9 @@ export function useRideStatus(rideId: string | null): RideStatusState {
       // deaf rather than merely un-refreshed. See the docblock above.
       refetch(epoch);
     });
+    // A socket that cannot connect never fires `connect`, so no read fails
+    // either: with REST up and the socket server down, this is the only sign.
+    socket.on('connect_error', attempted);
     socket.on('disconnect', () =>
       // `joined` goes with the connection: room membership does not follow a
       // socket the transport replaced.
@@ -244,8 +260,13 @@ export function useRideStatus(rideId: string | null): RideStatusState {
       socket.removeAllListeners();
       socket.disconnect();
       // In the cleanup, not the body (`react-hooks/set-state-in-effect`): a
-      // `rideId` change must not carry the previous ride's PIN onto the next.
-      setState((s) => (s.pickupPin === null ? s : { ...s, pickupPin: null }));
+      // `rideId` change must not carry the previous ride's PIN onto the next,
+      // nor its attempted link: the next ride's first frame is silent too.
+      setState((s) =>
+        s.pickupPin === null && !s.linkAttempted
+          ? s
+          : { ...s, pickupPin: null, linkAttempted: false },
+      );
     };
   }, [api, onBeforeSignOut, rideId, session, signOut]);
 

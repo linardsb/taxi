@@ -2,7 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { rideOffers, rides, users, type Db } from '@taxi/db';
 import {
   fareSplitSchema,
-  rideRequestSchema,
   type FareSplit,
   type PaymentMethodType,
   type RideStatus,
@@ -51,8 +50,10 @@ export class RideLifecycleRepository {
 
   /**
    * What the arrival-announce request checks (#259): ownership, the flag, the
-   * status and the driver. `request` is jsonb, so it is parsed, never cast
-   * (`ride-row.ts`); a legacy row without the key parses to `false`.
+   * status and the driver. `request` is jsonb and comes back RAW: the service
+   * parses it (never casts it, `ride-row.ts`) only after the owner check, so a
+   * row that no longer parses still answers a stranger 404 (PR #293 F5). A
+   * legacy row without the key parses to `false`.
    */
   async findAnnounceTarget(rideId: string): Promise<
     | {
@@ -61,7 +62,7 @@ export class RideLifecycleRepository {
         status: RideStatus;
         riderId: string;
         driverId: string | null;
-        announceArrival: boolean;
+        request: unknown;
       }
     | undefined
   > {
@@ -77,12 +78,7 @@ export class RideLifecycleRepository {
       .from(rides)
       .where(eq(rides.id, rideId))
       .limit(1);
-    if (!row) return undefined;
-    const { request, ...rest } = row;
-    return {
-      ...rest,
-      announceArrival: rideRequestSchema.parse(request).options.announceArrival,
-    };
+    return row;
   }
 
   /** The rider's phone and display name, for `toDriverRide` (#261). */

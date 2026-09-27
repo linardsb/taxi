@@ -75,6 +75,12 @@ function spaced(pin: string): string {
  * transition speak twice: «Auto ir atrasts», then «Brauciena statuss: Auto ir
  * atrasts». Banner is kept over the effect because it renders the line too, so
  * the text seen and the text heard cannot drift apart.
+ *
+ * NOTHING IS SPOKEN BEFORE THERE IS SOMETHING TRUE TO SAY (PR #293 F1). The
+ * first frame has no status and no link yet, and speaking it told a rider
+ * standing at the kerb «Meklējam auto…», then «Atjaunojam savienojumu…», then
+ * «Auto ir klāt» (T24, `observed` on Android). The status line speaks from the
+ * first real status; the reconnecting line once the link has been tried.
  */
 export function StatusScreen() {
   const t = useT();
@@ -89,6 +95,7 @@ export function StatusScreen() {
     stillSearching,
     connected,
     joined,
+    linkAttempted,
     pickupPin,
     announceArrival,
   } = useRideStatus(rideId);
@@ -148,7 +155,16 @@ export function StatusScreen() {
       <Text ref={heading} style={styles.title} accessibilityRole="header">
         {t('rider.status.title')}
       </Text>
-      <Banner tone="info" text={line} testID="status-line" />
+      {/* Silent on the first frame: `status` is null until the first read,
+          and the line would say «Meklējam auto…» whatever the ride is doing.
+          The text and `announce` change together, so the first real status
+          speaks once — `requested` included, whose text is the same. */}
+      <Banner
+        tone="info"
+        text={line}
+        announce={status !== null}
+        testID="status-line"
+      />
       {pinText !== null ? (
         <Text
           style={styles.pin}
@@ -163,9 +179,15 @@ export function StatusScreen() {
           whose join read failed hears nothing. Showing the live state on the
           transport alone is what let the screen reassure a rider it was live
           while no event could reach it. Same copy — to the rider both mean "the
-          live link is not up yet", and the retry behind it is the same wait. */}
+          live link is not up yet", and the retry behind it is the same wait.
+          Shown from the first frame, SPOKEN only once the link has been tried
+          (`linkAttempted`): before that there is no link to have lost. */}
       {!connected || !joined ? (
-        <Banner tone="warning" text={t('rider.status.reconnecting')} />
+        <Banner
+          tone="warning"
+          text={t('rider.status.reconnecting')}
+          announce={linkAttempted}
+        />
       ) : null}
       {error ? <Banner tone="danger" text={t(error)} /> : null}
       {/* The request (#259) answers the rider's own tap, so its Banner is not

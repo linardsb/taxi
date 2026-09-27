@@ -1,4 +1,5 @@
 import { colors, fontSize } from '@taxi/shared';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text } from 'react-native';
 
 export interface PreferenceSwitchProps {
@@ -16,7 +17,8 @@ export interface PreferenceSwitchProps {
  * The whole row is the switch (PR #277 M2): one 44 px touch target with the
  * label, and one screen-reader stop that says label, state and hint once. The
  * native `Switch` and the visible hint are hidden from that tree so neither is
- * read a second time.
+ * read a second time. An accent outline while focused, as `NameRow` (PR #293
+ * F3): an outline, so nothing reflows.
  *
  * A flip does NOT rotate the booking's idempotency key, like payment
  * (`booking-draft.ts` rule 2): a lost response, a flip, then a retry replays
@@ -31,11 +33,14 @@ export function PreferenceSwitch({
   onChange,
   testID,
 }: PreferenceSwitchProps) {
+  const [focused, setFocused] = useState(false);
   return (
     <>
       <Pressable
-        style={styles.row}
+        style={[styles.row, focused && styles.focused]}
         onPress={() => onChange(!value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         disabled={!enabled}
         accessibilityRole="switch"
         accessibilityLabel={label}
@@ -71,6 +76,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  focused: { outlineWidth: 2, outlineColor: colors.accent, outlineOffset: 2 },
   label: { flex: 1, fontSize: fontSize.md, color: colors.fg },
   hint: { fontSize: fontSize.sm, color: colors.fgMuted },
 });

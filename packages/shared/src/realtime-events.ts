@@ -19,7 +19,7 @@ import { rideOfferSchema } from './schemas/ride';
  *
  * Wire timestamps are ISO strings (`z.string().datetime()`), not `Date`. The
  * domain schemas in ./schemas use `z.coerce.date()` and re-hydrate them on
- * receipt; do not unify the two worlds. This holds for all 9 events with no
+ * receipt; do not unify the two worlds. This holds for all 10 events with no
  * exception: `ride:offer` is derived from a domain schema, so it overrides its
  * two date fields to obey the rule (see `rideOfferEventSchema`). The catalog
  * also carries exactly ONE acknowledgement — the api's reply to a

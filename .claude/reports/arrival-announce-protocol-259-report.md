@@ -73,7 +73,7 @@ T0 makes `Banner` speak on Android and removes the double announcements that cha
 
 Every count below is `observed` from the gate run named under Validation results.
 
-**shared** (vitest, 296 → 300):
+**shared** (vitest, 291 → 300; the base is 291, `observed` in the PR #290 round-1 review, corrected by PR #293 review F9):
 - `schemas-ride-request.test.ts`: the option defaults to off, a legacy object parses to `false`, and a non-boolean is refused.
 - `schemas-driver-ride.test.ts`: `announceRequestedAt` defaults to `null`, and a bad datetime is refused.
 - `realtime-events.test.ts`: a valid event; a `Date` `at` refused; a bad uuid refused; the push envelope round-trips; the catalog has 10 events.
@@ -193,7 +193,7 @@ Cleanup: the dispatcher cancelled the ride (201) and the driver went `offline` (
 | H3 on device | a second activation 24 s later (outside the window) spoke «Pieprasījums nosūtīts šoferim.» once more (`TYPE_ANNOUNCEMENT`) |
 | 429 on device | a third activation 16 s after that spoke «Pārāk daudz mēģinājumu — pagaidiet brīdi» once (`TYPE_ANNOUNCEMENT`). The api logged `rejected`, `cause: too_many_requests` |
 
-- **Finding, not fixed (from T0):** opening `/book/status` also spoke «Meklējam auto…» and «Atjaunojam savienojumu…» (both `TYPE_ANNOUNCEMENT`) before «Auto ir klāt». The status Banner mounts on the first frame (`status: null` → searching), and the reconnecting Banner mounts before the socket joins. Both now speak on Android, as they already did on iOS. That is three announcements to open one screen. It is not in T0's caller audit, which covered pairs and timers, not first-frame Banners. I recommend a follow-up decision, either folded into #16 or decided here.
+- **Finding, not fixed (from T0):** opening `/book/status` also spoke «Meklējam auto…» and «Atjaunojam savienojumu…» (both `TYPE_ANNOUNCEMENT`) before «Auto ir klāt». The status Banner mounts on the first frame (`status: null` → searching), and the reconnecting Banner mounts before the socket joins. Both now speak on Android, as they already did on iOS. That is three announcements to open one screen. It is not in T0's caller audit, which covered pairs and timers, not first-frame Banners. I recommend a follow-up decision, either folded into #16 or decided here. **Fixed in this PR** (PR #293 review F1): see `.claude/reports/pr-293-review-fixes.md`. The device re-run of this step on the fixed source is still owed.
 - **Layout note:** once the confirmation Banner mounts above the button, the button moves down about 190 px. My second `input tap` at the old position landed on the Banner. A TalkBack user keeps focus on the button, so this only affects scripted runs.
 - **Cleanup:** the dispatcher cancelled the ride (201).
 

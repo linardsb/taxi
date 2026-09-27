@@ -25,6 +25,20 @@ type Target = {
   announceArrival: boolean;
 };
 
+const storedRequest = (announceArrival: boolean) => ({
+  riderId: RIDER_ID,
+  pickup: {
+    location: { lat: 56.9496, lng: 24.1052 },
+    address: 'Brīvības iela 1, Rīga',
+  },
+  destination: {
+    location: { lat: 56.9236, lng: 23.9711 },
+    address: 'Lidosta RIX',
+  },
+  paymentMethod: 'cash',
+  options: { announceArrival },
+});
+
 function setup(over: Partial<Target> = {}) {
   let target: Target | undefined = {
     id: RIDE_ID,
@@ -35,8 +49,17 @@ function setup(over: Partial<Target> = {}) {
     announceArrival: true,
     ...over,
   };
+  // The repository hands `request` back raw (PR #293 F5); the flag rides in
+  // it, in the stored shape the service parses.
   const lifecycle = {
-    findAnnounceTarget: jest.fn(() => Promise.resolve(target)),
+    findAnnounceTarget: jest.fn(() => {
+      if (!target) return Promise.resolve(undefined);
+      const { announceArrival, ...rest } = target;
+      return Promise.resolve({
+        ...rest,
+        request: storedRequest(announceArrival),
+      });
+    }),
   } as unknown as RideLifecycleRepository;
   const kv = new InMemoryKeyValueStore();
   const emitToDriver = jest.fn();
@@ -195,6 +218,17 @@ describe('ArrivalAnnounceService (#259)', () => {
     await expect(service.request(RIDER_ID, RIDE_ID)).resolves.toEqual({
       ok: true,
     });
+    expect(pushes).toHaveLength(1);
+  });
+
+  it('a replay write that throws still reaches the driver live (failure — PR #293 F4)', async () => {
+    const { service, kv, emitToDriver, pushes } = setup();
+    jest.spyOn(kv, 'setWithTtl').mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(service.request(RIDER_ID, RIDE_ID)).resolves.toEqual({
+      ok: true,
+    });
+    expect(emitToDriver).toHaveBeenCalledTimes(1);
     expect(pushes).toHaveLength(1);
   });
 

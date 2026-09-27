@@ -29,6 +29,7 @@ const mockStatus = {
   stillSearching: false,
   connected: true,
   joined: true,
+  linkAttempted: true,
   pickupPin: null as string | null,
   announceArrival: false,
 };
@@ -59,6 +60,7 @@ describe('StatusScreen', () => {
       stillSearching: false,
       connected: true,
       joined: true,
+      linkAttempted: true,
       pickupPin: null,
       announceArrival: false,
     });
@@ -177,6 +179,71 @@ describe('StatusScreen', () => {
     Object.assign(mockStatus, { connected: true, joined: false });
     await render(<StatusScreen />);
     expect(screen.getByText(t('rider.status.reconnecting'))).toBeTruthy();
+  });
+
+  describe('the first frame speaks nothing false (PR #293 F1)', () => {
+    // The hook's first frame, before any read or join has come back.
+    const FIRST_FRAME = {
+      status: null,
+      connected: false,
+      joined: false,
+      linkAttempted: false,
+    };
+    const spoken = () => announce.mock.calls.map(([text]: [string]) => text);
+
+    it('opening at arrived speaks only the arrival line (failure — T24)', async () => {
+      Object.assign(mockStatus, FIRST_FRAME);
+      const { rerender } = await render(<StatusScreen />);
+      Object.assign(mockStatus, {
+        status: 'arrived',
+        connected: true,
+        joined: true,
+        linkAttempted: true,
+      });
+      await rerender(<StatusScreen />);
+
+      expect(spoken()).toEqual([t('rider.status.arrived')]);
+    });
+
+    it('opening at requested still speaks the search line once (edge — the text does not change)', async () => {
+      Object.assign(mockStatus, FIRST_FRAME);
+      const { rerender } = await render(<StatusScreen />);
+      Object.assign(mockStatus, {
+        status: 'requested',
+        connected: true,
+        joined: true,
+        linkAttempted: true,
+      });
+      await rerender(<StatusScreen />);
+
+      expect(spoken()).toEqual([t('rider.status.searching')]);
+    });
+
+    it('a drop after a live link speaks the reconnecting line once (expected)', async () => {
+      Object.assign(mockStatus, { status: 'accepted' });
+      const { rerender } = await render(<StatusScreen />);
+      Object.assign(mockStatus, { connected: false, joined: false });
+      await rerender(<StatusScreen />);
+
+      const reconnecting = spoken().filter(
+        (x) => x === t('rider.status.reconnecting'),
+      );
+      expect(reconnecting).toHaveLength(1);
+    });
+
+    it('a first link that never comes up speaks the reconnecting line once (failure)', async () => {
+      Object.assign(mockStatus, FIRST_FRAME);
+      const { rerender } = await render(<StatusScreen />);
+      expect(spoken()).not.toContain(t('rider.status.reconnecting'));
+
+      Object.assign(mockStatus, { linkAttempted: true });
+      await rerender(<StatusScreen />);
+
+      const reconnecting = spoken().filter(
+        (x) => x === t('rider.status.reconnecting'),
+      );
+      expect(reconnecting).toHaveLength(1);
+    });
   });
 
   describe('asking the driver to call out (#259)', () => {

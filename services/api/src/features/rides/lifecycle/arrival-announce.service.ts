@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   formatMessage,
+  rideRequestSchema,
   RT,
   type AnnouncePushData,
   type ApiErrorBody,
@@ -62,7 +63,9 @@ export class ArrivalAnnounceService {
       this.logRejected(rideId, riderId, 'ride_not_found');
       throw new NotFoundException('ride_not_found');
     }
-    if (!ride.announceArrival) {
+    // Parsed only after the owner check, so a stored request that no longer
+    // parses cannot answer a stranger 500 instead of the 404 (PR #293 F5).
+    if (!rideRequestSchema.parse(ride.request).options.announceArrival) {
       this.logRejected(rideId, riderId, 'announce_not_requested');
       throw new ConflictException('announce_not_requested');
     }
@@ -94,11 +97,22 @@ export class ArrivalAnnounceService {
     }
 
     const at = new Date().toISOString();
-    await this.kv.setWithTtl(
-      arrivalAnnounceLastKey(rideId),
-      at,
-      ARRIVAL_ANNOUNCE_REPLAY_SECONDS,
-    );
+    // Best-effort, as the emit below: the window is already spent, so a failed
+    // replay write must not also cost the live legs (PR #293 F4).
+    try {
+      await this.kv.setWithTtl(
+        arrivalAnnounceLastKey(rideId),
+        at,
+        ARRIVAL_ANNOUNCE_REPLAY_SECONDS,
+      );
+    } catch (error) {
+      this.logger.warn({
+        event: 'ride.arrival_announce.replay_write_failed',
+        rideId,
+        reason: error instanceof Error ? error.message : 'unknown',
+        at,
+      });
+    }
     try {
       this.realtime.emitToDriver(driverId, RT.rideAnnounceRequested, {
         rideId,

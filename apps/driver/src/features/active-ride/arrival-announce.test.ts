@@ -213,4 +213,18 @@ describe('decide — the announce request (#259)', () => {
     });
     expect(moved.state.notice).toBe('payment_changed');
   });
+
+  it('a request replaces an undismissed payment_changed notice, and leaving arrived clears it (edge — PR #293 F7)', () => {
+    const s = { ...showing(), notice: 'payment_changed' as const };
+    const heard = decide(s, request(AT));
+    expect(heard.state.notice).toBe('announce_requested');
+    expect(heard.effects).toEqual(NOTICE_EFFECTS);
+
+    const moved = decide(heard.state, {
+      type: 'status',
+      event: status('in_progress', 'arrived'),
+    });
+    // Replaced, not restored: the pill carries the operative method.
+    expect(moved.state.notice).toBeNull();
+  });
 });

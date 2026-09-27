@@ -418,6 +418,21 @@ describe('arrival-announce protocol (integration, #259)', () => {
     await announce(ride.id, d.auth).expect(403);
   });
 
+  it('answers another rider 404, not 500, when the stored request no longer parses (failure — PR #293 F5)', async () => {
+    const r = await rider(56);
+    const stranger = await rider(57);
+    const ride = await book(r.auth, true);
+    // A legacy row whose request predates the current schema. Cancelled in
+    // the same write so no sweeper can pick it up while it is malformed.
+    await ctx.db
+      .update(rides)
+      .set({ request: {}, status: 'cancelled_by_system' })
+      .where(eq(rides.id, ride.id));
+
+    const res = await announce(ride.id, stranger.auth).expect(404);
+    expect(res.body).toMatchObject({ message: 'ride_not_found' });
+  });
+
   it('a phone booking carries the flag, and the caller name reaches the driver at arrived (edge)', async () => {
     const dina = await dispatcher(90);
     const d = await onlineDriver(7);

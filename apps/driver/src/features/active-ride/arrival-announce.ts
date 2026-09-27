@@ -50,7 +50,8 @@ const isNewer = (at: string, last: string | null) => last === null || at > last;
  * `arrived`, or an `at` already heard. All three legs carry the same `at`, so
  * this is what makes them one notice and one buzz. The `announce` effect is
  * the one speaker (the Banner is silent, #259 T0): it runs app-wide, so the
- * notice is heard on whichever screen is up.
+ * notice is heard on whichever screen is up. It replaces an undismissed
+ * `payment_changed` notice — see `clearStaleAnnounce`.
  */
 export function announceNotice(
   state: ActiveRideState,
@@ -76,7 +77,11 @@ export function announceNotice(
  * The notice lives only while the car waits at `arrived` (PR #282 review M2).
  * «Sākt braucienu» moves the status itself in `step_done`, and dispatch can
  * release or cancel; either way the request is over. A `payment_changed`
- * notice keeps its own lifetime. Same object back when nothing changes.
+ * notice still up when this runs keeps its own lifetime. One that was up when
+ * a request arrived is gone already: `announceNotice` replaces it, because at
+ * the kerb the request is the notice that matters, and the payment change was
+ * spoken once and the pill still shows the operative method (PR #293 F7).
+ * Same object back when nothing changes.
  */
 export function clearStaleAnnounce(state: ActiveRideState): ActiveRideState {
   return state.notice === 'announce_requested' &&

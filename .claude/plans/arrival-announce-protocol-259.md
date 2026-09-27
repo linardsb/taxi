@@ -451,7 +451,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
     Docblock figures:
     - **Window** (`derived`): one request per fixed window. `incrWithTtl` sets the TTL only on the first INCR, so the next accepted request is ≥ 20 s after the last. Worst case, 3 interruptions a minute per ride (60 ÷ 20). The condition is `redis-kv.store.ts:63-77`'s TTL semantics. The 20 s itself is `expected`: a guess at the time needed to get out of the car and walk round it.
     - **Replay** (`expected`): 600 s bounds how stale a replayed request can be. A kerbside search longer than 10 min is a dispatcher problem, not a notice. The replay is shown only at `arrived` anyway.
-  - `RideLifecycleRepository.findAnnounceTarget(rideId)` returns `{ id, orderId, status, riderId, driverId, announceArrival }`. It selects `rides.request` and reads `rideRequestSchema.parse(row.request).options.announceArrival` (the `ride-row.ts:47` pattern; a legacy row parses to `false`).
+  - `RideLifecycleRepository.findAnnounceTarget(rideId)` returns `{ id, orderId, status, riderId, driverId, announceArrival }`. It selects `rides.request` and reads `rideRequestSchema.parse(row.request).options.announceArrival` (the `ride-row.ts:47` pattern; a legacy row parses to `false`). **Superseded by PR #293 F5:** it returns `request` raw and the service parses it after the owner check.
   - `ArrivalAnnounceService` injects `RideLifecycleRepository`, `@Inject(KV_STORE) kv`, `RealtimeService` and `DriversService`, and has a `Logger`.
     - `request(riderId, rideId)`:
       1. Missing or not the caller's → log rejected `ride_not_found`, `NotFoundException`.
@@ -479,7 +479,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 
 - **IMPLEMENT**:
   - `toDriverRide(ride, identity, announceRequestedAt: string | null = null)` returns `announceRequestedAt: ride.status === 'arrived' ? announceRequestedAt : null`. Gate it on the snapshot's status, as #261 gates the name.
-  - Add `announce: ArrivalAnnounceService` to `DriverRideReadDeps`. `readDriverRide` passes `await deps.announce.lastRequestedAt(rideId)`.
+  - Add `announce: ArrivalAnnounceService` to `DriverRideReadDeps`. `readDriverRide` passes `await deps.announce.lastRequestedAt(rideId)`. **Superseded by PR #293 F2:** it reads the KV only at `arrived`, and a KV failure logs `ride.read.announce_replay_failed` and replays nothing.
   - `RideLifecycleService`: inject `ArrivalAnnounceService`, one constructor line, and pass it in `findForDriver`'s deps (`:387-394`). `complete()` keeps calling `toDriverRide(ride, identity)`, which gives null.
 - **GOTCHA**:
   - Check the service stays < 500 lines after the one-line injection and the deps entry (470 + ~3). The `max-lines` lint catches it.
@@ -590,7 +590,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - A helper `isNewer(at, last) = last === null || at > last`. `toISOString()` strings are fixed-width UTC, so string order is time order. It replaces a plain `!==` (PR #282 review L5): a push for an older request that lands after a newer socket event must not fire the notice and haptic again.
   - Event `{ type: 'announce_requested'; rideId: string; at: string }`. It applies only when `state.ride?.id === rideId && state.ride.status === 'arrived' && isNewer(at, state.lastAnnounceAt)`. Then `notice: 'announce_requested'`, `lastAnnounceAt: at`, and effects `[{ type: 'haptic' }, { type: 'announce', key: 'driver.ride.announce_requested' }]`. Otherwise noop.
   - `loaded`: after the existing logic, if the ride is `arrived`, `ride.announceRequestedAt !== null` and `isNewer(ride.announceRequestedAt, state.lastAnnounceAt)` → apply the same notice, `lastAnnounceAt`, haptic and announce. This is the replay leg.
-  - Clear the notice whenever the ride leaves `arrived`, **only if** `notice === 'announce_requested'` (a `payment_changed` notice keeps its own lifetime), in **both** places (PR #282 review M2):
+  - Clear the notice whenever the ride leaves `arrived`, **only if** `notice === 'announce_requested'` (a `payment_changed` notice still up keeps its own lifetime; one a request replaced is gone, PR #293 F7), in **both** places (PR #282 review M2):
     - `step_done` when `to !== 'arrived'`. «Sākt braucienu» moves `ride.status` to `in_progress` itself (`:293-303`), so the `ride:status` that follows finds the state already off `arrived`, and a rule on the socket event alone never fires.
     - a `status` event that leaves `arrived`, for a transition the driver did not make (a release or a cancel by dispatch).
   - Effect `{ type: 'haptic' }`.

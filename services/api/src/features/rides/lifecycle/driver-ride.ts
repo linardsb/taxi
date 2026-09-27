@@ -117,6 +117,32 @@ export async function readDriverRide(
   return toDriverRide(
     found.ride,
     await deps.lifecycle.findRiderIdentity(found.ride.riderId),
-    await deps.announce.lastRequestedAt(rideId),
+    found.ride.status === 'arrived'
+      ? await readAnnounceReplay(deps, driverId, rideId)
+      : null,
   );
+}
+
+/**
+ * The replay leg (#259) is best-effort, like the join: the read reaches the KV
+ * only at `arrived`, the one status `toDriverRide` keeps it for, and a KV
+ * failure costs the replay, never the driver's ride (PR #293 F2).
+ */
+async function readAnnounceReplay(
+  deps: DriverRideReadDeps,
+  driverId: string,
+  rideId: string,
+): Promise<string | null> {
+  try {
+    return await deps.announce.lastRequestedAt(rideId);
+  } catch (error) {
+    deps.logger.warn({
+      event: 'ride.read.announce_replay_failed',
+      rideId,
+      driverId,
+      reason: error instanceof Error ? error.message : 'unknown',
+      at: new Date().toISOString(),
+    });
+    return null;
+  }
 }
