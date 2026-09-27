@@ -255,6 +255,8 @@ export const en = {
   'push.offer_body': 'You keep {amount}. Open to accept.',
   'push.rider_arrived_title': 'Your car is here',
   'push.rider_arrived_body': 'Your taxi ({plate}) has arrived.',
+  'push.announce_requested_title': 'The rider is looking for you',
+  'push.announce_requested_body': 'Get out and call "Sakta" aloud.',
   'driver.offer.title': 'New ride',
   'driver.offer.fare': 'Fare {amount}',
   'driver.offer.you_keep': 'You keep {amount} ({pct}%)',
@@ -295,6 +297,13 @@ export const en = {
   'driver.ride.rider_name': 'Rider: {name}',
   'driver.ride.call_rider': 'Call rider',
   'driver.ride.call_rider_hint': 'Calls {name}',
+  'driver.ride.announce_note':
+    'Rider asks: on arrival, get out and announce yourself.',
+  'driver.ride.announce_prompt_name': 'Get out and say aloud: "Sakta, {name}!"',
+  'driver.ride.announce_prompt_destination':
+    'Get out and say aloud: "Sakta, to {address}!"',
+  'driver.ride.announce_requested':
+    'The rider is looking for you: get out and call "Sakta" aloud.',
   'driver.earnings.title': 'Earnings',
   'driver.earnings.receipt_paid': 'Rider paid: {amount}',
   'driver.earnings.receipt_commission': 'Sakta ({pct}%): {amount}',
@@ -342,6 +351,9 @@ export const en = {
   'rider.book.payment_card': 'Card',
   'rider.book.pickup_pin': 'Pickup PIN',
   'rider.book.pickup_pin_hint': 'Your driver enters your PIN before the trip.',
+  'rider.book.announce_arrival': 'Driver announces arrival',
+  'rider.book.announce_arrival_hint':
+    'On arrival the driver gets out and says "Sakta" aloud.',
   'rider.book.name_row': 'Name for your driver: {name}',
   'rider.book.name_row_empty': 'Name for your driver: not set',
   'rider.book.name_row_hint': 'Opens the name setting',
@@ -366,6 +378,9 @@ export const en = {
   'rider.status.arrived': 'Your car is here',
   'rider.status.arrived_pin': 'Your car is here. PIN: {pin}',
   'rider.status.pin': 'Your PIN: {pin}',
+  'rider.status.request_announce': 'Ask the driver to call out',
+  'rider.status.request_announce_hint': 'The driver calls "Sakta" aloud.',
+  'rider.status.announce_sent': 'Request sent to the driver.',
   'rider.status.cancelled': 'Ride cancelled',
   'rider.status.completed': 'Ride complete',
   'rider.status.cancel': 'Cancel ride',
@@ -376,6 +391,9 @@ export const en = {
   'rider.a11y.quote_failed': 'The price could not be calculated',
   'rider.a11y.ride_requested': 'Ride requested',
   'rider.error.too_many_requests': 'Too many attempts — wait a moment',
+  'rider.error.ride_not_arrived': 'The car is no longer waiting for pickup.',
+  'rider.error.announce_not_requested':
+    'Arrival announcement was not requested for this ride.',
   'rider.error.idempotent_request_in_progress':
     'Your booking is still being processed…',
   'rider.error.scheduled_in_past': 'That time has already passed',

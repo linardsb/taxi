@@ -19,7 +19,7 @@ import { rideOfferSchema } from './schemas/ride';
  *
  * Wire timestamps are ISO strings (`z.string().datetime()`), not `Date`. The
  * domain schemas in ./schemas use `z.coerce.date()` and re-hydrate them on
- * receipt; do not unify the two worlds. This holds for all 9 events with no
+ * receipt; do not unify the two worlds. This holds for all 10 events with no
  * exception: `ride:offer` is derived from a domain schema, so it overrides its
  * two date fields to obey the rule (see `rideOfferEventSchema`). The catalog
  * also carries exactly ONE acknowledgement — the api's reply to a
@@ -27,9 +27,8 @@ import { rideOfferSchema } from './schemas/ride';
  * parameter on the two client→server maps, not an event: no `RT` entry, no
  * timestamp, no room.
  *
- * `RT` must stay the first `as const` block in this file — the doc-sync check
- * that keeps .claude/references/realtime-events.md honest slices the catalog
- * from here.
+ * `.claude/references/realtime-events.md` is kept in step by hand; T3 of #259
+ * found no check that reads it.
  */
 export const RT = {
   driverLocation: 'driver:location',
@@ -41,6 +40,7 @@ export const RT = {
   dispatchBoard: 'dispatch:board',
   dispatchUnclaimed: 'dispatch:unclaimed',
   dispatchSmsFailed: 'dispatch:sms_failed',
+  rideAnnounceRequested: 'ride:announce_requested',
 } as const;
 
 /**
@@ -169,6 +169,22 @@ export const rideAssignedEventSchema = z
     path: ['dispatcherId'],
   });
 export type RideAssignedEvent = z.infer<typeof rideAssignedEventSchema>;
+
+/**
+ * The rider asked the driver to get out and call out (#259). api →
+ * `driver:<id>` only. The rider's side is REST (`POST
+ * /rides/:rideId/announce-request`). Never the ride room: the rider is in it,
+ * and a reconnected driver socket is in no ride room until its next read.
+ * Also pushed (`announcePushDataSchema`) and replayed on the driver read
+ * (`announceRequestedAt`) with the same `at`, which the app dedupes on.
+ */
+export const rideAnnounceRequestedEventSchema = z.object({
+  rideId: z.string().uuid(),
+  at: z.string().datetime(),
+});
+export type RideAnnounceRequestedEvent = z.infer<
+  typeof rideAnnounceRequestedEventSchema
+>;
 
 /**
  * One full frame of Dina's board (#18): every live ride and every online
@@ -383,6 +399,7 @@ export interface ServerToClientEvents {
   [RT.dispatchBoard]: (payload: DispatchBoardEvent) => void;
   [RT.dispatchUnclaimed]: (payload: DispatchUnclaimedEvent) => void;
   [RT.dispatchSmsFailed]: (payload: DispatchSmsFailedEvent) => void;
+  [RT.rideAnnounceRequested]: (payload: RideAnnounceRequestedEvent) => void;
 }
 
 /**
@@ -404,4 +421,5 @@ export const RT_EVENT_SCHEMAS = {
   [RT.dispatchBoard]: dispatchBoardEventSchema,
   [RT.dispatchUnclaimed]: dispatchUnclaimedEventSchema,
   [RT.dispatchSmsFailed]: dispatchSmsFailedEventSchema,
+  [RT.rideAnnounceRequested]: rideAnnounceRequestedEventSchema,
 } satisfies Record<keyof ServerToClientEvents, z.ZodType>;

@@ -91,6 +91,7 @@ describe('rideRequestBodySchema', () => {
       childSeat: false,
       femaleDriver: false,
       pickupPin: false,
+      announceArrival: false,
     });
     expect(parsed.vehicleCount).toBe(1);
   });
@@ -181,6 +182,7 @@ describe('rideQuoteBodySchema', () => {
       childSeat: false,
       femaleDriver: false,
       pickupPin: false,
+      announceArrival: false,
     });
   });
 
@@ -251,7 +253,37 @@ describe('rideOptionsSchema.pickupPin (#258)', () => {
   it('parses a legacy options object with no pickupPin to false, never undefined (edge)', () => {
     expect(
       rideOptionsSchema.parse({ childSeat: true, femaleDriver: false }),
-    ).toEqual({ childSeat: true, femaleDriver: false, pickupPin: false });
+    ).toEqual({
+      childSeat: true,
+      femaleDriver: false,
+      pickupPin: false,
+      announceArrival: false,
+    });
+  });
+});
+
+describe('rideOptionsSchema.announceArrival (#259)', () => {
+  it('defaults to off, and carries an opt-in (expected)', () => {
+    expect(rideOptionsSchema.parse({}).announceArrival).toBe(false);
+    expect(
+      rideOptionsSchema.parse({ announceArrival: true }).announceArrival,
+    ).toBe(true);
+  });
+
+  it('parses a legacy options object with no announceArrival to false (edge)', () => {
+    expect(
+      rideOptionsSchema.parse({
+        childSeat: false,
+        femaleDriver: false,
+        pickupPin: true,
+      }).announceArrival,
+    ).toBe(false);
+  });
+
+  it('refuses a non-boolean (failure)', () => {
+    expect(
+      rideOptionsSchema.safeParse({ announceArrival: 'yes' }).success,
+    ).toBe(false);
   });
 });
 

@@ -48,6 +48,39 @@ export class RideLifecycleRepository {
     return row;
   }
 
+  /**
+   * What the arrival-announce request checks (#259): ownership, the flag, the
+   * status and the driver. `request` is jsonb and comes back RAW: the service
+   * parses it (never casts it, `ride-row.ts`) only after the owner check, so a
+   * row that no longer parses still answers a stranger 404 (PR #293 F5). A
+   * legacy row without the key parses to `false`.
+   */
+  async findAnnounceTarget(rideId: string): Promise<
+    | {
+        id: string;
+        orderId: string;
+        status: RideStatus;
+        riderId: string;
+        driverId: string | null;
+        request: unknown;
+      }
+    | undefined
+  > {
+    const [row] = await this.db
+      .select({
+        id: rides.id,
+        orderId: rides.orderId,
+        status: rides.status,
+        riderId: rides.riderId,
+        driverId: rides.driverId,
+        request: rides.request,
+      })
+      .from(rides)
+      .where(eq(rides.id, rideId))
+      .limit(1);
+    return row;
+  }
+
   /** The rider's phone and display name, for `toDriverRide` (#261). */
   async findRiderIdentity(
     riderId: string,

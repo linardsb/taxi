@@ -32,7 +32,7 @@ export function GateScreen() {
   }, [wrongRole, signOut]);
 
   if (wrongRole) {
-    // `Banner` announces on iOS and is a live region on Android, so the reason
+    // `Banner` announces its text on both platforms (#259 T0), so the reason
     // is spoken before the sign-out redirects away from it.
     return (
       <Screen>

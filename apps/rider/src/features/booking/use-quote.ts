@@ -48,14 +48,13 @@ export function useQuote(
       })
       .catch((e: unknown) => {
         const err = e instanceof ApiError ? e : null;
+        // Not announced: `/book`'s quote-failed Banner speaks the api's own
+        // cause, on both platforms since #259 T0 (P7).
         dispatch({
           type: 'quoteFailed',
           code: err?.code ?? 'generic',
           requestId,
         });
-        AccessibilityInfo.announceForAccessibility(
-          t('rider.a11y.quote_failed'),
-        );
       });
     // NO cleanup flag here, deliberately. `shouldQuote` flips to false the
     // instant this effect dispatches `quoteRequested`, so an effect-scoped

@@ -23,7 +23,12 @@ const BODY = {
   },
   stops: [],
   category: 'standard',
-  options: { childSeat: false, femaleDriver: false, pickupPin: false },
+  options: {
+    childSeat: false,
+    femaleDriver: false,
+    pickupPin: false,
+    announceArrival: false,
+  },
   paymentMethod: 'cash',
   vehicleCount: 1,
 } as unknown as DispatcherBookingBody;

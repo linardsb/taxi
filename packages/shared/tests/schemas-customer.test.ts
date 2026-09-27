@@ -37,6 +37,7 @@ describe('dispatcherBookingBodySchema', () => {
       childSeat: false,
       femaleDriver: false,
       pickupPin: false,
+      announceArrival: false,
     });
     expect(parsed.dispatcherNote).toBeNull();
   });

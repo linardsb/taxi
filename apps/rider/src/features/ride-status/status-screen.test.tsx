@@ -1,4 +1,5 @@
 import {
+  act,
   render,
   screen,
   userEvent,
@@ -28,7 +29,9 @@ const mockStatus = {
   stillSearching: false,
   connected: true,
   joined: true,
+  linkAttempted: true,
   pickupPin: null as string | null,
+  announceArrival: false,
 };
 jest.mock('./use-ride-status', () => ({
   useRideStatus: () => mockStatus,
@@ -57,7 +60,9 @@ describe('StatusScreen', () => {
       stillSearching: false,
       connected: true,
       joined: true,
+      linkAttempted: true,
       pickupPin: null,
+      announceArrival: false,
     });
     announce = jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
@@ -174,6 +179,177 @@ describe('StatusScreen', () => {
     Object.assign(mockStatus, { connected: true, joined: false });
     await render(<StatusScreen />);
     expect(screen.getByText(t('rider.status.reconnecting'))).toBeTruthy();
+  });
+
+  describe('the first frame speaks nothing false (PR #293 F1)', () => {
+    // The hook's first frame, before any read or join has come back.
+    const FIRST_FRAME = {
+      status: null,
+      connected: false,
+      joined: false,
+      linkAttempted: false,
+    };
+    const spoken = () => announce.mock.calls.map(([text]: [string]) => text);
+
+    it('opening at arrived speaks only the arrival line (failure — T24)', async () => {
+      Object.assign(mockStatus, FIRST_FRAME);
+      const { rerender } = await render(<StatusScreen />);
+      Object.assign(mockStatus, {
+        status: 'arrived',
+        connected: true,
+        joined: true,
+        linkAttempted: true,
+      });
+      await rerender(<StatusScreen />);
+
+      expect(spoken()).toEqual([t('rider.status.arrived')]);
+    });
+
+    it('opening at requested still speaks the search line once (edge — the text does not change)', async () => {
+      Object.assign(mockStatus, FIRST_FRAME);
+      const { rerender } = await render(<StatusScreen />);
+      Object.assign(mockStatus, {
+        status: 'requested',
+        connected: true,
+        joined: true,
+        linkAttempted: true,
+      });
+      await rerender(<StatusScreen />);
+
+      expect(spoken()).toEqual([t('rider.status.searching')]);
+    });
+
+    it('a drop after a live link speaks the reconnecting line once (expected)', async () => {
+      Object.assign(mockStatus, { status: 'accepted' });
+      const { rerender } = await render(<StatusScreen />);
+      Object.assign(mockStatus, { connected: false, joined: false });
+      await rerender(<StatusScreen />);
+
+      const reconnecting = spoken().filter(
+        (x) => x === t('rider.status.reconnecting'),
+      );
+      expect(reconnecting).toHaveLength(1);
+    });
+
+    it('a first link that never comes up speaks the reconnecting line once (failure)', async () => {
+      Object.assign(mockStatus, FIRST_FRAME);
+      const { rerender } = await render(<StatusScreen />);
+      expect(spoken()).not.toContain(t('rider.status.reconnecting'));
+
+      Object.assign(mockStatus, { linkAttempted: true });
+      await rerender(<StatusScreen />);
+
+      const reconnecting = spoken().filter(
+        (x) => x === t('rider.status.reconnecting'),
+      );
+      expect(reconnecting).toHaveLength(1);
+    });
+  });
+
+  describe('asking the driver to call out (#259)', () => {
+    const button = () =>
+      screen.queryByRole('button', {
+        name: t('rider.status.request_announce'),
+      });
+    const spoken = (text: string) =>
+      announce.mock.calls.filter(([s]: [string]) => s === text).length;
+
+    it('a flagged ride at arrived offers the button; pressing it POSTs and says sent (expected)', async () => {
+      Object.assign(mockStatus, { status: 'arrived', announceArrival: true });
+      mockRequest.mockResolvedValue({ ok: true });
+      await render(<StatusScreen />);
+
+      expect(button()!.props.accessibilityHint).toBe(
+        t('rider.status.request_announce_hint'),
+      );
+      await userEvent.press(button()!);
+
+      await screen.findByTestId('announce-sent');
+      expect(mockRequest).toHaveBeenCalledWith(
+        'POST',
+        `/rides/${RIDE_ID}/announce-request`,
+      );
+      expect(spoken(t('rider.status.announce_sent'))).toBe(1);
+      // The arrival line is untouched: still the one status announcement.
+      expect(screen.getByTestId('status-line')).toHaveTextContent(
+        t('rider.status.arrived'),
+      );
+    });
+
+    it.each([
+      ['arriving', true],
+      ['arrived', false],
+    ] as const)(
+      'no button at %s with the flag %s (edge — D3)',
+      async (status, announceArrival) => {
+        Object.assign(mockStatus, { status, announceArrival });
+        await render(<StatusScreen />);
+        expect(button()).toBeNull();
+      },
+    );
+
+    it('the result goes once the ride leaves arrived (edge)', async () => {
+      Object.assign(mockStatus, { status: 'arrived', announceArrival: true });
+      mockRequest.mockResolvedValue({ ok: true });
+      const { rerender } = await render(<StatusScreen />);
+      await userEvent.press(button()!);
+      await screen.findByTestId('announce-sent');
+
+      Object.assign(mockStatus, { status: 'in_progress' });
+      await rerender(<StatusScreen />);
+
+      expect(screen.queryByTestId('announce-sent')).toBeNull();
+      expect(button()).toBeNull();
+    });
+
+    it.each([
+      [
+        new ApiError(429, 'too_many_requests', 12),
+        'rider.error.too_many_requests',
+      ],
+      [new ApiError(409, 'ride_not_arrived'), 'rider.error.ride_not_arrived'],
+      [new ApiError(0, 'offline'), 'rider.error.offline'],
+    ] as const)('a refusal says why — %s (failure)', async (error, key) => {
+      Object.assign(mockStatus, { status: 'arrived', announceArrival: true });
+      mockRequest.mockRejectedValue(error);
+      await render(<StatusScreen />);
+
+      await userEvent.press(button()!);
+
+      expect(await screen.findByTestId('announce-error')).toHaveTextContent(
+        t(key),
+      );
+    });
+
+    it('a second success, and a second 429, are each spoken again (edge — H3)', async () => {
+      Object.assign(mockStatus, { status: 'arrived', announceArrival: true });
+      /** Each press answers only when the test says, as a real round trip does. */
+      let answer!: () => void;
+      const next = (outcome: 'ok' | 'throttled') =>
+        mockRequest.mockImplementationOnce(
+          () =>
+            new Promise((resolve, reject) => {
+              answer = () =>
+                outcome === 'ok'
+                  ? resolve({ ok: true })
+                  : reject(new ApiError(429, 'too_many_requests', 9));
+            }),
+        );
+      const press = async (outcome: 'ok' | 'throttled') => {
+        next(outcome);
+        await userEvent.press(button()!);
+        await act(async () => answer());
+      };
+      await render(<StatusScreen />);
+
+      await press('ok');
+      await press('ok');
+      await press('throttled');
+      await press('throttled');
+
+      expect(spoken(t('rider.status.announce_sent'))).toBe(2);
+      expect(spoken(t('rider.error.too_many_requests'))).toBe(2);
+    });
   });
 
   it('cancels with a null reason and returns to booking (expected)', async () => {

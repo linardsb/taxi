@@ -1,4 +1,5 @@
 import {
+  announcePushDataSchema,
   offerPushDataSchema,
   rideOfferEventSchema,
   type RideOfferEvent,
@@ -18,6 +19,8 @@ export type NotificationRoute =
       offerId: string | null;
       rideId: string | null;
     }
+  /** The rider asked the driver to call out (#259); `at` dedupes the legs. */
+  | { kind: 'announce'; rideId: string; at: string }
   | { kind: 'gate' };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -25,6 +28,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** Pure: notification `data` (strings only, Expo forwards them verbatim) → route. */
 export function routeNotification(data: unknown): NotificationRoute {
+  if (isRecord(data) && data.kind === announcePushDataSchema.shape.kind.value) {
+    // No partial routing here: without a valid `at` the request cannot be
+    // deduped, and the gate's re-read replays it anyway.
+    const envelope = announcePushDataSchema.safeParse(data);
+    return envelope.success
+      ? { kind: 'announce', rideId: envelope.data.rideId, at: envelope.data.at }
+      : { kind: 'gate' };
+  }
   // The literal comes off the SHARED schema, not a copy of it: the gate runs
   // before the parse, so a bare `'offer'` here would still compile after the
   // envelope's `kind` changed — and every offer push would fall to the gate.

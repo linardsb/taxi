@@ -11,6 +11,7 @@ import {
   type RideStatus,
   type RideStatusEvent,
 } from '@taxi/shared';
+import { announceNotice, clearStaleAnnounce } from './arrival-announce';
 
 export type Ended =
   | { kind: 'released' | 'cancelled'; reason: string | null }
@@ -29,7 +30,13 @@ export interface ActiveRideState {
   loading: boolean;
   /** A step is in flight — the primary button spins and ignores taps. */
   busy: boolean;
-  notice: 'payment_changed' | null;
+  notice: 'payment_changed' | 'announce_requested' | null;
+  /**
+   * The newest rider request heard (#259), from any of its three legs. Kept
+   * across a same-ride re-open so a push tap cannot fire the notice twice;
+   * reset only by opening another ride.
+   */
+  lastAnnounceAt: string | null;
   ended: Ended | null;
   errorCode: string | null;
   /** The socket said `completed` before the REST answer; a re-read owes the receipt. */
@@ -52,6 +59,7 @@ export const initialActiveRide: ActiveRideState = {
   loading: false,
   busy: false,
   notice: null,
+  lastAnnounceAt: null,
   ended: null,
   errorCode: null,
   awaitingReceipt: false,
@@ -79,6 +87,8 @@ export type ActiveRideEvent =
   | { type: 'foreground' }
   | { type: 'reload_pressed' }
   | { type: 'notice_dismissed' }
+  /** The rider asked the driver to call out (#259): socket or push. */
+  | { type: 'announce_requested'; rideId: string; at: string }
   | { type: 'dismissed' };
 
 export type ActiveRideEffect =
@@ -93,7 +103,19 @@ export type ActiveRideEffect =
   | { type: 'post_complete'; rideId: string }
   | { type: 'route_ride' }
   | { type: 'route_home' }
-  | { type: 'announce'; key: MessageKey };
+  | { type: 'haptic' }
+  /**
+   * The one speaker for its event (#259 T0): the screen's Banner showing the
+   * same text is silent, because this runs app-wide and the Banner only while
+   * `/active-ride` is mounted. `method` and `reason` make it say the Banner's
+   * exact text.
+   */
+  | {
+      type: 'announce';
+      key: MessageKey;
+      method?: PaymentMethodType;
+      reason?: string | null;
+    };
 
 export interface ActiveRideDecision {
   state: ActiveRideState;
@@ -178,6 +200,14 @@ export function decide(
   state: ActiveRideState,
   event: ActiveRideEvent,
 ): ActiveRideDecision {
+  const next = decideEvent(state, event);
+  return { ...next, state: clearStaleAnnounce(next.state) };
+}
+
+function decideEvent(
+  state: ActiveRideState,
+  event: ActiveRideEvent,
+): ActiveRideDecision {
   switch (event.type) {
     case 'open': {
       const expected = event.expectedPaymentMethod ?? null;
@@ -227,24 +257,36 @@ export function decide(
       if (isCancelled(ride.status)) {
         return {
           state: { ...base, ended: { kind: 'cancelled', reason: null } },
-          effects: [{ type: 'announce', key: 'driver.ride.cancelled' }],
+          effects: [
+            { type: 'announce', key: 'driver.ride.cancelled', reason: null },
+          ],
         };
       }
       // Active. The one-time payment-method comparison (R2).
-      if (
+      const active: ActiveRideDecision =
         state.expectedPaymentMethod !== null &&
         ride.paymentMethod !== state.expectedPaymentMethod
-      ) {
-        return {
-          state: {
-            ...base,
-            expectedPaymentMethod: null,
-            notice: 'payment_changed',
-          },
-          effects: [{ type: 'announce', key: 'driver.ride.payment_changed' }],
-        };
-      }
-      return noop({ ...base, expectedPaymentMethod: null });
+          ? {
+              state: {
+                ...base,
+                expectedPaymentMethod: null,
+                notice: 'payment_changed',
+              },
+              effects: [
+                {
+                  type: 'announce',
+                  key: 'driver.ride.payment_changed',
+                  method: ride.paymentMethod,
+                },
+              ],
+            }
+          : noop({ ...base, expectedPaymentMethod: null });
+      // The replay leg (#259): a request missed while backgrounded.
+      const at = ride.announceRequestedAt;
+      return (
+        (at && announceNotice(active.state, ride.id, at, active.effects)) ||
+        active
+      );
     }
 
     case 'load_failed':
@@ -376,7 +418,13 @@ export function decide(
             ride: { ...state.ride, status: s },
             ended: { kind: 'cancelled', reason: e.reason },
           },
-          effects: [{ type: 'announce', key: 'driver.ride.cancelled' }],
+          effects: [
+            {
+              type: 'announce',
+              key: 'driver.ride.cancelled',
+              reason: e.reason,
+            },
+          ],
         };
       }
       if (s === 'completed' || s === 'settled') {
@@ -430,6 +478,9 @@ export function decide(
 
     case 'notice_dismissed':
       return noop({ ...state, notice: null });
+
+    case 'announce_requested':
+      return announceNotice(state, event.rideId, event.at) ?? noop(state);
 
     case 'dismissed':
       return { state: initialActiveRide, effects: [{ type: 'route_home' }] };

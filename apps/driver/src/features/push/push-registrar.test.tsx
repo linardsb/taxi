@@ -36,6 +36,9 @@ jest.mock('@/features/auth', () => ({
 }));
 
 const mockOpen = jest.fn();
+const mockAnnounceRequested = jest.fn();
+/** What `ActiveRideProvider` holds; `rideId` truthy = a ride on this phone. */
+let mockRideState: { rideId: string | null } = { rideId: null };
 // PARTIAL, not a replacement: this file imports the `@/features/offers`
 // barrel, which loads `offer-card-props.ts` → the real `paymentMethodLabel`
 // and `pctLabel` (F14 — they live in active-ride now). A full replacement
@@ -45,7 +48,11 @@ jest.mock('@/features/active-ride', () => ({
   ...jest.requireActual<typeof import('@/features/active-ride')>(
     '@/features/active-ride',
   ),
-  useActiveRide: () => ({ open: mockOpen, state: {} }),
+  useActiveRide: () => ({
+    open: mockOpen,
+    state: mockRideState,
+    announceRequested: mockAnnounceRequested,
+  }),
 }));
 
 const mockListeners: RuntimeListener[] = [];
@@ -141,6 +148,7 @@ describe('PushRegistrar tap routing (#15)', () => {
     mockListeners.length = 0;
     ctx = null;
     tap = null;
+    mockRideState = { rideId: null };
     mockRequest.mockResolvedValue(undefined);
     jest
       .mocked(Notifications.addNotificationResponseReceivedListener)
@@ -225,5 +233,90 @@ describe('PushRegistrar tap routing (#15)', () => {
         pct: '85',
       }),
     );
+  });
+});
+
+describe('PushRegistrar announce routing (#259)', () => {
+  const AT = '2026-09-27T10:00:00.000Z';
+  const announceData = (rideId = RIDE_ID) => ({
+    kind: 'announce_requested',
+    rideId,
+    at: AT,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    tap = null;
+    mockRideState = { rideId: null };
+    mockRequest.mockResolvedValue(undefined);
+    jest
+      .mocked(Notifications.addNotificationResponseReceivedListener)
+      .mockImplementation((listener) => {
+        tap = listener;
+        return {
+          remove: jest.fn(),
+        } as unknown as Notifications.EventSubscription;
+      });
+  });
+
+  it('a warm tap hands the request over and opens the held ride (expected — round 2 H1)', async () => {
+    mockRideState = { rideId: RIDE_ID };
+    await mount();
+
+    await tapWith(announceData());
+
+    expect(mockAnnounceRequested).toHaveBeenCalledWith(RIDE_ID, AT);
+    expect(router.navigate).toHaveBeenCalledWith('/active-ride');
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('a stale tray entry for another ride still lands on the held one (edge)', async () => {
+    mockRideState = { rideId: 'another-ride' };
+    await mount();
+
+    await tapWith(announceData());
+
+    expect(mockAnnounceRequested).toHaveBeenCalledWith(RIDE_ID, AT);
+    expect(router.navigate).toHaveBeenCalledWith('/active-ride');
+  });
+
+  it('a cold-start tap goes through the gate, which opens the ride and replays it (edge — round 1 M1)', async () => {
+    await mount();
+
+    await tapWith(announceData());
+
+    expect(mockAnnounceRequested).toHaveBeenCalledWith(RIDE_ID, AT);
+    expect(router.replace).toHaveBeenCalledWith('/');
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('reads the ride held NOW, not at first render (failure — the ref)', async () => {
+    const tree = (
+      <OffersProvider>
+        <PushRegistrar />
+      </OffersProvider>
+    );
+    const { rerender } = await render(tree);
+    await waitFor(() => expect(tap).not.toBeNull());
+
+    mockRideState = { rideId: RIDE_ID };
+    await rerender(
+      <OffersProvider>
+        <PushRegistrar />
+      </OffersProvider>,
+    );
+    await tapWith(announceData());
+
+    expect(router.navigate).toHaveBeenCalledWith('/active-ride');
+  });
+
+  it('a malformed announce push goes to the gate without a dispatch (failure)', async () => {
+    mockRideState = { rideId: RIDE_ID };
+    await mount();
+
+    await tapWith({ kind: 'announce_requested', rideId: RIDE_ID });
+
+    expect(mockAnnounceRequested).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith('/');
   });
 });

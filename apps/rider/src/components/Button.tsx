@@ -24,6 +24,8 @@ export interface ButtonProps {
    */
   accessibilityRole?: 'button' | 'switch';
   accessibilityState?: AccessibilityState;
+  /** What pressing it does, when the label alone does not say (#259). */
+  accessibilityHint?: string;
   /** `lg` is the 56 px Book button; `md` is the 44 px minimum everywhere else. */
   size?: 'md' | 'lg';
   testID?: string;
@@ -45,6 +47,7 @@ export function Button({
   loading = false,
   accessibilityRole = 'button',
   accessibilityState,
+  accessibilityHint,
   size = 'md',
   testID,
 }: ButtonProps) {
@@ -57,6 +60,7 @@ export function Button({
       testID={testID}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{
         disabled: isDisabled,
         busy: loading,

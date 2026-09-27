@@ -12,11 +12,14 @@ import { ApiError } from '@/features/auth';
 import { SearchSheet } from './search-sheet';
 
 const mockRequest = jest.fn();
+// One object, as the real session's memoised client is: a fresh `api` per
+// render re-fires the search effect on every re-render (#259 T0 P6's hole 2).
+const mockApi = { request: mockRequest };
 jest.mock('@/features/auth', () => ({
   ...jest.requireActual<typeof import('@/features/auth')>('@/features/auth'),
   useSession: () => ({
     state: { status: 'signedOut', session: null },
-    api: { request: mockRequest },
+    api: mockApi,
     signIn: jest.fn(),
     signOut: jest.fn(),
     onBeforeSignOut: jest.fn(),
@@ -221,6 +224,101 @@ describe('SearchSheet', () => {
     });
     await type('Brīvības iela 45');
     expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  describe('the 429 countdown is spoken once (#259 T0 P6)', () => {
+    let announce: jest.SpyInstance;
+    beforeEach(() => {
+      // The RN preset's own `jest.fn`: `spyOn` hands back the same mock, with
+      // every earlier test's calls still on it.
+      announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation();
+      announce.mockClear();
+    });
+    afterEach(() => announce.mockRestore());
+    /** What was spoken, minus the status line's own «min chars» / «Meklē…». */
+    const spoken = () =>
+      announce.mock.calls
+        .map(([text]: [string]) => text)
+        .filter(
+          (text) =>
+            text !== t('rider.book.min_chars', { count: 3 }) &&
+            text !== t('rider.book.searching'),
+        );
+
+    it('announces the wait once with the api`s seconds while the visible text ticks (edge)', async () => {
+      mockRequest.mockRejectedValueOnce(
+        new ApiError(429, 'too_many_requests', 5),
+      );
+      await render(<SearchSheet />);
+
+      await type('Brīvības');
+      await act(async () => {
+        jest.advanceTimersByTime(3000);
+      });
+
+      const tail = (seconds: number) =>
+        `${t('rider.error.too_many_requests')} ${t('rider.book.retry_in', {
+          seconds,
+        })}`;
+      expect(screen.getByText(tail(2))).toBeTruthy();
+      expect(spoken()).toEqual([tail(5)]);
+
+      await act(async () => {
+        jest.advanceTimersByTime(5000);
+      });
+      expect(spoken()).toEqual([tail(5)]);
+    });
+
+    it('a later error inside the cooldown speaks once, with no ticking suffix (failure — round 2 M1, hole 1)', async () => {
+      (router.useLocalSearchParams as jest.Mock).mockReturnValue({
+        field: 'pickup',
+      });
+      (
+        Location.requestForegroundPermissionsAsync as jest.Mock
+      ).mockResolvedValue({ status: 'denied' });
+      mockRequest.mockRejectedValueOnce(
+        new ApiError(429, 'too_many_requests', 5),
+      );
+      await render(<SearchSheet />);
+      await type('Brīvības');
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+
+      await fireEvent.press(
+        screen.getByRole('button', {
+          name: t('rider.book.use_current_location'),
+        }),
+      );
+      await screen.findByText(t('rider.book.location_unavailable'));
+      await act(async () => {
+        jest.advanceTimersByTime(3000);
+      });
+
+      expect(spoken()).toEqual([
+        `${t('rider.error.too_many_requests')} ${t('rider.book.retry_in', {
+          seconds: 5,
+        })}`,
+        t('rider.book.location_unavailable'),
+      ]);
+    });
+
+    it('a 429 with no seconds is an ordinary error Banner, spoken once (failure — round 2 M1, hole 2)', async () => {
+      // A body that fails `apiErrorBodySchema` reaches the app as `generic`
+      // with no `retryAfterSeconds` (`auth/api-client.ts`).
+      mockRequest.mockRejectedValueOnce(new ApiError(429, 'generic'));
+      await render(<SearchSheet />);
+
+      await type('Brīvības');
+      await screen.findByText(t('rider.error.generic'));
+      await act(async () => {
+        jest.advanceTimersByTime(3000);
+      });
+
+      expect(spoken()).toEqual([t('rider.error.generic')]);
+    });
   });
 
   it('speaks the result count on iOS, where a live region says nothing (a11y — H4)', async () => {

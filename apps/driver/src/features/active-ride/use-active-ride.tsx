@@ -5,6 +5,7 @@ import {
   type DriverRide,
   type PaymentMethodType,
 } from '@taxi/shared';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import {
   createContext,
@@ -28,6 +29,7 @@ import {
   type ActiveRideEvent,
   type ActiveRideState,
 } from './active-ride-state';
+import { paymentMethodLabel } from './receipt';
 
 export interface ActiveRideContextValue {
   state: ActiveRideState;
@@ -40,6 +42,11 @@ export interface ActiveRideContextValue {
   step(pin?: string): void;
   reload(): void;
   dismissNotice(): void;
+  /**
+   * The rider asked the driver to call out (#259) — the push leg's way in.
+   * Stable across renders: the push registrar's handler effect depends on it.
+   */
+  announceRequested(rideId: string, at: string): void;
   /** The done / back-to-home button on an ended ride. */
   dismiss(): void;
 }
@@ -157,9 +164,24 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
       case 'route_home':
         router.replace('/home');
         return;
-      case 'announce':
-        AccessibilityInfo.announceForAccessibility(tRef.current(effect.key));
+      case 'haptic':
+        // Best-effort, as the offer card's: a haptics failure never reaches React.
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Warning,
+        ).catch(() => undefined);
         return;
+      case 'announce': {
+        // The Banner's own expressions, so the one speaker says what it shows.
+        const t = tRef.current;
+        AccessibilityInfo.announceForAccessibility(
+          effect.method
+            ? t(effect.key, { method: paymentMethodLabel(effect.method, t) })
+            : effect.reason !== undefined
+              ? t(effect.key, { reason: effect.reason ?? '' }).trim()
+              : t(effect.key),
+        );
+        return;
+      }
     }
   };
   useEffect(() => {
@@ -196,13 +218,27 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
         if (me)
           dispatch({ type: 'assigned', event: parsed.data, myDriverId: me });
       };
+      const onAnnounce = (payload: unknown) => {
+        const parsed =
+          RT_EVENT_SCHEMAS[RT.rideAnnounceRequested].safeParse(payload);
+        if (!parsed.success) {
+          console.warn(
+            'ride:announce_requested dropped',
+            parsed.error.issues[0]?.message,
+          );
+          return;
+        }
+        dispatch({ type: 'announce_requested', ...parsed.data });
+      };
       const onConnect = () => dispatch({ type: 'socket_connected' });
       socket.on(RT.rideStatus, onStatus);
       socket.on(RT.rideAssigned, onAssigned);
+      socket.on(RT.rideAnnounceRequested, onAnnounce);
       socket.on('connect', onConnect);
       detach = () => {
         socket.off(RT.rideStatus, onStatus);
         socket.off(RT.rideAssigned, onAssigned);
+        socket.off(RT.rideAnnounceRequested, onAnnounce);
         socket.off('connect', onConnect);
       };
     };
@@ -246,10 +282,23 @@ export function ActiveRideProvider({ children }: { children: ReactNode }) {
     () => dispatch({ type: 'dismissed' }),
     [dispatch],
   );
+  const announceRequested = useCallback(
+    (rideId: string, at: string) =>
+      dispatch({ type: 'announce_requested', rideId, at }),
+    [dispatch],
+  );
 
   const value = useMemo<ActiveRideContextValue>(
-    () => ({ state, open, step, reload, dismissNotice, dismiss }),
-    [state, open, step, reload, dismissNotice, dismiss],
+    () => ({
+      state,
+      open,
+      step,
+      reload,
+      dismissNotice,
+      announceRequested,
+      dismiss,
+    }),
+    [state, open, step, reload, dismissNotice, announceRequested, dismiss],
   );
   return (
     <ActiveRideContext.Provider value={value}>

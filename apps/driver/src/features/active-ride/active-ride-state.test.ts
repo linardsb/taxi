@@ -110,8 +110,10 @@ describe('decide — open and load', () => {
     });
     expect(first.state.notice).toBe('payment_changed');
     expect(first.state.expectedPaymentMethod).toBeNull();
+    // The effect carries the method so it speaks the Banner's exact text:
+    // the Banner is silent (#259 T0 P1).
     expect(first.effects).toEqual([
-      { type: 'announce', key: 'driver.ride.payment_changed' },
+      { type: 'announce', key: 'driver.ride.payment_changed', method: 'card' },
     ]);
 
     // A reconnect re-reads the same ride: no second notice.
@@ -391,6 +393,28 @@ describe('decide — ride:status reconciliation', () => {
       kind: 'cancelled',
       reason: 'changed plans',
     });
+    // The effect speaks the Banner's text, reason included (#259 T0 P3).
+    expect(cancelled.effects).toEqual([
+      {
+        type: 'announce',
+        key: 'driver.ride.cancelled',
+        reason: 'changed plans',
+      },
+    ]);
+  });
+
+  it('a cancellation found by a re-read announces with no reason (edge — #259 T0 P3)', () => {
+    const opened = decide(initialActiveRide, {
+      type: 'open',
+      rideId: RIDE_ID,
+    }).state;
+    const read = decide(opened, {
+      type: 'loaded',
+      ride: ride({ status: 'cancelled_by_dispatcher' }),
+    });
+    expect(read.effects).toEqual([
+      { type: 'announce', key: 'driver.ride.cancelled', reason: null },
+    ]);
   });
 
   it('ignores a status for another ride (edge)', () => {
