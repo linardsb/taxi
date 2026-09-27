@@ -57,6 +57,24 @@ The issue says no rider has a name. That is **half wrong**, and the plan correct
 - **D6: `204`, no echo.** The app sends a value it has already run through `displayNameSchema` (the same parse the api runs), so it stores that value. That keeps `RidersController`'s rule, "nothing here reads" (`riders.controller.ts:16-17`), true.
 - **D7: no `GET /riders/me`.** The session already carries `user.displayName`. `toUser` (`auth/auth.repository.ts:21-29`) puts it into every OTP verify response. The stale case is accepted and documented: Dina fills an empty name while the app shows «nav norādīts». It corrects itself at the next sign-in, or when the rider saves their own name, which wins. See Q1.
 
+## De-risking runs (planning time, 2026-09-27, all reverted)
+
+Every task below was spiked in a scratch worktree on `origin/main` at `170c4b1`, run, and then reverted. The spike diff was kept outside the repo. Each row is `observed` from that run.
+
+| # | Risk | Run | Result |
+|---|---|---|---|
+| R1 | `lv.ts` split is not a pure move | #259's T1 script (docblock set to #269), with #259's hash command run before and after | **345 keys, `a43374cb71b05908` before and after.** `lv.ts` 495 → 395 lines, `lv-rider.ts` 109. Retired. |
+| R2 | catalog files pass 500 after the keys | T4's 11 keys in all three catalogs, then `npx eslint --fix` (prettier wraps the long hints) | `lv.ts` 396, `lv-rider.ts` 120, `en.ts` 394, `ru.ts` 401. All under 500. Retired. |
+| R3 | T2/T3/T5 contract and tests | spike of T2, T3 and T5's test file; `@taxi/shared` typecheck, lint, test and build | Green: **30 files, 284 tests.** `dist/schemas/user.d.ts` contains `displayNameSchema`. `\P{Cc}` with `u` works under zod 3.24 (the `'An\u0000na'` and `'An\nna'` cases fail parse). Retired. |
+| R4 | session outgrows SecureStore | probe spec: real OTP sign-in → `PUT` 120 × `'中'` → sign in again → `Buffer.byteLength(JSON.stringify(session))` | **409 bytes with no name, 786 with 120 × `'中'`, 666 with 60 × `'𝒜'`** (JWT is 208 chars). +377 matches the derived figure in Notes. Expo documents no enforced limit and cites a historical iOS ceiling of "roughly 2048 bytes" ([docs](https://docs.expo.dev/versions/latest/sdk/securestore/), fetched 2026-09-27), so the worst case uses 38 % of it. Retired. |
+| R5 | the route or pipe does not do what D6 says | probe spec against T6's route | `'  Anna  '` → 204 with body `{}`, stored `Anna`. `'   '`, 121 × `x` and `'An\u0000na'` → 400 with the stored value unchanged. `null` → 204 and stored NULL. Driver token → 403, no token → 401. `ZodValidationPipe` returns `result.data` (`common/zod-validation.pipe.ts:26`). Retired. |
+| R6 | the conditional fill SQL is wrong, or a race lets Dina overwrite the rider | probe calling `CustomersRepository.fillEmptyDisplayName` directly, plus 20 rounds of `Promise.all([rider PUT, fill])` from NULL | fill NULL → `Dina`; second fill `Other` → still `Dina`; legacy `'  '` → filled `Anna`. **Rider's name survived 20/20 rounds.** Mutations: deleting the whole `or(...)` arm gives `Expected "Dina", Received "Other"` (the null-fill assertion before it stays green). Deleting only the `btrim` arm gives `Expected "Anna", Received "  "`. Retired. |
+| R7 | unlisted tests break | T6, T8, T9, T11 and T12 spiked; riders, customers, bookings, auth and driver-ride specs run | 7 failures, all expected: `bookings.integration.spec.ts:175` (T10 rewrites it), four in `bookings.service.spec.ts` (`fillEmptyDisplayName is not a function`, fixed by T9's mock), and **`customers.service.spec.ts:68` and `:110`, which the first draft missed** (the lookup `toEqual` gains `displayName`; now in T11). After T11/T12: auth + driver-ride + ride-read give 10 suites, 100 tests, green, and `driver-ride.spec.ts` needed no edits. A blank stored name is in the session before T11 (`"displayName":"   "`) and absent after it. Retired. |
+| R8 | RNTL 14 tests for the rider slice | T13, T14 and T15 spiked with the tests in T14 | `@taxi/rider` typecheck and lint clean. **34 suites, 188 tests passed.** The `_old` rest binding lints clean. Mutation: sending the untrimmed text turns the expected test red (1 failed / 6). `booking-screen.test.tsx` and `accessibility.test.tsx` needed no edits. The one `● Console` "overlapping act()" warning is from `use-saved-places.test.tsx` and is also printed on `170c4b1` without the spike. Retired. |
+| R9 | dispatch fixtures | T16 spiked | `@taxi/dispatch` typecheck red until **two** literal `CallerLookup` fixtures gain `displayName: null` (`caller-panel.test.tsx:15` and `use-booking-form.test.tsx:29`). `booking-api.test.ts:64`'s `toEqual` gains `displayName: null` from the schema default. After those: 6 files, 57 tests, green except that one assertion, which T16 now lists. Retired. |
+
+Not run at planning time: the full turbo gate over the finished diff (T18), and Level 4 step 5 (TalkBack on the emulator). Both are validation of the finished work. Every component they exercise ran above.
+
 ## Out of Scope / Non-Goals
 
 - Not included: showing the name to Dina on the live board or ride card. #261's Q1 said no; this ticket adds it only to the caller-lookup panel, at booking time.
@@ -236,7 +254,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
 
 - **IMPLEMENT**: `git show origin/main:packages/shared/src/i18n/lv-rider.ts`. If it exists, #259's T1 has landed: skip this task and put the rider keys in `lv-rider.ts` in T4. If it does not, run #259's T1 script **verbatim** (`.claude/plans/arrival-announce-protocol-259.md:375-387`) from `packages/shared/src/i18n`.
 - **GOTCHA**:
-  - This ticket adds 11 `lv` keys (T4: 10 rider, 1 console). Derived, assuming one line per key: 495 + 11 = 506 > 500, so the split is required even without #135.
+  - This ticket adds 11 `lv` keys (T4: 10 rider, 1 console). Derived, assuming one line per key: 495 + 11 = 506 > 500, so the split is required even without #135. Observed in R1: the split takes `lv.ts` to 395 lines, and the hash must match before and after. At `170c4b1` both runs printed `345 a43374cb71b05908`; recompute on your base, since #135 or #259 may have added keys.
   - **#135 collides with this file.** It is on a local branch in the main checkout at `f2cc6c4`, not yet pushed, and adds 5 lines to `lv.ts` (`git diff --stat origin/main...f2cc6c4`, observed). Whichever of #135 and #269 lands second must rebase its `rider.*` keys into `lv-rider.ts`. Tell the #135 session (SendMessage, or a note in its PR) when this split is pushed.
   - The script's docblock says "split out of `lv.ts` when #259 pushed it past the 500-line cap". If #269 runs the script, change `#259` to `#269` in the generated `lv-rider.ts`, or the comment is false.
   - Prove the move is pure. Run #259's hash command (`:391`) before and after. The **two outputs must be identical**. Do not compare against #259's `344 2a276af52559cb83`, which is `d6deaa6`'s catalog; the key count has grown since.
@@ -316,7 +334,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
   | `rider.name.removed` | `Vārds noņemts` | `Имя удалено` | `Name removed` |
   | `console.caller_known_name` | `Vārds: {name}` | `Имя: {name}` | `Name: {name}` |
 
-  10 rider keys and 1 console key make 11 keys per catalog. The line count per catalog depends on how prettier wraps the long `rider.name.hint` values. Record it from T4's `wc -l` rather than predicting it. At `170c4b1`, `en.ts` has 382 lines and `ru.ts` 389 (observed), so even at 3 lines per key (33) both stay under 500.
+  10 rider keys and 1 console key make 11 keys per catalog. Prettier wraps the `rider.name.hint` values, so run `npx eslint --fix packages/shared/src/i18n` after inserting them. Observed in R2 after that: `lv.ts` 396, `lv-rider.ts` 120, `en.ts` 394, `ru.ts` 401.
 - **GOTCHA**: `packages/shared/tests/i18n.test.ts` checks parity. A key missing from one catalog fails there, and a `{name}` placeholder mismatch fails `formatMessage` typing. Cosmetic wording questions go to `.claude/references/ui-decisions.md`, not into this ticket.
 - **VALIDATE**: `pnpm --filter @taxi/shared test -- i18n` and `wc -l packages/shared/src/i18n/*.ts` (all ≤ 500)
 - **SATISFIES**: AC7, AC9
@@ -328,7 +346,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
   - **edge**: 120 × `'ā'` passes and 121 fails. `readDisplayName('   ')` → null, `readDisplayName(undefined)` → null, and a 130-char row reads back at 120. `callerLookupSchema.parse({...without displayName})` gives `displayName: null` (the default, so a new console still parses an old api).
   - **failure**: `'   '`, `''` and `'An\u0000na'` are each rejected by `displayNameSchema`.
   - Then run `pnpm --filter @taxi/shared build`. The apps import shared from `dist` (memory: CI parity gate).
-- **VALIDATE**: `pnpm --filter @taxi/shared test -- schemas-display-name && pnpm --filter @taxi/shared build && grep -c "displayNameSchema" packages/shared/dist/schemas/user.d.ts` (≥ 1; `tsc -p tsconfig.build.json` emits one `.d.ts` per source file, `package.json:15`)
+- **VALIDATE** (R3 observed the whole package green at 30 files / 284 tests): `pnpm --filter @taxi/shared test -- schemas-display-name && pnpm --filter @taxi/shared build && grep -c "displayNameSchema" packages/shared/dist/schemas/user.d.ts` (≥ 1; `tsc -p tsconfig.build.json` emits one `.d.ts` per source file, `package.json:15`)
 - **SATISFIES**: AC1, AC3
 
 ### T6 ADD `PUT /riders/me/display-name` (riders slice)
@@ -346,7 +364,8 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
 
 - **IMPLEMENT**: a new `describe('rider display name (#269)')` reusing `signIn` and `p()` (`+371310` range; use `p(5)` and up). Cases:
   - **expected**: `PUT {displayName: '  Anna  '}` → 204, empty body, stored `'Anna'`. Then `PUT {displayName: null}` → stored null.
-  - **edge (session size)**: `PUT` 120 × `'中'` (3 UTF-8 bytes each, the worst case the schema admits; see Notes). Then sign in again and assert `Buffer.byteLength(JSON.stringify(session)) < 2048`, where `session` is the parsed verify body the app stores. Log the actual figure in the test name or a comment when you record it in the report, as `observed`.
+  - **edge (session size)**: `PUT` 120 × `'中'` (3 UTF-8 bytes each, the worst case the schema admits; see Notes). Then sign in again and assert `Buffer.byteLength(JSON.stringify(session)) < 2048`, where `session` is the parsed verify body the app stores. R4 observed 786 bytes.
+  - **edge (legacy blank)**: `ctx.db.update(users).set({ displayName: '   ' })`, then sign in: the verify body's `user` has no `displayName` key (T11; R7 observed the key present before T11 and absent after).
   - **edge (rider wins)**: `ctx.db.update(users).set({ displayName: 'Dina' })`, then the rider's `PUT 'Anna'` → stored `'Anna'`.
   - **failure**: `'   '` → 400, and `'x'.repeat(121)` → 400, with the stored value unchanged in both. A driver token → 403. No token → 401 (mirror :105-119).
 - **VALIDATE**: `COMPOSE_PROJECT_NAME=taxi pnpm --filter @taxi/api exec jest src/features/riders`
@@ -429,6 +448,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
 
 - **IMPLEMENT**:
   - `lookup` returns `displayName: readDisplayName(user.displayName)` in the object at :66-71.
+  - `customers.service.spec.ts`: its `findUserByPhone` mock gains `displayName: null`, and the two lookup `toEqual`s at `:68` and `:110` gain `displayName: null` (R7: both go red without this). Add an **edge**: the mock returns `'  Anna '` and the lookup answers `'Anna'`.
   - `toUser` (:21-30), tested by a new **edge** in `auth/auth.integration.spec.ts` (a `'   '` stored name → the verify body's `user` has no `displayName`): replace `...(row.displayName ? { displayName: row.displayName } : {})` with `const name = readDisplayName(row.displayName)` and `...(name ? { displayName: name } : {})`. This means a legacy «  » name never reaches the rider's session as a blank row label, and an over-long one never fails `authSessionSchema` at sign-in.
 - **VALIDATE**: `COMPOSE_PROJECT_NAME=taxi pnpm --filter @taxi/api exec jest src/features/auth src/features/customers`
 - **SATISFIES**: AC3, AC6
@@ -496,7 +516,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
   - Uncontrolled field (#287). **No `value` prop.** A controlled field makes TalkBack speak «aizstāts» on every keystroke.
   - `toHaveTextContent` matches whole text (memory: RNTL 14).
   - Do not make the row's `Text` a separate accessible element. The `Pressable` is one stop.
-- **VALIDATE**: `pnpm --filter @taxi/rider test -- profile`
+- **VALIDATE**: `pnpm --filter @taxi/rider test -- profile`. R8 ran these exact three cases per file green, with the mutation red. The test shape that worked: `await render(...)`, then `fireEvent.changeText(screen.getByLabelText(label), …)` and `fireEvent.press(screen.getByRole('button', { name }))`, each inside `await act(async () => { … })`; `useSession` mocked through `jest.mock('@/features/auth', …)` with `requireActual`, as in `booking-screen.test.tsx:31-35`; `router.useRouter()` taken from `jest.requireMock('expo-router')`.
 - **SATISFIES**: AC4, AC7
 
 ### T15 ADD `/name` route and the row on `/book`
@@ -520,11 +540,11 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
     - **expected**: a lookup with `displayName: 'Anna'` shows «Vārds: Anna» and has no `#booking-caller-name` input.
     - **edge**: a lookup with `displayName: null` (an app-only rider) shows the input.
     - **failure**: a lookup that failed (`lookup === null`, `lookupState: 'failed'`) shows the input, so Dina can still type a name for a caller the api could not look up.
-  - Fixtures built with `callerLookupSchema.parse` get `displayName: null` by default (T3). Literal fixtures typed `CallerLookup` need the field added.
+  - Fixture updates (R9, observed): add `displayName: null` to the literal `LOOKUP` in `caller-panel.test.tsx:15` **and** `use-booking-form.test.tsx:29` (typecheck fails otherwise), and to the expected object in `booking-api.test.ts:64` (the schema default puts it in the parsed result).
 - **GOTCHA**:
   - A name Dina typed **before** the lookup resolved stays in `draft.callerName` and is still sent. The api ignores it, because the name is set (D2). That is harmless, and the panel now shows the name that will be used. Do not add clearing logic.
   - Run the single file with `npx vitest run --root apps/dispatch src/features/phone-orders/caller-panel.test.tsx` (memory: the `--filter … -- <name>` form runs all 28 files).
-- **VALIDATE**: `npx vitest run --root apps/dispatch src/features/phone-orders/caller-panel.test.tsx && pnpm --filter @taxi/dispatch typecheck lint`
+- **VALIDATE**: `npx vitest run --root apps/dispatch src/features/phone-orders/ && pnpm --filter @taxi/dispatch typecheck lint`. The whole folder, because of the fixture changes.
 - **SATISFIES**: AC6
 
 ### T17 UPDATE docs whose claims this ticket retires
@@ -532,7 +552,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
 - **IMPLEMENT**:
   - `.claude/plans/driver-ride-rider-identity.md`: add an AMENDMENTS entry, "2026-09-27 (#269): line 39 and D2's 'one writer … only caller passes `undefined`' was wrong at `bfca835`. `bookings.service.ts:45` passed `callerName`, so new phone callers were named. #269 replaces both writers with `fillEmptyDisplayName` and `PUT /riders/me/display-name`." Do not edit the historical body.
   - `services/api/src/features/rides/lifecycle/driver-ride.ts:27-30` is done in T12.
-  - `apps/rider/src/features/auth/session-store.ts:4`: replace "≈ 600 bytes" with the figure T7 observed plus the name's worst case, labelled (e.g. "observed N bytes with a 120-char name, T7 of #269"). Delete the figure if T7 did not print one.
+  - `apps/rider/src/features/auth/session-store.ts:4`: replace "≈ 600 bytes" with "observed 409 bytes, 786 with a worst-case 120-character name (#269 R4)". Re-run T7 and use its figures if they differ.
   - Grep for the retired subject, not the sentence: `grep -rn "only caller passes\|one writer\|never overwrites an existing" --include='*.ts' --include='*.md' . | grep -v node_modules/`. Fix every live source or docblock hit; plans get amendments only.
 - **VALIDATE**: the grep shows only amended plan text.
 - **SATISFIES**: AC10
@@ -659,7 +679,7 @@ If step 5's emulator is unavailable in the implementing session, record it as no
   - Rider `PUT` commits first: the conditional fill sees a non-null name and writes nothing. The rider's name stands.
   - Fill commits first: the rider's unconditional `PUT` overwrites it. The rider's name stands.
   - Postgres row locks serialise the two `UPDATE`s. Worst case: if the fill wins and the driver reads the ride before the rider's `PUT` commits, the driver's current copy shows Dina's name until the driver app next re-reads the ride. This plan did not check when that re-read happens.
-- **A2**: the 2048-byte SecureStore value limit is `expected` from Expo's docs, not observed. T7 measures the session and compares it with that figure. If the SDK 57 page states a different limit, use that.
+- **A2 (retired by R4)**: Expo enforces no limit and cites a historical iOS ceiling of roughly 2048 bytes. The observed worst case is 786.
 - **A3**: `textContentType="givenName"` nudges the iOS autofill to a first name. The rider can still type anything (D5).
 
 ## NOTES (open canvas)
@@ -674,10 +694,14 @@ If step 5's emulator is unavailable in the implementing session, record it as no
 
 **Rejected: storing the name on the device only** (like `pickup-pin-preference.ts`). The driver reads it server-side, so it has to be in `users`.
 
-**Confidence: 8/10** (`expected`). Risks:
-- T1's split collides with #259's implementation if both run at once. That is a coordination risk, not a code risk.
-- RNTL 14 async rough edges in T14.
-- The unknown SecureStore figure (A2).
+**Confidence: 10/10** for a one-pass implementation. Every task was spiked and run at planning time (R1-R9), and each spike was reverted. Each risk named in the first draft is retired by an observed run:
+- the split (R1, R2);
+- the SecureStore figure (R4);
+- RNTL 14 (R8).
+
+The spikes also found the three test files the first draft missed (R7, R9). What is left is coordination, not code: if #135 or #259 lands first, T1 changes from running the split to adding keys to `lv-rider.ts`, and that path is written into T1.
 
 ## AMENDMENTS
+
+- 2026-09-27: planning-time de-risking (R1-R9), all spiked and reverted. Added the three missed test files (`customers.service.spec.ts` in T11; `use-booking-form.test.tsx` and `booking-api.test.ts` in T16), the observed catalog line counts, the session sizes, the race and mutation results, and the RNTL test shape. Confidence went from 8 to 10.
 
