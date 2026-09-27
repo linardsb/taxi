@@ -23,7 +23,9 @@ Counts: 0 Critical · 0 High · 2 Medium · 3 Low.
 
 **Evidence (observed):** a throwaway vitest (deleted after) rendered `CallerPanel` inside `DialogShell`, focused `#booking-caller-name`, then re-rendered with `displayName: 'Anna'`. Output: `activeElement = BODY`, `inDialog = false`, and `onClose` called 0 times after an Escape keydown on the active element.
 
-**Fix:** keep one `<input>` mounted and, when a name is known, render it `readOnly` with `value={knownName}` and the «Vārds: …» label. Focus stays put and a screen reader announces it as read-only. Alternative: `tabIndex={-1}` on the `<p>` and move focus to it when the input had focus before the swap. Add the probe above as the failure-case test.
+**Fix, within the plan:** give the known-name `<p>` `tabIndex={-1}` and, in a layout effect, move focus to it when the input held focus before the swap (or fall back to the dialog container). Plan T16 specifies the `<p>` "**instead of** the label and input", and its expected-case test asserts no `#booking-caller-name` input, so this keeps both. Add the probe above as the failure-case test.
+
+A mounted `readOnly` input with `value={knownName}` would also keep focus, but it contradicts T16 and turns its expected-case test red, so it needs a plan amendment first. The constraint pass rules it out as the default fix.
 
 ### F2 (Medium) — a `callerName` over 120 characters still fails the booking
 `packages/shared/src/schemas/customer.ts:121-126`, `apps/dispatch/src/features/phone-orders/caller-panel.tsx:130-142`
@@ -57,7 +59,7 @@ Not flagged: `NameScreen` shows `rider.error.generic` for a pasted control chara
 |---|---|---|
 | 38 files, +1922 / −172; `.claude` 3 files +785; rest 35 files +1137 / −172 | observed | re-run `git diff --shortstat` at `103e9cb`: identical |
 | Gate 22/22, api 888 / 87 suites, shared 291, dispatch 275, driver 296, rider 192, db 17 | observed | re-run, see Validation: identical counts |
-| Report's api 884 / shared 290 pre-rebase, +4 / +1 from #289 | observed, attributed | consistent with the rebase note; not re-run on the old tree |
+| Report's api 884 / shared 290 pre-rebase, the difference is #289's tests | observed, attributed | `git diff bc0c5d3~1 bc0c5d3`: #289 adds exactly 4 `it(` in `services/api` and 1 in `packages/shared`, so 884 + 4 = 888 and 290 + 1 = 291 (derived) |
 | Catalog split pure, 11 new keys per catalog | observed | lines removed from `lv.ts` vs lines added to `lv-rider.ts`: identical apart from 11 added keys (3 `rider.book.name_row*` + 8 `rider.name.*`); `...lvRider` spread last into `lv` |
 | `lv.ts` 396, `lv-rider.ts` 120, `en.ts` 394, `ru.ts` 401 lines | observed | `wc -l`: identical |
 | Session 409 / 786 bytes | observed in a removed probe | not re-run; arithmetic consistent (F4) |
