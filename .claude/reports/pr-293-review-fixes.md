@@ -36,7 +36,7 @@ Each finding lists its test, whether that test was run against the unfixed code 
     - A second mutation removed only the cleanup reset, and the `rideId` case failed.
 - **The failure mode this fix's mechanism introduces:** the gate could silence a real outage, or carry one ride's state into another. Those are exactly the failed-first-join, failed-mount-read, `connect_error` and `rideId` cases above.
 - **Closing command:** `npx jest src/features/ride-status` in `apps/rider`. Result: 4 suites, 57 passed.
-- **Manual test owed:** re-run T24's "open `/book/status` at `arrived`" step on `sakta224` under TalkBack against this source. No emulator was running this session (`adb devices` listed none), so the device claim stays with T24's pre-fix run, and the unit tests above stand in for it. That is a reduced claim, not an equivalent one.
+- **Device re-run:** done. See **T24 re-run on `sakta224`** below.
 
 ### F2 (Medium): a Redis failure 500'd the driver's ride read at every status
 
@@ -128,4 +128,42 @@ For each retired value or noun, the `grep -n` below was run over the plan, the i
 **The Level 4 runs and the new source:**
 - Only comments changed in the driver source (`arrival-announce.ts` docblocks), so T21 and T23 still cover the driver's behaviour.
 - T22 (API over curl) sent requests down a path whose code F4 and F5 changed: the replay write is now wrapped, and the parse now comes after the owner check. For T22's inputs the behaviour is the same (a healthy KV, a parseable request), and `arrival-announce.integration.spec.ts`, which sends the same requests in process, is green. T22 was not re-run.
-- T24 ran on rider source that F1 and F3 changed. Its device re-run is owed (see F1).
+- T24 ran on rider source that F1 and F3 changed. Its F1 step was re-run on the fixed source (below). Steps (a) to (c) were not re-run: F1 did not touch the switch row or the request button, and F3 added only a focus style, which TalkBack does not speak.
+
+## T24 re-run on `sakta224`
+
+`observed` 2026-09-27, with TalkBack on and lv-LV as the app locale. The text is the TTS input from TalkBack's VERBOSE log. Logcat times are host time (BST, UTC+1).
+
+**Setup:**
+- The emulator was `sakta224`.
+- The app was the `lv.saktacab.rider` debug build from `wt-a11y-276` (24 Sep). `apps/rider/package.json`, `app.json` and `pnpm-lock.yaml` are unchanged between `d6deaa6` and `9b27227`, so its native layer is this branch's.
+- It was pointed at this worktree's Metro on 8082 through `debug_http_host`. The api was on 3042.
+- Rider `+37120000003`, driver `+37121590002`, dispatcher `+37120000099`.
+- Ride `eb86d927-bbc7-4b7f-8b49-acadc7a2bca3` was booked over curl with `announceArrival: true`, force-assigned, and driven to `arrived`. It was cancelled afterwards (201).
+
+**Which source each run used.** For every run, I fetched the bundle Metro served (1,635 modules, the same count the app loads) and counted `linkAttempted`: 8 for the fixed source, 0 for the pre-fix source. For the control, I checked out `26ef638`'s `status-screen.tsx` and `use-ride-status.tsx` and restarted Metro.
+
+**Procedure** (`scratchpad/measure.sh`):
+1. Cold-start the app and wait for `/book`.
+2. Wait 25 s. A `uiautomator dump` restarts TalkBack, and announcements made during the restart are lost.
+3. Clear logcat, open `saktacabrider://book/status?rideId=…`, and read 15 s of speech.
+
+| Run | Source | Utterances after opening (subtype) |
+|---|---|---|
+| Control | pre-fix (`26ef638`), 16:38:03 | «Meklējam auto…» (`TYPE_ANNOUNCEMENT`), «Atjaunojam savienojumu…» (`TYPE_ANNOUNCEMENT`), «Jūsu brauciens» and «Heading» (focus), «Auto ir klāt» (`TYPE_ANNOUNCEMENT`) |
+| Fixed | `9b27227`, 16:39:30 | «Auto ir klāt» (`TYPE_ANNOUNCEMENT`), «Jūsu brauciens» and «Heading» (focus). Nothing else in 15 s |
+| Fixed, the link drops | `9b27227`. Api stopped at 16:40:22 with the screen open and joined | «Atjaunojam savienojumu…» (`TYPE_ANNOUNCEMENT`), once in 20 s |
+| Fixed, the first link never comes up | `9b27227`. Opened with the api down, 16:41:38 | «Jūsu brauciens» and «Heading» (focus), then «Atjaunojam savienojumu…» (`TYPE_ANNOUNCEMENT`) once. No «Meklējam auto…» |
+
+- **The control reproduces T24's finding** in the same order.
+- **On the fixed source, opening at `arrived` speaks only the arrival line.** Two earlier fixed-source runs gave the same result:
+  - 16:29:32, opened from a warm `/book`;
+  - 16:35:24, a cold start. It was started as a pre-fix run, but Metro was still serving the fixed source, because Metro under `CI=1` does not watch files. It was relabelled after the bundle check showed this.
+
+**Not explained:** a dev-only LogBox warning badge was showing on the status screen during the first fixed run. Its log line predates the logcat clear, so its source was not captured.
+
+**Restored afterwards:**
+- TalkBack is off.
+- The api, Metro and the emulator are stopped.
+- Metro's rewrite of `apps/rider/tsconfig.json` is reverted.
+- Location Accuracy is still on in the emulator. I accepted it once so that its dialog stopped covering the app on every cold start.
