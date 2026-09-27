@@ -20,7 +20,7 @@ const zone = (over: Partial<BoardZone> = {}): BoardZone => ({
   geozoneId: 'e0000000-0000-4000-8000-000000000001',
   slug: 'centrs',
   name: 'Centrs',
-  queueModeEnabled: true,
+  dispatchMode: 'geozone_queue',
   entries: [entry()],
   ...over,
 });
@@ -86,8 +86,9 @@ describe('ZoneGrid', () => {
 
   it('hides positions in a zone that does not run queue mode (edge)', () => {
     // A rank dispatch does not honour is worse than no rank — it is one
-    // drivers will still ring up to argue about.
-    render(<ZoneGrid zones={[zone({ queueModeEnabled: false })]} />);
+    // drivers will still ring up to argue about. Keyed off the EFFECTIVE mode
+    // the frame carries, not the zone's flag (#124).
+    render(<ZoneGrid zones={[zone({ dispatchMode: 'auto_match' })]} />);
 
     expect(screen.queryByText('1')).not.toBeInTheDocument();
     expect(

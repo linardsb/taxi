@@ -13,6 +13,7 @@ import {
   type DriverLocationStore,
 } from '../../drivers';
 import { GeozonesService } from '../../geozones';
+import { PlatformConfigService } from '../../platform-config';
 import { RealtimeService } from '../../realtime';
 import { RidesRepository } from '../../rides';
 import { DispatchRepository } from '../dispatch.repository';
@@ -21,6 +22,7 @@ import {
   type DispatchQueueStore,
   type QueueSnapshotEntry,
 } from '../queue/dispatch-queue.store';
+import { DispatchStrategyResolver } from '../strategies/dispatch-strategy.resolver';
 import { BOARD_EMIT_INTERVAL_MS, BOARD_RIDES_LIMIT } from './board.policy';
 import { buildCascades } from './cascade';
 import { buildZoneRows } from './zone-rows';
@@ -52,6 +54,8 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
     @Inject(DISPATCH_QUEUE_STORE)
     private readonly queue: DispatchQueueStore,
     @Inject(APP_ENV) private readonly env: Env,
+    private readonly config: PlatformConfigService,
+    private readonly strategies: DispatchStrategyResolver,
   ) {}
 
   /** No auto-start under NODE_ENV=test — same rationale as DispatchSweeper. */
@@ -80,11 +84,14 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
    *
    * POSTGRES QUERIES PER FRAME (`derived`, and the number that matters because
    * this runs 30 times a minute forever):
-   *   1 rides · 1 zone catalog · 1 driver contacts · 1 offers · N `ST_Contains`
-   * = **4 + N**, where N is the number of ONLINE drivers with a position.
-   * #19 added 2 of those 4 and neither scales with rides or drivers: the
-   * catalog is one row set, and every offer for every live ride comes back in
-   * one `findOffersForRides`. Before #19 the same frame cost 2 + N.
+   *   1 rides · 1 zone catalog · 1 platform config · 1 driver contacts ·
+   *   1 offers · N `ST_Contains`
+   * = **5 + N**, where N is the number of ONLINE drivers with a position.
+   * #19 added 2 of those 5 and #124 the config read (uncached on purpose —
+   * `PlatformConfigService`'s docblock), and none of the three scales with
+   * rides or drivers: the catalog and the config are one row set each, and
+   * every offer for every live ride comes back in one `findOffersForRides`.
+   * Before #19 the same frame cost 2 + N.
    *
    * REDIS PER FRAME: 1 `listOnline` + one `snapshot()` per catalog zone (each
    * an LRANGE + an HGETALL). Z zones, not Z × drivers — the queue is read
@@ -96,10 +103,11 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
    */
   async buildBoardState(cityId: string): Promise<DispatchBoardEvent> {
     const nowMs = Date.now();
-    const [rides, online, catalog] = await Promise.all([
+    const [rides, online, catalog, config] = await Promise.all([
       this.rides.findBoardRides(BOARD_RIDES_LIMIT),
       this.locations.listOnline(cityId),
       this.geozones.listForCity(cityId),
+      this.config.forCity(cityId),
     ]);
 
     // Per ZONE, never per driver: ≤6 pairs of Redis calls at pilot scale, and
@@ -128,7 +136,16 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
       ).map((c) => [c.driverId, c]),
     );
 
-    const zoneRows = buildZoneRows({ catalog, snapshots, contacts, nowMs });
+    const zoneRows = buildZoneRows({
+      catalog,
+      snapshots,
+      contacts,
+      nowMs,
+      // The mode dispatch RUNS in each zone, from the one place that decides
+      // it. The raw flag under-reports a city whose default is queue mode
+      // (#124), and the resolver's docblock calls that fallback deliberate.
+      dispatchModeFor: (zone) => this.strategies.forZone(zone, config).mode,
+    });
     const cascades = buildCascades({
       offers: await this.dispatch.findOffersForRides(rides.map((r) => r.id)),
       zones: zoneRows,
