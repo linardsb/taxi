@@ -63,7 +63,7 @@ Each finding lists its test, whether that test was run against the unfixed code 
 ### F5 (Low): the request was parsed before the ownership check
 
 - **Fix:** `findAnnounceTarget` returns `request` raw. `ArrivalAnnounceService` parses it with `rideRequestSchema` only after the 404 owner check. The service spec's stub now returns a stored request in the same shape.
-- **Test:** `arrival-announce.integration.spec.ts` sets a real row's `request` jsonb to `{}`, then sends another rider's request, which must get a 404.
+- **Test:** `arrival-announce.integration.spec.ts` sets a real row's `request` jsonb to `{}`, then sends another rider's request, which must get a 404. The test restores the row in a `finally` block, because spec files share one database.
   - On unfixed code this was `expected 404 "Not Found", got 500` from a `ZodError` (observed). That is the review's input, run end to end.
   - A service unit test could not have failed on the old code, because the parse lived in the repository.
 - **Closing command:** same run as F2. The integration file passed.
@@ -90,7 +90,7 @@ Each finding lists its test, whether that test was run against the unfixed code 
 
 ## Gate
 
-The command was `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://127.0.0.1:6381 bash .claude/skills/piv-create-pr/scripts/record-gate.sh --clean`. It ran on the fixed tree (uncommitted, on `26ef638`) and exited 0. The committed source is that same tree. All figures are `observed`:
+The command was `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://127.0.0.1:6381 bash .claude/skills/piv-create-pr/scripts/record-gate.sh --clean`. This run was on the fixed tree before it was committed (uncommitted, on `26ef638`), and exited 0. A follow-up commit then restored the F5 test's row in a `finally` block and corrected this report's T22 wording. The gate on the pushed head is recorded in `.claude/last-gate.json` and quoted in the PR body. This report does not repeat it, because every commit would make that copy stale. All figures in the table are `observed`:
 
 | | |
 |---|---|
@@ -127,5 +127,5 @@ For each retired value or noun, the `grep -n` below was run over the plan, the i
 
 **The Level 4 runs and the new source:**
 - Only comments changed in the driver source (`arrival-announce.ts` docblocks), so T21 and T23 still cover the driver's behaviour.
-- T22 (API over curl) exercised only paths the fixes leave as they were, when Redis is healthy.
+- T22 (API over curl) sent requests down a path whose code F4 and F5 changed: the replay write is now wrapped, and the parse now comes after the owner check. For T22's inputs the behaviour is the same (a healthy KV, a parseable request), and `arrival-announce.integration.spec.ts`, which sends the same requests in process, is green. T22 was not re-run.
 - T24 ran on rider source that F1 and F3 changed. Its device re-run is owed (see F1).

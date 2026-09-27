@@ -423,14 +423,21 @@ describe('arrival-announce protocol (integration, #259)', () => {
     const stranger = await rider(57);
     const ride = await book(r.auth, true);
     // A legacy row whose request predates the current schema. Cancelled in
-    // the same write so no sweeper can pick it up while it is malformed.
+    // the same write so no sweeper can pick it up while it is malformed, and
+    // restored after, because spec files share one database.
     await ctx.db
       .update(rides)
       .set({ request: {}, status: 'cancelled_by_system' })
       .where(eq(rides.id, ride.id));
-
-    const res = await announce(ride.id, stranger.auth).expect(404);
-    expect(res.body).toMatchObject({ message: 'ride_not_found' });
+    try {
+      const res = await announce(ride.id, stranger.auth).expect(404);
+      expect(res.body).toMatchObject({ message: 'ride_not_found' });
+    } finally {
+      await ctx.db
+        .update(rides)
+        .set({ request: ride.request })
+        .where(eq(rides.id, ride.id));
+    }
   });
 
   it('a phone booking carries the flag, and the caller name reaches the driver at arrived (edge)', async () => {
