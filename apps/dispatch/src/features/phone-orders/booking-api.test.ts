@@ -61,7 +61,11 @@ describe('booking-api transport', () => {
     };
     vi.stubGlobal('fetch', respond(JSON.stringify(lookup)));
 
-    await expect(lookupCaller('+37129999000')).resolves.toEqual(lookup);
+    // `displayName` arrives from the schema default: an older api omits it (#269).
+    await expect(lookupCaller('+37129999000')).resolves.toEqual({
+      ...lookup,
+      displayName: null,
+    });
   });
 
   it('sends the bearer token and never caches a PII read (edge)', async () => {

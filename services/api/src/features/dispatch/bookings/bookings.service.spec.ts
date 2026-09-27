@@ -41,6 +41,7 @@ function build() {
       role: 'rider',
     }),
     findOrCreateCustomer: jest.fn().mockResolvedValue({ id: 'c1' }),
+    fillEmptyDisplayName: jest.fn().mockResolvedValue(undefined),
   };
   const dispatch = {
     insertBookingAudit: jest.fn().mockResolvedValue(undefined),
@@ -64,8 +65,10 @@ describe('BookingsService', () => {
     const created = await service.book(DISPATCHER_ID, 'idem-1', BODY);
 
     expect(created.ride.id).toBe(RIDE_ID);
-    expect(customers.findOrCreateUser).toHaveBeenCalledWith(
-      '+37129999000',
+    // One argument: the fill is the one name writer on this path (#269).
+    expect(customers.findOrCreateUser).toHaveBeenCalledWith('+37129999000');
+    expect(customers.fillEmptyDisplayName).toHaveBeenCalledWith(
+      RIDER_ID,
       'Anna',
     );
 
@@ -103,6 +106,24 @@ describe('BookingsService', () => {
     expect(customers.findOrCreateUser).not.toHaveBeenCalled();
     const [riderId] = rides.request.mock.calls[0] as [string];
     expect(riderId).toBe(RIDER_ID);
+    // An existing rider's EMPTY name is filled too (#269 D2); the repository's
+    // WHERE clause is what keeps a set name.
+    expect(customers.fillEmptyDisplayName).toHaveBeenCalledWith(
+      RIDER_ID,
+      'Anna',
+    );
+  });
+
+  it('books without a name when callerName is blank, never a 400 (edge)', async () => {
+    const { rides, customers, service } = build();
+
+    await service.book(DISPATCHER_ID, 'idem-5', {
+      ...BODY,
+      callerName: '   ',
+    });
+
+    expect(customers.fillEmptyDisplayName).not.toHaveBeenCalled();
+    expect(rides.request).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the phone number out of the log line (edge)', async () => {
@@ -136,6 +157,7 @@ describe('BookingsService', () => {
     // passenger would corrupt every eligibility read on that user.
     expect(rides.request).not.toHaveBeenCalled();
     expect(customers.findOrCreateCustomer).not.toHaveBeenCalled();
+    expect(customers.fillEmptyDisplayName).not.toHaveBeenCalled();
   });
 
   it('does not fail a committed booking when the audit write fails (failure)', async () => {

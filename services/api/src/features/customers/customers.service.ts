@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import type {
-  CallerLookup,
-  Customer,
-  CustomerUpsertBody,
-  VenueEntry,
+import {
+  readDisplayName,
+  type CallerLookup,
+  type Customer,
+  type CustomerUpsertBody,
+  type VenueEntry,
 } from '@taxi/shared';
 import { maskPhone } from '../auth';
 import { CustomersRepository } from './customers.repository';
@@ -68,6 +69,7 @@ export class CustomersService {
       customer: customer ?? null,
       savedPlaces,
       recentRides,
+      displayName: readDisplayName(user.displayName),
     };
   }
 
@@ -90,8 +92,7 @@ export class CustomersService {
     }
 
     const user =
-      existing ??
-      (await this.repository.findOrCreateUser(body.phone, undefined));
+      existing ?? (await this.repository.findOrCreateUser(body.phone));
     const customer = await this.repository.findOrCreateCustomer(user.id);
     const updated = await this.repository.updateCustomer(customer.id, {
       label: body.label,

@@ -1,6 +1,8 @@
 'use client';
 
+import { useLayoutEffect, useRef } from 'react';
 import {
+  DISPLAY_NAME_MAX,
   formatMessage,
   type AddressPoint,
   type CallerLookup,
@@ -54,6 +56,25 @@ export function CallerPanel({
   onPickVenue: (pickup: AddressPoint) => void;
 }>) {
   const label = lookup?.customer?.label ?? null;
+  // The rider's own name (#269). Shown read-only: the api ignores Dina's
+  // `callerName` for a named rider (D2), so an editable field would drop her
+  // edit without saying so.
+  const knownName = lookup?.displayName ?? null;
+  const hasKnownName = knownName !== null;
+
+  // The lookup can land while Dina is typing in the name field. The swap
+  // unmounts whichever element held focus and drops it to `<body>`, outside
+  // `DialogShell`'s Escape and Tab handler (#290 F1). Hand focus to the element
+  // that took its place, but only when focus was actually lost: a lookup that
+  // lands while she is on the phone field must not pull her off it.
+  const nameSlot = useRef<HTMLElement | null>(null);
+  const hadKnownName = useRef(hasKnownName);
+  useLayoutEffect(() => {
+    if (hadKnownName.current === hasKnownName) return;
+    hadKnownName.current = hasKnownName;
+    const active = document.activeElement;
+    if (active === null || active === document.body) nameSlot.current?.focus();
+  }, [hasKnownName]);
 
   return (
     <section style={{ display: 'grid', gap: 'var(--spacing-sm)' }}>
@@ -105,28 +126,50 @@ export function CallerPanel({
         </p>
       </div>
 
-      <div style={{ display: 'grid', gap: 'var(--spacing-xs)' }}>
-        <label
-          htmlFor="booking-caller-name"
-          style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
-        >
-          {formatMessage(LANG, 'console.caller_name')}
-        </label>
-        <input
-          id="booking-caller-name"
-          value={callerName}
-          onChange={(event) => onCallerNameChange(event.target.value)}
-          style={{
-            minHeight: 44,
-            padding: 'var(--spacing-xs) var(--spacing-sm)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-border)',
-            background: 'var(--color-bg)',
-            color: 'var(--color-fg)',
-            fontSize: 'var(--font-size-md)',
+      {knownName !== null ? (
+        <p
+          id="booking-caller-name-known"
+          ref={(node) => {
+            nameSlot.current = node;
           }}
-        />
-      </div>
+          // Focusable by script only, so it can take over from the input.
+          tabIndex={-1}
+          style={{ margin: 0, fontSize: 'var(--font-size-md)' }}
+        >
+          {formatMessage(LANG, 'console.caller_known_name', {
+            name: knownName,
+          })}
+        </p>
+      ) : (
+        <div style={{ display: 'grid', gap: 'var(--spacing-xs)' }}>
+          <label
+            htmlFor="booking-caller-name"
+            style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
+          >
+            {formatMessage(LANG, 'console.caller_name')}
+          </label>
+          <input
+            id="booking-caller-name"
+            ref={(node) => {
+              nameSlot.current = node;
+            }}
+            value={callerName}
+            // The wire caps `callerName` at the same length and refuses more
+            // with a 400 (#290 F2), so the field cannot produce it.
+            maxLength={DISPLAY_NAME_MAX}
+            onChange={(event) => onCallerNameChange(event.target.value)}
+            style={{
+              minHeight: 44,
+              padding: 'var(--spacing-xs) var(--spacing-sm)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-bg)',
+              color: 'var(--color-fg)',
+              fontSize: 'var(--font-size-md)',
+            }}
+          />
+        </div>
+      )}
 
       {lookup !== null && lookup.recentRides.length > 0 ? (
         <RecentJobs rides={lookup.recentRides} onUse={onUseRecent} />

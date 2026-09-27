@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import type { DispatcherBookingBody, RideCreated } from '@taxi/shared';
+import {
+  displayNameSchema,
+  type DispatcherBookingBody,
+  type RideCreated,
+} from '@taxi/shared';
 import { CustomersRepository } from '../../customers';
 import { RidesService } from '../../rides';
 import { DispatchRepository } from '../dispatch.repository';
@@ -41,8 +45,15 @@ export class BookingsService {
     }
 
     const user =
-      existing ??
-      (await this.customers.findOrCreateUser(callerPhone, callerName));
+      existing ?? (await this.customers.findOrCreateUser(callerPhone));
+    // Dina's name for the caller fills an EMPTY name only (#269 D2), and an
+    // unusable one (blank, control characters) is "no name", never a 400 — a
+    // failed submit mid-call costs the caller (D4). Before `rides.request`, so
+    // the name is stored before any driver can accept.
+    const name = displayNameSchema.safeParse(callerName);
+    if (name.success) {
+      await this.customers.fillEmptyDisplayName(user.id, name.data);
+    }
     // Filed at booking time so the NEXT call from this number pops a record.
     // Never overwrites a label Dina already typed — `findOrCreateCustomer`'s
     // conflict clause is a no-op update.

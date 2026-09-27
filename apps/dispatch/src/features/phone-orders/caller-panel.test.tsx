@@ -1,6 +1,7 @@
 import type { CallerLookup, VenueEntry } from '@taxi/shared';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { DialogShell } from '@/features/override';
 import { CallerPanel } from './caller-panel';
 
 const PICKUP = {
@@ -30,6 +31,7 @@ const LOOKUP: CallerLookup = {
       bookedAt: new Date('2026-08-01T10:00:00Z'),
     },
   ],
+  displayName: null,
 };
 
 const VENUE: VenueEntry = {
@@ -138,5 +140,104 @@ describe('CallerPanel', () => {
     renderPanel({ lookup: null, lookupState: 'failed' });
 
     expect(screen.getByText('Neizdevās atrast zvanītāju')).toBeInTheDocument();
+  });
+
+  describe("the rider's own name (#269)", () => {
+    it('shows a known name read-only, with no input (expected)', () => {
+      renderPanel({ lookup: { ...LOOKUP, displayName: 'Anna' } });
+
+      expect(screen.getByText('Vārds: Anna')).toBeInTheDocument();
+      expect(document.getElementById('booking-caller-name')).toBeNull();
+    });
+
+    it('offers the input when the rider has no name (edge)', () => {
+      renderPanel({ lookup: LOOKUP });
+
+      expect(document.getElementById('booking-caller-name')).not.toBeNull();
+    });
+
+    // The wire refuses a `callerName` over 120 with a 400 that fails the whole
+    // booking, so the field must not be able to produce one (#290 F2).
+    it('caps the name at the length the api accepts (edge)', () => {
+      renderPanel({ lookup: LOOKUP });
+
+      expect(
+        (document.getElementById('booking-caller-name') as HTMLInputElement)
+          .maxLength,
+      ).toBe(120);
+    });
+
+    it('offers the input when the lookup failed, so Dina can still name the caller (failure)', () => {
+      renderPanel({ lookup: null, lookupState: 'failed' });
+
+      expect(document.getElementById('booking-caller-name')).not.toBeNull();
+    });
+
+    // The lookup lands while Dina is typing the name: the swap unmounts the
+    // focused input, and focus on `<body>` never reaches the shell's Escape and
+    // Tab handler (#290 F1). The reverse swap, to a new number, is the same.
+    it('keeps focus in the dialog when the name swaps in or out under it (failure)', () => {
+      const onClose = vi.fn();
+      const inDialog = (lookup: CallerLookup) => (
+        <DialogShell title="Jauns pasūtījums" onClose={onClose}>
+          <CallerPanel
+            phone="+37129999000"
+            callerName=""
+            lookup={lookup}
+            lookupState="idle"
+            venues={[]}
+            onPhoneChange={vi.fn()}
+            onCallerNameChange={vi.fn()}
+            onUseRecent={vi.fn()}
+            onPickVenue={vi.fn()}
+          />
+        </DialogShell>
+      );
+      const { rerender } = render(inDialog(LOOKUP));
+      document.getElementById('booking-caller-name')?.focus();
+
+      rerender(inDialog({ ...LOOKUP, displayName: 'Anna' }));
+
+      expect(document.activeElement?.id).toBe('booking-caller-name-known');
+      fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      rerender(inDialog(LOOKUP));
+
+      expect(document.activeElement?.id).toBe('booking-caller-name');
+    });
+
+    it('does not pull focus off the phone field when the name arrives (edge)', () => {
+      const { rerender } = render(
+        <CallerPanel
+          phone="+37129999000"
+          callerName=""
+          lookup={LOOKUP}
+          lookupState="idle"
+          venues={[]}
+          onPhoneChange={vi.fn()}
+          onCallerNameChange={vi.fn()}
+          onUseRecent={vi.fn()}
+          onPickVenue={vi.fn()}
+        />,
+      );
+      document.getElementById('booking-phone')?.focus();
+
+      rerender(
+        <CallerPanel
+          phone="+37129999000"
+          callerName=""
+          lookup={{ ...LOOKUP, displayName: 'Anna' }}
+          lookupState="idle"
+          venues={[]}
+          onPhoneChange={vi.fn()}
+          onCallerNameChange={vi.fn()}
+          onUseRecent={vi.fn()}
+          onPickVenue={vi.fn()}
+        />,
+      );
+
+      expect(document.activeElement?.id).toBe('booking-phone');
+    });
   });
 });

@@ -24,6 +24,11 @@ export interface SessionContextValue {
   signIn(session: AuthSession): Promise<void>;
   signOut(): Promise<void>;
   /**
+   * Mirrors a successful `PUT /riders/me/display-name` into the stored
+   * session (#269 D6). A no-op when signed out.
+   */
+  setDisplayName(name: string | null): Promise<void>;
+  /**
    * Runs BEFORE the session is cleared, while the token is still valid —
    * availability goes offline and push forgets its token through this.
    * Returns the unsubscribe.
@@ -96,6 +101,21 @@ export function SessionProvider({
     setState({ status: 'signedIn', session });
   }, []);
 
+  const setDisplayName = useCallback(async (name: string | null) => {
+    const current = live.session;
+    if (current === null) return;
+    // Omitted rather than `undefined`: `userSchema.displayName` is optional,
+    // not nullable.
+    const { displayName: _old, ...user } = current.user;
+    const next: AuthSession = {
+      ...current,
+      user: name === null ? user : { ...user, displayName: name },
+    };
+    await writeSession(next);
+    live.session = next;
+    setState({ status: 'signedIn', session: next });
+  }, []);
+
   const signOut = useCallback((): Promise<void> => {
     if (live.session === null) return Promise.resolve();
     // Teardown first, token still valid: the presence layer goes offline
@@ -124,8 +144,8 @@ export function SessionProvider({
   }, []);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ state, api, signIn, signOut, onBeforeSignOut }),
-    [state, api, signIn, signOut, onBeforeSignOut],
+    () => ({ state, api, signIn, signOut, setDisplayName, onBeforeSignOut }),
+    [state, api, signIn, signOut, setDisplayName, onBeforeSignOut],
   );
   return (
     <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

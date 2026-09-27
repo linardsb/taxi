@@ -74,6 +74,11 @@ describe('customers (#19)', () => {
         paymentMethod: 'cash',
       });
     createdRides.push((booked.body as { ride: { id: string } }).ride.id);
+    // The rider's own name, set as `PUT /riders/me/display-name` would (#269).
+    await ctx.db
+      .update(users)
+      .set({ displayName: 'Anna' })
+      .where(eq(users.phone, caller));
 
     const res = await http
       .get('/customers/lookup')
@@ -83,6 +88,7 @@ describe('customers (#19)', () => {
     expect(res.status).toBe(200);
     const lookup = res.body as CallerLookup;
     expect(lookup.customer).not.toBeNull();
+    expect(lookup.displayName).toBe('Anna');
     expect(lookup.recentRides).toHaveLength(1);
     expect(lookup.recentRides[0]?.pickup.address).toBe(PICKUP.address);
     // STABLE FIELDS ONLY — the projection never carries what the caller chose
@@ -110,6 +116,23 @@ describe('customers (#19)', () => {
       .from(users)
       .where(eq(users.phone, p(11)));
     expect(rows).toHaveLength(0);
+  });
+
+  it('reads a legacy whitespace-only name back as null (edge — #269)', async () => {
+    const caller = p(15);
+    const user = await insertUser(ctx.db, { phone: caller, role: 'rider' });
+    await ctx.db
+      .update(users)
+      .set({ displayName: '   ' })
+      .where(eq(users.id, user.id));
+
+    const res = await http
+      .get('/customers/lookup')
+      .query({ phone: caller })
+      .set('authorization', dispatcherAuth);
+
+    expect(res.status).toBe(200);
+    expect((res.body as CallerLookup).displayName).toBeNull();
   });
 
   it('files a venue and lists it for quick-book (expected)', async () => {

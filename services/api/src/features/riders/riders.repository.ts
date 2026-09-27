@@ -24,4 +24,15 @@ export class RidersRepository {
       .set({ pushToken: token })
       .where(eq(users.id, riderId));
   }
+
+  /**
+   * Unconditional on purpose: the rider's own name always wins over Dina's
+   * fill-if-empty (#269 D2/D3).
+   */
+  async setDisplayName(riderId: string, name: string | null): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ displayName: name })
+      .where(eq(users.id, riderId));
+  }
 }
