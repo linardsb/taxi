@@ -184,6 +184,18 @@ describe('auth (integration)', () => {
     expect(session.user.phone).toBe(phone);
   });
 
+  it('keeps a legacy blank display name out of the session (edge — #269)', async () => {
+    const phone = p(9);
+    await ctx.db
+      .insert(users)
+      .values({ phone, role: 'rider', displayName: '   ' });
+
+    const session = await signIn(phone, 'rider');
+
+    // `readDisplayName` in `toUser`: no blank row label in the rider app.
+    expect('displayName' in session.user).toBe(false);
+  });
+
   it('refuses a guarded route without a token, and with a junk one (failure — fail-closed)', async () => {
     await http.get('/probe/me').expect(401);
     await http

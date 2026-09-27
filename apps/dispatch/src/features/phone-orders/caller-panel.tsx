@@ -54,6 +54,10 @@ export function CallerPanel({
   onPickVenue: (pickup: AddressPoint) => void;
 }>) {
   const label = lookup?.customer?.label ?? null;
+  // The rider's own name (#269). Shown read-only: the api ignores Dina's
+  // `callerName` for a named rider (D2), so an editable field would drop her
+  // edit without saying so.
+  const knownName = lookup?.displayName ?? null;
 
   return (
     <section style={{ display: 'grid', gap: 'var(--spacing-sm)' }}>
@@ -105,28 +109,39 @@ export function CallerPanel({
         </p>
       </div>
 
-      <div style={{ display: 'grid', gap: 'var(--spacing-xs)' }}>
-        <label
-          htmlFor="booking-caller-name"
-          style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
+      {knownName !== null ? (
+        <p
+          id="booking-caller-name-known"
+          style={{ margin: 0, fontSize: 'var(--font-size-md)' }}
         >
-          {formatMessage(LANG, 'console.caller_name')}
-        </label>
-        <input
-          id="booking-caller-name"
-          value={callerName}
-          onChange={(event) => onCallerNameChange(event.target.value)}
-          style={{
-            minHeight: 44,
-            padding: 'var(--spacing-xs) var(--spacing-sm)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-border)',
-            background: 'var(--color-bg)',
-            color: 'var(--color-fg)',
-            fontSize: 'var(--font-size-md)',
-          }}
-        />
-      </div>
+          {formatMessage(LANG, 'console.caller_known_name', {
+            name: knownName,
+          })}
+        </p>
+      ) : (
+        <div style={{ display: 'grid', gap: 'var(--spacing-xs)' }}>
+          <label
+            htmlFor="booking-caller-name"
+            style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
+          >
+            {formatMessage(LANG, 'console.caller_name')}
+          </label>
+          <input
+            id="booking-caller-name"
+            value={callerName}
+            onChange={(event) => onCallerNameChange(event.target.value)}
+            style={{
+              minHeight: 44,
+              padding: 'var(--spacing-xs) var(--spacing-sm)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-bg)',
+              color: 'var(--color-fg)',
+              fontSize: 'var(--font-size-md)',
+            }}
+          />
+        </div>
+      )}
 
       {lookup !== null && lookup.recentRides.length > 0 ? (
         <RecentJobs rides={lookup.recentRides} onUse={onUseRecent} />

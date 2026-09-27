@@ -29,6 +29,7 @@ import {
   currentPositionPoint,
   useSavedPlaces,
 } from '@/features/places';
+import { NameRow } from '@/features/profile';
 import { isBookable } from './booking-draft';
 import { PaymentChips } from './payment-chips';
 import { usePickupPinPreference } from './pickup-pin-preference';
@@ -267,6 +268,7 @@ export function BookingScreen() {
         >
           {t('rider.book.pickup_pin_hint')}
         </Text>
+        <NameRow />
       </ScrollView>
       <Button
         label={busy ? t('rider.book.confirming') : t('rider.book.confirm')}

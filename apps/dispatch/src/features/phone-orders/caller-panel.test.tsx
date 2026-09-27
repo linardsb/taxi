@@ -30,6 +30,7 @@ const LOOKUP: CallerLookup = {
       bookedAt: new Date('2026-08-01T10:00:00Z'),
     },
   ],
+  displayName: null,
 };
 
 const VENUE: VenueEntry = {
@@ -138,5 +139,26 @@ describe('CallerPanel', () => {
     renderPanel({ lookup: null, lookupState: 'failed' });
 
     expect(screen.getByText('Neizdevās atrast zvanītāju')).toBeInTheDocument();
+  });
+
+  describe("the rider's own name (#269)", () => {
+    it('shows a known name read-only, with no input (expected)', () => {
+      renderPanel({ lookup: { ...LOOKUP, displayName: 'Anna' } });
+
+      expect(screen.getByText('Vārds: Anna')).toBeInTheDocument();
+      expect(document.getElementById('booking-caller-name')).toBeNull();
+    });
+
+    it('offers the input when the rider has no name (edge)', () => {
+      renderPanel({ lookup: LOOKUP });
+
+      expect(document.getElementById('booking-caller-name')).not.toBeNull();
+    });
+
+    it('offers the input when the lookup failed, so Dina can still name the caller (failure)', () => {
+      renderPanel({ lookup: null, lookupState: 'failed' });
+
+      expect(document.getElementById('booking-caller-name')).not.toBeNull();
+    });
   });
 });

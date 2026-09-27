@@ -705,3 +705,9 @@ The spikes also found the three test files the first draft missed (R7, R9). What
 
 - 2026-09-27: planning-time de-risking (R1-R9), all spiked and reverted. Added the three missed test files (`customers.service.spec.ts` in T11; `use-booking-form.test.tsx` and `booking-api.test.ts` in T16), the observed catalog line counts, the session sizes, the race and mutation results, and the RNTL test shape. Confidence went from 8 to 10.
 
+- 2026-09-27: as shipped (from `.claude/reports/rider-display-name-269-report.md`). These supersede the task text above where they differ:
+  - **T14**: `/name` shows every error (api and the pasted-control-character parse failure) in one `Banner tone="danger"`, and passes no `error` to `TextField`. Both would read the message twice.
+  - **T14**: `NameRow`'s focus state is an accent **outline** (`outlineWidth: 2, outlineColor: colors.accent, outlineOffset: 2`, `Button`'s pattern), not a border. It causes no layout shift and needs no transparent colour literal.
+  - **T10**: the repeat-caller lookup case sets the name with `ctx.db.update` after its booking, which sends no `callerName`.
+  - **T7**: the three 400 cases are one `it.each`, each row on its own phone (`p(9)`, `p(11)`, `p(12)`).
+  - **Level 4**: not run, including step 5 (TalkBack), so AC7's TalkBack half is recorded as not run.

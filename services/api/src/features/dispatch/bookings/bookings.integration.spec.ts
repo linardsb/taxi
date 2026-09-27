@@ -150,9 +150,27 @@ describe('POST /dispatch/bookings (#19)', () => {
     expect(all).toHaveLength(1);
   });
 
+  const storedName = async (userId: string) =>
+    (
+      await ctx.db
+        .select({ displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+    )[0]?.displayName;
+
+  const named = async (phone: string, displayName: string | null) => {
+    const user = await insertUser(ctx.db, { phone, role: 'rider' });
+    await ctx.db
+      .update(users)
+      .set({ displayName })
+      .where(eq(users.id, user.id));
+    return user;
+  };
+
   it('reuses an existing rider rather than forking their history (edge)', async () => {
     const caller = p(12);
-    const existing = await insertUser(ctx.db, { phone: caller, role: 'rider' });
+    const existing = await named(caller, 'Rider-set');
 
     const res = await book(caller, randomUUID(), { callerName: 'Ignored' });
 
@@ -166,11 +184,41 @@ describe('POST /dispatch/bookings (#19)', () => {
       .limit(1);
     expect(row?.riderId).toBe(existing.id);
 
-    // `callerName` never overwrites an existing rider's own name.
+    // `callerName` never overwrites a set name (#269 D2).
+    expect(await storedName(existing.id)).toBe('Rider-set');
+  });
+
+  it("fills an existing rider's EMPTY name with Dina's, trimmed (edge — #269)", async () => {
+    const existing = await named(p(17), null);
+
+    const res = await book(p(17), randomUUID(), { callerName: '  Anna  ' });
+
+    expect(res.status).toBe(201);
+    createdRides.push((res.body as { ride: { id: string } }).ride.id);
+    expect(await storedName(existing.id)).toBe('Anna');
+  });
+
+  it('treats a legacy whitespace-only name as empty (edge — #269)', async () => {
+    const existing = await named(p(18), '  ');
+
+    const res = await book(p(18), randomUUID(), { callerName: 'Anna' });
+
+    expect(res.status).toBe(201);
+    createdRides.push((res.body as { ride: { id: string } }).ride.id);
+    expect(await storedName(existing.id)).toBe('Anna');
+  });
+
+  it('books a new caller with a blank callerName and stores no name (failure — #269 D4)', async () => {
+    const caller = p(19);
+
+    const res = await book(caller, randomUUID(), { callerName: '   ' });
+
+    expect(res.status).toBe(201);
+    createdRides.push((res.body as { ride: { id: string } }).ride.id);
     const [user] = await ctx.db
-      .select()
+      .select({ displayName: users.displayName })
       .from(users)
-      .where(eq(users.id, existing.id))
+      .where(eq(users.phone, caller))
       .limit(1);
     expect(user?.displayName).toBeNull();
   });

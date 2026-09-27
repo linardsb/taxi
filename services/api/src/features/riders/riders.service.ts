@@ -2,10 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { RidersRepository } from './riders.repository';
 
 /**
- * The rider's own account surface (#17). One concern today — the push token
- * that #17's arrival notification needs — and the slice exists rather than the
- * route hanging off `rides` because a token is a property of the RIDER, not of
- * any ride. `apps/rider`'s remaining self-service reads land here next.
+ * The rider's own account surface: the push token (#17) and the rider's
+ * display name (#269). The slice exists rather than the route hanging off
+ * `rides` because a token is a property of the RIDER, not of any ride. `apps/rider`'s remaining self-service reads land here next.
  */
 @Injectable()
 export class RidersService {
@@ -24,5 +23,10 @@ export class RidersService {
    */
   clearPushToken(riderId: string): Promise<void> {
     return this.riders.setPushToken(riderId, null);
+  }
+
+  /** The rider's own name (#269); `null` removes it. */
+  setDisplayName(riderId: string, name: string | null): Promise<void> {
+    return this.riders.setDisplayName(riderId, name);
   }
 }

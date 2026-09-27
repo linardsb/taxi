@@ -1,8 +1,10 @@
 import { Body, Controller, Delete, HttpCode, Put } from '@nestjs/common';
 import {
   pushTokenUpdateSchema,
+  riderDisplayNameUpdateSchema,
   type JwtClaims,
   type PushTokenUpdate,
+  type RiderDisplayNameUpdate,
 } from '@taxi/shared';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
@@ -15,6 +17,8 @@ import { RidersService } from './riders.service';
  *
  * Nothing here reads. The token is write-only by design — it is a provider
  * handle, and putting it in a response body is how one reaches a log.
+ * The name is write-only here too: the rider's copy lives in their session
+ * (#269 D6).
  */
 @Controller('riders')
 @Roles('rider')
@@ -35,5 +39,16 @@ export class RidersController {
   @HttpCode(204)
   clearPushToken(@CurrentUser() user: JwtClaims): Promise<void> {
     return this.riders.clearPushToken(user.sub);
+  }
+
+  /** Sets (trimmed) or, with `null`, removes the rider's own name (#269); 204. */
+  @Put('me/display-name')
+  @HttpCode(204)
+  setDisplayName(
+    @CurrentUser() user: JwtClaims,
+    @Body(new ZodValidationPipe(riderDisplayNameUpdateSchema))
+    body: RiderDisplayNameUpdate,
+  ): Promise<void> {
+    return this.riders.setDisplayName(user.sub, body.displayName);
   }
 }

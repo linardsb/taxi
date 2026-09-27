@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { SAVED_PLACE_KINDS } from '../enums';
 import { addressPointSchema } from './geo';
 import { rideRequestBodySchema } from './ride';
-import { phoneSchema } from './user';
+import { DISPLAY_NAME_MAX, phoneSchema } from './user';
 
 /**
  * The phone channel's customer record (#19) — a `users` row plus what the app
@@ -71,6 +71,12 @@ export const callerLookupSchema = z.object({
   customer: customerSchema.nullable(),
   savedPlaces: z.array(savedPlaceSchema).default([]),
   recentRides: z.array(recentRideSchema).max(3).default([]),
+  /**
+   * The rider's own name, as the driver will see it (#269). Shown read-only:
+   * Dina's `callerName` only fills an empty one. Not `customer.label`, which is
+   * her private annotation (#261 D3).
+   */
+  displayName: z.string().min(1).max(DISPLAY_NAME_MAX).nullable().default(null),
 });
 export type CallerLookup = z.infer<typeof callerLookupSchema>;
 
@@ -112,7 +118,11 @@ export type CustomerUpsertBody = z.infer<typeof customerUpsertBodySchema>;
  */
 export const dispatcherBookingBodySchema = rideRequestBodySchema.extend({
   callerPhone: phoneSchema,
-  /** Prefills the `users` row on first sight; never overwrites an existing one. */
+  /**
+   * Fills the rider's name when it is empty, and never overwrites a set one
+   * (#269 D2). Normalised through `displayNameSchema` server-side; an unusable
+   * value means "no name", never a 400 (D4).
+   */
   callerName: z.string().max(120).optional(),
   dispatcherNote: z.string().max(280).nullable().default(null),
 });

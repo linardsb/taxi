@@ -564,3 +564,7 @@ State comes from the #15 device-pass recipe, `.claude/plans/driver-15-offers-dev
   - The set pins are in `schemas-driver-ride.test.ts`.
 - **The AC6 revert probe** spread a literal `rider` key into `findForRider`'s return, instead of calling `toDriverRide`. That is equivalent for a key-presence assertion. Result: RED, then GREEN.
 - **AC8 (Level 4)** ran on `sakta224` with an EAS `preview` APK of this branch: steps 1–5 pass, step 6 is owed by #257. Detail in the report's D8.
+
+### 2026-09-27 (#269): the "one writer" claim was wrong
+
+Line 39 and D2 say `users.display_name` has one writer whose "only caller passes `undefined` (`customers.service.ts:94`)". That was wrong at `bfca835`: `bookings.service.ts:45` passed `callerName` to `findOrCreateUser`, so a brand-new phone caller was named. #269 replaces both writers with `CustomersRepository.fillEmptyDisplayName` (phone path, fills an empty name only) and `PUT /riders/me/display-name` (the rider's own, unconditional). The body above is left as written.
