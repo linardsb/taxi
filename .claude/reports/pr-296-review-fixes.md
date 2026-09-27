@@ -40,7 +40,7 @@ No new test: the change is prose in a review report, and no gate task reads `.cl
 
 `grep -n -i "both\|exactly one\|dismissTo\|one home\|safe once\|call site" .claude/code-reviews/pr-295-review.md` after the edits: remaining hits are the new F2 text, "both redirects are conditional", F4's "covers both findings", F5's "both platforms" and F6's "repeats both claims" — none states the two-route claim. The PR #296 body (`gh pr view 296 --json body`) has no hit for `both|dismissTo|exactly`.
 
-The posted copy of the report (`pull/295#issuecomment-5859111564`) was byte-identical to the file before the edit (`diff` showed only a trailing blank line); it is updated to the amended file.
+The posted copy of the report (`pull/295#issuecomment-5859111564`) matched the file before the edit. It was PATCHed to the amended file at 2026-09-27T19:58:50Z. Both checks were `diff <(gh api …/comments/5859111564 --jq .body) <file>`, and each differed only by the trailing newline `--jq` appends.
 
 ## Validation
 
