@@ -318,6 +318,24 @@ describe('SearchSheet', () => {
     expect(screen.queryByText(t('rider.error.generic'))).toBeNull();
   });
 
+  it('the address field is uncontrolled, so typing never re-sets the native text (regression — #287)', async () => {
+    mockRequest.mockResolvedValueOnce([SUGGESTION]);
+    await render(<SearchSheet />);
+
+    await type('Brīvības');
+
+    // A `value` prop is what makes RN re-set the native text per keystroke,
+    // which TalkBack speaks as «tika aizstāts».
+    const field = screen.getByLabelText(t('rider.address.search_label'));
+    expect(field.props.value).toBeUndefined();
+    expect(field.props.defaultValue).toBeUndefined();
+    // The typed text still reaches state: the search goes out.
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(String(mockRequest.mock.calls[0]![1])).toContain(
+      encodeURIComponent('Brīvības'),
+    );
+  });
+
   it('has one header and moves focus to it on mount (a11y — property 1)', async () => {
     await render(<SearchSheet />);
 

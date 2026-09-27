@@ -41,13 +41,22 @@ export function VehicleScreen() {
   const editing = vehicleId
     ? me?.vehicles.find((v) => v.id === vehicleId)
     : undefined;
-  const [plate, setPlate] = useState(editing?.plate ?? '');
-  const [make, setMake] = useState(editing?.make ?? '');
-  const [model, setModel] = useState(editing?.model ?? '');
-  const [year, setYear] = useState(editing ? String(editing.year) : '');
-  const [seats, setSeats] = useState(
-    editing ? String(editing.passengerSeats) : '4',
-  );
+  // The fields are uncontrolled: a changing `value` re-sets the native text on
+  // every keystroke, which TalkBack speaks as «tika aizstāts» (#287). So each
+  // `defaultValue` is this first render's text, captured once and never fed
+  // from the state the keystrokes write.
+  const [initial] = useState(() => ({
+    plate: editing?.plate ?? '',
+    make: editing?.make ?? '',
+    model: editing?.model ?? '',
+    year: editing ? String(editing.year) : '',
+    seats: editing ? String(editing.passengerSeats) : '4',
+  }));
+  const [plate, setPlate] = useState(initial.plate);
+  const [make, setMake] = useState(initial.make);
+  const [model, setModel] = useState(initial.model);
+  const [year, setYear] = useState(initial.year);
+  const [seats, setSeats] = useState(initial.seats);
   const [childSeat, setChildSeat] = useState(editing?.hasChildSeat ?? false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [banner, setBanner] = useState<string | null>(null);
@@ -122,7 +131,7 @@ export function VehicleScreen() {
       </Text>
       <TextField
         label={t('driver.vehicle.plate')}
-        value={plate}
+        defaultValue={initial.plate}
         onChangeText={setPlate}
         autoCapitalize="characters"
         autoCorrect={false}
@@ -130,19 +139,19 @@ export function VehicleScreen() {
       />
       <TextField
         label={t('driver.vehicle.make')}
-        value={make}
+        defaultValue={initial.make}
         onChangeText={setMake}
         error={errors.make}
       />
       <TextField
         label={t('driver.vehicle.model')}
-        value={model}
+        defaultValue={initial.model}
         onChangeText={setModel}
         error={errors.model}
       />
       <TextField
         label={t('driver.vehicle.year')}
-        value={year}
+        defaultValue={initial.year}
         onChangeText={setYear}
         keyboardType="number-pad"
         maxLength={4}
@@ -150,7 +159,7 @@ export function VehicleScreen() {
       />
       <TextField
         label={t('driver.vehicle.seats')}
-        value={seats}
+        defaultValue={initial.seats}
         onChangeText={setSeats}
         keyboardType="number-pad"
         maxLength={1}

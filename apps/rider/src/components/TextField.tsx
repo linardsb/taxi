@@ -1,5 +1,6 @@
-import { useState, type Ref } from 'react';
+import { useId, useState, type Ref } from 'react';
 import {
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -16,20 +17,28 @@ export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
 }
 
 /**
- * Label + input + error, the theme's only text input. The label is also the
+ * Label + input + error, the theme's only text input. The label is the
  * accessible name and the error its hint — `accessibilityLiveRegion` is
  * Android-only, and a refocused input reads only its label to VoiceOver;
  * the focus state is a `colors.accent` border (visible focus, every plan's
- * rule).
+ * rule). The label stays its own screen-reader stop. On Android the input is
+ * labelled BY it (`labelFor`): an EditText holding text drops its own
+ * `accessibilityLabel` from TalkBack's reading, and carrying both reads the
+ * name twice (#280, S8). iOS has no `accessibilityLabelledBy`, so there the
+ * input carries the label.
  */
 export function TextField({ label, error, ref, ...rest }: TextFieldProps) {
   const [focused, setFocused] = useState(false);
+  const labelId = useId();
   return (
     <View style={styles.wrap}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label} nativeID={labelId}>
+        {label}
+      </Text>
       <TextInput
         ref={ref}
-        accessibilityLabel={label}
+        accessibilityLabel={Platform.OS === 'ios' ? label : undefined}
+        accessibilityLabelledBy={labelId}
         placeholderTextColor={colors.fgMuted}
         {...rest}
         accessibilityHint={error ?? rest.accessibilityHint}

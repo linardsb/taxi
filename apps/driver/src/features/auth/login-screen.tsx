@@ -70,7 +70,9 @@ export function LoginScreen() {
       </Text>
       <TextField
         label={t('driver.login.phone_label')}
-        value={phone}
+        // Uncontrolled: a changing `value` re-sets the native text on every
+        // keystroke, which TalkBack speaks as «tika aizstāts» (#287).
+        defaultValue="+371"
         onChangeText={setPhone}
         keyboardType="phone-pad"
         textContentType="telephoneNumber"
