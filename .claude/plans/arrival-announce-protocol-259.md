@@ -4,13 +4,13 @@ The following plan should be complete, but its important that you validate docum
 
 Pay special attention to naming of existing utils types and models. Import from the right files etc.
 
-Every `file:line` below was read on `origin/main` at `d6deaa6` (2026-09-24). Re-read before editing; lines drift. Where this plan says **`observed`**, the check was run in the planning worktree `~/taxi-worktrees/wt-259` on 2026-09-24 and then reverted. Its evidence is in §De-risking record.
+Every `file:line` below was first read on `origin/main` at `d6deaa6` (2026-09-24), then **re-read at `75feaa6` (2026-09-27)** after #260, #269, #280/#286/#287 and #124 landed. The refs below are `75feaa6`'s. Re-read before editing; lines drift. Where this plan says **`observed`**, the check was run in the planning worktree `~/taxi-worktrees/wt-259` on 2026-09-24 **at `d6deaa6`** and then reverted, unless the entry names another run. Those figures keep that anchor. Its evidence is in §De-risking record, and the 2026-09-27 re-read is in §AMENDMENTS.
 
 ## Feature Description
 
 A rider can opt in, per booking, to the **arrival-announce protocol**.
 
-- When the ride reaches `arrived`, the driver app tells the driver to get out of the car and say aloud «Sakta, {rider name}!». If the rider has no name (every rider today, #269), the driver says «Sakta, uz {destination}!» instead.
+- When the ride reaches `arrived`, the driver app tells the driver to get out of the car and say aloud «Sakta, {rider name}!». If the rider has not set a name (names are optional since #269, `5ef840a`), the driver says «Sakta, uz {destination}!» instead.
 - While the car is at `arrived`, the rider's status screen offers one button, «Palūgt šoferi pieteikties». Pressing it reaches the driver by three routes, deduplicated:
   - a socket event, which is live;
   - a push, for a backgrounded driver app;
@@ -41,9 +41,9 @@ So that I can find my car at the kerb without looking at anything or asking stra
   - `driverRideSchema` gains `announceRequestedAt: string | null` (default `null`).
   - LV/RU/EN copy.
 - **No migration.** Options live in the `request` jsonb snapshot (`db/src/schema/rides.ts:57-58`). A legacy row lacks the key and parses to `false`. The replay timestamp lives in Redis (KV) with a TTL, not in Postgres.
-- **Reveal after accept only (D2), and it is structural.** The flag reaches a driver only through `driverRideSchema.request.options`, and that read is served only to the assigned driver (`lifecycle/driver-ride.ts:69-116`). `rideOfferSchema` (`schemas/ride.ts:194-217`) has no `request`. The offer has two legs, and each strips unknown keys by a different parse:
+- **Reveal after accept only (D2), and it is structural.** The flag reaches a driver only through `driverRideSchema.request.options`, and that read is served only to the assigned driver (`lifecycle/driver-ride.ts:67-114`). `rideOfferSchema` (`schemas/ride.ts:208-238`) has no `request`; #260 added `trip` (distance and duration) to it, nothing from the request's options. The offer has two legs, and each strips unknown keys by a different parse:
   - the socket leg: every emit is parsed through `RT_EVENT_SCHEMAS` (`realtime.service.ts:76-88`);
-  - the push leg (`dispatch-notifier.ts:72-99`, `JSON.stringify(wire)`) is not parsed by `RealtimeService`. It is clean because `offer-builder.ts:64` builds the offer through `rideOfferSchema.parse`.
+  - the push leg (`dispatch-notifier.ts:72-99`, `JSON.stringify(wire)`) is not parsed by `RealtimeService`. It is clean because `offer-builder.ts:69` builds the offer through `rideOfferSchema.parse` (with `satisfies RideOffer` since #260).
 
   An integration test checks both legs on the wire (T8).
 - **Rider request**: `POST /rides/:rideId/announce-request`, rider-only. `ArrivalAnnounceService` runs these checks in order:
@@ -67,7 +67,7 @@ So that I can find my car at the kerb without looking at anything or asking stra
 - **D1. Procedure, not diagnosis.** `announceArrival`, «Šoferis pieteiksies balsī». No field, log key or string says blind. No GDPR Art. 9 data.
 - **D2. The driver learns of it after accepting, never on the offer.** Declining is unpenalised (#15). NFB's 2026 survey reports that refusals persist (`rider-ux-evidence.md:24`).
 - **D3. The request button exists on flagged rides only.**
-- **D4. Name fallback.** «Sakta, {name}!» when `rider.displayName` is set, «Sakta, uz {destination}!» when it is not. It switches by itself when #269 lands.
+- **D4. Name fallback.** «Sakta, {name}!» when `rider.displayName` is set, «Sakta, uz {destination}!» when it is not. #269 has landed (`5ef840a`): a rider sets a name from `/book` (`NameRow`, directly under this ticket's switch, T10), and a dispatcher's caller name fills an empty one. The fallback stays for a rider who has set no name.
 
 **Calls this plan makes, each with its evidence:**
 
@@ -80,12 +80,12 @@ So that I can find my car at the kerb without looking at anything or asking stra
 - **Not included: Android push delivery itself.** Neither `apps/driver/app.json` nor `apps/rider/app.json` declares `googleServicesFile` (`observed`, grep exit 1), so an Android build cannot obtain an Expo push token. `driver-device-day.md` §"What still cannot be reached here" assigns that to **#14** (open). This ticket sends the push by the same path as the offer push (`dispatch-notifier.ts:72-99`). It reaches iOS as soon as an iOS build exists, and Android when #14 adds FCM. The replay leg covers Android today.
 - **Not included: an acknowledgement back to the rider.** The driver's voice is the acknowledgement.
 - **Not included: a stored rider preference or settings screen.** The opt-in is per booking and remembered on the device, as #258 did.
-- **Not included: setting a rider name** (#269), or a "Call dispatch" button for the rider (evidence item 5, its own ticket).
+- **Not included: setting a rider name** (#269, shipped), or a "Call dispatch" button for the rider (evidence item 5, its own ticket).
 - **Not included: a sound on the driver notice.** The offer tone means "new work", so the notice uses haptic and Banner only (`ui-decisions.md`, T17).
 - **Not changing:** the SMS templates, the tracking page, `NotifiableRide`, or `rider.status.arrived`.
 - **Not fixing:**
-  - #258's disabled-Start TalkBack gap, which #276 already owns.
-  - `accessibilityLiveRegion` on views that are not `Banner`: `TextField.tsx:51` (both apps), `offers/queue-position.tsx:20`, `earnings/earnings-screen.tsx:34`. R11 suggests they are equally silent on Android (`derived`, not run). Note them in the report for #276.
+  - #258's disabled-Start TalkBack gap. #276 closed it on 2026-09-27 as not reproduced: «Sākt braucienu, Poga. atspējots» was spoken.
+  - `accessibilityLiveRegion` on views that are not `Banner`: `TextField.tsx:60` (the error `Text`, both apps), `offers/queue-position.tsx:20`, `earnings/earnings-screen.tsx:34`. R11 suggests they are equally silent on Android (`derived`, not run). #276 is closed, so note them in the report and comment them onto #279 (driver) and #16 (rider) in T19–T20.
 - **Fixed here although not #259's:** the paired announcements T0 would otherwise extend to Android. Its caller audit lists them. The driver's `payment_changed` double on iOS (`active-ride-state.ts:244` plus the Banner) is one of them.
 
 ## Feature Metadata
@@ -98,7 +98,7 @@ So that I can find my car at the kerb without looking at anything or asking stra
 - `apps/rider`: booking and ride-status slices
 - `apps/driver`: active-ride and push slices
 
-**Dependencies**: none new. `expo-haptics ~57.0.2` is already a driver dependency (`apps/driver/package.json:12`). `apps/driver/package.json` is unchanged since `7ee13e5` (2026-09-22), and #258's EAS build succeeded on it on 2026-09-24.
+**Dependencies**: none new. `expo-haptics ~57.0.2` is already a driver dependency (`apps/driver/package.json:12`). `apps/driver/package.json` is unchanged since `7ee13e5` (2026-09-22), and #258's EAS build succeeded on it on 2026-09-24. Re-checked 2026-09-27: `git log d6deaa6..75feaa6 -- apps/driver/package.json apps/rider/package.json apps/driver/app.json apps/rider/app.json` prints nothing (`observed`).
 
 ## Related Work
 
@@ -107,14 +107,16 @@ So that I can find my car at the kerb without looking at anything or asking stra
 **Back-references**:
 - `.claude/plans/pickup-pin.md` (#258): same shape end to end. Its report `.claude/reports/pickup-pin-report.md` §T18 is the emulator run this plan's Level 4 inherits.
 - `.claude/plans/driver-ride-rider-identity.md` (#261): `rider.displayName` and its window.
+- `.claude/plans/rider-display-name-269.md` (#269, shipped `5ef840a`): riders and dispatchers set `users.display_name`; it did this plan's T1 split. Nothing in it or its review (`pr-290-review.md`) changes D4.
 - `.claude/plans/driver-offers-active-ride.md:52`: the deferral.
-- `docs/runbooks/driver-device-day.md` §"Driving TalkBack from `adb`" (`:463-500`).
+- `docs/runbooks/driver-device-day.md` §"Driving TalkBack from `adb`" (`:476-514` at `75feaa6`).
 
 **Forward-references**:
-- #269: names, so the prompt stops falling back to the destination.
 - #275: form checkbox plus board badge (T20).
 - #14: Android FCM, which makes the push leg real on Android.
-- #257 / #276: iOS VoiceOver and the rider-app speech checks, if T24's rider leg cannot run.
+- #257: iOS VoiceOver, both apps (#276's closure left the VoiceOver legs there).
+- #16: the rider-app listen checks #276 moved there, and T24's leg if it cannot run.
+- #279: the driver's other non-Banner live regions (T19–T20 comment).
 
 ---
 
@@ -125,13 +127,13 @@ So that I can find my car at the kerb without looking at anything or asking stra
 | R1 | A backgrounded driver misses the request (socket only) | Read the driver app: `foreground` and `socket_connected` both dispatch `fetch_ride` (`active-ride-state.ts:414-422`). The push pipeline for offers is `dispatch-notifier.ts:72-99` → `push-registrar.tsx:31-58` → `register-push-token.ts:85-128`. `grep googleServicesFile apps/*/app.json` gives exit 1. | Redesigned as three legs. **Replay** works on Android today: a re-read carries `announceRequestedAt`. **Push** mirrors the offer push. It is testable end to end in the harness (`RecordingPushProvider`, `test/harness.ts:426-431`), but it cannot deliver on Android until #14 adds FCM. | Retired for foreground, reconnect and return-to-app. Residual: a driver who **never** reopens the app while on Android. That is owned by #14, and at `arrived` it means a driver who has stopped working the ride. |
 | R2 | Rider app has no device build (Expo Go guess) | `taxi-f0` built the rider app locally for #276 (`observed` by that session: Gradle `BUILD SUCCESSFUL in 12m 50s`). This session then drove that installed debug build from its own Metro (`observed` 17:18–17:31 BST). | A rider device leg exists; recipe in T24 | Retired |
 | R11 | **Found while de-risking**: the rider's `Banner` is silent under TalkBack on Android, so «Auto ir klāt» and T11's «Pieprasījums nosūtīts šoferim.» are never spoken | Four variants were run on `sakta224` against the installed rider debug build, with TalkBack's verbose log. A fresh Metro bundle was confirmed by an on-screen `[P]` marker; the first two variant runs were discarded because the app was still on a stale bundle. **V0** (main): the `arriving`/`arrived` text changes came in with `nodeLiveRegion=0` and **0 utterances**. **V1** (live region on `Text`): still 0; RN 0.86.3's `Text` has no live-region prop. **V3** (`announceForAccessibility` on Android as well): TalkBack spoke «Auto ir klāt» with subtype **`TYPE_ANNOUNCEMENT`**, on API 36 / `targetSdk=36`. | Fix = T0. The driver `Banner` has identical code on the same RN 0.86.3 (`derived`, not run), so T0 fixes both apps, and T23 observes the driver's | Retired by T0 (rider `observed`; driver checked in T23) |
-| R3 | The `lv.ts` split conflicts with an open branch | `gh pr list --state open`: none. Remote branches whose diff against main touches `i18n/lv.ts`: only #258 and #261, both merged. | No live conflict. Re-check at T1. | Retired |
+| R3 | The `lv.ts` split conflicts with an open branch | `gh pr list --state open`: none. Remote branches whose diff against main touches `i18n/lv.ts`: only #258 and #261, both merged. | No live conflict. Re-checked 2026-09-27: `gh pr list --state open` prints `[]` (`observed`). Re-check before T4. | Retired |
 | R4 | Horn at night | likumi.lv, CSN (274865), in force: **p. 172** «Skaņas signālu atļauts lietot, tikai lai novērstu ceļu satiksmei bīstamas situācijas, bet ārpus apdzīvotām vietām – arī lai pievērstu citu ceļu satiksmes dalībnieku uzmanību.» | Honking to find a rider in Rīga is not permitted. | Retired by design (D5): voice-only copy |
-| R5 | T1 catalog split | The split was run with the T1 script, then reverted. `lv.ts` 494 → 394 lines, `lv-rider.ts` 109. `Object.entries(lv)` gives **344 keys, sha256 prefix `2a276af52559cb83` before and after**. `tsc --noEmit` passes. `@taxi/shared` test: **29 files, 276 tests passed**. Lint passes. | Pure move proven | Retired |
-| R6 | T8 `PreferenceSwitch` extraction touching #258's hardened row | The extraction was run with the exact component in T8, then reverted. `booking-screen.tsx` 294 → 255 lines. Rider typecheck clean. Lint clean after prettier `--fix` (one import-wrap). `@taxi/rider` test: **32 suites, 176 tests passed, no test edited**. | Proven. The `pickup-pin-row` testID and accessibility props are preserved. | Retired |
-| R7 | EAS driver build fails | `apps/driver/package.json` last changed at `7ee13e5` (2026-09-22). #258's EAS `preview` build `0df8edea-…` **finished on the first attempt** on 2026-09-24, 807 s (`pickup-pin-report.md:106`), with the same `expo install --check` drift (16 packages behind, on main). This ticket adds no native module. | Same native tree as a build that passed today | Retired. Budget 807 s plus queue, not a failure |
-| R8 | TalkBack speech unreachable | `driver-device-day.md:463-500`: TalkBack **is** on the `google_apis` image, enabled over `adb`, with a verbose utterance log through the `pref_log_level` file. #258 T18(e) used it on 2026-09-24. | The Android speech leg is performable here | Retired. Only iOS VoiceOver stays impossible here (Xcode 26.3 ceiling, `observed` 2026-08-25) and is owed by #257/#276 |
-| R9 | Gate count copied from memory | `npx turbo run typecheck lint test build --dry=json`: 28 tasks, **22** with a real command | 22/22 is the target | Retired |
+| R5 | T1 catalog split | The split was run with the T1 script, then reverted. `lv.ts` 494 → 394 lines, `lv-rider.ts` 109. `Object.entries(lv)` gives **344 keys, sha256 prefix `2a276af52559cb83` before and after**. `tsc --noEmit` passes. `@taxi/shared` test: **29 files, 276 tests passed**. Lint passes. (All at `d6deaa6`.) | Pure move proven | **Superseded**: #269 ran this script and shipped the split (`5ef840a`; its R1 `345 a43374cb71b05908` before and after at `170c4b1`). At `75feaa6`, `lv.ts` is 396 lines and `lv-rider.ts` 120 (`observed`, `wc -l`). T1 is retired |
+| R6 | T8 `PreferenceSwitch` extraction touching #258's hardened row | The extraction was run with the exact component in T8, then reverted. `booking-screen.tsx` 294 → 255 lines. Rider typecheck clean. Lint clean after prettier `--fix` (one import-wrap). `@taxi/rider` test: **32 suites, 176 tests passed, no test edited**. (All at `d6deaa6`.) | Proven. The `pickup-pin-row` testID and accessibility props are preserved. | Retired. At `75feaa6` the replaced block is unchanged: #269 added one import line above it and `<NameRow />` after the PIN hint (`derived` from `git diff d6deaa6 75feaa6`). The file is now 296 lines, so the extraction gives ~257 (`derived`: 296 − 39, R6's delta). The rider suite has grown since, so 176 is no longer the count (T10) |
+| R7 | EAS driver build fails | `apps/driver/package.json` last changed at `7ee13e5` (2026-09-22). #258's EAS `preview` build `0df8edea-…` **finished on the first attempt** on 2026-09-24, 807 s (`pickup-pin-report.md:106`), with the same `expo install --check` drift (16 packages behind, on main). This ticket adds no native module. | Same native tree as a build that passed today | Retired. Budget 807 s plus queue, not a failure. Re-checked 2026-09-27: no `package.json` or `app.json` change in either app since `d6deaa6` (`observed`) |
+| R8 | TalkBack speech unreachable | `driver-device-day.md:463-500` (`:476-514` at `75feaa6`): TalkBack **is** on the `google_apis` image, enabled over `adb`, with a verbose utterance log through the `pref_log_level` file. #258 T18(e) used it on 2026-09-24. | The Android speech leg is performable here | Retired. Only iOS VoiceOver stays impossible here (Xcode 26.3 ceiling, `observed` 2026-08-25) and is owed by #257 |
+| R9 | Gate count copied from memory | `npx turbo run typecheck lint test build --dry=json`: 28 tasks, **22** with a real command | 22/22 is the target. Re-derived 2026-09-27: the same command printed 28 tasks, 22 with a command, in the main checkout at `f2cc6c4`, whose `package.json` files differ from `75feaa6` by one dependency line and whose `turbo.json` is identical, so no script changed (`derived` for `75feaa6`) | Retired |
 
 ---
 
@@ -143,17 +145,17 @@ Shared:
 - `packages/shared/src/schemas/ride.ts`:
   - 23-32 `rideOptionsSchema`
   - 88-92 default literal
-  - 194-217 `rideOfferSchema`
-  - 292-298 `driverRideRiderSchema`/`driverRideSchema`
+  - 208-238 `rideOfferSchema`
+  - 313-319 `driverRideRiderSchema`/`driverRideSchema`
 - `packages/shared/src/schemas/offer-push.ts` (the whole file): the envelope pattern `announcePushDataSchema` mirrors. Its values are strings only (`:15-17`). It is exported from `src/index.ts:22`.
 - `packages/shared/src/ride-state-machine.ts` 35-58
 - `packages/shared/src/realtime-events.ts`:
-  - 29-43 `RT` (first `as const` block)
-  - 92-99 ISO-`at` shape
-  - 368-378 `ServerToClientEvents`
-  - 389-399 `RT_EVENT_SCHEMAS`
-- `packages/shared/tests/realtime-events.test.ts:529-547` (hand-listed catalog, `toHaveLength(9)`)
-- `packages/shared/src/i18n.ts`, `i18n/lv.ts` (494 lines; `rider.*` at 394-486; `driver.ride.*` 345-366; `push.*` 238-239, 314-323; `driver.action.done` = «Gatavs» at `:266`), `en.ts` (381), `ru.ts` (388)
+  - 30-44 `RT` (first `as const` block)
+  - 93-100 ISO-`at` shape
+  - 376-386 `ServerToClientEvents`
+  - 397-407 `RT_EVENT_SCHEMAS`
+- `packages/shared/tests/realtime-events.test.ts:541-559` (hand-listed catalog, `toHaveLength(9)` at `:557`)
+- `packages/shared/src/i18n.ts`, `i18n/lv.ts` (396 lines; `driver.ride.*` 349-370; `push.*` 241-242, 317-326; `driver.action.done` = «Gatavs» at `:269`), `i18n/lv-rider.ts` (120 lines, every `rider.*` key since #269), `en.ts` (394), `ru.ts` (401)
 
 API:
 - `services/api/src/features/rides/lifecycle/ride-lifecycle.controller.ts` 35-37, 39-47, 105-118
@@ -163,23 +165,23 @@ API:
   - 229-234 `complete` → `toDriverRide`
   - 317-357 owner-or-404
   - 387-394 `findForDriver` → `readDriverRide` deps
-- `services/api/src/features/rides/lifecycle/driver-ride.ts` 31-48 `toDriverRide`, 50-56 `DriverRideReadDeps`, 79-116 `readDriverRide`
+- `services/api/src/features/rides/lifecycle/driver-ride.ts` 29-46 `toDriverRide` (the name now goes through shared `readDisplayName`, #269), 48-54 `DriverRideReadDeps`, 77-114 `readDriverRide`
 - `services/api/src/features/rides/lifecycle/ride-lifecycle.repository.ts` 22-49, 51-61
-- `services/api/src/features/rides/rides.repository.ts:51-58` (`rideRequestSchema.parse(row.request)`: parse, never cast)
-- `services/api/src/features/rides/rides.service.ts` 55-61 (KV injection), 406-452 (INCR-then-check, 429 body)
+- `services/api/src/features/rides/ride-row.ts:47` (`rideRequestSchema.parse(row.request)`: parse, never cast; #260 moved it here out of `rides.repository.ts`)
+- `services/api/src/features/rides/rides.service.ts` 55-61 (KV injection), 407-453 (INCR-then-check, 429 body)
 - `services/api/src/common/kv/kv.store.ts:9-23` (`get`, `setWithTtl`, `incrWithTtl`, `ttl`)
 - `services/api/src/features/rides/rides.module.ts` 24-33 (imports `DriversModule`, which exports `DriversService` per `drivers.module.ts:50`)
 - `services/api/src/features/drivers/drivers.service.ts:80-125` (`sendPush`: logs `${event}_sent|_skipped|_failed` and never throws)
 - `services/api/src/features/dispatch/dispatch-notifier.ts` 53-54 (emit in try/catch), 72-99 (`pushOffer`: `void …sendPush(…).catch(() => undefined)`)
 - `services/api/src/features/realtime/realtime.service.ts` 30-36, 76-88; `realtime/room-policy.ts:27-38`
 - `services/api/src/features/rides/lifecycle/ride-pickup-pin.integration.spec.ts`: helpers 112-165, `waitForEvent` 266-285
-- `services/api/src/features/dispatch/dispatch.integration.spec.ts:998-1010` (asserting `ctx.push.sent`)
+- `services/api/src/features/dispatch/dispatch.integration.spec.ts:1030-1042` (asserting `ctx.push.sent`)
 - `services/api/src/features/drivers/push-token.integration.spec.ts:47-56` (`PUT /drivers/me/push-token` → 204)
 - `services/api/test/harness.ts` 50 (`InMemoryKeyValueStore`), 426-431 (`RecordingPushProvider.sent`), 496, 717-738
 
 Rider app:
 - `apps/rider/src/features/booking/pickup-pin-preference.ts` (49 lines)
-- `apps/rider/src/features/booking/booking-screen.tsx` 1-38, 61-62, 231-269, 274, 280-293
+- `apps/rider/src/features/booking/booking-screen.tsx` 1-39, 62-63, 232-270 (PIN row and hint), 271 (`<NameRow />`, #269), 276, 282-295
 - `apps/rider/src/features/booking/use-book-ride.ts` 43, 61
 - `apps/rider/src/features/ride-status/use-ride-status.tsx` 45-64, 116-121, 159-173 (`pickupPin` is set **before** the staleness guard on purpose, `:162-171`)
 - `apps/rider/src/features/ride-status/status-screen.tsx` 86-87, 111-129, 131-172
@@ -197,7 +199,7 @@ Driver app:
   - 414-422 `socket_connected`/`foreground` → `fetch_ride`
   - 431-432 `notice_dismissed`
 - `apps/driver/src/features/active-ride/use-active-ride.tsx` 32-45 (context API), 150-163 (effect runner), 165-214 (socket intake)
-- `apps/driver/src/features/active-ride/active-ride-screen.tsx` 144-155, 164-172, 188-212
+- `apps/driver/src/features/active-ride/active-ride-screen.tsx` 151-162, 171-179, 198-222. Since #280 the PIN field is uncontrolled and its state is `{ rideId, text }` (`:61-69`, `typedPin` at `:150`); T13 adds nothing to it
 - `apps/driver/src/features/push/route-notification.ts` (whole), `register-push-token.ts:85-128` (`quiet` rule, listeners), `push-registrar.tsx:19-58`
 - `apps/driver/src/app/_layout.tsx:15-31` (`PushRegistrar` sits inside `ActiveRideProvider`, so it can call `useActiveRide()`)
 - `apps/driver/src/features/offers/use-offer-alerts.ts` (best-effort `expo-haptics`)
@@ -205,11 +207,10 @@ Driver app:
 
 Dispatch: `apps/dispatch/src/features/phone-orders/use-booking-form.ts:313-314`.
 
-Docs: `.claude/references/realtime-events.md`, `docs/ux-metrics-ledger.md:16`, `docs/runbooks/rider-a11y-walkthrough.md`, `docs/runbooks/driver-device-day.md:24,463-500,577-580`, `.claude/references/ui-decisions.md`, `.claude/reports/pickup-pin-report.md:104-124`.
+Docs: `.claude/references/realtime-events.md`, `docs/ux-metrics-ledger.md:16`, `docs/runbooks/rider-a11y-walkthrough.md`, `docs/runbooks/driver-device-day.md:24,476-514` (§"Driving TalkBack from `adb`", which since #281 also holds the raw-touch `sendevent` recipe for moving focus),`:618-621`, `.claude/references/ui-decisions.md`, `.claude/reports/pickup-pin-report.md:104-124`.
 
 ### New Files to Create
 
-- `packages/shared/src/i18n/lv-rider.ts`
 - `packages/shared/src/schemas/announce-push.ts`
 - `services/api/src/features/rides/lifecycle/arrival-announce.policy.ts`
 - `services/api/src/features/rides/lifecycle/arrival-announce.service.ts` and `.spec.ts`
@@ -231,7 +232,7 @@ Docs: `.claude/references/realtime-events.md`, `docs/ux-metrics-ledger.md:16`, `
 
 - **Error codes**: the message is the snake_case code. New: `announce_not_requested` (409). Reused: `ride_not_arrived` (409), `too_many_requests` (429 + `retryAfterSeconds`), `ride_not_found` (404).
 - **Owner without an existence oracle**: `ride-lifecycle.service.ts:338-340`.
-- **Rate limit**: INCR-then-check (`rides.service.ts:406-409`). The window is fixed, not sliding.
+- **Rate limit**: INCR-then-check (`rides.service.ts:407-410`). The window is fixed, not sliding.
 - **Emit then push**: `dispatch-notifier.ts:53-54` then `:72-99`. The emit goes in try/catch. The push is `void …catch(() => undefined)`, because `sendPush` logs every outcome itself.
 - **Push envelope**: built through the shared schema type, so a rename fails typecheck on both sides (`offer-push.ts:5-13`).
 - **Logging**:
@@ -293,7 +294,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 
 **Friction audit** (`derived` from the breadboards)
 - Rider not opted in: 0 extra taps.
-- Rider opting in the first time: +1 tap. Later bookings: 0.
+- Rider opting in the first time: +1 tap. Later bookings: 0. Setting a name so the driver says it is #269's optional `NameRow` flow, directly under the switch; this ticket adds no step to it.
 - Rider at the kerb: 0 taps if the first announcement is heard. +1 per re-request.
 - Driver on a flagged ride: 0 extra taps (getting out is the protocol). +1 optional to dismiss.
 - Driver on an un-flagged ride: unchanged.
@@ -303,7 +304,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 ## IMPLEMENTATION PLAN
 
 - **Phase 0, Banner speaks on Android** (T0). Both apps. **Independent of** everything else, and first, because T11 and T13 rely on it.
-- **Phase A, Shared** (T1–T4). T1 first. Rebuild shared after every shared edit: `pnpm --filter @taxi/shared build`, because the apps read `dist`.
+- **Phase A, Shared** (T2–T4; T1 is retired, #269 shipped the split). Rebuild shared after every shared edit: `pnpm --filter @taxi/shared build`, because the apps read `dist`.
 - **Phase B, API** (T5–T8). **Depends on:** A.
 - **Phase C, Rider** (T9–T11). **Depends on:** A · **Independent of:** B, D.
 - **Phase D, Driver** (T12–T15). **Depends on:** A · **Independent of:** B, C.
@@ -323,7 +324,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 - **GOTCHA**:
   - `announceForAccessibility` is deprecated on API 36, but it spoke there (`observed`). Say so in the docblock, so a later deprecation clean-up does not silently remove the only Android announcer.
   - **Focused-node double read** (`expected`, not yet run): when TalkBack's focus is on the banner's own text node, TalkBack also speaks that node's content change. That was seen once in a discarded stale-bundle run (the `v3b` log), where the change was spoken as `TYPE_WINDOW_CONTENT_CHANGED`. T23/T24 check whether the new code then speaks twice.
-  - **Caller audit** (PR #282 review H1/H2, re-derived at `d6deaa6`). After T0 every `Banner` speaks on Android. So every place that speaks the same event a second way, or re-renders a Banner's `text` on a timer, speaks twice or repeatedly on TalkBack too. Several already do so on iOS: the one-announcer rule does **not** already hold there. Sources: `grep -rn "<Banner" apps/rider/src apps/driver/src` and `grep -rn "announceForAccessibility" apps/rider/src apps/driver/src`, both excluding tests.
+  - **Caller audit** (PR #282 review H1/H2, re-derived at `d6deaa6`; re-run at `75feaa6` with the same two greps: 23 `<Banner` and 11 `announceForAccessibility` hits in shipped source, one more of each than at `d6deaa6`, both from #269's `profile/name-screen.tsx`, `observed`). After T0 every `Banner` speaks on Android. So every place that speaks the same event a second way, or re-renders a Banner's `text` on a timer, speaks twice or repeatedly on TalkBack too. Several already do so on iOS: the one-announcer rule does **not** already hold there. Sources: `grep -rn "<Banner" apps/rider/src apps/driver/src` and `grep -rn "announceForAccessibility" apps/rider/src apps/driver/src`, both excluding tests.
   - **Which of the two speakers stays.** Keep the one that speaks regardless of which screen is mounted. The driver's reducers run in app-wide providers. The Banners render only on their own screen, and that screen can be unmounted while the state is live:
     - The driver app's root is a plain `Stack` (`apps/driver/src/app/_layout.tsx:28`), with no `BackHandler` or `usePreventRemove` anywhere in `apps/driver/src`, and `ActiveRideProvider` wraps it (`:25-31`). For a ride entered through an offer (`/home` → `/offer`, replaced by `/active-ride`), hardware back from `/active-ride` pops to `/home` while `state.rideId` is still set (`derived` from the code, not run). After a cold start the gate's `<Redirect>` replaces `/`, so back leaves the app instead (round 2 L3). Either way the screen unmounts while the provider lives on, which is what the rule rests on.
     - `marked_offline` can land while `/active-ride` is up, where the home Banner is not mounted.
@@ -333,24 +334,26 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 
     | # | Where | Second speaker | Fix in T0 |
     |---|---|---|---|
-    | P1 | driver `payment-changed` Banner (`active-ride-screen.tsx:166-172`), text with `{ method }` | reducer `announce` `driver.ride.payment_changed` (`active-ride-state.ts:244`), bare key | the Banner gets `announce={false}`. The effect carries the method so it speaks the Banner's text: `{ type: 'announce', key, method: ride.paymentMethod }`. The runner (`use-active-ride.tsx:160-161`) resolves it with `paymentMethodLabel(method, t)` from `./receipt`, as the screen does |
-    | P2 | driver `ended-banner` for released (`active-ride-screen.tsx:103-113`) | reducer `announce` `driver.ride.released` at `active-ride-state.ts:224`, `:260`, `:319`, `:369` | `announce={false}` on the `ended-banner`. The effects stay as they are |
+    | P1 | driver `payment-changed` Banner (`active-ride-screen.tsx:173-179`), text with `{ method }` | reducer `announce` `driver.ride.payment_changed` (`active-ride-state.ts:244`), bare key | the Banner gets `announce={false}`. The effect carries the method so it speaks the Banner's text: `{ type: 'announce', key, method: ride.paymentMethod }`. The runner (`use-active-ride.tsx:160-161`) resolves it with `paymentMethodLabel(method, t)` from `./receipt`, as the screen does |
+    | P2 | driver `ended-banner` for released (`active-ride-screen.tsx:109-119`) | reducer `announce` `driver.ride.released` at `active-ride-state.ts:224`, `:260`, `:319`, `:369` | `announce={false}` on the `ended-banner`. The effects stay as they are |
     | P3 | driver `ended-banner` for cancelled | reducer `announce` `driver.ride.cancelled` at `:230`, `:379`, bare key | the same `announce={false}`. The effect carries `reason: e.reason` at `:379` and `null` at `:230`, and the runner speaks `t('driver.ride.cancelled', { reason: reason ?? '' }).trim()`, the Banner's own expression |
-    | P4 | driver completed-without-split Banner (`active-ride-screen.tsx:95-99`) | reducer `announce` `driver.ride.completed_title` at `:216`, `:350` | `announce={false}` on that Banner. The effects stay: they already speak its exact text, and they also cover the Receipt path, which has no Banner |
-    | P6 | rider error Banner in `search-sheet.tsx:281-285`, text `${t(error)} ${t('rider.book.retry_in', { seconds: cooldown })}` | itself: `cooldown` ticks every 1 s (`:103`), and Banner's effect is keyed on `[text]` | keep the visible ticking text. **One flag**, `rateLimited` (PR #282 review round 2 M1): set it only in the `retryAfterSeconds` branch (`:182`, `:231`), next to `setCooldown`, and announce there once with the seconds from the response: `` `${t(key)} ${t('rider.book.retry_in', { seconds: err.retryAfterSeconds })}` ``. Clear it at every `setError` (`:171`, `:181`, `:212`, `:230`, `:249`, `:257`); at `:181` and `:230` the clear comes before the branch that sets it. The Banner gets `announce={!rateLimited}` and carries the countdown suffix only while `rateLimited && coolingDown`. So a later error inside the cooldown (the location failure at `:257`, reachable because «Use current location» is disabled only on `busy`, `:290-296`) speaks once with no ticking suffix, and a 429 with no `retryAfterSeconds` (code `'generic'` when the body fails `apiErrorBodySchema`, `auth/api-client.ts:119-127`) leaves the flag unset and its Banner speaks. Do not key the flag on `err.status`. The comment at `:98-99` promises the rider is told how long, and a Banner reduced to `t(error)` would drop that |
+    | P4 | driver completed-without-split Banner (`active-ride-screen.tsx:101-105`) | reducer `announce` `driver.ride.completed_title` at `:216`, `:350` | `announce={false}` on that Banner. The effects stay: they already speak its exact text, and they also cover the Receipt path, which has no Banner |
+    | P6 | rider error Banner in `search-sheet.tsx:282-286` (lines up to `:271` are unchanged since `d6deaa6`; #287 added one line at `:274`), text `${t(error)} ${t('rider.book.retry_in', { seconds: cooldown })}` | itself: `cooldown` ticks every 1 s (`:103`), and Banner's effect is keyed on `[text]` | keep the visible ticking text. **One flag**, `rateLimited` (PR #282 review round 2 M1): set it only in the `retryAfterSeconds` branch (`:182`, `:231`), next to `setCooldown`, and announce there once with the seconds from the response: `` `${t(key)} ${t('rider.book.retry_in', { seconds: err.retryAfterSeconds })}` ``. Clear it at every `setError` (`:171`, `:181`, `:212`, `:230`, `:249`, `:257`); at `:181` and `:230` the clear comes before the branch that sets it. The Banner gets `announce={!rateLimited}` and carries the countdown suffix only while `rateLimited && coolingDown`. So a later error inside the cooldown (the location failure at `:257`, reachable because «Use current location» is disabled only on `busy`, `:291-297`) speaks once with no ticking suffix, and a 429 with no `retryAfterSeconds` (code `'generic'` when the body fails `apiErrorBodySchema`, `auth/api-client.ts:119-127`) leaves the flag unset and its Banner speaks. Do not key the flag on `err.status`. The comment at `:98-99` promises the rider is told how long, and a Banner reduced to `t(error)` would drop that |
     | P7 | rider quote-failed Banner (`booking-screen.tsx:212-219`, the api's own cause) | `use-quote.ts:56` announces «Cenu neizdevās aprēķināt» | drop the hook's failure announce. Both render only on `/book`, so the more specific Banner stays. Keep the success announce at `:45`, which has no Banner |
 
     Callers checked and **kept** (one speaker, or two distinct messages in sequence):
     - driver `flipOffline` (`presence-state.ts:135`), which says «Bezsaistē», and the home `marked_offline` Banner, which says «Serveris jūs atzīmēja kā bezsaistē {time}». These are two different texts. On `/active-ride` the announce is the only speaker, because the home Banner is not mounted. Keep both.
     - rider `status-line` (`status-screen.tsx:138`): the one status announcer, by design.
-    - rider `search-status` (`search-sheet.tsx:304`): speaks the result count. That is intended, and `:130-140` already blanks it while the error Banner speaks.
+    - rider `search-status` (`search-sheet.tsx:305`): speaks the result count. That is intended, and `:130-140` already blanks it while the error Banner speaks.
     - rider `ride_requested` (`use-book-ride.ts:66`, «Brauciens pieteikts»), then the `/book/status` status line on mount («Meklējam auto…»). Distinct messages in sequence, which iOS already speaks. T24 (b) records the utterances.
     - rider `reconnecting`, and the error Banners on booking, status, gate, login and verify.
     - driver home permission/`driver_on_ride` Banners; `offer-banner` (the offer reducer announces only `driver.offer.title`, for a new card, `offer-state.ts:211`); `ride-error`; `gate-screen`; `profile-screen`; `vehicle-screen`.
     - `presence-state.ts:303`: it carries the existing banner and never sets a new one, so its Banner's `[text]` effect does not re-fire.
-  - **Retire the live-region reasoning in shipped comments**, not only in `Banner.tsx`. Hits for `live region` at `d6deaa6`:
+    - rider `profile/name-screen.tsx` (#269): `:53` announces «Vārds saglabāts» / «Vārds noņemts» on success and navigates back; the danger Banner (`error ? <Banner …>`) renders only on failure. Two different events, one speaker each.
+    - driver `offers/offer-card.tsx:62` (the countdown, every 5 s then each of the last 5) and `availability/earnings-card.tsx:50` (the day's net when it changes): neither screen renders a Banner with that text. The countdown's timing is #279's.
+  - **Retire the live-region reasoning in shipped comments**, not only in `Banner.tsx`. Hits for `live region` at `d6deaa6`, re-checked at `75feaa6`:
     - `rider/…/status-screen.tsx:67-78` ("Banner is kept over the effect because it also carries the Android live region")
-    - `rider/…/search-sheet.tsx:126-128` and `:299`
+    - `rider/…/search-sheet.tsx:126-128` and `:300`
     - `rider/…/auth/gate-screen.tsx:35`
     - both `Banner.test.tsx` titles (`:6`, `:19`)
 
@@ -370,27 +373,12 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - Then run each app's full suite. Every other changed assertion is explained in the report.
 - **SATISFIES**: AC9, AC14, AC15
 
-### T1 REFACTOR split `rider.*` out of `lv.ts` (run in planning: R5)
+### T1 RETIRED: #269 shipped the `lv.ts` split (`5ef840a`)
 
-- **IMPLEMENT**: run this from `packages/shared/src/i18n`. It is the exact script that produced R5's result.
-
-  ```python
-  src=open('lv.ts').read().split('\n')
-  start=next(i for i,l in enumerate(src) if l.startswith("  'rider."))
-  while src[start-1].strip().startswith('//'): start-=1
-  end=max(i for i,l in enumerate(src) if l.startswith("  'rider.") or (l.startswith("    '") and i>start))
-  while not src[end].rstrip().endswith(','): end+=1
-  close=next(i for i in range(end+1,len(src)) if src[i].startswith('} as const'))
-  block=src[start:end+1]
-  open('lv-rider.ts','w').write('\n'.join(["/**"," * The rider app's Latvian keys, split out of `lv.ts` when #259 pushed it past"," * the 500-line cap. Spread into `lv` last, so `MessageKey` is unchanged."," */","export const lvRider = {"]+block+["} as const;",""]))
-  open('lv.ts','w').write('\n'.join(["import { lvRider } from './lv-rider';",""]+src[:start]+src[end+1:close]+["  ...lvRider,"]+src[close:]))
-  ```
-
-- **GOTCHA**:
-  - Re-run the R3 check first: `gh pr list --state open`. Then run, for each remote branch, `git diff --name-only origin/main...<branch> | grep i18n/lv.ts`.
-  - Prove the move with the same hash, run before and after: `npx tsx -e "import {lv} from './src/i18n/lv'; import {createHash} from 'crypto'; console.log(Object.keys(lv).length, createHash('sha256').update(JSON.stringify(Object.entries(lv).sort())).digest('hex').slice(0,16))"` from `packages/shared`. It must print `344 2a276af52559cb83` at `d6deaa6`'s catalog.
-- **VALIDATE**: the hash matches, then `pnpm --filter @taxi/shared typecheck lint test`. Green with no test edits (R5: 29 files, 276 tests).
-- **SATISFIES**: AC10
+- `packages/shared/src/i18n/lv-rider.ts` exists on `75feaa6` (120 lines) and holds every `rider.*` key, spread into `lv` as this task planned. Its docblock names #269, which is correct. Do not run the script again.
+- The number stays so that T-refs in PR #282's two review rounds and fix reports still resolve. The script and its `d6deaa6` hash are in git history at `06878d0`.
+- What survives: before T4, re-run R3's check (`gh pr list --state open`, then `git diff --name-only origin/main...<branch> | grep i18n/lv` for each open branch). Two branches adding keys to the same catalog conflict on the insertion lines.
+- **SATISFIES**: AC10 (through T4's line figures)
 
 ### T2 UPDATE `packages/shared/src/schemas/ride.ts`
 
@@ -398,21 +386,21 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - `rideOptionsSchema`: add `announceArrival: z.boolean().default(false)`, with a docblock: "A request for the arrival procedure, not a statement about the rider (D1). Revealed to the driver only through `driverRideSchema`, after accept (D2)."
   - Default literal `:88-92`: add `announceArrival: false`.
   - `driverRideSchema`: extend with `announceRequestedAt: z.string().datetime().nullable().default(null)`. Docblock: "When the rider last asked the driver to call out (#259), from KV (600 s TTL). The replay leg: the app re-reads on every foreground and reconnect (`active-ride-state.ts:414-422`), so a request missed while backgrounded shows on return. `.default(null)`: a new app reading an api from before this change still parses."
-- **GOTCHA**: find every literal that breaks with `grep -rn "pickupPin: false" --exclude-dir=node_modules --exclude-dir=dist .`. It includes at least `use-booking-form.ts:314`, `bookings.service.spec.ts:26` and `candidate-filter.spec.ts:80,104`. Add the key beside each, never through a spread.
+- **GOTCHA**: find every literal that breaks with `grep -rn "pickupPin: false" --exclude-dir=node_modules --exclude-dir=dist .`. At `75feaa6` it prints (`observed`, 2026-09-27): `use-booking-form.ts:314`, `bookings.service.spec.ts:26`, `candidate-filter.spec.ts:80,104`, `use-book-ride.test.tsx:89`, `schemas-ride-request.test.ts:93,183,254`, `schemas-customer.test.ts:39` (new with #269; it asserts `dispatcherBookingBodySchema` inherits the option defaults with `toEqual`), and the default literal `ride.ts:91`. The `toEqual` sites go red on the new default rather than failing typecheck, so run the shared tests, not only typecheck. Add the key beside each, never through a spread.
 - **VALIDATE**: `pnpm --filter @taxi/shared build && pnpm --filter @taxi/shared test`. Then `pnpm turbo run typecheck --force`: every consumer compiles, and the api fails where `toDriverRide` output lacks the key. T6 fixes that. Record the failing file list.
 - **SATISFIES**: AC1, AC5
 
 ### T3 UPDATE `realtime-events.ts`, CREATE `schemas/announce-push.ts`, UPDATE the doc and tests
 
 - **IMPLEMENT**:
-  - `RT.rideAnnounceRequested: 'ride:announce_requested'`. Correct the stale docblock at `realtime-events.ts:29-31`: it says a doc-sync check slices the catalog from `RT`, and no such check exists (GOTCHA below). Replace it with "`.claude/references/realtime-events.md` is kept in step by hand; T3 of #259 found no check that reads it."
+  - `RT.rideAnnounceRequested: 'ride:announce_requested'`. Correct the stale docblock at `realtime-events.ts:30-32`: it says a doc-sync check slices the catalog from `RT`, and no such check exists (GOTCHA below). Replace it with "`.claude/references/realtime-events.md` is kept in step by hand; T3 of #259 found no check that reads it."
   - `rideAnnounceRequestedEventSchema = z.object({ rideId: z.string().uuid(), at: z.string().datetime() })`, plus the `ServerToClientEvents` and `RT_EVENT_SCHEMAS` entries. Docblock: "api → `driver:<id>` only. The rider's side is REST (`POST /rides/:rideId/announce-request`). Never the ride room: the rider is in it, and a reconnected driver socket is in no ride room until its next read."
   - `announce-push.ts`: `announcePushDataSchema = z.object({ kind: z.literal('announce_requested'), rideId: z.string().uuid(), at: z.string().datetime() })` and its type, with a docblock that points at `offer-push.ts`'s reasons (strings only; one schema for both sides). Export it from `src/index.ts` beside `offer-push`.
   - `.claude/references/realtime-events.md`: `:3` "all 9 events" → 10, and add a row: "`ride:announce_requested` | api → driver app | `RideAnnounceRequestedEvent` | the rider's `POST /rides/:rideId/announce-request` (REST: auth, rate limit), emitted to `driver:<id>`; also pushed (`announcePushDataSchema`) and replayed via `announceRequestedAt` on the driver read; all three share `at`, which the app dedupes on". In the "Accept/decline are not socket events" paragraph, add the rider request.
   - Tests:
-    - `realtime-events.test.ts:529-547`: 10, the new name in `wired`, and the title.
+    - `realtime-events.test.ts:541-559`: 10, the new name in `wired`, and the title.
     - New cases: a valid event, a `Date` `at` rejected, a bad uuid rejected, and an envelope round-trip through `announcePushDataSchema`.
-- **GOTCHA**: no test reads the doc. `realtime-events.test.ts:532` names it in a comment only, and no script under `.github`, `.claude/hooks` or `scripts` checks it (`observed` by grep). This task is what keeps them in step.
+- **GOTCHA**: no test reads the doc. `realtime-events.test.ts:544` names it in a comment only, and no script under `.github`, `.claude/hooks` or `scripts` checks it (`observed` by grep). This task is what keeps them in step.
 - **VALIDATE**: `pnpm --filter @taxi/shared build && pnpm --filter @taxi/shared test`, then `grep -n "all 10 events" .claude/references/realtime-events.md`.
 - **SATISFIES**: AC4, AC5
 
@@ -445,9 +433,10 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - RU `{address}` after «до» is not declined; it is a geocoder proper noun, like `{zone}`.
   - Hints stay one short sentence (`rider-ux-evidence.md:21`: listening at up to 3× speed).
 - **VALIDATE**: `pnpm --filter @taxi/shared build && pnpm --filter @taxi/shared test` (parity), then `wc -l packages/shared/src/i18n/*.ts`. Each file < 500 (`derived`, assuming Prettier's default `printWidth` 80, since `.prettierrc` sets none, and one `  'key': 'value',` line per entry before wrapping):
-  - lv: the 4 `driver.ride.*` entries measure 93, 83, 96 and 95 columns and wrap to 2 lines each; the 2 `push.*` entries measure 58 and 71 and stay on 1. So 4×2 + 2×1 = 10, and 394 + 10 = **404**.
-  - lv-rider: 2 of the 7 entries wrap (`announce_arrival_hint` 90, `announce_not_requested` 84) and 5 stay on 1 (61–71). So 2×2 + 5×1 = 9, and 109 + 9 = **118**.
-  - en/ru: ≈ 381/388 + 13 to 26 (one or two lines per key; not measured).
+  - lv: the 4 `driver.ride.*` entries measure 93, 83, 96 and 95 columns and wrap to 2 lines each; the 2 `push.*` entries measure 58 and 71 and stay on 1. So 4×2 + 2×1 = 10, and at `75feaa6` 396 + 10 = **406**.
+  - lv-rider: 2 of the 7 entries wrap (`announce_arrival_hint` 90, `announce_not_requested` 84) and 5 stay on 1 (61–71). So 2×2 + 5×1 = 9, and at `75feaa6` 120 + 9 = **129**.
+  - en/ru: 394/401 at `75feaa6`, + 13 to 26 each (one or two lines per key; not measured). Worst case 401 + 26 = **427** (ru).
+  - The column widths are unchanged from the `d6deaa6` derivation; only the starting line counts moved (#269 added 11 keys and the split).
 - **SATISFIES**: AC2, AC6, AC10
 
 ### T5 CREATE the policy and the service; ADD the repository read, route and provider
@@ -462,7 +451,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
     Docblock figures:
     - **Window** (`derived`): one request per fixed window. `incrWithTtl` sets the TTL only on the first INCR, so the next accepted request is ≥ 20 s after the last. Worst case, 3 interruptions a minute per ride (60 ÷ 20). The condition is `redis-kv.store.ts:63-77`'s TTL semantics. The 20 s itself is `expected`: a guess at the time needed to get out of the car and walk round it.
     - **Replay** (`expected`): 600 s bounds how stale a replayed request can be. A kerbside search longer than 10 min is a dispatcher problem, not a notice. The replay is shown only at `arrived` anyway.
-  - `RideLifecycleRepository.findAnnounceTarget(rideId)` returns `{ id, orderId, status, riderId, driverId, announceArrival }`. It selects `rides.request` and reads `rideRequestSchema.parse(row.request).options.announceArrival` (the `rides.repository.ts:51-58` pattern; a legacy row parses to `false`).
+  - `RideLifecycleRepository.findAnnounceTarget(rideId)` returns `{ id, orderId, status, riderId, driverId, announceArrival }`. It selects `rides.request` and reads `rideRequestSchema.parse(row.request).options.announceArrival` (the `ride-row.ts:47` pattern; a legacy row parses to `false`).
   - `ArrivalAnnounceService` injects `RideLifecycleRepository`, `@Inject(KV_STORE) kv`, `RealtimeService` and `DriversService`, and has a `Logger`.
     - `request(riderId, rideId)`:
       1. Missing or not the caller's → log rejected `ride_not_found`, `NotFoundException`.
@@ -516,7 +505,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 
 - **IMPLEMENT**: copy `ride-pickup-pin.integration.spec.ts`'s setup, teardown and helpers (112-165, 266-285) with a new phone prefix and plate prefix `PA`. The main case follows **the app's order**:
   1. Driver A: `onlineDriver`, then `PUT /drivers/me/push-token` with an `ExponentPushToken[…]` (`push-token.integration.spec.ts:47-56`), then **connects its socket** now. This is `use-presence.tsx`, which creates the socket on going online. The rider signs in and connects its socket.
-  2. The rider books with `options.announceArrival: true`. Capture A's `ride:offer` and assert `JSON.stringify(payload)` does not contain `announceArrival` (D2 on the socket leg). Also find A's offer push in `ctx.push.sent` and assert its `data.offer` string does not contain `announceArrival` (D2 on the push leg, which `offer-builder.ts:64`'s `rideOfferSchema.parse` keeps clean). Accept. **Only now** does driver B go online and connect. If B were online at booking, dispatch could offer B and the case would flake.
+  2. The rider books with `options.announceArrival: true`. Capture A's `ride:offer` and assert `JSON.stringify(payload)` does not contain `announceArrival` (D2 on the socket leg). Also find A's offer push in `ctx.push.sent` and assert its `data.offer` string does not contain `announceArrival` (D2 on the push leg, which `offer-builder.ts:69`'s `rideOfferSchema.parse` keeps clean). Accept. **Only now** does driver B go online and connect. If B were online at booking, dispatch could offer B and the case would flake.
   3. Driver `GET` → `request.options.announceArrival === true` and `announceRequestedAt === null`. Then `arriving`, then `arrived`.
   4. Rider `POST …/announce-request` → 201. `waitForEvent(A, 'ride:announce_requested', rideId, …)` resolves, and its `at` parses. `waitUntil(() => ctx.push.sent.length > before)` → the push's `token` is A's and its `data` is `{ kind: 'announce_requested', rideId, at }` with the same `at`. B's and the rider's sockets recorded nothing in 500 ms.
   5. Driver `GET` → `announceRequestedAt === at` (the replay leg). An immediate second POST → 429.
@@ -527,13 +516,13 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - an un-flagged ride at `arrived` → 409 `announce_not_requested`
   - a flagged ride at `arriving` → 409 `ride_not_arrived`
   - after `start`, the driver `GET` → `announceRequestedAt === null`
-  - phone path: dispatcher `POST /dispatch/bookings` with the flag → force-assign → the driver `GET` shows it
+  - phone path: dispatcher `POST /dispatch/bookings` with the flag and a `callerName` → force-assign → the driver `GET` shows the flag, and at `arrived` `rider.displayName` equals the caller name (#269 fills an empty name), so a phone rider gets the name variant of the prompt
 - **GOTCHA**:
-  - `waitUntil` is not in the PIN spec: copy it from `dispatch.integration.spec.ts:981`.
+  - `waitUntil` is not in the PIN spec: copy it from `dispatch.integration.spec.ts:1013`.
   - State the order in the spec's docblock.
   - Run one gate at a time; global-setup drops the shared test DB.
 - **VALIDATE**: `COMPOSE_PROJECT_NAME=taxi pnpm --filter @taxi/api test -- arrival-announce.integration`. **Mutation**: `emitToDriver` → `emitToRide`. Record both halves, then restore:
-  - `expected` RED: the rider-socket negative. The rider joins the ride room at booking (`rides.service.ts:466`).
+  - `expected` RED: the rider-socket negative. The rider joins the ride room at booking (`rides.service.ts:467`).
   - `expected` GREEN: A's positive. A joins at accept (`dispatch-notifier.ts:119`), so this test alone cannot tell the rooms apart. The negative pins the room.
 - **SATISFIES**: AC3, AC4, AC5, AC7, AC8
 
@@ -550,13 +539,15 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 
 - **IMPLEMENT**:
   - CREATE `preference-switch.tsx` exactly as run in planning. Props are `{ label, hint, value, enabled, onChange, testID }`. The component renders a `Pressable` row with `accessibilityRole="switch"`, `accessibilityLabel={label}`, `accessibilityHint={hint}` and `accessibilityState={{ checked: value, disabled: !enabled }}`. The row contains a label `Text` and a `Switch` hidden from accessibility. Below the row sits a hidden muted hint `Text`. Styles: `row` `minHeight: 44`, `label` `fontSize.md`/`colors.fg`, `hint` `fontSize.sm`/`colors.fgMuted`. It carries the docblock with #258's idempotency-key and M2 comments.
-  - In `booking-screen.tsx`, replace `:231-269` with two instances:
+  - In `booking-screen.tsx`, replace `:232-270` (the PIN comment, row and hint, ending just above `<NameRow />`) with two instances:
     - `<PreferenceSwitch label={t('rider.book.pickup_pin')} hint={t('rider.book.pickup_pin_hint')} value={pin.value} enabled={pin.loaded && !busy} onChange={pin.set} testID="pickup-pin-row" />`
     - the same for announce with `testID="announce-arrival-row"`
 
+    `<NameRow />` (#269) stays where it is, after both switches, so the name the driver will say sits directly under the switch that makes them say it.
+
     Drop `Pressable`/`Switch` from the imports and the `switchRow`/`switchLabel` styles. Run `npx eslint --fix` on the folder: the import wrap changes (R6).
   - `useBookRide(draft, options: { pickupPin: boolean; announceArrival: boolean })`. Book stays disabled until **both** preferences are `loaded`.
-- **VALIDATE**: `pnpm --filter @taxi/rider test -- booking` green (R6: 176/176 with only the extraction). Then **add**:
+- **VALIDATE**: record the rider suite's totals before the extraction, then `pnpm --filter @taxi/rider test -- booking` green with the same totals and no test edited after it (R6 was 176/176 at `d6deaa6`; #269 has added tests since, so that figure is not today's). Then **add**:
   - toggling `announce-arrival-row` flips `accessibilityState.checked`, and the POST body carries `options.announceArrival: true`;
   - `use-book-ride.test.tsx`'s body literal gains the key.
 
@@ -610,7 +601,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 - **GOTCHA**:
   - **The reducer effect is the notice's one announcer, and T13's Banner is silent** (`announce={false}`). It follows T0's rule: the Banner renders only on `/active-ride`, and the reducer runs whichever screen is up. Because the effect fires once per newer `at`, a second request while the notice is still up is spoken again. That is PR #282 review H3's driver side, which needs no `key` remount.
   - Reuse the jest mock of `expo-haptics` that `use-offer-alerts` tests already rely on.
-  - **The notice slot is shared** (PR #282 review round 2 L2). `announce_requested` overwrites a `payment_changed` notice the driver has not dismissed. That is cosmetic: the payment pill still shows the method (`active-ride-screen.tsx:161-165`), and P1's reducer effect already spoke the change.
+  - **The notice slot is shared** (PR #282 review round 2 L2). `announce_requested` overwrites a `payment_changed` notice the driver has not dismissed. That is cosmetic: the payment pill still shows the method (`active-ride-screen.tsx:168-172`), and P1's reducer effect already spoke the change.
 - **VALIDATE**: `pnpm --filter @taxi/driver test -- active-ride` with cases:
   - socket event at `arrived` → notice and haptic
   - the same `at` a second time → noop (the dedupe)
@@ -631,7 +622,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 - **IMPLEMENT**:
   - Render `announcePrompt(ride)` in `styles.details` after `rider-name`, as `<View style={styles.prompt} testID="announce-prompt"><Text style={styles.promptText}>…</Text></View>`. Styles use theme tokens only (`colors.accent` border, `spacing.md` padding, `fontSize.lg`).
   - `state.notice === 'announce_requested'` → `<Banner announce={false} tone="warning" text={t('driver.ride.announce_requested')} secondary={{ label: t('driver.action.done'), onPress: dismissNotice }} testID="announce-requested" />`. It is silent because T12's reducer effect speaks the notice (T0's rule).
-- **GOTCHA**: the prompt is not a Banner. The client name window (`:147-149`) and `announcePrompt` agree at `arrived`. Assert that in a test rather than re-gating.
+- **GOTCHA**: the prompt is not a Banner. The client name window (`:157-159`) and `announcePrompt` agree at `arrived`. Assert that in a test rather than re-gating.
 - **VALIDATE**: `pnpm --filter @taxi/driver test -- active-ride-screen` with cases:
   - flagged `arrived` + name → «…„Sakta, Anna!”»
   - null name → «…„Sakta, uz <destination>!”»
@@ -650,7 +641,7 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
   - `register-push-token.ts:91-92`: quiet when `(route.kind === 'offer' || route.kind === 'announce') && AppState.currentState === 'active'`. Extend the docblock: in the foreground, the socket and the reducer notice already did the job.
   - `push-registrar.tsx`: `const { announceRequested, state: rideState } = useActiveRide()`. Keep `rideState` in a ref updated by an effect, the file's `tRef` pattern (`push-registrar.tsx:24-27`), so the handler effect's deps (`:58`) stay stable (PR #282 round 1 L1).
     - `onTap`: `route.kind === 'announce'` → `announceRequested(route.rideId, route.at)`, then route on what the provider holds (PR #282 review round 2 H1):
-      - **the provider holds a ride** (`rideStateRef.current.rideId` truthy, the same test as `active-ride-screen.tsx:77`'s `!state.rideId`) → `router.navigate('/active-ride')`. That is safe: `/active-ride` redirects only when `rideId` is falsy. It covers a stale tray entry too: the announce for ride A tapped while the provider holds ride B lands on B, and the reducer ignores A's dispatch (`state.ride?.id !== rideId`).
+      - **the provider holds a ride** (`rideStateRef.current.rideId` truthy, the same test as `active-ride-screen.tsx:83`'s `!state.rideId`) → `router.navigate('/active-ride')`. That is safe: `/active-ride` redirects only when `rideId` is falsy. It covers a stale tray entry too: the announce for ride A tapped while the provider holds ride B lands on B, and the reducer ignores A's dispatch (`state.ride?.id !== rideId`).
       - **it holds none** (a cold start) → `router.replace('/')`, the gate. `me` is fresh on a cold start, so the gate opens the ride (`onboarding/gate-screen.tsx:25-27`), and the replay leg delivers the notice at `loaded`.
     - Why not the gate on a warm tap: the gate redirects from the `me` cache (`gate-screen.tsx:46-53`), which `useMe` loads once per sign-in (`onboarding/use-me.tsx:75-91`). Accepting an offer never updates it (`offers/use-offers.tsx:135-137`). So a ride accepted in this session has `me.activeRideId === null`, `nextRoute` returns `/home` (`onboarding-state.ts:18-19`), and `/home` has no way back to `/active-ride`. A driver who cold-started during ride A and then accepted B has `me.activeRideId === A`, and the gate's `open(A)` drops B from the provider (`active-ride-state.ts:191-194`).
     - Why not `/active-ride` on a cold start (round 1 M1): `state.rideId` is null until the gate opens the ride, so `/active-ride` redirects to `/home` and nothing routes back. `push-registrar.tsx:32-44` documents the same trap for offers.
@@ -709,8 +700,9 @@ backgrounded app ◄── push «Pasažieris jūs meklē» / «Izkāpiet un ska
 - **IMPLEMENT**: each body goes through `--body-file` from the scratchpad (the PreToolUse hook matches command text).
   - **#275**: widen it to the phone-form options «PIN kods» **and** «Šoferis pieteiksies balsī», plus a board badge on flagged rides (dispatcher-as-Aira, `rider-ux-evidence.md:30`).
   - **#14**: add a comment that #259's `ride.arrival_announce.push` is the third push kind that stays undeliverable on Android until `googleServicesFile` lands.
+  - **#279** and **#16**: the non-Banner live regions T0 leaves in place (driver: `queue-position.tsx:20`, `earnings-screen.tsx:34`, `TextField.tsx:60`; rider: `TextField.tsx:60`), with R11's evidence that a live region never reached the platform node. These replace the "report for #276" note, since #276 is closed.
   - Keep `#N` away from the words close and fix.
-- **VALIDATE**: `gh issue view 275 --comments | tail -5`, and the same for 14.
+- **VALIDATE**: `gh issue view 275 --comments | tail -5`, and the same for 14, 279 and 16.
 - **SATISFIES**: AC12
 
 ### T21–T24 Level 4 on `sakta224` (see VALIDATION Level 4)
@@ -757,7 +749,8 @@ It asserts:
 | Driver backgrounded at request time | T8 (push sent), T12 (replay on `loaded`), T14 (tap routes), T23 step (d) (replay on device) |
 | Socket, push and replay all arrive | T12 (dedupe by `at`) |
 | Replay after `start` | T6, T8 (null off `arrived`) |
-| Name null → destination | T12 table, T13, T23 |
+| Name null → destination; name set → name | T12 table, T13, T23 (b, both rides) |
+| Phone booking with a caller name | T8 (the name reaches the driver read at `arrived`) |
 | Status leaves `arrived` with the notice up, by «Sākt braucienu» or by dispatch | T12 (`step_done` and `status`) |
 | An older `at` lands after a newer one | T12 (`isNewer`) |
 | The rider presses again, or gets a second 429 | T11 (announced twice) |
@@ -797,6 +790,7 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
 - The LV locale needs `adb reboot` after `settings put system system_locales lv-LV`.
 
 1. **T22 — API over curl**, following `pickup-pin.md` Level 4 steps 1–2 (OTP via the stub log, explicit coordinates, uuid `Idempotency-Key`, `POST /dispatch/rides/:id/assign`).
+   - (a0) The name route for T23 (b): `PUT /riders/me/display-name` with the rider's token (`riders.controller.ts:45`, the route `name-screen.tsx` calls). The driver read looks the name up **at read time** (`driver-ride.ts:112`, `findRiderIdentity`), not from the booking, so a name changed while a ride is open changes that ride's prompt on the next read. Run the two rides strictly in sequence: (1) with `{ "displayName": null }`, the unnamed ride, ended or cancelled; (2) `{ "displayName": "Anna" }`, then book the named ride; (3) `{ "displayName": null }` after it ends.
    - (a) Book with `options.announceArrival: true` and force-assign. Driver `GET` → the flag is true and `announceRequestedAt` is null.
    - (b) Rider request at `accepted` → 409 `ride_not_arrived`.
    - (c) `arriving`, `arrived`, then the request → 201. Again at once → 429 with `retryAfterSeconds`.
@@ -804,10 +798,10 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
    - (e) The api log shows one `…requested`, one `…rejected` `cause: too_many_requests`, and `ride.arrival_announce.push_skipped` or `_sent`. The dev push provider is the stub (`driver-device-day.md` §What still cannot be reached). No line carries the rider's phone.
 2. **T21/T23 — driver APK with TalkBack.**
    - Build with `eas init --id 976c4e03-9ef1-46aa-b383-bc72138890a4` (**never `--account`**), then `npx eas-cli@latest build -p android --profile preview`. Revert the `eas init` edits, including its appended `android.permissions`, before the build is queued (`pickup-pin-report.md:107`).
-   - Enable TalkBack and the verbose utterance log exactly as `driver-device-day.md:463-495` shows.
+   - Enable TalkBack and the verbose utterance log exactly as `driver-device-day.md:477-509` shows. To move TalkBack focus onto a specific node (e2), use that section's raw-touch `sendevent` recipe (added by #281); activation still goes through `input tap` with TalkBack off, as it says.
    - Force-assign a flagged ride, then launch the app, and drive it to `arriving` over curl. Then:
      - (a) DPAD to `announce-prompt`. The utterance is the note text.
-     - (b) Tap «Esmu klāt» (activate by `input tap` on its bounds, taken from `uiautomator dump`). Count the utterances whose subtype is `TYPE_ANNOUNCEMENT` in the next 5 s: **exactly one**, «Esat klāt» (AC9 on device). DPAD to the prompt → «Izkāpiet un skaļi sakiet: „Sakta, uz <destination>!”».
+     - (b) Tap «Esmu klāt» (activate by `input tap` on its bounds, taken from `uiautomator dump`). Count the utterances whose subtype is `TYPE_ANNOUNCEMENT` in the next 5 s: **exactly one**, «Esat klāt» (AC9 on device). DPAD to the prompt → «Izkāpiet un skaļi sakiet: „Sakta, uz <destination>!”» on the unnamed ride. After ending that ride, run (a0) step (2) and repeat (a)–(b) on a second flagged ride: the prompt is «Izkāpiet un skaļi sakiet: „Sakta, Anna!”». This is the headline path, reachable on device since #269.
      - (c) Rider `curl POST …/announce-request` → the `announce-requested` Banner appears (screenshot). The utterance log shows its text once, with subtype `TYPE_ANNOUNCEMENT` (T0; the live region is gone).
      - (d) **Replay leg**: press HOME (`keyevent KEYCODE_HOME`), wait for the 20 s window to pass, send a second rider request (201), then relaunch the app to the foreground. The Banner appears from the re-read. Screenshot it, and grep the api log for the driver's `GET` after the request.
      - (e) «Gatavs» dismisses it.
@@ -832,7 +826,7 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
    - (b) Book with it on. Drive the ride to `arrived` over curl → DPAD to `request-announce` → the label and hint are spoken.
    - (c) Activate it → the `announce-sent` Banner is spoken once. If the driver emulator app is running, it shows the notice; otherwise the api log shows `…requested`.
 
-   If neither build route loads within **45 min**, record the error verbatim and add the step to #276 by comment. RNTL (T10, T11) is then the evidence.
+   If neither build route loads within **45 min**, record the error verbatim and add the step to #16 by comment (#276 is closed and moved its rider listen checks there). RNTL (T10, T11) is then the evidence.
 
 ---
 
@@ -857,9 +851,9 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
 - [ ] **AC9**: no added status announcement. On device, exactly one `TYPE_ANNOUNCEMENT` at `arrived` (T23 b).
 - [ ] **AC10**: the gate is 22/22 with `REDIS_TEST_URL` set, and every shipped file is < 500 lines.
 - [ ] **AC11**: docs, ledger, walkthrough, evidence row and `ui-decisions.md` are updated.
-- [ ] **AC12**: #275 and #14 carry the comments.
-- [ ] **AC13**: T22 and T23 are run on `sakta224` with artifacts, including TalkBack utterances. T24 is run, or recorded with its error and added to #276. **Owed elsewhere, and unperformable on this Mac:**
-  - **iOS VoiceOver**, for both apps: the Xcode 26.3 ceiling (`observed` 2026-08-25) cannot build SDK 57. Owed by #257 (driver) and #276 (rider).
+- [ ] **AC12**: #275, #14, #279 and #16 carry the comments.
+- [ ] **AC13**: T22 and T23 are run on `sakta224` with artifacts, including TalkBack utterances for both the named and the unnamed prompt. T24 is run, or recorded with its error and added to #16. **Owed elsewhere, and unperformable on this Mac:**
+  - **iOS VoiceOver**, for both apps: the Xcode 26.3 ceiling (`observed` 2026-08-25) cannot build SDK 57. Owed by #257, which #276's closure left holding the VoiceOver legs of both apps.
   - **Android push delivery**: no `googleServicesFile`. Owed by #14, together with T23 (e4), the announce push tap from the shade.
 
   Property-first check: *does a screen reader reach and speak the new controls, and does a missed request reach the driver?*
@@ -875,7 +869,7 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
 
 ## COMPLETION CHECKLIST
 
-- [ ] T1–T24 in order (Phases C and D may run in parallel)
+- [ ] T0, T2–T24 in order (T1 retired; Phases C and D may run in parallel)
 - [ ] Mutations in T7 and T8 recorded
 - [ ] Gate 22/22, figures `observed` with the run named
 - [ ] Level 4 artifacts in the execution report
@@ -902,11 +896,11 @@ Lessons from #258's run on this AVD (`pickup-pin-report.md:118-124`), applied he
 
 - **REST in, socket plus push out, replay on read.** The rider's request needs auth, a rate limit and a status code the rider can hear, which is why every other rider/driver action is REST. The three outbound legs cover three driver states: live, backgrounded and reconnecting. They share one idempotence key (`at`), so they cannot add up to more than one notice.
 - **Why the driver room.** Rooms have no per-role emit. `emitToRide` would reach the rider, and a reconnected driver socket is in no ride room until its read.
-- **Destination fallback (D4)** says a street name aloud at the kerb. The rider chose it by opting in, and #269 removes it for any rider who sets a name.
+- **Destination fallback (D4)** says a street name aloud at the kerb. The rider chose it by opting in, and #269 (shipped) removes it for any rider who sets a name, and for a phone rider whose caller name Dina entered.
 
 ## CONFIDENCE
 
-**9/10** that execution succeeds in one pass (`expected`). Since the first de-risking pass, R2 is retired and R11, a real defect that would have left the feature silent for blind Android riders, was found and fixed by T0. The plan's structural risks were each retired by an observed run: the split (R5), the extraction (R6), the build (R7), speech reachability (R8), the law (R4), conflicts (R3) and the gate count (R9). What keeps it from 10:
+**9/10** that execution succeeds in one pass (`expected`). Since the first de-risking pass, R2 is retired and R11, a real defect that would have left the feature silent for blind Android riders, was found and fixed by T0. The plan's structural risks were each retired by an observed run at `d6deaa6`: the split (R5, since shipped by #269), the extraction (R6, whose replaced block is unchanged at `75feaa6`), the build (R7), speech reachability (R8), the law (R4), conflicts (R3) and the gate count (R9). What keeps it from 10:
 - The new code in T5–T8 and T11–T14 has not been run. It mirrors shipped patterns line for line, but it is still unrun code.
 
 A 10 would need the new code written and run, which is implementation, not planning.
@@ -928,3 +922,11 @@ A 10 would need the new code written and run, which is implementation, not plann
   - H1: round 1's M1 fix (announce tap → the gate) strands a warm driver on `/home`, because the gate redirects from a `me` cache that an offer accept never updates. T14 now navigates to `/active-ride` when the provider holds a ride and goes to the gate only when it holds none (a cold start). The provider state is read through a ref. T23 (e4) adds the shade-tap step, owed by #14 on Android.
   - M1: T0 P6's silence rule is one `rateLimited` flag, set with the cooldown and cleared at every `setError`. It covers a later error inside the cooldown and a 429 with no seconds.
   - L1–L6: AC14 names `announce={false}`; T12's notice clear is conditional and the shared slot is stated; T0's back claim is scoped to offer-entered rides and T23 (e3) enters its back ride through an offer; the `_layout.tsx` path and driver `Banner.tsx:43-47` are corrected; the round-1 report's sweep row is corrected.
+- 2026-09-27 (re-read at `75feaa6`, before implementation): #260, #269, #280/#286/#287 and #124 landed after the `d6deaa6` anchor: `git diff --name-only d6deaa6 75feaa6` lists 111 files (`observed`). No decision changed. What changed:
+  - **T1 retired.** #269 ran this plan's split script and shipped `lv-rider.ts` (`5ef840a`). T1 is kept as a stub so review refs resolve; R5 is marked superseded. T4's line figures are re-based on `lv.ts` 396 and `lv-rider.ts` 120: **406** and **129**, with en/ru at 394/401 + 13 to 26 (`derived`).
+  - **D4's premise corrected, the decision kept.** Names exist now (rider `NameRow`, and a phone caller's name fills an empty one). The fallback stays for an unnamed rider. T10 keeps `NameRow` under the new switch. T8's phone case asserts the caller name reaches the driver read. T22 (a0) sets a name over curl, and T23 (b) runs a named and an unnamed ride, so the «Sakta, {name}!» prompt is heard on device.
+  - **T0 audit re-run**: one new `Banner` and one new announcer, both in #269's `name-screen.tsx`, joined the kept list; `offer-card.tsx:62` and `earnings-card.tsx:50` were added to it explicitly. No new pair.
+  - **Owners moved.** #276 closed: its disabled-Start item was not reproduced, its rider listen checks went to #16, and VoiceOver stays with #257. T24's fallback now goes to #16. The non-Banner live regions are commented onto #279 and #16 (T19–T20, AC12).
+  - **T2's literal list** gains `use-book-ride.test.tsx:89`, `schemas-ride-request.test.ts:93,183,254` and `schemas-customer.test.ts:39`. The `toEqual` ones fail only at test time.
+  - **Refs remapped** in `ride.ts`, `realtime-events.ts` and its test, `driver-ride.ts`, `offer-builder.ts`, `rides.service.ts`, `dispatch.integration.spec.ts`, `active-ride-screen.tsx`, `booking-screen.tsx`, `search-sheet.tsx`, `lv.ts` and `driver-device-day.md`, by a line diff from `d6deaa6` and a `sed -n` spot-check. The request-parse pattern moved to `ride-row.ts:47` (#260). Every other backticked cited path is unchanged between the two anchors (`observed`: the basenames of the plan's backticked paths intersected with that 111-file list, plus a targeted `git diff --stat` over the lifecycle, push, ride-status, booking, Banner, realtime and harness files). A ref written without backticks was not covered by the intersection.
+  - R3 (no open PRs), R7 (no dependency or `app.json` change) and R9 (22 tasks, `derived`) were re-checked. Every `observed` figure from 2026-09-24 keeps its `d6deaa6` anchor. Confidence stays at 9.
