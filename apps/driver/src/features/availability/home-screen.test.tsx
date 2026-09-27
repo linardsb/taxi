@@ -4,6 +4,8 @@ import {
   screen,
   within,
 } from '@testing-library/react-native';
+import { usePathname } from 'expo-router';
+import { AccessibilityInfo } from 'react-native';
 import { formatMessage } from '@taxi/shared';
 import { NO_EARNINGS } from './earnings-body';
 import { HomeScreen } from './home-screen';
@@ -85,12 +87,20 @@ const t = (
 ) => formatMessage('lv', key, params);
 
 describe('HomeScreen', () => {
+  let announce: jest.SpyInstance;
   beforeEach(() => {
     mockToggle.mockReset();
     mockDismissOffer.mockReset();
     mockPresence = initialPresence;
     mockEarningsStatus = 'ready';
     mockOffers = { ...mockOffers, banner: null, errorCode: null, queue: null };
+    announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation();
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    jest.mocked(usePathname).mockReturnValue('/home');
   });
 
   it('renders the LV catalog copy and the toggle dispatches (expected)', async () => {
@@ -180,6 +190,32 @@ describe('HomeScreen', () => {
     expect(
       screen.getByRole('switch', { name: t('driver.home.go_offline') }),
     ).toBeChecked();
+  });
+
+  it('does not announce a new rank while another screen is on top (#279, edge)', async () => {
+    const queue = (position: number) => ({
+      driverId: 'd0000000-0000-4000-8000-000000000001',
+      geozoneId: '00000000-0000-4000-8000-000000000102',
+      geozoneSlug: 'rix',
+      position,
+      size: 5,
+      at: '2026-09-04T10:00:00.000Z',
+    });
+    const rank = (position: number) =>
+      t('driver.queue.position', { position, size: 5, zone: 'rix' });
+    mockOffers = { ...mockOffers, queue: queue(1) };
+    const view = await render(<HomeScreen />);
+
+    // Home stays mounted beneath the ride; an on-ride driver stays queued.
+    jest.mocked(usePathname).mockReturnValue('/active-ride');
+    mockOffers = { ...mockOffers, queue: queue(2) };
+    await view.rerender(<HomeScreen />);
+    expect(announce).not.toHaveBeenCalledWith(rank(2));
+
+    jest.mocked(usePathname).mockReturnValue('/home');
+    mockOffers = { ...mockOffers, queue: queue(3) };
+    await view.rerender(<HomeScreen />);
+    expect(announce).toHaveBeenCalledWith(rank(3));
   });
 
   it('shows the queue position under the toggle and links the today card to earnings (#15, expected)', async () => {

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { formatMessage, splitFare, type DriverRide } from '@taxi/shared';
+import { AccessibilityInfo } from 'react-native';
 import {
   initialActiveRide,
   type ActiveRideState,
@@ -110,5 +111,33 @@ describe('EarningsScreen (#15)', () => {
       .requireMock<{ useRouter: () => { back: jest.Mock } }>('expo-router')
       .useRouter();
     expect(router.back).toHaveBeenCalled();
+  });
+});
+
+// #279: home's `EarningsCard`, mounted beneath this screen, is the one
+// announcer of a changed total; this screen speaking it too says it twice.
+describe('EarningsScreen announcements (#279)', () => {
+  let announce: jest.SpyInstance;
+  beforeEach(() => {
+    announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation();
+  });
+  afterEach(() => announce.mockRestore());
+
+  it('has no live region and does not announce the total itself (expected)', async () => {
+    mockEarningsStatus = 'loading';
+    mockRide = initialActiveRide;
+    const view = await render(<EarningsScreen />);
+    mockEarningsStatus = 'ready';
+    await view.rerender(<EarningsScreen />);
+
+    expect(screen.getByTestId('earnings-today')).toHaveTextContent(
+      t('driver.home.today', { amount: '€84.20', rides: 7 }),
+    );
+    expect(
+      screen.getByTestId('earnings-today').props.accessibilityLiveRegion,
+    ).toBeUndefined();
+    expect(announce).not.toHaveBeenCalled();
   });
 });

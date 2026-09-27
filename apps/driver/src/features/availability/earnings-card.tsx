@@ -1,12 +1,6 @@
 import { colors, fontSize, radius, spacing } from '@taxi/shared';
-import { useEffect, useRef } from 'react';
-import {
-  AccessibilityInfo,
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useAnnounceChange } from '@/components';
 import { NO_EARNINGS } from './earnings-body';
 
 /**
@@ -24,7 +18,9 @@ import { NO_EARNINGS } from './earnings-body';
  * update zero times. The card announces a new number itself instead.
  */
 export function EarningsCard({ body }: { body: string | null }) {
-  useAnnounceChange(body);
+  // A change to a number: the spinner → value transition and any later
+  // refresh that moves it. Not «—», which is no news.
+  useAnnounceChange(body === NO_EARNINGS ? null : body);
   return (
     <View style={styles.card} testID="earnings">
       {body === null ? (
@@ -34,21 +30,6 @@ export function EarningsCard({ body }: { body: string | null }) {
       )}
     </View>
   );
-}
-
-/**
- * Speaks `body` when it changes to a number — the spinner → value transition
- * and any later refresh that moves it. Not on mount (a live region would not
- * speak its initial content either) and not for «—», which is no news.
- */
-function useAnnounceChange(body: string | null) {
-  const last = useRef(body);
-  useEffect(() => {
-    if (body === last.current) return;
-    last.current = body;
-    if (body === null || body === NO_EARNINGS) return;
-    AccessibilityInfo.announceForAccessibility(body);
-  }, [body]);
 }
 
 const styles = StyleSheet.create({

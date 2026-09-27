@@ -11,6 +11,14 @@ import { useT } from '@/features/i18n';
  * present it as gross) and the receipt of the ride just completed, held by
  * the active-ride provider until the driver dismisses it. No per-ride history
  * (Q1 = Option B): the receipt covers the ride just completed.
+ *
+ * The total is not announced here (#279). Home stays mounted beneath this
+ * screen, and its `EarningsCard` already speaks a changed total; a second
+ * announcer would say it twice. That holds only while online: home polls
+ * every `EARNINGS_REFRESH_MS` (60 s) only then, on its own timer, so the
+ * spoken total can trail this screen's by up to 60 s (`derived`: two
+ * independent 60 s timers), and offline a change here is not spoken at all.
+ * The live region it replaced never reached TalkBack.
  */
 export function EarningsScreen() {
   const t = useT();
@@ -29,11 +37,7 @@ export function EarningsScreen() {
       <Text style={styles.title} accessibilityRole="header">
         {t('driver.earnings.title')}
       </Text>
-      <View
-        style={styles.card}
-        accessibilityLiveRegion="polite"
-        testID="earnings-today"
-      >
+      <View style={styles.card} testID="earnings-today">
         {today === null ? (
           <ActivityIndicator color={colors.fgMuted} testID="earnings-loading" />
         ) : (

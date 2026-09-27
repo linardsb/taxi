@@ -1,5 +1,5 @@
 import { colors, fontSize, spacing, type MessageKey } from '@taxi/shared';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Banner, Button, Screen, type BannerProps } from '@/components';
 import { useSession } from '@/features/auth';
@@ -36,6 +36,7 @@ function clockTime(iso: string | undefined): string {
 export function HomeScreen() {
   const t = useT();
   const router = useRouter();
+  const pathname = usePathname();
   const { signOut } = useSession();
   const { me } = useMe();
   const { state, nowMs, toggle, dismissBanner, batteryPrompt } = usePresence();
@@ -82,7 +83,10 @@ export function HomeScreen() {
         variant={online ? 'secondary' : 'primary'}
         testID="toggle"
       />
-      <QueuePosition queue={offers.state.queue} />
+      <QueuePosition
+        queue={offers.state.queue}
+        announce={pathname === '/home'}
+      />
       {/*
         The label is COMPOSED, never static and never absent. `Pressable`
         defaults `accessible` to true, which collapses the subtree into a

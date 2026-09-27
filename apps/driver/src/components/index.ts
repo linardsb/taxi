@@ -5,3 +5,4 @@ export type { ButtonProps, ButtonVariant } from './Button';
 export { Screen } from './Screen';
 export { TextField } from './TextField';
 export type { TextFieldProps } from './TextField';
+export { useAnnounceChange } from './use-announce-change';
