@@ -3,7 +3,7 @@
 **Head** `493df80` · **Base** main @ `43078db` · merged as `f02d255` (2026-09-27 19:22Z) · reviewed 2026-09-27 · first round (no earlier report, so the guarantees pass and the fix-mechanism pass do not apply)
 
 **Verdict: follow-up needed.** The PR is merged, so "request changes" does not apply. There are two Highs and three Mediums:
-- F1 is an issue-tracking error: reopen #279.
+- F1 is an issue-tracking error: reopen #279 (done at 19:44:23Z).
 - F2–F5 go in one follow-up fix PR, with F6 and F7 folded in.
 
 ## Summary
@@ -14,7 +14,7 @@ The mechanism is right. #259 R11 observed that live regions never reach TalkBack
 
 What is wrong:
 - Merging auto-closed #279, but #279's own acceptance criteria are not met (F1).
-- The `pathname === '/home'` gate cannot tell a buried home screen from the top one. The app does stack home screens, because both of its routes back to home use `router.replace` (F2).
+- The `pathname === '/home'` gate cannot tell a buried home screen from the top one. The app does stack home screens, because five of the six routes that navigate to home end in a `REPLACE` onto a home already below; on two of them that `REPLACE` is made by one of three `<Redirect>`s, expo-router's own component (F2).
 - The earnings total still speaks from underneath other screens (F3).
 - The vehicle form's error announcements miss a second failed Save (F4), and several at once probably cut each other off on iOS (F5).
 
@@ -35,13 +35,34 @@ A blind driver is still told «15 s left» for an offer that is gone.
 
 **Fix:** reopen #279 with a comment that the live-regions part shipped in #295 and the countdown acceptance and D2 re-run remain. Do not open a new issue.
 
+**Done:** #279 was reopened at 2026-09-27 19:44:23Z, with that comment (`issues/279#issuecomment-5859223173`, 19:44:22Z; `observed`, issue timeline).
+
 **F2 · `apps/driver/src/features/availability/home-screen.tsx:88`, with `use-offers.tsx:145` and `use-active-ride.tsx:165` · the "only while home is on top" gate is defeated by stacked home screens**
 
 The PR body says the rank "is spoken only while home is the top screen". That holds only while exactly one home screen is mounted.
 
-Both routes back to home call `router.replace('/home')`: `use-offers.tsx:145` on offer expiry or decline, and `use-active-ride.tsx:165` on `route_home`. expo-router's Stack sends `REPLACE` straight to the stock `StackRouter` (`layouts/StackClient.js` overrides only `PUSH`, `NAVIGATE` and `PRELOAD`). That router swaps the top route for a **new** `home` route, so the old home stays in the stack.
+Every route that navigates to home, rather than popping back to it, ends in a `REPLACE`. expo-router's Stack sends `REPLACE` straight to the stock `StackRouter` (`layouts/StackClient.js` overrides only `PUSH`, `NAVIGATE` and `PRELOAD`). That router swaps the top route for a **new** `home` route, so any home already below it stays in the stack. The routes, from a grep of `router.*` and `<Redirect` in `apps/driver/src` on `f02d255` (amended after PR #296 round 1, F2; the first version named only the first two rows):
+
+| Path to home | Source | Stacks a second home? |
+|---|---|---|
+| Offer expiry or decline | `use-offers.tsx:145` `router.replace('/home')` | **yes**, from `home \| offer` |
+| Ride ends (`route_home`) | `use-active-ride.tsx:165` `router.replace('/home')` | **yes**, from `home \| active-ride` |
+| Home → "Add vehicle" → vehicle → documents → Done | `home-screen.tsx:54` push, `vehicle-screen.tsx:101` `replace('/onboarding/documents')`, `onboarding/documents-screen.tsx:23` `router.replace('/home')` | **yes**, `home \| home` |
+| Push-notification tap with no ride and no card | `push-registrar.tsx:53` and `:72` `router.replace('/')`; the gate (`app/index.tsx` → `GateScreen`) then renders `<Redirect href={nextRoute(…)}>` (`gate-screen.tsx:47`), which is `/home` for an onboarded driver (`onboarding-state.ts:19`) | **yes**, `home \| home` from `home \| earnings` |
+| `/offer` or `/active-ride` rendered with nothing held | `offer-screen.tsx:16`, `active-ride-screen.tsx:84`: `<Redirect href="/home" />` | `home \| home` if reached. Whether the app reaches it is `derived`: both redirects are conditional |
+| Sign-in | `verify-screen.tsx:60` `router.replace('/')` → gate → `/home` | no: `login \| home`, one home |
+
+`<Redirect>` calls `router.replace` internally, from a focus effect (`build/link/Redirect.js:34-37`), so on three of these paths (the gate and the two screen redirects) the final `REPLACE` to home is not a `router.replace` call in `apps/driver` that could be swapped.
 
 - **Stack growth — `observed`** at reducer level, `StackRouter` from expo-router 57.0.17. Sequence: `navigate('offer')`, then `replace('home')`, twice, then an offer → ride → home cycle. Result: `home | home | home | home`.
+- **The other paths — `observed`** at reducer level, same router, with the driver's flat root-stack route names. Re-run for this amendment from the npm tarball of expo-router 57.0.17 (the lockfile's version):
+
+  | Sequence | `REPLACE` home (today) | `POP_TO` home |
+  |---|---|---|
+  | `home` → PUSH `onboarding/vehicle` → REPLACE `onboarding/documents` → home | `home \| home` | `home` (original key) |
+  | `home \| earnings` → REPLACE `index` → home | `home \| home` | `home` (original key) |
+  | `home \| offer` → home | `home \| home` | `home` (original key) |
+  | Control: `login \| verify` → REPLACE `index` → home | `login \| home` | `login \| home` |
 - **Buried homes stay live — `derived`.** `react-native-screens` 4.26.2 has `ENABLE_FREEZE = false`, and nothing in `apps/driver` calls `enableFreeze`, so buried screens keep rendering and running effects. `usePathname()` is global, so every mounted home passes `'/home'` at once.
 - **Consequence — `expected`, not run on a device.** Assuming nothing pops the stack, after N offers or rides that end in `replace('/home')` there are N+1 homes. Each rank change is then spoken N+1 times, and N+1 `useEarnings` pollers run.
 
@@ -49,20 +70,12 @@ The same stacking already doubled `EarningsCard` before this PR. This PR adds th
 
 The new home test (`home-screen.test.tsx:195-219`) simulates "another screen on top" by changing the global pathname mock. That is the same assumption the gate makes, so the test cannot fail on this.
 
-**Fix:** remove the stacking at its source. Replace both `router.replace('/home')` calls with `router.dismissTo('/home')` (a `POP_TO` action). Reducer check (`observed`, stock `StackRouter`, `POP_TO` home):
+**Fix:** two options, and the choice turns on how many paths each one has to reach.
 
-| Stack before | Stack after |
-|---|---|
-| `home \| offer` | `home` (the original key) |
-| `home \| active-ride` | `home` (the original key) |
-| `active-ride` (cold start into a ride) | one new `home` |
+- **Gate on focus.** Replace `pathname === '/home'` with `useIsFocused()`, which is true only for the screen on top, however many homes are stacked. `useIsFocused` is exported by expo-router (`build/exports.d.ts:20`); the global `expo-router` mock in `apps/driver/jest.setup.ts:134` would need it added. It fixes the announcements without finding any route, but the buried homes and their `useEarnings` pollers keep growing.
+- **Remove the stacking at its source.** `router.dismissTo('/home')` (a `POP_TO` action) leaves exactly one home on every row of the table above, keeping the original key. But it works only on a path that uses it: the two hook call sites and `documents-screen.tsx:23` can switch directly; the gate's `<Redirect>` and the two conditional screen redirects cannot, and each needs a `dismissTo` of its own in place of the `<Redirect>`. A path missed or added later stacks again.
 
-In every case exactly one home remains, and the duplicate pollers go away. Pin it with a test that asserts `dismissTo` rather than `replace` at both call sites.
-
-Gating on focus is the alternative:
-- `useIsFocused` is exported by expo-router (`build/exports.d.ts:20`).
-- The global `expo-router` mock in `apps/driver/jest.setup.ts:134` would need it added.
-- It leaves the stack and the pollers growing, so it is the weaker fix.
+Either way, the test must pin the stack or the focus, not the call sites. A test that asserts `dismissTo` at the named call sites passes while any unnamed path still stacks. `dismissTo` also has to be added to `mockRouter` in `apps/driver/jest.setup.ts:128-133`.
 
 ### Medium
 
@@ -74,9 +87,11 @@ Scenario: a ride completes, and the next 60 s poll changes the total while `/off
 
 This predates the PR, but the PR's own reasoning applies to it, and the PR now depends on it.
 
-**Fix:** gate `EarningsCard` the way `QueuePosition` is gated, with `announce={pathname === '/home'}` (safe once F2's fix leaves one home). Give `EarningsScreen` its own `useAnnounceChange(today === NO_EARNINGS ? null : today)`. Each screen then speaks what it shows, and F6's comment caveats go away.
+**Fix:** gate `EarningsCard` the way `QueuePosition` is gated, with whichever gate F2's fix settles on. `EarningsCard` takes `({ body }: { body: string | null })` today (`earnings-card.tsx:20`), so this means adding an `announce` prop and passing it to `useAnnounceChange` as its second argument. Give `EarningsScreen` its own `useAnnounceChange(today === NO_EARNINGS ? null : today)`, and rewrite the comment at `earnings-screen.test.tsx:117`, which relies on the ungated card being the one announcer. Each screen then speaks what it shows, and F6's comment caveats go away.
 
-**F4 · `apps/driver/src/features/onboarding/vehicle-screen.tsx:65-88` with `apps/driver/src/components/TextField.tsx:36` · a second failed Save is silent**
+**F4 · `apps/driver/src/features/onboarding/vehicle-screen.tsx:65-88` with `apps/driver/src/components/TextField.tsx:36` · a second failed Save is silent when client-side validation fails**
+
+The scope is client-side validation only. A server-side error is re-announced, because a passing `validate()` calls `setErrors({})` (`vehicle-screen.tsx:76`) before the save's `await` (`:97`, `:100`), so the field error clears and comes back as a change.
 
 `validate()` sets the same `t('driver.error.invalid_field')` string again in the same state update. No `TextField` gets a changed `error` prop, so the hook stays silent.
 
@@ -134,10 +149,10 @@ The only caller is `home-screen.tsx:86`. The sentence predates the PR, but it si
 
 ## Recommendation
 
-1. **Reopen #279** with a comment separating what #295 shipped from what remains: the countdown acceptance and the D2 re-run.
+1. **Reopen #279** with a comment separating what #295 shipped from what remains: the countdown acceptance and the D2 re-run. Done at 19:44:23Z (F1).
 2. **Open one follow-up fix PR** covering:
-   - F2: `dismissTo('/home')` at both call sites, plus a test;
-   - F3: gate `EarningsCard`, and give `EarningsScreen` its own announcer;
-   - F4 and F5: one announcement per failed Save from the form;
+   - F2: either a `useIsFocused` gate, or `dismissTo('/home')` on every path in F2's table, including the three `<Redirect>`s; plus a test that pins the stack or the focus, not the call sites;
+   - F3: gate `EarningsCard` (new `announce` prop), and give `EarningsScreen` its own announcer;
+   - F4 and F5: one announcement per failed client-side validation from the form;
    - F6 and F7: comment fixes.
 3. Device ear-checks stay owed on #279's TalkBack re-run.
