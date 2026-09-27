@@ -60,6 +60,7 @@ describe('CustomersService', () => {
       repository.findUserByPhone.mockResolvedValue({
         id: CUSTOMER.userId,
         role: 'rider',
+        displayName: null,
       });
       repository.findCustomerByUserId.mockResolvedValue(CUSTOMER);
 
@@ -70,7 +71,23 @@ describe('CustomersService', () => {
         customer: CUSTOMER,
         savedPlaces: [PLACE],
         recentRides: [RECENT],
+        displayName: null,
       });
+    });
+
+    it("answers the rider's own name, read through readDisplayName (edge)", async () => {
+      // #269: the panel shows it read-only in place of the name input.
+      const { repository, service } = build();
+      repository.findUserByPhone.mockResolvedValue({
+        id: CUSTOMER.userId,
+        role: 'rider',
+        displayName: '  Anna ',
+      });
+      repository.findCustomerByUserId.mockResolvedValue(CUSTOMER);
+
+      const result = await service.lookup('dispatcher-1', '+37129999000');
+
+      expect(result?.displayName).toBe('Anna');
     });
 
     it('names the subject on the PII log, masked (edge)', async () => {
@@ -102,6 +119,7 @@ describe('CustomersService', () => {
       repository.findUserByPhone.mockResolvedValue({
         id: CUSTOMER.userId,
         role: 'rider',
+        displayName: null,
       });
       repository.findCustomerByUserId.mockResolvedValue(undefined);
 
@@ -112,6 +130,7 @@ describe('CustomersService', () => {
         customer: null,
         savedPlaces: [],
         recentRides: [RECENT],
+        displayName: null,
       });
       expect(repository.listSavedPlaces).not.toHaveBeenCalled();
     });

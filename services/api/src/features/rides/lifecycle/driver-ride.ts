@@ -2,6 +2,7 @@ import { NotFoundException, type Logger } from '@nestjs/common';
 import {
   assertRideSplitConsistent,
   isInStatusSet,
+  readDisplayName,
   RIDER_NAME_VISIBLE_STATUSES,
   RIDER_PHONE_VISIBLE_STATUSES,
   type DriverRide,
@@ -13,9 +14,6 @@ import type { RideLifecycleRepository } from './ride-lifecycle.repository';
 
 type RiderIdentity = { phone: string; displayName: string | null };
 
-/** `driverRideRiderSchema`'s bounds (`userSchema.displayName`, 1–120). */
-const DISPLAY_NAME_MAX = 120;
-
 /**
  * The driver's projection of a ride (#261). The windows are applied HERE
  * and nowhere else server-side, keyed on the SNAPSHOT's own status, so the
@@ -26,19 +24,19 @@ const DISPLAY_NAME_MAX = 120;
  *
  * `users.display_name` is unconstrained `text` while the contract requires
  * 1–120 characters, and a name outside that fails the app's parse of the WHOLE
- * ride. So it is trimmed, blank becomes null and over-long is cut — here, not
- * left to whichever writer #269 adds.
+ * ride. So it is trimmed, blank becomes null and over-long is cut by
+ * `readDisplayName` (shared, #269).
  */
 export function toDriverRide(
   ride: Ride,
   identity: RiderIdentity | undefined,
 ): DriverRide {
-  const name = identity?.displayName?.trim().slice(0, DISPLAY_NAME_MAX);
+  const name = readDisplayName(identity?.displayName);
   return {
     ...ride,
     rider: {
       displayName: isInStatusSet(RIDER_NAME_VISIBLE_STATUSES, ride.status)
-        ? name || null
+        ? name
         : null,
       phone: isInStatusSet(RIDER_PHONE_VISIBLE_STATUSES, ride.status)
         ? (identity?.phone ?? null)

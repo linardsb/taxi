@@ -1,6 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { users, type Db } from '@taxi/db';
-import { LANGUAGES, type SignupRole, type User } from '@taxi/shared';
+import {
+  LANGUAGES,
+  readDisplayName,
+  type SignupRole,
+  type User,
+} from '@taxi/shared';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { DRIZZLE } from '../../common/db/db.module';
@@ -19,6 +24,9 @@ const languageSchema = z.enum(LANGUAGES).catch('lv');
 
 /** The row's nullable columns are optional in the shared domain shape. */
 function toUser(row: UserRow): User {
+  // A legacy blank or over-long name must neither become a blank row label in
+  // the rider's session nor fail `authSessionSchema` at sign-in (#269).
+  const name = readDisplayName(row.displayName);
   return {
     id: row.id,
     phone: row.phone,
@@ -26,7 +34,7 @@ function toUser(row: UserRow): User {
     language: languageSchema.parse(row.language),
     createdAt: row.createdAt,
     ...(row.email ? { email: row.email } : {}),
-    ...(row.displayName ? { displayName: row.displayName } : {}),
+    ...(name ? { displayName: name } : {}),
   };
 }
 

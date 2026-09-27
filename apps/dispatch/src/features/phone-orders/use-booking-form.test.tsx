@@ -31,6 +31,7 @@ const LOOKUP: CallerLookup = {
   customer: null,
   savedPlaces: [],
   recentRides: [],
+  displayName: null,
 };
 
 const { api } = vi.hoisted(() => ({

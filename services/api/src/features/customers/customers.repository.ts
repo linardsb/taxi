@@ -7,11 +7,19 @@ import {
   type SavedPlace,
   type UserRole,
 } from '@taxi/shared';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 
 /** How many past jobs the caller panel offers for reuse (evidence F2.2). */
 export const RECENT_RIDES_LIMIT = 3;
+
+/**
+ * A Postgres regex for "nothing JS `trim()` would keep": the set
+ * `readDisplayName` reads as no name. `btrim` strips only spaces, so an NBSP or
+ * a tab row read as empty and was still refused by the fill (#290 F3).
+ */
+const BLANK_NAME_PATTERN =
+  '^[\\s\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]*$';
 
 type CustomerRow = typeof customers.$inferSelect;
 type SavedPlaceRow = typeof savedPlaces.$inferSelect;
@@ -48,9 +56,15 @@ export class CustomersRepository {
    */
   async findUserByPhone(
     phone: string,
-  ): Promise<{ id: string; role: UserRole } | undefined> {
+  ): Promise<
+    { id: string; role: UserRole; displayName: string | null } | undefined
+  > {
     const [row] = await this.db
-      .select({ id: users.id, role: users.role })
+      .select({
+        id: users.id,
+        role: users.role,
+        displayName: users.displayName,
+      })
       .from(users)
       .where(eq(users.phone, phone))
       .limit(1);
@@ -63,26 +77,43 @@ export class CustomersRepository {
    * `DO UPDATE SET phone = phone` — the no-op form `DriverRepository.findOrCreate`
    * uses, and for the same reason: `DO NOTHING` returns [] on conflict. The
    * omission is what matters here: `displayName`, `language` and `role` are
-   * NEVER in the `set`, so a dispatcher typing a name for an existing rider
-   * cannot rename them or downgrade a role.
+   * NEVER in the `set`, so a booking for an existing rider cannot rename them or
+   * downgrade a role. It takes no name at all: `fillEmptyDisplayName` is the one
+   * name writer on the phone path (#269).
    */
   async findOrCreateUser(
     phone: string,
-    displayName: string | undefined,
   ): Promise<{ id: string; role: UserRole }> {
     const [row] = await this.db
       .insert(users)
-      .values({
-        phone,
-        role: 'rider',
-        ...(displayName === undefined ? {} : { displayName }),
-      })
+      .values({ phone, role: 'rider' })
       .onConflictDoUpdate({ target: users.phone, set: { phone } })
       .returning({ id: users.id, role: users.role });
     if (row === undefined) {
       throw new Error('customers.findOrCreateUser returned no row');
     }
     return row;
+  }
+
+  /**
+   * Dina's name for a caller, written ONLY where the rider has none (#269 D2).
+   * One statement, so a rider's concurrent `PUT /riders/me/display-name` can
+   * never be overwritten (D3). A whitespace-only legacy value counts as empty,
+   * by the same whitespace set `readDisplayName` trims.
+   */
+  async fillEmptyDisplayName(userId: string, name: string): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ displayName: name })
+      .where(
+        and(
+          eq(users.id, userId),
+          or(
+            isNull(users.displayName),
+            sql`${users.displayName} ~ ${BLANK_NAME_PATTERN}`,
+          ),
+        ),
+      );
   }
 
   /** Same no-op-conflict shape, keyed on the unique `user_id`. */

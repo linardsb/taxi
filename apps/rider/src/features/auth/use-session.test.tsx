@@ -3,7 +3,8 @@ import type { AuthSession } from '@taxi/shared';
 import { useEffect } from 'react';
 import { Text } from 'react-native';
 import { createApiClient } from './api-client';
-import { writeSession } from './session-store';
+import * as SecureStore from 'expo-secure-store';
+import { clearSession, SESSION_KEY, writeSession } from './session-store';
 import {
   SessionProvider,
   useSession,
@@ -70,5 +71,71 @@ describe('SessionProvider.signOut', () => {
     expect(hook).toHaveBeenCalledTimes(1);
     expect(fetch401).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.getByText('signedOut')).toBeTruthy());
+  });
+});
+
+describe('SessionProvider.setDisplayName (#269)', () => {
+  const stored = () => SecureStore.getItemAsync(SESSION_KEY);
+
+  async function mountSignedIn() {
+    await writeSession(SESSION);
+    await render(
+      <SessionProvider
+        api={createApiClient({
+          baseUrl: 'http://api',
+          getToken: () => null,
+          onUnauthorized: () => undefined,
+        })}
+      >
+        <Probe />
+      </SessionProvider>,
+    );
+    await screen.findByText('signedIn');
+  }
+
+  it('writes the name into the live and the stored session (expected)', async () => {
+    await mountSignedIn();
+
+    await act(() => ctx!.setDisplayName('Anna'));
+
+    await waitFor(() =>
+      expect(ctx!.state.session?.user.displayName).toBe('Anna'),
+    );
+    expect(await stored()).toContain('"displayName":"Anna"');
+  });
+
+  it('removes the key on null rather than storing undefined (edge)', async () => {
+    await mountSignedIn();
+    await act(() => ctx!.setDisplayName('Anna'));
+
+    await act(() => ctx!.setDisplayName(null));
+
+    await waitFor(() =>
+      expect(ctx!.state.session?.user).not.toHaveProperty('displayName'),
+    );
+    expect(await stored()).not.toContain('displayName');
+  });
+
+  it('is a no-op while signed out, with no write (failure)', async () => {
+    await clearSession();
+    await render(
+      <SessionProvider
+        api={createApiClient({
+          baseUrl: 'http://api',
+          getToken: () => null,
+          onUnauthorized: () => undefined,
+        })}
+      >
+        <Probe />
+      </SessionProvider>,
+    );
+    await screen.findByText('signedOut');
+    const writes = jest.mocked(SecureStore.setItemAsync);
+    writes.mockClear();
+
+    await act(() => ctx!.setDisplayName('Anna'));
+
+    expect(writes).not.toHaveBeenCalled();
+    expect(await stored()).toBeNull();
   });
 });

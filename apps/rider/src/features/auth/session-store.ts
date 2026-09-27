@@ -1,7 +1,12 @@
 import { authSessionSchema, type AuthSession } from '@taxi/shared';
 import * as SecureStore from 'expo-secure-store';
 
-/** One JSON blob: token + expiry + user ≈ 600 bytes, under SecureStore's iOS ceiling. */
+/**
+ * One JSON blob: token + expiry + user. Observed 409 bytes, 786 with a
+ * worst-case 120-character name (#269 T7, a probe run inside
+ * `riders.integration.spec.ts` and since removed; the spec keeps only the
+ * `< 2048` bound), under SecureStore's historical ~2048-byte iOS ceiling.
+ */
 export const SESSION_KEY = 'sakta.rider.session';
 
 /**
