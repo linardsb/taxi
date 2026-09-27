@@ -89,6 +89,23 @@ describe('LoginScreen', () => {
     expect(button).toBeEnabled();
   });
 
+  it('the phone field is uncontrolled, so typing never re-sets the native text (regression — #287)', async () => {
+    await render(<LoginScreen />);
+    const field = screen.getByLabelText(t('rider.login.phone_label'));
+    expect(field.props.defaultValue).toBe('+371');
+
+    await fireEvent.changeText(field, '+37126123456');
+
+    // A `value` prop is what makes RN re-set the native text per keystroke,
+    // which TalkBack speaks as «tika aizstāts».
+    expect(field.props.value).toBeUndefined();
+    expect(field.props.defaultValue).toBe('+371');
+    // The typed number still reaches state: send goes live.
+    expect(
+      screen.getByRole('button', { name: t('rider.login.send_code') }),
+    ).toBeEnabled();
+  });
+
   it('shows the catalog copy and a countdown on 429 resend_too_soon (failure)', async () => {
     mockRequest.mockRejectedValue(new ApiError(429, 'resend_too_soon', 30));
     await render(<LoginScreen />);

@@ -6,7 +6,7 @@ import {
   waitFor,
 } from '@testing-library/react-native';
 import { formatMessage } from '@taxi/shared';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, TextInput } from 'react-native';
 import { ApiError } from './api-client';
 import { VerifyScreen } from './verify-screen';
 
@@ -50,10 +50,12 @@ describe('VerifyScreen', () => {
    * file rather than the screen.
    */
   let focusSpy: jest.SpyInstance;
+  let clearSpy: jest.SpyInstance;
   beforeEach(() => {
     focusSpy = jest
       .spyOn(AccessibilityInfo, 'setAccessibilityFocus')
       .mockImplementation();
+    clearSpy = jest.spyOn(TextInput.prototype, 'clear');
     mockRequest.mockReset();
     mockSignIn.mockReset();
     (replace as jest.Mock).mockReset();
@@ -63,7 +65,10 @@ describe('VerifyScreen', () => {
     });
   });
 
-  afterEach(() => focusSpy.mockRestore());
+  afterEach(() => {
+    focusSpy.mockRestore();
+    clearSpy.mockRestore();
+  });
 
   it('auto-submits on the sixth digit, signs in and returns to the gate (expected)', async () => {
     mockRequest.mockResolvedValue(SESSION);
@@ -125,10 +130,29 @@ describe('VerifyScreen', () => {
     );
 
     await screen.findByText(t('rider.error.invalid_or_expired_code'));
-    expect(
-      screen.getByLabelText(t('rider.verify.code_label')).props.value,
-    ).toBe('');
+    // The field is uncontrolled (#287), so the clear is the native `clear()`
+    // on its ref — the jest mock of `TextInput` puts it on the prototype.
+    expect(clearSpy).toHaveBeenCalledTimes(1);
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('leaves the field uncontrolled, so no keystroke re-sets the native text (regression — #287)', async () => {
+    await render(<VerifyScreen />);
+    const field = screen.getByLabelText(t('rider.verify.code_label'));
+
+    await fireEvent.changeText(field, '123');
+    expect(field.props.value).toBeUndefined();
+  });
+
+  it('does not submit six characters that are not all digits (failure — #287)', async () => {
+    await render(<VerifyScreen />);
+
+    await fireEvent.changeText(
+      screen.getByLabelText(t('rider.verify.code_label')),
+      '12a456',
+    );
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect(clearSpy).not.toHaveBeenCalled();
   });
 
   it('has one header and moves screen-reader focus to it on mount (a11y — property 1)', async () => {

@@ -271,7 +271,8 @@ export function SearchSheet() {
       </Text>
       <TextField
         label={t('rider.address.search_label')}
-        value={typed}
+        // Uncontrolled: a changing `value` re-sets the native text on every
+        // keystroke, which TalkBack speaks as «tika aizstāts» (#287).
         onChangeText={setTyped}
         autoFocus
         editable={!busy}

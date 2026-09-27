@@ -46,7 +46,6 @@ export function VerifyScreen() {
     resendAfterSeconds?: string;
   }>();
   const phone = params.phone ?? null;
-  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
   const [resendIn, setResendIn] = useState(
@@ -78,7 +77,7 @@ export function VerifyScreen() {
         router.replace('/');
       } catch (e) {
         const err = e instanceof ApiError ? e : null;
-        setCode('');
+        input.current?.clear();
         setError(errorMessageKey(err?.code ?? 'generic'));
         input.current?.focus();
       } finally {
@@ -89,9 +88,11 @@ export function VerifyScreen() {
   );
 
   function onChange(value: string) {
-    const digits = value.replace(/\D/g, '').slice(0, CODE_LENGTH);
-    setCode(digits);
-    if (digits.length === CODE_LENGTH && !busy) void submit(digits);
+    // Uncontrolled (#287): no `value`, so no per-keystroke native re-set for
+    // TalkBack to speak as «tika aizstāts». A non-digit stays visible and never
+    // reaches six digits; the error path's `clear()` is the one native write.
+    if (value.length === CODE_LENGTH && /^\d+$/.test(value) && !busy)
+      void submit(value);
   }
 
   async function resend() {
@@ -125,7 +126,6 @@ export function VerifyScreen() {
       <TextField
         ref={input}
         label={t('rider.verify.code_label')}
-        value={code}
         onChangeText={onChange}
         keyboardType="number-pad"
         textContentType="oneTimeCode"
