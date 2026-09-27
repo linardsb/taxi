@@ -8,19 +8,22 @@ import {
   type TextInputProps,
 } from 'react-native';
 import { colors, fontSize, radius, spacing } from '@taxi/shared';
+import { useAnnounceChange } from './use-announce-change';
 
 export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
   label: string;
-  /** Catalog copy, already formatted. Rendered in `colors.danger` and announced. */
+  /** Catalog copy, already formatted. Rendered in `colors.danger`, announced with the label. */
   error?: string | null;
   ref?: Ref<TextInput>;
 }
 
 /**
  * Label + input + error, the theme's only text input. The label is the
- * accessible name and the error its hint — `accessibilityLiveRegion` is
- * Android-only, and a refocused input reads only its label to VoiceOver;
- * the focus state is a `colors.accent` border (visible focus, every plan's
+ * accessible name and the error its hint, so a refocused input reads both.
+ * A new error is also announced as «label. error» on both platforms: a live
+ * region does not reach TalkBack on this stack (#279), and one submit can
+ * fail several fields with the same catalog string, so the label says which.
+ * The focus state is a `colors.accent` border (visible focus, every plan's
  * rule). The label stays its own screen-reader stop. On Android the input is
  * labelled BY it (`labelFor`): an EditText holding text drops its own
  * `accessibilityLabel` from TalkBack's reading, and carrying both reads the
@@ -30,6 +33,7 @@ export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
 export function TextField({ label, error, ref, ...rest }: TextFieldProps) {
   const [focused, setFocused] = useState(false);
   const labelId = useId();
+  useAnnounceChange(error ? `${label}. ${error}` : null);
   return (
     <View style={styles.wrap}>
       <Text style={styles.label} nativeID={labelId}>
@@ -56,11 +60,7 @@ export function TextField({ label, error, ref, ...rest }: TextFieldProps) {
           Boolean(error) && styles.errored,
         ]}
       />
-      {error ? (
-        <Text style={styles.error} accessibilityLiveRegion="polite">
-          {error}
-        </Text>
-      ) : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
 }
