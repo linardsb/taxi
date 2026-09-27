@@ -1,48 +1,22 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useState } from 'react';
+import {
+  useBooleanPreference,
+  type BooleanPreference,
+} from './boolean-preference';
 
-/**
- * Whether this rider opts in to a pickup PIN (#258), remembered on the device.
- * AsyncStorage, like `sakta.rider.places`: a yes/no is not a secret, and a
- * stored preference on the server is out of scope (the user's 2026-09-23 call).
- */
+/** Whether this rider opts in to a pickup PIN (#258), remembered on the device. */
 export const PICKUP_PIN_KEY = 'sakta.rider.pickup_pin';
 
-export interface PickupPinPreference {
-  value: boolean;
-  /** False until the stored value is read — Book waits for it. */
-  loaded: boolean;
-  set(value: boolean): void;
-}
-
 /**
- * Read once on mount. A read that throws means "off", and still counts as
- * loaded: the switch then shows off, visibly, before the rider taps Book.
- * `set` applies at once and writes fire-and-forget — a failed write still
- * applies to this booking, and costs only the memory for the next one.
+ * Whether this rider opts in to the arrival-announce protocol (#259): the
+ * driver gets out and calls «Sakta» at the kerb. A procedure the rider asks
+ * for, remembered on the device — never a statement about the rider.
  */
-export function usePickupPinPreference(): PickupPinPreference {
-  const [state, setState] = useState({ value: false, loaded: false });
+export const ANNOUNCE_ARRIVAL_KEY = 'sakta.rider.announce_arrival';
 
-  useEffect(() => {
-    let cancelled = false;
-    AsyncStorage.getItem(PICKUP_PIN_KEY)
-      .then((stored) => stored === '1')
-      .catch(() => false)
-      .then((value) => {
-        if (!cancelled) setState({ value, loaded: true });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+export type PickupPinPreference = BooleanPreference;
 
-  const set = useCallback((value: boolean) => {
-    setState({ value, loaded: true });
-    AsyncStorage.setItem(PICKUP_PIN_KEY, value ? '1' : '0').catch(
-      () => undefined,
-    );
-  }, []);
+export const usePickupPinPreference = () =>
+  useBooleanPreference(PICKUP_PIN_KEY);
 
-  return { ...state, set };
-}
+export const useAnnounceArrivalPreference = () =>
+  useBooleanPreference(ANNOUNCE_ARRIVAL_KEY);

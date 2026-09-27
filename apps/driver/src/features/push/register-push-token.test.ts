@@ -45,6 +45,25 @@ describe('installNotificationHandling (#15)', () => {
     );
   });
 
+  it('suppresses an announce request while active, and shows it backgrounded (expected — #259)', async () => {
+    installNotificationHandling({ onTap });
+    const data = {
+      kind: 'announce_requested',
+      rideId: '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c',
+      at: '2026-09-27T10:00:00.000Z',
+    };
+    expect(await presentationFor(data)).toEqual(
+      expect.objectContaining({ shouldShowBanner: false }),
+    );
+    appState.currentState = 'background';
+    expect(await presentationFor(data)).toEqual(
+      expect.objectContaining({
+        shouldShowBanner: true,
+        shouldPlaySound: true,
+      }),
+    );
+  });
+
   it('still shows a backgrounded offer and every nudge (edge)', async () => {
     installNotificationHandling({ onTap });
     appState.currentState = 'background';

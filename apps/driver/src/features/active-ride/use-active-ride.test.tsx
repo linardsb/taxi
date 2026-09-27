@@ -7,7 +7,8 @@ import {
   within,
 } from '@testing-library/react-native';
 import { useEffect } from 'react';
-import { Text } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { AccessibilityInfo, Text } from 'react-native';
 import {
   formatMessage,
   driverRideSchema,
@@ -320,6 +321,160 @@ describe('ActiveRideProvider (#15)', () => {
       t('driver.ride.released'),
     );
     expect(screen.queryByTestId('ride-step')).toBeNull();
+  });
+
+  /**
+   * #259 T0 P1/P3: the reducer's effect is the one speaker, so it must say
+   * what the silent Banner shows — method and reason included — exactly once.
+   */
+  it('the payment-changed announce speaks the Banner`s text, once (edge — #259 T0 P1)', async () => {
+    const announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation();
+    try {
+      apiAnswers(() => ride({ paymentMethod: 'card' }));
+      await mount();
+
+      await act(async () => ctx!.open(RIDE_ID, 'cash'));
+
+      await screen.findByTestId('payment-changed');
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenCalledWith(
+        t('driver.ride.payment_changed', {
+          method: t('driver.offer.payment_card'),
+        }),
+      );
+    } finally {
+      announce.mockRestore();
+    }
+  });
+
+  it('a socket cancel speaks the Banner`s text with its reason, once (edge — #259 T0 P3)', async () => {
+    const announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation();
+    try {
+      apiAnswers(() => ride({ status: 'arriving' }));
+      await mount();
+      const { handlers, socket } = makeSocket();
+      await act(async () => {
+        for (const listener of mockListeners) {
+          listener.onSocket?.(
+            socket as unknown as Parameters<
+              NonNullable<RuntimeListener['onSocket']>
+            >[0],
+          );
+        }
+      });
+      await act(async () => ctx!.open(RIDE_ID));
+      await screen.findByTestId('ride-step');
+      announce.mockClear();
+
+      await act(async () =>
+        handlers['ride:status']!({
+          rideId: RIDE_ID,
+          orderId: '11111111-2222-4333-8444-555555555555',
+          status: 'cancelled_by_rider',
+          previousStatus: 'arriving',
+          reason: 'changed plans',
+          at: '2026-09-04T10:05:00.000Z',
+        }),
+      );
+
+      await screen.findByTestId('ended-banner');
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenCalledWith(
+        t('driver.ride.cancelled', { reason: 'changed plans' }).trim(),
+      );
+    } finally {
+      announce.mockRestore();
+    }
+  });
+
+  describe('the rider`s announce request (#259)', () => {
+    const AT = '2026-09-27T10:00:00.000Z';
+    const flagged = () => {
+      const base = ride({ status: 'arrived' });
+      return {
+        ...base,
+        request: {
+          ...base.request,
+          options: { ...base.request.options, announceArrival: true },
+        },
+      };
+    };
+    async function atArrived() {
+      apiAnswers(flagged);
+      await mount();
+      const { handlers, socket } = makeSocket();
+      await act(async () => {
+        for (const listener of mockListeners) {
+          listener.onSocket?.(
+            socket as unknown as Parameters<
+              NonNullable<RuntimeListener['onSocket']>
+            >[0],
+          );
+        }
+      });
+      await act(async () => ctx!.open(RIDE_ID));
+      await screen.findByTestId('announce-prompt');
+      return handlers;
+    }
+
+    it('a socket request shows the notice, buzzes once and is spoken once (expected)', async () => {
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation();
+      try {
+        const handlers = await atArrived();
+        announce.mockClear();
+
+        await act(async () =>
+          handlers['ride:announce_requested']!({ rideId: RIDE_ID, at: AT }),
+        );
+
+        await screen.findByTestId('announce-requested');
+        expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+        expect(announce).toHaveBeenCalledTimes(1);
+        expect(announce).toHaveBeenCalledWith(
+          t('driver.ride.announce_requested'),
+        );
+      } finally {
+        announce.mockRestore();
+      }
+    });
+
+    it('the push leg with the same `at` after the socket adds nothing (edge — the dedupe)', async () => {
+      const handlers = await atArrived();
+      await act(async () =>
+        handlers['ride:announce_requested']!({ rideId: RIDE_ID, at: AT }),
+      );
+      await screen.findByTestId('announce-requested');
+
+      await act(async () => ctx!.announceRequested(RIDE_ID, AT));
+
+      expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops a malformed payload with a warning (failure — AC8)', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation();
+      try {
+        const handlers = await atArrived();
+
+        await act(async () =>
+          handlers['ride:announce_requested']!({ rideId: RIDE_ID, at: 'now' }),
+        );
+
+        expect(warn).toHaveBeenCalledWith(
+          'ride:announce_requested dropped',
+          expect.anything(),
+        );
+        expect(screen.queryByTestId('announce-requested')).toBeNull();
+        expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 
   /**

@@ -324,6 +324,8 @@ export const lv = {
   // so the two channels cannot drift into saying different things.
   'push.rider_arrived_title': 'Auto ir klāt',
   'push.rider_arrived_body': 'Jūsu taksometrs ({plate}) ir klāt.',
+  'push.announce_requested_title': 'Pasažieris jūs meklē',
+  'push.announce_requested_body': 'Izkāpiet un skaļi sauciet „Sakta”.',
   'driver.offer.title': 'Jauns brauciens',
   'driver.offer.fare': 'Cena {amount}',
   'driver.offer.you_keep': 'Jūs saņemat {amount} ({pct}%)',
@@ -368,6 +370,14 @@ export const lv = {
   'driver.ride.rider_name': 'Pasažieris: {name}',
   'driver.ride.call_rider': 'Zvanīt pasažierim',
   'driver.ride.call_rider_hint': 'Zvana {name}',
+  'driver.ride.announce_note':
+    'Pasažieris lūdz: ierodoties izkāpiet un piesakieties balsī.',
+  'driver.ride.announce_prompt_name':
+    'Izkāpiet un skaļi sakiet: „Sakta, {name}!”',
+  'driver.ride.announce_prompt_destination':
+    'Izkāpiet un skaļi sakiet: „Sakta, uz {address}!”',
+  'driver.ride.announce_requested':
+    'Pasažieris jūs meklē: izkāpiet un skaļi sauciet „Sakta”.',
   'driver.earnings.title': 'Ieņēmumi',
   'driver.earnings.receipt_paid': 'Pasažieris samaksāja: {amount}',
   'driver.earnings.receipt_commission': 'Sakta ({pct}%): {amount}',

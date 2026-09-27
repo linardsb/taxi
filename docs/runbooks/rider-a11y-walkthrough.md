@@ -197,3 +197,23 @@ VERBOSE log, audio not heard):
   (`announceForAccessibility` on Android too) is #259's T0.
 - Address search needs `GOOGLE_MAPS_API_KEY`; without it, book with
   `POST /rides` and open `saktacabrider://book/status?rideId=<id>`.
+
+### 14 — Arrival announce (#259)
+
+The rider asks, per booking, for the driver to get out at the kerb and call
+«Sakta» aloud, and can ask again while the car waits.
+
+- **Gesture:** on `/book`, find the «Šoferis pieteiksies balsī» switch (under
+  the PIN switch), turn it on, book; on `/book/status`, wait for `arrived`, then
+  find «Palūgt šoferi pieteikties» above «Atcelt braucienu» and activate it.
+- **Pass (TalkBack and VoiceOver):**
+  - the switch is one stop reading its label, state and hint «Ieradies šoferis
+    izkāps un skaļi pateiks „Sakta”.»;
+  - at `arrived` the status line speaks «Auto ir klāt» once and nothing else is
+    added to it;
+  - the button reads its label and hint «Šoferis skaļi sauks „Sakta”.»;
+  - activating it speaks «Pieprasījums nosūtīts šoferim.» once; activating it
+    again inside 20 s speaks «Pārāk daudz mēģinājumu — pagaidiet brīdi»; a
+    second activation after that window speaks the confirmation again;
+  - after «Sākt braucienu» the button and the confirmation are gone.
+- **Not flagged:** a ride booked with the switch off shows no button at `arrived`.

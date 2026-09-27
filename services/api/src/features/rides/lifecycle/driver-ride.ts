@@ -10,6 +10,7 @@ import {
 } from '@taxi/shared';
 import type { RealtimeService } from '../../realtime';
 import type { RidesRepository } from '../rides.repository';
+import type { ArrivalAnnounceService } from './arrival-announce.service';
 import type { RideLifecycleRepository } from './ride-lifecycle.repository';
 
 type RiderIdentity = { phone: string; displayName: string | null };
@@ -26,14 +27,19 @@ type RiderIdentity = { phone: string; displayName: string | null };
  * 1–120 characters, and a name outside that fails the app's parse of the WHOLE
  * ride. So it is trimmed, blank becomes null and over-long is cut by
  * `readDisplayName` (shared, #269).
+ *
+ * `announceRequestedAt` (#259) is gated the same way, on the snapshot's own
+ * status: a request is replayed only while the car waits at `arrived`.
  */
 export function toDriverRide(
   ride: Ride,
   identity: RiderIdentity | undefined,
+  announceRequestedAt: string | null = null,
 ): DriverRide {
   const name = readDisplayName(identity?.displayName);
   return {
     ...ride,
+    announceRequestedAt: ride.status === 'arrived' ? announceRequestedAt : null,
     rider: {
       displayName: isInStatusSet(RIDER_NAME_VISIBLE_STATUSES, ride.status)
         ? name
@@ -50,6 +56,7 @@ export type DriverRideReadDeps = {
   rides: RidesRepository;
   lifecycle: RideLifecycleRepository;
   realtime: RealtimeService;
+  announce: ArrivalAnnounceService;
   logger: Logger;
 };
 
@@ -110,5 +117,32 @@ export async function readDriverRide(
   return toDriverRide(
     found.ride,
     await deps.lifecycle.findRiderIdentity(found.ride.riderId),
+    found.ride.status === 'arrived'
+      ? await readAnnounceReplay(deps, driverId, rideId)
+      : null,
   );
+}
+
+/**
+ * The replay leg (#259) is best-effort, like the join: the read reaches the KV
+ * only at `arrived`, the one status `toDriverRide` keeps it for, and a KV
+ * failure costs the replay, never the driver's ride (PR #293 F2).
+ */
+async function readAnnounceReplay(
+  deps: DriverRideReadDeps,
+  driverId: string,
+  rideId: string,
+): Promise<string | null> {
+  try {
+    return await deps.announce.lastRequestedAt(rideId);
+  } catch (error) {
+    deps.logger.warn({
+      event: 'ride.read.announce_replay_failed',
+      rideId,
+      driverId,
+      reason: error instanceof Error ? error.message : 'unknown',
+      at: new Date().toISOString(),
+    });
+    return null;
+  }
 }

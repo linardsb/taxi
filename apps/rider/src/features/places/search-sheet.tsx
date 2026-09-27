@@ -9,7 +9,7 @@ import {
 } from '@taxi/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, StyleSheet, Text } from 'react-native';
+import { AccessibilityInfo, FlatList, StyleSheet, Text } from 'react-native';
 import {
   Banner,
   Button,
@@ -85,6 +85,14 @@ export function SearchSheet() {
   const [busy, setBusy] = useState(false);
   const [gone, setGone] = useState<string[]>([]);
   const [cooldown, setCooldown] = useState(0);
+  /**
+   * The error on screen is the 429 that started the cooldown (#259 T0 P6).
+   * Its Banner then ticks every second, so it is silent and the wait is
+   * announced once, from the response. Set only where `setCooldown` is, and
+   * cleared at every `setError`: a later error inside the cooldown is an
+   * ordinary Banner that speaks once, and a 429 with no seconds never sets it.
+   */
+  const [rateLimited, setRateLimited] = useState(false);
 
   /**
    * ONE session token per FIELD VISIT, reused across this field's keystrokes.
@@ -124,8 +132,8 @@ export function SearchSheet() {
    * rules file describes this as the screen where you HEAR the suggestions.
    *
    * `failed` and the cooldown say nothing here because the error `Banner` above
-   * is already speaking; two live regions firing on the same event is the M9
-   * double-announce by another door.
+   * is already speaking (or, for a 429, its one announce is); two speakers on the
+   * same event is the M9 double-announce by another door.
    */
   const statusText = !searchable
     ? coolingDown
@@ -169,6 +177,7 @@ export function SearchSheet() {
           // this it survived over a healthy list — and `Banner` re-announced
           // the stale text on iOS.
           setError(null);
+          setRateLimited(false);
           setResults({
             query,
             suggestions: found,
@@ -178,8 +187,16 @@ export function SearchSheet() {
         .catch((e: unknown) => {
           if (abandoned) return;
           const err = e instanceof ApiError ? e : null;
-          setError(errorMessageKey(err?.code ?? 'generic'));
-          if (err?.retryAfterSeconds) setCooldown(err.retryAfterSeconds);
+          const key = errorMessageKey(err?.code ?? 'generic');
+          setError(key);
+          setRateLimited(false);
+          if (err?.retryAfterSeconds) {
+            setCooldown(err.retryAfterSeconds);
+            setRateLimited(true);
+            AccessibilityInfo.announceForAccessibility(
+              `${t(key)} ${t('rider.book.retry_in', { seconds: err.retryAfterSeconds })}`,
+            );
+          }
           setResults({ query, suggestions: [], status: 'failed' });
         });
     }, DEBOUNCE_MS);
@@ -187,7 +204,7 @@ export function SearchSheet() {
       abandoned = true;
       clearTimeout(timer);
     };
-  }, [api, query, searchable]);
+  }, [api, query, searchable, t]);
 
   function done(
     address: string,
@@ -210,6 +227,7 @@ export function SearchSheet() {
   async function resolve(suggestion: AddressSuggestion) {
     setBusy(true);
     setError(null);
+    setRateLimited(false);
     try {
       const point = await api.request(
         'POST',
@@ -227,8 +245,16 @@ export function SearchSheet() {
       );
     } catch (e) {
       const err = e instanceof ApiError ? e : null;
-      setError(errorMessageKey(err?.code ?? 'generic'));
-      if (err?.retryAfterSeconds) setCooldown(err.retryAfterSeconds);
+      const key = errorMessageKey(err?.code ?? 'generic');
+      setError(key);
+      setRateLimited(false);
+      if (err?.retryAfterSeconds) {
+        setCooldown(err.retryAfterSeconds);
+        setRateLimited(true);
+        AccessibilityInfo.announceForAccessibility(
+          `${t(key)} ${t('rider.book.retry_in', { seconds: err.retryAfterSeconds })}`,
+        );
+      }
       if (err?.status === 404) {
         // "This place is gone, search again" — not a generic failure. The row
         // goes, and the token rotates because the provider WAS asked.
@@ -247,6 +273,7 @@ export function SearchSheet() {
   async function fillFromCurrentLocation() {
     setBusy(true);
     setError(null);
+    setRateLimited(false);
     const point = await currentPositionPoint();
     setBusy(false);
     if (point === null) {
@@ -255,6 +282,7 @@ export function SearchSheet() {
       // who deliberately refused location that the app broke invites a retry
       // that fails identically.
       setError('rider.book.location_unavailable');
+      setRateLimited(false);
       return;
     }
     done(point.address, point.location.lat, point.location.lng, null);
@@ -281,8 +309,9 @@ export function SearchSheet() {
       {error ? (
         <Banner
           tone="danger"
+          announce={!rateLimited}
           text={
-            coolingDown
+            rateLimited && coolingDown
               ? `${t(error)} ${t('rider.book.retry_in', { seconds: cooldown })}`
               : t(error)
           }
@@ -298,10 +327,10 @@ export function SearchSheet() {
       ) : null}
       {statusText === '' ? null : (
         // `Banner`, not a bare `<Text accessibilityLiveRegion>`: that attribute
-        // is ANDROID-ONLY (see Banner's own docblock), so on iOS a blind rider
-        // heard no "searching", no "nothing found" and no result count at all —
-        // silence until they swiped into the list to find out whether it had
-        // rows. Banner owns the announce-on-iOS half.
+        // does nothing on iOS and never reached TalkBack on Android either
+        // (Banner's docblock, #259 R11), so a blind rider heard no
+        // "searching", no "nothing found" and no result count at all. Banner
+        // announces the line outright on both platforms.
         <Banner tone="info" text={statusText} testID="search-status" />
       )}
       <FlatList

@@ -261,6 +261,8 @@ export const ru = {
   'push.offer_body': 'Вы получаете {amount}. Откройте, чтобы принять.',
   'push.rider_arrived_title': 'Машина подъехала',
   'push.rider_arrived_body': 'Ваше такси ({plate}) на месте.',
+  'push.announce_requested_title': 'Пассажир ищет вас',
+  'push.announce_requested_body': 'Выйдите и громко позовите «Sakta».',
   'driver.offer.title': 'Новый заказ',
   'driver.offer.fare': 'Цена {amount}',
   'driver.offer.you_keep': 'Вы получаете {amount} ({pct}%)',
@@ -300,6 +302,14 @@ export const ru = {
   'driver.ride.rider_name': 'Пассажир: {name}',
   'driver.ride.call_rider': 'Позвонить пассажиру',
   'driver.ride.call_rider_hint': 'Звонок: {name}',
+  'driver.ride.announce_note':
+    'Пассажир просит: по прибытии выйдите и назовитесь вслух.',
+  'driver.ride.announce_prompt_name':
+    'Выйдите и скажите вслух: «Sakta, {name}!»',
+  'driver.ride.announce_prompt_destination':
+    'Выйдите и скажите вслух: «Sakta, до {address}!»',
+  'driver.ride.announce_requested':
+    'Пассажир ищет вас: выйдите и громко позовите «Sakta».',
   'driver.earnings.title': 'Заработок',
   'driver.earnings.receipt_paid': 'Пассажир заплатил: {amount}',
   'driver.earnings.receipt_commission': 'Sakta ({pct}%): {amount}',
@@ -350,6 +360,9 @@ export const ru = {
   'rider.book.payment_card': 'Картой',
   'rider.book.pickup_pin': 'PIN-код для посадки',
   'rider.book.pickup_pin_hint': 'Водитель введёт ваш PIN перед поездкой.',
+  'rider.book.announce_arrival': 'Водитель объявит о прибытии',
+  'rider.book.announce_arrival_hint':
+    'Приехав, водитель выйдет и громко скажет «Sakta».',
   'rider.book.name_row': 'Имя для водителя: {name}',
   'rider.book.name_row_empty': 'Имя для водителя: не указано',
   'rider.book.name_row_hint': 'Открывает настройку имени',
@@ -374,6 +387,9 @@ export const ru = {
   'rider.status.arrived': 'Машина подъехала',
   'rider.status.arrived_pin': 'Машина подъехала. PIN: {pin}',
   'rider.status.pin': 'Ваш PIN-код: {pin}',
+  'rider.status.request_announce': 'Попросить водителя отозваться',
+  'rider.status.request_announce_hint': 'Водитель громко позовёт «Sakta».',
+  'rider.status.announce_sent': 'Запрос отправлен водителю.',
   'rider.status.cancelled': 'Поездка отменена',
   'rider.status.completed': 'Поездка завершена',
   'rider.status.cancel': 'Отменить поездку',
@@ -384,6 +400,9 @@ export const ru = {
   'rider.a11y.quote_failed': 'Не удалось рассчитать цену',
   'rider.a11y.ride_requested': 'Поездка заказана',
   'rider.error.too_many_requests': 'Слишком много попыток — подождите немного',
+  'rider.error.ride_not_arrived': 'Машина больше не ждёт посадки.',
+  'rider.error.announce_not_requested':
+    'Для этой поездки объявление о прибытии не заказано.',
   'rider.error.idempotent_request_in_progress': 'Заказ ещё обрабатывается…',
   'rider.error.scheduled_in_past': 'Указанное время уже прошло',
   'rider.error.multi_taxi_not_supported':

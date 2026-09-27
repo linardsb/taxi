@@ -5,7 +5,7 @@ import {
   screen,
   within,
 } from '@testing-library/react-native';
-import { Linking } from 'react-native';
+import { AccessibilityInfo, Linking } from 'react-native';
 import {
   formatMessage,
   driverRideSchema,
@@ -58,13 +58,14 @@ let mockState: ActiveRideState = initialActiveRide;
 const mockStep = jest.fn();
 const mockReload = jest.fn();
 const mockDismiss = jest.fn();
+const mockDismissNotice = jest.fn();
 jest.mock('./use-active-ride', () => ({
   useActiveRide: () => ({
     state: mockState,
     open: jest.fn(),
     step: mockStep,
     reload: mockReload,
-    dismissNotice: jest.fn(),
+    dismissNotice: mockDismissNotice,
     dismiss: mockDismiss,
   }),
 }));
@@ -427,5 +428,136 @@ describe('ActiveRideScreen rider identity (#261)', () => {
     });
     await render(<ActiveRideScreen />);
     expect(screen.queryByTestId('call-rider')).toBeNull();
+  });
+});
+
+/**
+ * #259 T0: the reducer's `announce` effects are the one speaker for these
+ * events — they run app-wide, so they still speak after hardware back has
+ * unmounted this screen. The Banners showing the same text stay silent, or
+ * both platforms say it twice now that Banner announces on Android too.
+ */
+describe('ActiveRideScreen Banners the reducer already speaks (#259 T0)', () => {
+  let announce: jest.SpyInstance;
+  beforeEach(() => {
+    announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation();
+  });
+  afterEach(() => announce.mockRestore());
+
+  it.each([
+    [
+      'payment-changed (P1)',
+      () => showing('accepted', { notice: 'payment_changed' }),
+      'payment-changed',
+    ],
+    [
+      'released (P2)',
+      () => showing('requested', { ended: { kind: 'released', reason: null } }),
+      'ended-banner',
+    ],
+    [
+      'cancelled (P3)',
+      () =>
+        showing('cancelled_by_rider', {
+          ended: { kind: 'cancelled', reason: 'changed plans' },
+        }),
+      'ended-banner',
+    ],
+  ] as const)(
+    'the %s Banner renders without announcing (edge)',
+    async (_name, state, testID) => {
+      mockState = state();
+      await render(<ActiveRideScreen />);
+      expect(screen.getByTestId(testID)).toBeTruthy();
+      expect(announce).not.toHaveBeenCalled();
+    },
+  );
+
+  it('the completed-without-split Banner (P4) renders without announcing (edge)', async () => {
+    const done = ride({ status: 'completed', split: null });
+    mockState = showing('completed', {
+      ride: done,
+      ended: { kind: 'completed', ride: done },
+    });
+    await render(<ActiveRideScreen />);
+    expect(screen.getByText(t('driver.ride.reload'))).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
+  });
+});
+
+describe('ActiveRideScreen arrival-announce protocol (#259)', () => {
+  let announce: jest.SpyInstance;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation();
+  });
+  afterEach(() => announce.mockRestore());
+
+  const flagged = (
+    status: RideStatus,
+    displayName: string | null = 'Anna',
+  ): DriverRide => {
+    const base = ride({ status, rider: { displayName, phone: null } });
+    return {
+      ...base,
+      request: {
+        ...base.request,
+        options: { ...base.request.options, announceArrival: true },
+      },
+    };
+  };
+  const show = (r: DriverRide, over: Partial<ActiveRideState> = {}) => {
+    mockState = { ...initialActiveRide, rideId: r.id, ride: r, ...over };
+  };
+
+  it('at arrived tells the driver to call out the rider`s name — the same name the name line shows (expected — D4)', async () => {
+    show(flagged('arrived'));
+    await render(<ActiveRideScreen />);
+    expect(screen.getByTestId('announce-prompt')).toHaveTextContent(
+      t('driver.ride.announce_prompt_name', { name: 'Anna' }),
+    );
+    expect(screen.getByTestId('rider-name')).toHaveTextContent(
+      t('driver.ride.rider_name', { name: 'Anna' }),
+    );
+  });
+
+  it('with no name, calls out the destination instead (edge — D4)', async () => {
+    show(flagged('arrived', null));
+    await render(<ActiveRideScreen />);
+    expect(screen.getByTestId('announce-prompt')).toHaveTextContent(
+      t('driver.ride.announce_prompt_destination', { address: 'Teika' }),
+    );
+  });
+
+  it('before arrival shows the note, and a flag-less ride shows nothing (edge)', async () => {
+    show(flagged('arriving'));
+    const { rerender } = await render(<ActiveRideScreen />);
+    expect(screen.getByTestId('announce-prompt')).toHaveTextContent(
+      t('driver.ride.announce_note'),
+    );
+
+    show(ride({ status: 'arrived' }));
+    await rerender(<ActiveRideScreen />);
+    expect(screen.queryByTestId('announce-prompt')).toBeNull();
+  });
+
+  it('the request notice is a silent Banner, and «Gatavs» dismisses it (expected)', async () => {
+    show(flagged('arrived'), { notice: 'announce_requested' });
+    await render(<ActiveRideScreen />);
+
+    const notice = screen.getByTestId('announce-requested');
+    expect(notice).toHaveTextContent(t('driver.ride.announce_requested'), {
+      exact: false,
+    });
+    // The reducer's effect is the speaker (T0's rule), not the Banner.
+    expect(announce).not.toHaveBeenCalled();
+    await fireEvent.press(
+      within(notice).getByRole('button', { name: t('driver.action.done') }),
+    );
+    expect(mockDismissNotice).toHaveBeenCalledTimes(1);
   });
 });

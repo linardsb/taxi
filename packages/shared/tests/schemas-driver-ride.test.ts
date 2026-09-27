@@ -71,6 +71,31 @@ describe('driverRideSchema (#261)', () => {
     );
   });
 
+  it('announceRequestedAt defaults to null — an api from before #259 still parses (edge)', () => {
+    const parsed = driverRideSchema.parse({
+      ...ride,
+      rider: { displayName: null, phone: null },
+    });
+    expect(parsed.announceRequestedAt).toBeNull();
+    expect(
+      driverRideSchema.parse({
+        ...ride,
+        rider: { displayName: null, phone: null },
+        announceRequestedAt: '2026-09-27T10:00:00.000Z',
+      }).announceRequestedAt,
+    ).toBe('2026-09-27T10:00:00.000Z');
+  });
+
+  it('refuses an announceRequestedAt that is not an ISO datetime (failure)', () => {
+    expect(
+      driverRideSchema.safeParse({
+        ...ride,
+        rider: { displayName: null, phone: null },
+        announceRequestedAt: 'yesterday',
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects a body with no rider block, and a non-E.164 phone (failure)', () => {
     expect(() => driverRideSchema.parse(ride)).toThrow();
     expect(() =>

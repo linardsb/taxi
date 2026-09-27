@@ -48,14 +48,20 @@ jest.mock('./socket', () => ({ createRiderSocket: () => mockSocket }));
 
 const RIDE_ID = '2f1b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
 
-const rideAt = (status: string, pickupPin: string | null = null) => ({
+// `request` carries the parsed `options` the hook reads (#259); the mock
+// hands the object back unparsed, so it must have the parsed shape.
+const rideAt = (
+  status: string,
+  pickupPin: string | null = null,
+  announceArrival = false,
+) => ({
   id: RIDE_ID,
   pickupPin,
   status,
   riderId: mockSession.user.id,
   driverId: null,
   paymentMethod: 'cash',
-  request: {},
+  request: { options: { announceArrival } },
   quote: null,
   createdAt: '2026-09-02T00:00:00.000Z',
   updatedAt: '2026-09-02T00:00:00.000Z',
@@ -70,9 +76,16 @@ const event = (status: string, previousStatus: string | null) => ({
   at: '2026-09-02T00:00:01.000Z',
 });
 
-function Probe() {
-  const { status, stillSearching, connected, joined, pickupPin } =
-    useRideStatus(RIDE_ID);
+function Probe({ rideId = RIDE_ID }: { rideId?: string }) {
+  const {
+    status,
+    stillSearching,
+    connected,
+    joined,
+    linkAttempted,
+    pickupPin,
+    announceArrival,
+  } = useRideStatus(rideId);
   return (
     <>
       <Text>{`${status ?? 'none'}|${stillSearching ? 'still' : 'not'}|${
@@ -84,7 +97,9 @@ function Probe() {
           assertion in this file into something that no longer reads as a
           status. */}
       <Text>{`joined:${joined ? 'yes' : 'no'}`}</Text>
+      <Text>{`tried:${linkAttempted ? 'yes' : 'no'}`}</Text>
       <Text>{`pin:${pickupPin ?? 'none'}`}</Text>
+      <Text>{`announce:${announceArrival ? 'on' : 'off'}`}</Text>
     </>
   );
 }
@@ -218,6 +233,32 @@ describe('useRideStatus', () => {
     expect(screen.getByText('offered|not|up')).toBeTruthy();
   });
 
+  it('exposes the arrival-announce opt-in from the read (expected — #259)', async () => {
+    mockRequest.mockResolvedValue(rideAt('arrived', null, true));
+    await render(<Probe />);
+
+    await screen.findByText('announce:on');
+  });
+
+  it('keeps the announce flag when an event beats the read (edge — #259)', async () => {
+    const settles: ((ride: unknown) => void)[] = [];
+    mockRequest.mockImplementation(
+      () => new Promise((resolve) => settles.push(resolve)),
+    );
+    await render(<Probe />);
+    await act(async () => mockHandlers.get('connect')!(undefined));
+    await act(async () =>
+      mockHandlers.get(RT.rideStatus)!(event('arrived', 'arriving')),
+    );
+
+    await act(async () => {
+      for (const settle of settles) settle(rideAt('arriving', null, true));
+    });
+
+    expect(screen.getByText('announce:on')).toBeTruthy();
+    expect(screen.getByText('arrived|not|up')).toBeTruthy();
+  });
+
   it('has no PIN for a ride booked without one (expected — #258)', async () => {
     await render(<Probe />);
     await screen.findByText('requested|not|down');
@@ -348,5 +389,62 @@ describe('useRideStatus', () => {
     await act(async () => settleMount(rideAt('requested')));
 
     expect(screen.getByText('accepted|not|up')).toBeTruthy();
+  });
+
+  describe('linkAttempted — when a missing link is news (PR #293 F1)', () => {
+    it('is false on the first frame, and a landed join sets it (expected)', async () => {
+      await render(<Probe />);
+      await screen.findByText('requested|not|down');
+      // The mount read has landed and nothing has tried the link yet: a
+      // «reconnecting» spoken now would be about a link never lost.
+      expect(screen.getByText('tried:no')).toBeTruthy();
+
+      await act(async () => mockHandlers.get('connect')!(undefined));
+      await screen.findByText('joined:yes');
+      expect(screen.getByText('tried:yes')).toBeTruthy();
+    });
+
+    it('a first join read that fails sets it, with the socket up (failure)', async () => {
+      await render(<Probe />);
+      await screen.findByText('requested|not|down');
+
+      mockRequest.mockRejectedValueOnce(new Error('offline'));
+      await act(async () => mockHandlers.get('connect')!(undefined));
+
+      await screen.findByText('tried:yes');
+      expect(screen.getByText('joined:no')).toBeTruthy();
+    });
+
+    it('a mount read that fails sets it before any socket connects (failure — api down)', async () => {
+      mockRequest.mockRejectedValueOnce(new Error('offline'));
+      await render(<Probe />);
+
+      await screen.findByText('tried:yes');
+      expect(screen.getByText('none|not|down')).toBeTruthy();
+    });
+
+    it('a socket connect_error sets it while REST is up (failure — socket server down)', async () => {
+      await render(<Probe />);
+      await screen.findByText('requested|not|down');
+      expect(screen.getByText('tried:no')).toBeTruthy();
+
+      await act(async () =>
+        mockHandlers.get('connect_error')!(new Error('xhr poll error')),
+      );
+
+      await screen.findByText('tried:yes');
+    });
+
+    it('another ride starts unattempted again (edge)', async () => {
+      const view = await render(<Probe />);
+      await act(async () => mockHandlers.get('connect')!(undefined));
+      await screen.findByText('tried:yes');
+
+      await view.rerender(
+        <Probe rideId="9f1b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6f" />,
+      );
+
+      await screen.findByText('tried:no');
+    });
   });
 });

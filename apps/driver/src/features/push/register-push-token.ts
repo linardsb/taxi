@@ -79,8 +79,10 @@ const routedColdStartTaps = new Set<string>();
  *
  * An OFFER arriving while the app is active is suppressed: the socket path
  * already showed the card, played the tone and buzzed, and a second banner
- * plus sound for the same card is noise. Everything else — the offline
- * nudge included — still shows in the foreground, as before.
+ * plus sound for the same card is noise. So is an arrival-announce request
+ * (#259): in the foreground the socket and the reducer's notice (haptic,
+ * Banner, spoken) already did the job. Everything else — the offline nudge
+ * included — still shows in the foreground, as before.
  */
 export function installNotificationHandling(
   handlers: NotificationHandlers,
@@ -89,7 +91,8 @@ export function installNotificationHandling(
     handleNotification: (notification) => {
       const route = routeNotification(notification.request.content.data);
       const quiet =
-        route.kind === 'offer' && AppState.currentState === 'active';
+        (route.kind === 'offer' || route.kind === 'announce') &&
+        AppState.currentState === 'active';
       return Promise.resolve({
         shouldShowBanner: !quiet,
         shouldShowList: !quiet,

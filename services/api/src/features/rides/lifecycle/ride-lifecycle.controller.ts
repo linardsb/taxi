@@ -19,6 +19,7 @@ import {
 } from '@taxi/shared';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../../auth';
+import { ArrivalAnnounceService } from './arrival-announce.service';
 import type { LifecycleActor } from './ride-lifecycle.policy';
 import { RideLifecycleService } from './ride-lifecycle.service';
 
@@ -34,7 +35,10 @@ import { RideLifecycleService } from './ride-lifecycle.service';
  */
 @Controller('rides')
 export class RideLifecycleController {
-  constructor(private readonly lifecycle: RideLifecycleService) {}
+  constructor(
+    private readonly lifecycle: RideLifecycleService,
+    private readonly announce: ArrivalAnnounceService,
+  ) {}
 
   @Post(':rideId/arriving')
   @Roles('driver')
@@ -115,5 +119,15 @@ export class RideLifecycleController {
       user.sub,
       body.paymentMethod,
     );
+  }
+
+  /** The rider asks the driver to get out and call out (#259). No body. */
+  @Post(':rideId/announce-request')
+  @Roles('rider')
+  requestAnnounce(
+    @CurrentUser() user: JwtClaims,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+  ): Promise<{ ok: true }> {
+    return this.announce.request(user.sub, rideId);
   }
 }

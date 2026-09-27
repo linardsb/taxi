@@ -18,7 +18,7 @@ import {
   clearSavedPlaces,
 } from '@/features/places';
 import { BookingScreen } from './booking-screen';
-import { PICKUP_PIN_KEY } from './pickup-pin-preference';
+import { ANNOUNCE_ARRIVAL_KEY, PICKUP_PIN_KEY } from './pickup-pin-preference';
 
 const mockRequest = jest.fn();
 const mockSessionContext = {
@@ -76,6 +76,7 @@ describe('BookingScreen', () => {
   beforeEach(async () => {
     await clearSavedPlaces();
     await AsyncStorage.removeItem(PICKUP_PIN_KEY);
+    await AsyncStorage.removeItem(ANNOUNCE_ARRIVAL_KEY);
     mockRequest.mockReset();
     (push as jest.Mock).mockReset();
     (replace as jest.Mock).mockReset();
@@ -132,7 +133,9 @@ describe('BookingScreen', () => {
     // (AC10) and the one screen-reader stop — the native Switch, the label and
     // the visible hint are not separate stops, so nothing is read twice.
     expect(toggle.props.testID).toBe('pickup-pin-row');
-    expect(screen.getAllByRole('switch')).toHaveLength(1);
+    // Two switch rows since #259 — the PIN and the arrival announce — and no
+    // third stop from either row's native Switch.
+    expect(screen.getAllByRole('switch')).toHaveLength(2);
     // The visible hint stays on screen but out of the accessibility tree.
     expect(
       screen.getByText(t('rider.book.pickup_pin_hint'), {
@@ -156,6 +159,73 @@ describe('BookingScreen', () => {
       screen.getByRole('switch', { name: t('rider.book.pickup_pin') }),
     ).toBeChecked();
     expect(await AsyncStorage.getItem(PICKUP_PIN_KEY)).toBe('1');
+  });
+
+  it('offers the arrival-announce switch as one stop, and books with it on (expected — #259)', async () => {
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue(dropoffParams);
+    mockRequest
+      .mockResolvedValueOnce({ quote: QUOTE })
+      .mockResolvedValueOnce({ ride: { id: 'ride-1' }, split: {} });
+    await renderScreen();
+
+    const toggle = await screen.findByRole('switch', {
+      name: t('rider.book.announce_arrival'),
+    });
+    expect(toggle.props.testID).toBe('announce-arrival-row');
+    expect(toggle.props.accessibilityHint).toBe(
+      t('rider.book.announce_arrival_hint'),
+    );
+    expect(
+      StyleSheet.flatten(toggle.props.style).minHeight,
+    ).toBeGreaterThanOrEqual(44);
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle).not.toBeChecked();
+
+    await fireEvent.press(toggle);
+
+    expect(
+      screen.getByRole('switch', { name: t('rider.book.announce_arrival') }),
+    ).toBeChecked();
+    expect(await AsyncStorage.getItem(ANNOUNCE_ARRIVAL_KEY)).toBe('1');
+    await screen.findByTestId('quote-card');
+    await userEvent.press(
+      screen.getByRole('button', { name: t('rider.book.confirm') }),
+    );
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(
+        'POST',
+        '/rides',
+        expect.objectContaining({
+          body: expect.objectContaining({
+            options: { pickupPin: false, announceArrival: true },
+          }),
+        }),
+      ),
+    );
+  });
+
+  it('keeps Book disabled until the stored announce choice has loaded too (edge — #259)', async () => {
+    (router.useLocalSearchParams as jest.Mock).mockReturnValue(dropoffParams);
+    mockRequest.mockResolvedValueOnce({ quote: QUOTE });
+    let resolve!: (v: string | null) => void;
+    const getItem = AsyncStorage.getItem as jest.Mock;
+    const stored = getItem.getMockImplementation()!;
+    getItem.mockImplementation((key: string) =>
+      key === ANNOUNCE_ARRIVAL_KEY
+        ? new Promise<string | null>((r) => (resolve = r))
+        : stored(key),
+    );
+
+    await renderScreen();
+    await screen.findByTestId('quote-card');
+
+    const bookButton = () =>
+      screen.getByRole('button', { name: t('rider.book.confirm') });
+    expect(bookButton()).toBeDisabled();
+
+    await act(async () => resolve('1'));
+    expect(bookButton()).toBeEnabled();
+    getItem.mockImplementation(stored);
   });
 
   it('keeps Book disabled until the stored PIN choice has loaded (edge — E2)', async () => {
