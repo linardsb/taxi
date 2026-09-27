@@ -21,6 +21,7 @@ const t = (
 ) => formatMessage('lv', key, params);
 
 const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
+const OTHER_ID = '7c6b5a49-3827-4165-9f4e-3d2c1b0a9f8e';
 
 const ride = (over: Partial<DriverRide> = {}): DriverRide =>
   driverRideSchema.parse({
@@ -170,13 +171,57 @@ describe('ActiveRideScreen (#15)', () => {
       expect(mockStep).toHaveBeenCalledWith('0042');
     });
 
-    it('keeps digits only (edge)', async () => {
+    it('a non-digit paste is not stripped, Start stays off, and nothing is sent (failure — #280)', async () => {
       mockState = pinnedAt('arrived');
       await render(<ActiveRideScreen />);
       const field = screen.getByTestId('pickup-pin-input');
 
-      await fireEvent.changeText(field, '0-4 2');
-      expect(field.props.value).toBe('042');
+      await fireEvent.changeText(field, '12ab');
+      expect(screen.getByTestId('ride-step')).toBeDisabled();
+      await fireEvent.press(screen.getByTestId('ride-step'));
+      expect(mockStep).not.toHaveBeenCalled();
+
+      await fireEvent.changeText(field, '1234');
+      expect(screen.getByTestId('ride-step')).toBeEnabled();
+      await fireEvent.press(screen.getByTestId('ride-step'));
+      expect(mockStep).toHaveBeenCalledWith('1234');
+    });
+
+    it('the field is uncontrolled, so the native text is never re-set per keystroke (regression — #280)', async () => {
+      mockState = pinnedAt('arrived');
+      await render(<ActiveRideScreen />);
+      const field = screen.getByTestId('pickup-pin-input');
+
+      await fireEvent.changeText(field, '0042');
+      expect(field.props.value).toBeUndefined();
+      expect(field.props.defaultValue).toBeUndefined();
+    });
+
+    it('a PIN typed for one ride does not carry to the next (edge — #280)', async () => {
+      mockState = pinnedAt('arrived');
+      const view = await render(<ActiveRideScreen />);
+      await fireEvent.changeText(
+        screen.getByTestId('pickup-pin-input'),
+        '0042',
+      );
+      expect(screen.getByTestId('ride-step')).toBeEnabled();
+
+      // What `opened()` leaves on a force-assign: the new id, no ride yet.
+      mockState = { ...initialActiveRide, rideId: OTHER_ID, loading: true };
+      await view.rerender(<ActiveRideScreen />);
+      expect(screen.getByTestId('ride-loading')).toBeTruthy();
+
+      const next = pinnedAt('arrived');
+      mockState = {
+        ...next,
+        rideId: OTHER_ID,
+        ride: { ...next.ride!, id: OTHER_ID },
+      };
+      await view.rerender(<ActiveRideScreen />);
+
+      expect(screen.getByTestId('ride-step')).toBeDisabled();
+      await fireEvent.press(screen.getByTestId('ride-step'));
+      expect(mockStep).not.toHaveBeenCalled();
     });
 
     it('an un-pinned ride shows no field and Start works as before (regression)', async () => {
@@ -217,8 +262,8 @@ describe('ActiveRideScreen (#15)', () => {
       expect(
         screen.queryByRole('button', { name: t('driver.action.retry') }),
       ).toBeNull();
-      // The digits survive the 422, so the driver corrects rather than retypes.
-      expect(screen.getByTestId('pickup-pin-input').props.value).toBe('9999');
+      // The digits survive the 422, so the driver corrects rather than retypes:
+      // Start is off for the refused 9999, and on for the one-digit change below.
       expect(screen.getByTestId('ride-step')).toBeDisabled();
 
       await fireEvent.changeText(

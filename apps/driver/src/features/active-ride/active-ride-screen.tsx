@@ -59,8 +59,14 @@ export function ActiveRideScreen() {
   const targetKey = target ? `${target.lat},${target.lng}` : null;
   const [wazeAvailable, setWazeAvailable] = useState(false);
   // The rider's pickup PIN as typed (#258). Kept after a 422 so the driver
-  // corrects rather than retypes (Start stays off until it differs); a new ride remounts the screen and clears it.
-  const [pin, setPin] = useState('');
+  // corrects rather than retypes (Start stays off until it differs). The field
+  // is uncontrolled: a changing `value` makes RN re-set the native text on
+  // every keystroke, which TalkBack speaks as "replaced" (#280). Non-digits
+  // stay visible and `pinSendable` refuses them. Keyed to the ride because a
+  // force-assign can swap the ride under a mounted screen, and a remounted
+  // uncontrolled field comes back empty — so an early return that unmounts the
+  // field on the SAME ride at `arrived` would leave digits behind an empty box.
+  const [pin, setPin] = useState({ rideId: '', text: '' });
   useEffect(() => {
     if (!target) return;
     let live = true;
@@ -141,6 +147,7 @@ export function ActiveRideScreen() {
     );
   }
 
+  const typedPin = pin.rideId === ride.id ? pin.text : '';
   const currentStep = stepFor(ride.status);
   const title = TITLE_KEY[ride.status] ?? 'driver.ride.title_accepted';
   const method = paymentMethodLabel(ride.paymentMethod, t);
@@ -180,7 +187,10 @@ export function ActiveRideScreen() {
           action={
             state.errorCode.startsWith('pickup_pin_')
               ? undefined
-              : { label: t('driver.action.retry'), onPress: () => step(pin) }
+              : {
+                  label: t('driver.action.retry'),
+                  onPress: () => step(typedPin),
+                }
           }
           secondary={{ label: t('driver.ride.reload'), onPress: reload }}
           testID="ride-error"
@@ -213,8 +223,7 @@ export function ActiveRideScreen() {
       {needsPin(ride) ? (
         <TextField
           label={t('driver.ride.pin_label')}
-          value={pin}
-          onChangeText={(v) => setPin(v.replace(/\D/g, ''))}
+          onChangeText={(text) => setPin({ rideId: ride.id, text })}
           keyboardType="number-pad"
           maxLength={4}
           testID="pickup-pin-input"
@@ -224,8 +233,8 @@ export function ActiveRideScreen() {
         <Button
           size="lg"
           label={t(STEP_KEY[currentStep])}
-          onPress={() => step(pin)}
-          disabled={needsPin(ride) && !pinSendable(state, pin)}
+          onPress={() => step(typedPin)}
+          disabled={needsPin(ride) && !pinSendable(state, typedPin)}
           loading={state.busy}
           testID="ride-step"
         />
