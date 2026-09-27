@@ -11,6 +11,7 @@ import { StyleSheet, Text } from 'react-native';
 import { Banner, Button, Screen, useScreenFocus } from '@/components';
 import { ApiError, useSession } from '@/features/auth';
 import { errorMessageKey, useT } from '@/features/i18n';
+import { useAnnounceRequest } from './use-announce-request';
 import { useRideStatus } from './use-ride-status';
 
 /**
@@ -64,18 +65,16 @@ function spaced(pin: string): string {
 /**
  * `/book/status` — what is happening, spoken.
  *
- * The status line is BOTH an Android live region and an iOS announce, which is
- * the split `Banner` already owns, so it reuses `Banner` rather than
- * reinventing it: `accessibilityLiveRegion` is Android-only, and on iOS
- * VoiceOver hears nothing unless the text is announced outright. A rider whose
- * phone is in their pocket is the whole point — nothing here requires looking
- * at the screen.
+ * The status line is a `Banner`, which announces its text outright on both
+ * platforms (#259 T0: an Android live region never reached TalkBack). A rider
+ * whose phone is in their pocket is the whole point — nothing here requires
+ * looking at the screen.
  *
  * ONE announcement per change, and `Banner` is it. A second effect here
  * announcing the same line under `rider.a11y.status_changed` made every iOS
  * transition speak twice: «Auto ir atrasts», then «Brauciena statuss: Auto ir
- * atrasts». Banner is kept over the effect because it also carries the Android
- * live region, which an announce alone does not.
+ * atrasts». Banner is kept over the effect because it renders the line too, so
+ * the text seen and the text heard cannot drift apart.
  */
 export function StatusScreen() {
   const t = useT();
@@ -85,8 +84,15 @@ export function StatusScreen() {
   useScreenFocus(heading);
   const params = useLocalSearchParams<{ rideId?: string }>();
   const rideId = params.rideId ?? null;
-  const { status, stillSearching, connected, joined, pickupPin } =
-    useRideStatus(rideId);
+  const {
+    status,
+    stillSearching,
+    connected,
+    joined,
+    pickupPin,
+    announceArrival,
+  } = useRideStatus(rideId);
+  const announce = useAnnounceRequest(rideId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
 
@@ -109,6 +115,13 @@ export function StatusScreen() {
   const pinText =
     pickupPin !== null && status !== null && !over && status !== 'in_progress'
       ? t('rider.status.pin', { pin: spaced(pickupPin) })
+      : null;
+
+  // The request's result belongs to the status it was sent at: once the ride
+  // leaves `arrived`, it is gone — derived here, never reset by an effect.
+  const announceShown =
+    announce.result !== null && announce.result.forStatus === status
+      ? announce.result.value
       : null;
 
   async function cancel() {
@@ -155,6 +168,27 @@ export function StatusScreen() {
         <Banner tone="warning" text={t('rider.status.reconnecting')} />
       ) : null}
       {error ? <Banner tone="danger" text={t(error)} /> : null}
+      {/* The request (#259) answers the rider's own tap, so its Banner is not
+          a second status announcement. Only a flagged ride at the kerb has
+          the button; the status line above stays the one arrival signal. */}
+      {announceShown === 'sent' ? (
+        <Banner
+          tone="info"
+          text={t('rider.status.announce_sent')}
+          testID="announce-sent"
+        />
+      ) : announceShown !== null ? (
+        <Banner tone="danger" text={t(announceShown)} testID="announce-error" />
+      ) : null}
+      {announceArrival && status === 'arrived' ? (
+        <Button
+          label={t('rider.status.request_announce')}
+          accessibilityHint={t('rider.status.request_announce_hint')}
+          onPress={() => void announce.send(status)}
+          loading={announce.busy}
+          testID="request-announce"
+        />
+      ) : null}
       {over ? (
         <Button
           label={t('rider.status.book_again')}

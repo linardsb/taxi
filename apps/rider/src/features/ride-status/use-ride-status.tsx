@@ -62,6 +62,11 @@ export interface RideStatusState {
    * REST read only — no socket event carries it.
    */
   pickupPin: string | null;
+  /**
+   * Whether the rider opted in to the arrival-announce protocol (#259), from
+   * the REST read's `request.options`. Like the PIN, it never changes.
+   */
+  announceArrival: boolean;
 }
 
 /**
@@ -119,6 +124,7 @@ export function useRideStatus(rideId: string | null): RideStatusState {
     connected: false,
     joined: false,
     pickupPin: null,
+    announceArrival: false,
   });
   const [elapsed, setElapsed] = useState(false);
 
@@ -165,10 +171,13 @@ export function useRideStatus(rideId: string | null): RideStatusState {
           // beating both cold-start reads, the normal order right after
           // booking. Behind it the rider would see no PIN until a reconnect,
           // and the driver could lock out a ride the rider could have started.
+          // The announce flag (#259) rides here for the same reason.
+          const announceArrival = ride.request.options.announceArrival;
           setState((s) =>
-            s.pickupPin === ride.pickupPin
+            s.pickupPin === ride.pickupPin &&
+            s.announceArrival === announceArrival
               ? s
-              : { ...s, pickupPin: ride.pickupPin },
+              : { ...s, pickupPin: ride.pickupPin, announceArrival },
           );
           retryDelay = READ_RETRY_MS;
           // The join only happened for a socket that was already connected when

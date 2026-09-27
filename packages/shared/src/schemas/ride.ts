@@ -29,6 +29,13 @@ export const rideOptionsSchema = z.object({
    * on the request; the PIN itself never does (see `riderRideSchema`).
    */
   pickupPin: z.boolean().default(false),
+  /**
+   * A request for the arrival procedure, not a statement about the rider (D1,
+   * #259): at `arrived` the driver gets out and says «Sakta, …!» aloud, and the
+   * rider may ask them to call out again. Revealed to the driver only through
+   * `driverRideSchema`, after accept (D2) — never on the offer.
+   */
+  announceArrival: z.boolean().default(false),
 });
 export type RideOptions = z.infer<typeof rideOptionsSchema>;
 
@@ -89,6 +96,7 @@ export const rideRequestSchema = z.object({
     childSeat: false,
     femaleDriver: false,
     pickupPin: false,
+    announceArrival: false,
   }),
   paymentMethod: z.enum(PAYMENT_METHOD_TYPES),
   /** Set for "izsaukumi uz laiku" — scheduled rides enter the machine as `scheduled`. */
@@ -316,6 +324,14 @@ export const driverRideRiderSchema = z.object({
 });
 export const driverRideSchema = rideSchema.extend({
   rider: driverRideRiderSchema,
+  /**
+   * When the rider last asked the driver to call out (#259), from KV (600 s
+   * TTL); null off `arrived`. The replay leg: the app re-reads on every
+   * foreground and reconnect (`active-ride-state.ts`), so a request missed
+   * while backgrounded shows on return. `.default(null)`: a new app reading an
+   * api from before this change still parses.
+   */
+  announceRequestedAt: z.string().datetime().nullable().default(null),
 });
 export type DriverRide = z.infer<typeof driverRideSchema>;
 

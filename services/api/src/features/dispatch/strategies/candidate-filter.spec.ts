@@ -77,7 +77,12 @@ describe('toCandidates', () => {
         attrs(3, { isFemale: true }),
       ],
       request({
-        options: { childSeat: false, femaleDriver: true, pickupPin: false },
+        options: {
+          childSeat: false,
+          femaleDriver: true,
+          pickupPin: false,
+          announceArrival: false,
+        },
       }),
       DEBT_LIMIT,
     );
@@ -101,7 +106,12 @@ describe('toCandidates', () => {
       [nearby(1, 100), nearby(2, 200)],
       [attrs(1), attrs(2)],
       request({
-        options: { childSeat: true, femaleDriver: false, pickupPin: false },
+        options: {
+          childSeat: true,
+          femaleDriver: false,
+          pickupPin: false,
+          announceArrival: false,
+        },
       }),
       DEBT_LIMIT,
     );

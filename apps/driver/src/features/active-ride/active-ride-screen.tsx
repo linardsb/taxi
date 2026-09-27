@@ -16,6 +16,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Banner, Button, Screen, TextField } from '@/components';
 import { errorMessageKey, useT } from '@/features/i18n';
 import { needsPin, pinSendable, stepFor, TITLE_KEY } from './active-ride-state';
+import { announcePrompt } from './arrival-announce';
 import {
   callRider,
   canOpenWaze,
@@ -98,7 +99,10 @@ export function ActiveRideScreen() {
               />
             ) : (
               // Completed but the split has not been read yet (Q5): offer the re-read.
+              // Silent: the reducer's `completed_title` effect speaks it,
+              // on the Receipt path too (#259 T0 P4).
               <Banner
+                announce={false}
                 tone="info"
                 text={t('driver.ride.completed_title')}
                 action={{ label: t('driver.ride.reload'), onPress: reload }}
@@ -106,7 +110,11 @@ export function ActiveRideScreen() {
             )}
           </>
         ) : (
+          // Silent: the reducer's `released`/`cancelled` effect is the one
+          // speaker — it runs app-wide, so it is also heard after hardware
+          // back has unmounted this screen (#259 T0 P2/P3).
           <Banner
+            announce={false}
             tone={ended.kind === 'released' ? 'info' : 'warning'}
             text={
               ended.kind === 'released'
@@ -160,6 +168,7 @@ export function ActiveRideScreen() {
   const riderPhone = isInStatusSet(RIDER_PHONE_VISIBLE_STATUSES, ride.status)
     ? ride.rider.phone
     : null;
+  const prompt = announcePrompt(ride);
   return (
     <Screen>
       <Text style={styles.title} accessibilityRole="header">
@@ -171,11 +180,24 @@ export function ActiveRideScreen() {
         </Text>
       </View>
       {state.notice === 'payment_changed' ? (
+        // Silent: the reducer's effect speaks this text (#259 T0 P1).
         <Banner
+          announce={false}
           tone="warning"
           text={t('driver.ride.payment_changed', { method })}
           secondary={{ label: t('driver.action.done'), onPress: dismissNotice }}
           testID="payment-changed"
+        />
+      ) : null}
+      {state.notice === 'announce_requested' ? (
+        // Silent: the reducer's effect is the one speaker, heard on whichever
+        // screen is up (#259 T0's rule).
+        <Banner
+          announce={false}
+          tone="warning"
+          text={t('driver.ride.announce_requested')}
+          secondary={{ label: t('driver.action.done'), onPress: dismissNotice }}
+          testID="announce-requested"
         />
       ) : null}
       {state.errorCode ? (
@@ -201,6 +223,15 @@ export function ActiveRideScreen() {
           <Text style={styles.detail} testID="rider-name">
             {t('driver.ride.rider_name', { name: riderName })}
           </Text>
+        ) : null}
+        {/* The arrival-announce protocol (#259). Plain text, not a Banner:
+            a Banner speaks at mount and would talk over «Esat klāt». */}
+        {prompt ? (
+          <View style={styles.prompt} testID="announce-prompt">
+            <Text style={styles.promptText}>
+              {t(prompt.key, prompt.params)}
+            </Text>
+          </View>
         ) : null}
         <Text style={styles.detail}>
           {t('driver.offer.pickup', { address: ride.request.pickup.address })}
@@ -289,5 +320,12 @@ const styles = StyleSheet.create({
   details: { gap: spacing.xs },
   detail: { fontSize: fontSize.md, color: colors.fg },
   fare: { fontSize: fontSize.lg, fontWeight: '600', color: colors.fg },
+  prompt: {
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: radius.md,
+  },
+  promptText: { fontSize: fontSize.lg, fontWeight: '600', color: colors.fg },
   nav: { gap: spacing.sm, marginTop: 'auto' },
 });

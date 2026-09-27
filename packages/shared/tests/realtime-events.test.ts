@@ -14,6 +14,7 @@ import {
   driverLocationPingSchema,
   driverQueueEventSchema,
   driverRoom,
+  rideAnnounceRequestedEventSchema,
   rideAssignedEventSchema,
   rideOfferEventSchema,
   rideOfferRevokedEventSchema,
@@ -23,6 +24,7 @@ import {
 } from '../src/realtime-events';
 import { SMS_KINDS } from '../src/enums';
 import { rideOfferSchema } from '../src/schemas/ride';
+import { announcePushDataSchema } from '../src/schemas/announce-push';
 import { splitFare } from '../src/commission';
 
 const riga = { lat: 56.9496, lng: 24.1052 };
@@ -538,9 +540,44 @@ describe('driverLocationAckSchema (#14)', () => {
   });
 });
 
+describe('rideAnnounceRequestedEventSchema (#259)', () => {
+  const at = '2026-09-27T10:00:00.000Z';
+
+  it('parses a request event (expected)', () => {
+    expect(
+      rideAnnounceRequestedEventSchema.parse({ rideId: uuid, at }),
+    ).toEqual({ rideId: uuid, at });
+  });
+
+  it('refuses a Date `at` — the wire carries ISO strings (edge)', () => {
+    expect(
+      rideAnnounceRequestedEventSchema.safeParse({
+        rideId: uuid,
+        at: new Date(),
+      }).success,
+    ).toBe(false);
+  });
+
+  it('refuses a bad ride id (failure)', () => {
+    expect(
+      rideAnnounceRequestedEventSchema.safeParse({ rideId: 'ride-1', at })
+        .success,
+    ).toBe(false);
+  });
+
+  it('the push envelope round-trips as strings and names no one (expected)', () => {
+    const data = { kind: 'announce_requested', rideId: uuid, at } as const;
+    const wire = JSON.parse(JSON.stringify(data)) as unknown;
+    expect(announcePushDataSchema.parse(wire)).toEqual(data);
+    expect(
+      announcePushDataSchema.safeParse({ ...data, kind: 'offer' }).success,
+    ).toBe(false);
+  });
+});
+
 describe('RT catalog', () => {
-  it('carries exactly the 9 wired events, each domain:action (completeness)', () => {
-    // Hand-listed on purpose: adding a 10th event without wiring it into the
+  it('carries exactly the 10 wired events, each domain:action (completeness)', () => {
+    // Hand-listed on purpose: adding an 11th event without wiring it into the
     // direction maps and .claude/references/realtime-events.md must fail here.
     const wired = [
       'driver:location',
@@ -552,9 +589,10 @@ describe('RT catalog', () => {
       'dispatch:board',
       'dispatch:unclaimed',
       'dispatch:sms_failed',
+      'ride:announce_requested',
     ];
     const names: string[] = Object.values(RT);
-    expect(names).toHaveLength(9);
+    expect(names).toHaveLength(10);
     expect([...names].sort()).toEqual([...wired].sort());
     for (const name of names) expect(name).toMatch(/^[a-z]+:[a-z_]+$/);
   });

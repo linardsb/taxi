@@ -930,3 +930,15 @@ A 10 would need the new code written and run, which is implementation, not plann
   - **T2's literal list** gains `use-book-ride.test.tsx:89`, `schemas-ride-request.test.ts:93,183,254` and `schemas-customer.test.ts:39`. The `toEqual` ones fail only at test time.
   - **Refs remapped** in `ride.ts`, `realtime-events.ts` and its test, `driver-ride.ts`, `offer-builder.ts`, `rides.service.ts`, `dispatch.integration.spec.ts`, `active-ride-screen.tsx`, `booking-screen.tsx`, `search-sheet.tsx`, `lv.ts` and `driver-device-day.md`, by a line diff from `d6deaa6` and a `sed -n` spot-check. The request-parse pattern moved to `ride-row.ts:47` (#260). Every other backticked cited path is unchanged between the two anchors (`observed`: the basenames of the plan's backticked paths intersected with that 111-file list, plus a targeted `git diff --stat` over the lifecycle, push, ride-status, booking, Banner, realtime and harness files). A ref written without backticks was not covered by the intersection.
   - R3 (no open PRs), R7 (no dependency or `app.json` change) and R9 (22 tasks, `derived`) were re-checked. Every `observed` figure from 2026-09-24 keeps its `d6deaa6` anchor. Confidence stays at 9.
+- 2026-09-27 (implementation, `feature/arrival-announce-protocol-259`; the report is `.claude/reports/arrival-announce-protocol-259-report.md`). These entries supersede the task text named, and every figure below is `observed` in that report:
+  - **T12, where the code lives:** `announcePrompt` is in `apps/driver/src/features/active-ride/arrival-announce.ts`, together with `announceNotice`, `isNewer` and `clearStaleAnnounce`. The reducer file was already 462 lines after T0, so it had to move out; it ends at 488.
+  - **T12, the notice-clearing rule:** the clear is not placed in `step_done` and `status`. `decide` wraps a private `decideEvent`, and every result passes through `clearStaleAnnounce`, which keeps an `announce_requested` notice only while `ride.status === 'arrived'`. M2's `step_done` case is pinned by a mutation that applies the clear only on `status` events.
+  - **T12, the tests:** they are in a new `arrival-announce.test.ts`, not in `active-ride-state.test.ts`.
+  - **T0 P6, the test mock:** `search-sheet.test.tsx`'s `useSession` mock now returns one stable `api` object, as the real provider does. Without that, the hole-2 case could not run.
+  - **T10, the switch count:** `booking-screen.test.tsx`'s `getAllByRole('switch')` expects 2, not 1.
+  - **T11, the rider `Button`:** it gains an `accessibilityHint` prop. The plan assumed the prop existed.
+  - **T11, a test fixture:** `use-ride-status.test.tsx`'s `rideAt` fixture now carries `request.options`.
+  - **T11, the offline state:** it is tested.
+  - **T8, the push-leg check:** it asserts that `data.offer` is present before asserting it is free of the flag.
+  - **Level 4, T23 (c):** it needs the driver online **through the app's toggle**. A driver put online by the api has no socket, so its first attempt became the (d) replay run.
+  - **Level 4, T24:** it ran on Metro port 8082 through the app's `debug_http_host` pref, because 8081 was held by another session.

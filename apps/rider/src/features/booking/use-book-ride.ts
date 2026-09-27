@@ -22,6 +22,12 @@ const RETRY_DELAY_MS = 800;
  *  cars nobody asked for. */
 const MAX_RETRIES = 1;
 
+/** The per-booking opt-ins the rider switched on (#258, #259). */
+export interface BookingOptions {
+  pickupPin: boolean;
+  announceArrival: boolean;
+}
+
 export interface BookRide {
   book(): Promise<string | null>;
   busy: boolean;
@@ -40,7 +46,10 @@ export interface BookRide {
  * new one would book a second car, which is precisely the failure
  * `RIDE_IDEMPOTENCY_PENDING` exists to prevent.
  */
-export function useBookRide(draft: BookingDraft, pickupPin: boolean): BookRide {
+export function useBookRide(
+  draft: BookingDraft,
+  { pickupPin, announceArrival }: BookingOptions,
+): BookRide {
   const { api } = useSession();
   const t = useT();
   const [busy, setBusy] = useState(false);
@@ -58,7 +67,7 @@ export function useBookRide(draft: BookingDraft, pickupPin: boolean): BookRide {
               pickup: draft.pickup,
               destination: draft.dropoff,
               paymentMethod: draft.paymentMethod,
-              options: { pickupPin },
+              options: { pickupPin, announceArrival },
             },
             headers: { [IDEMPOTENCY_KEY_HEADER]: draft.idempotencyKey },
             schema: rideCreatedSchema,
@@ -79,7 +88,7 @@ export function useBookRide(draft: BookingDraft, pickupPin: boolean): BookRide {
     } finally {
       setBusy(false);
     }
-  }, [api, draft, pickupPin, t]);
+  }, [api, draft, pickupPin, announceArrival, t]);
 
   return { book, busy, error };
 }

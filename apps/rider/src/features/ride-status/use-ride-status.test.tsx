@@ -48,14 +48,20 @@ jest.mock('./socket', () => ({ createRiderSocket: () => mockSocket }));
 
 const RIDE_ID = '2f1b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
 
-const rideAt = (status: string, pickupPin: string | null = null) => ({
+// `request` carries the parsed `options` the hook reads (#259); the mock
+// hands the object back unparsed, so it must have the parsed shape.
+const rideAt = (
+  status: string,
+  pickupPin: string | null = null,
+  announceArrival = false,
+) => ({
   id: RIDE_ID,
   pickupPin,
   status,
   riderId: mockSession.user.id,
   driverId: null,
   paymentMethod: 'cash',
-  request: {},
+  request: { options: { announceArrival } },
   quote: null,
   createdAt: '2026-09-02T00:00:00.000Z',
   updatedAt: '2026-09-02T00:00:00.000Z',
@@ -71,8 +77,14 @@ const event = (status: string, previousStatus: string | null) => ({
 });
 
 function Probe() {
-  const { status, stillSearching, connected, joined, pickupPin } =
-    useRideStatus(RIDE_ID);
+  const {
+    status,
+    stillSearching,
+    connected,
+    joined,
+    pickupPin,
+    announceArrival,
+  } = useRideStatus(RIDE_ID);
   return (
     <>
       <Text>{`${status ?? 'none'}|${stillSearching ? 'still' : 'not'}|${
@@ -85,6 +97,7 @@ function Probe() {
           status. */}
       <Text>{`joined:${joined ? 'yes' : 'no'}`}</Text>
       <Text>{`pin:${pickupPin ?? 'none'}`}</Text>
+      <Text>{`announce:${announceArrival ? 'on' : 'off'}`}</Text>
     </>
   );
 }
@@ -216,6 +229,32 @@ describe('useRideStatus', () => {
 
     expect(screen.getByText('pin:0042')).toBeTruthy();
     expect(screen.getByText('offered|not|up')).toBeTruthy();
+  });
+
+  it('exposes the arrival-announce opt-in from the read (expected — #259)', async () => {
+    mockRequest.mockResolvedValue(rideAt('arrived', null, true));
+    await render(<Probe />);
+
+    await screen.findByText('announce:on');
+  });
+
+  it('keeps the announce flag when an event beats the read (edge — #259)', async () => {
+    const settles: ((ride: unknown) => void)[] = [];
+    mockRequest.mockImplementation(
+      () => new Promise((resolve) => settles.push(resolve)),
+    );
+    await render(<Probe />);
+    await act(async () => mockHandlers.get('connect')!(undefined));
+    await act(async () =>
+      mockHandlers.get(RT.rideStatus)!(event('arrived', 'arriving')),
+    );
+
+    await act(async () => {
+      for (const settle of settles) settle(rideAt('arriving', null, true));
+    });
+
+    expect(screen.getByText('announce:on')).toBeTruthy();
+    expect(screen.getByText('arrived|not|up')).toBeTruthy();
   });
 
   it('has no PIN for a ride booked without one (expected — #258)', async () => {

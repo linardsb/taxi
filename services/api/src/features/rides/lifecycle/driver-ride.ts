@@ -10,6 +10,7 @@ import {
 } from '@taxi/shared';
 import type { RealtimeService } from '../../realtime';
 import type { RidesRepository } from '../rides.repository';
+import type { ArrivalAnnounceService } from './arrival-announce.service';
 import type { RideLifecycleRepository } from './ride-lifecycle.repository';
 
 type RiderIdentity = { phone: string; displayName: string | null };
@@ -26,14 +27,19 @@ type RiderIdentity = { phone: string; displayName: string | null };
  * 1–120 characters, and a name outside that fails the app's parse of the WHOLE
  * ride. So it is trimmed, blank becomes null and over-long is cut by
  * `readDisplayName` (shared, #269).
+ *
+ * `announceRequestedAt` (#259) is gated the same way, on the snapshot's own
+ * status: a request is replayed only while the car waits at `arrived`.
  */
 export function toDriverRide(
   ride: Ride,
   identity: RiderIdentity | undefined,
+  announceRequestedAt: string | null = null,
 ): DriverRide {
   const name = readDisplayName(identity?.displayName);
   return {
     ...ride,
+    announceRequestedAt: ride.status === 'arrived' ? announceRequestedAt : null,
     rider: {
       displayName: isInStatusSet(RIDER_NAME_VISIBLE_STATUSES, ride.status)
         ? name
@@ -50,6 +56,7 @@ export type DriverRideReadDeps = {
   rides: RidesRepository;
   lifecycle: RideLifecycleRepository;
   realtime: RealtimeService;
+  announce: ArrivalAnnounceService;
   logger: Logger;
 };
 
@@ -110,5 +117,6 @@ export async function readDriverRide(
   return toDriverRide(
     found.ride,
     await deps.lifecycle.findRiderIdentity(found.ride.riderId),
+    await deps.announce.lastRequestedAt(rideId),
   );
 }

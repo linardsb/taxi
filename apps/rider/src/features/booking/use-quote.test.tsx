@@ -123,7 +123,7 @@ describe('useQuote', () => {
     expect(body).not.toHaveProperty('paymentMethod');
   });
 
-  it('surfaces a 429 as a failed quote and announces it, without retrying (failure — E2, E4)', async () => {
+  it('surfaces a 429 as a failed quote without announcing or retrying (failure — E2, E4, #259 T0 P7)', async () => {
     mockRequest.mockRejectedValue(new ApiError(429, 'too_many_requests', 30));
 
     await render(<Filled />);
@@ -131,7 +131,9 @@ describe('useQuote', () => {
     await waitFor(() => expect(seen.quoteState).toBe('failed'));
     expect(seen.quoteErrorCode).toBe('too_many_requests');
     expect(seen.quote).toBeNull();
-    expect(announce).toHaveBeenCalledWith(t('rider.a11y.quote_failed'));
+    // Not announced here: `/book`'s quote-failed Banner speaks the api's own
+    // cause, and a second announce read the failure twice (#259 T0 P7).
+    expect(announce).not.toHaveBeenCalled();
     // Retrying is what produced the throttle, and the cap it hit is a money
     // control — one request, no automatic second.
     expect(mockRequest).toHaveBeenCalledTimes(1);

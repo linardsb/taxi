@@ -40,11 +40,16 @@ let lastRideId: string | null | undefined;
 function Harness({
   draft = DRAFT,
   pickupPin = false,
+  announceArrival = false,
 }: {
   draft?: BookingDraft;
   pickupPin?: boolean;
+  announceArrival?: boolean;
 }) {
-  const { book, busy, error } = useBookRide(draft, pickupPin);
+  const { book, busy, error } = useBookRide(draft, {
+    pickupPin,
+    announceArrival,
+  });
   return (
     <>
       <Pressable
@@ -86,7 +91,7 @@ describe('useBookRide', () => {
           pickup: DRAFT.pickup,
           destination: DRAFT.dropoff,
           paymentMethod: 'cash',
-          options: { pickupPin: false },
+          options: { pickupPin: false, announceArrival: false },
         },
       }),
     );
@@ -106,7 +111,27 @@ describe('useBookRide', () => {
       'POST',
       '/rides',
       expect.objectContaining({
-        body: expect.objectContaining({ options: { pickupPin: true } }),
+        body: expect.objectContaining({
+          options: { pickupPin: true, announceArrival: false },
+        }),
+      }),
+    );
+  });
+
+  it('sends the arrival-announce opt-in when the rider switched it on (expected — #259)', async () => {
+    mockRequest.mockResolvedValue(RIDE);
+    await render(<Harness announceArrival />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'book' }));
+
+    await waitFor(() => expect(lastRideId).toBe('ride-1'));
+    expect(mockRequest).toHaveBeenCalledWith(
+      'POST',
+      '/rides',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          options: { pickupPin: false, announceArrival: true },
+        }),
       }),
     );
   });

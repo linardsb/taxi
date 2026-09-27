@@ -131,7 +131,7 @@ Fit assessments assume: solo developer, <€100/mo, Q4 2026 Rīga pilot, ~10 dri
 | 4 | **Text-first, saved-address, one-tap booking** as the only flow (DiDi elderly mode, Uber Simple Mode, AFB/AppleVis map-pin findings) | Strong qualitative convergence | Perfect; serves blind + elderly with one build |
 | 5 | **Dispatcher-as-Aira**: human pickup assistance for blind riders (Lyft×Aira, 2025 remote-support study) | Shipped (paid); study-backed need | Sakta uniquely gets it free |
 | 6 | **Ongoing-ride notification on Android** (custom now, Live Updates template later) | Uber's measured cancellation reductions transfer | Cheap; Android-heavy market |
-| 7 | **Driver-arrival protocol for blind riders**: announce-yourself prompt + honk-on-request (Waymo honk/melody, USDOT-recognized; vehicle-ID named top gap in all research) | Shipped by Waymo; strong community reception | Cheap adaptation via driver app event |
+| 7 | **Driver-arrival protocol for blind riders**: announce-yourself prompt + honk-on-request (Waymo honk/melody, USDOT-recognized; vehicle-ID named top gap in all research) | Shipped by Waymo; strong community reception | Cheap adaptation via driver app event. **Shipped as #259** (2026-09, voice-only: CSN p. 172 bars the horn in built-up areas) |
 | 8 | **iOS Live Activity for ride ETA** (Uber: −2.26% driver cancels, −2.13% rider cancels) | Best quantified evidence in the space | Adapted, phase 2 (Expo config-plugin + Swift widget) |
 | 9 | **Share-trip link to family** (Uber, up to 5 contacts, no app needed) | Universal; reuses item #1's page | Near-free |
 | 10 | **Cash+card equal citizens, frozen at acceptance, one price** (Bolt, inDrive) | Shipped consensus in EE/Africa | Already in Sakta's rules; add driver-side payment prominence |

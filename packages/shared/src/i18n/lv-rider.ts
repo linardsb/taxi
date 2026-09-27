@@ -53,6 +53,9 @@ export const lvRider = {
   'rider.book.payment_card': 'Ar karti',
   'rider.book.pickup_pin': 'PIN kods iekāpšanai',
   'rider.book.pickup_pin_hint': 'Šoferis ievadīs jūsu PIN pirms brauciena.',
+  'rider.book.announce_arrival': 'Šoferis pieteiksies balsī',
+  'rider.book.announce_arrival_hint':
+    'Ieradies šoferis izkāps un skaļi pateiks „Sakta”.',
   'rider.book.name_row': 'Vārds vadītājam: {name}',
   'rider.book.name_row_empty': 'Vārds vadītājam: nav norādīts',
   'rider.book.name_row_hint': 'Atver vārda iestatījumu',
@@ -87,6 +90,9 @@ export const lvRider = {
   'rider.status.arrived': 'Auto ir klāt',
   'rider.status.arrived_pin': 'Auto ir klāt. PIN: {pin}',
   'rider.status.pin': 'Jūsu PIN kods: {pin}',
+  'rider.status.request_announce': 'Palūgt šoferi pieteikties',
+  'rider.status.request_announce_hint': 'Šoferis skaļi sauks „Sakta”.',
+  'rider.status.announce_sent': 'Pieprasījums nosūtīts šoferim.',
   'rider.status.cancelled': 'Brauciens ir atcelts',
   'rider.status.completed': 'Brauciens ir pabeigts',
   'rider.status.cancel': 'Atcelt braucienu',
@@ -102,6 +108,9 @@ export const lvRider = {
   'rider.a11y.quote_failed': 'Cenu neizdevās aprēķināt',
   'rider.a11y.ride_requested': 'Brauciens pieteikts',
   'rider.error.too_many_requests': 'Pārāk daudz mēģinājumu — pagaidiet brīdi',
+  'rider.error.ride_not_arrived': 'Brauciens vairs negaida iekāpšanu.',
+  'rider.error.announce_not_requested':
+    'Šim braucienam pieteikšanās nav pasūtīta.',
   'rider.error.idempotent_request_in_progress':
     'Pieteikums vēl tiek apstrādāts…',
   'rider.error.scheduled_in_past': 'Norādītais laiks jau ir pagājis',

@@ -25,6 +25,7 @@ import { DriversService } from '../../drivers';
 import { RealtimeService } from '../../realtime';
 import { RideTransitionService } from '../ride-transition.service';
 import { RidesRepository } from '../rides.repository';
+import { ArrivalAnnounceService } from './arrival-announce.service';
 import { readDriverRide, toDriverRide } from './driver-ride';
 import {
   RideLifecycleRepository,
@@ -66,6 +67,7 @@ export class RideLifecycleService {
     private readonly transitions: RideTransitionService,
     private readonly drivers: DriversService,
     private readonly realtime: RealtimeService,
+    private readonly announce: ArrivalAnnounceService,
   ) {}
 
   /**
@@ -386,9 +388,9 @@ export class RideLifecycleService {
 
   /** The driver's read of their ride (#15, #261) — see `readDriverRide`. */
   findForDriver(driverId: string, rideId: string): Promise<DriverRide> {
-    const { rides, lifecycle, realtime, logger } = this;
+    const { rides, lifecycle, realtime, announce, logger } = this;
     return readDriverRide(
-      { rides, lifecycle, realtime, logger },
+      { rides, lifecycle, realtime, announce, logger },
       driverId,
       rideId,
     );

@@ -6,5 +6,5 @@ export { QuoteCard } from './quote-card';
 export { useBookingDraft } from './use-booking-draft';
 export type { BookingDraftApi } from './use-booking-draft';
 export { useBookRide } from './use-book-ride';
-export type { BookRide } from './use-book-ride';
+export type { BookingOptions, BookRide } from './use-book-ride';
 export { useQuote } from './use-quote';

@@ -59,6 +59,26 @@ describe('routeNotification (#15)', () => {
     });
   });
 
+  it('routes an announce request by the shared envelope (expected — #259)', () => {
+    const at = '2026-09-27T10:00:00.000Z';
+    expect(
+      routeNotification({ kind: 'announce_requested', rideId: RIDE_ID, at }),
+    ).toEqual({ kind: 'announce', rideId: RIDE_ID, at });
+  });
+
+  it('sends a malformed announce envelope to the gate (failure — #259)', () => {
+    expect(
+      routeNotification({ kind: 'announce_requested', rideId: RIDE_ID }),
+    ).toEqual({ kind: 'gate' });
+    expect(
+      routeNotification({
+        kind: 'announce_requested',
+        rideId: 'x',
+        at: '2026-09-27T10:00:00.000Z',
+      }),
+    ).toEqual({ kind: 'gate' });
+  });
+
   it('sends every other notification — the offline nudge included — to the gate (edge)', () => {
     expect(routeNotification({ kind: 'offline_nudge' })).toEqual({
       kind: 'gate',

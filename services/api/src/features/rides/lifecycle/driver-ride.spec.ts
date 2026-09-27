@@ -107,6 +107,29 @@ describe('toDriverRide (#261)', () => {
     const base = ride('arriving');
     const { rider, ...rest } = toDriverRide(base, undefined);
     expect(rider).toEqual({ displayName: null, phone: null });
-    expect(rest).toEqual(base);
+    expect(rest).toEqual({ ...base, announceRequestedAt: null });
+  });
+});
+
+describe('toDriverRide announceRequestedAt (#259)', () => {
+  const AT = '2026-09-27T10:00:00.000Z';
+
+  it('carries the last request at arrived (expected)', () => {
+    const read = toDriverRide(ride('arrived'), ANNA, AT);
+    expect(read.announceRequestedAt).toBe(AT);
+    expect(driverRideSchema.parse(read).announceRequestedAt).toBe(AT);
+  });
+
+  it('is null off arrived, so a request never replays after start (edge)', () => {
+    expect(
+      toDriverRide(ride('in_progress'), ANNA, AT).announceRequestedAt,
+    ).toBeNull();
+    expect(
+      toDriverRide(ride('arriving'), ANNA, AT).announceRequestedAt,
+    ).toBeNull();
+  });
+
+  it('is null with no request — the default for complete() (failure)', () => {
+    expect(toDriverRide(ride('arrived'), ANNA).announceRequestedAt).toBeNull();
   });
 });

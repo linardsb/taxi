@@ -15,6 +15,7 @@ import type {
   LifecycleRide,
   RideLifecycleRepository,
 } from './ride-lifecycle.repository';
+import type { ArrivalAnnounceService } from './arrival-announce.service';
 import { RideLifecycleService } from './ride-lifecycle.service';
 
 const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
@@ -187,6 +188,9 @@ function build(
     transitions,
     drivers,
     realtime,
+    {
+      lastRequestedAt: () => Promise.resolve(null),
+    } as unknown as ArrivalAnnounceService,
   );
 
   return {

@@ -1,11 +1,5 @@
 import { useEffect } from 'react';
-import {
-  AccessibilityInfo,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import { colors, fontSize, radius, spacing } from '@taxi/shared';
 import { Button } from './Button';
 
@@ -23,34 +17,51 @@ export interface BannerProps {
   action?: BannerAction;
   /** A quieter second choice — the battery explainer's «Izlaist». */
   secondary?: BannerAction;
+  /**
+   * `false` for a caller whose event is already spoken elsewhere, or whose
+   * text changes on a timer. Default `true`.
+   */
+  announce?: boolean;
   testID?: string;
 }
 
 /**
  * A state change the driver should hear, with at most one thing to do about
- * it. `accessibilityLiveRegion` is Android-only, so on iOS the text is
- * announced outright — that is what VoiceOver hears. The announce is
- * iOS-only in turn: on Android both firing should read every fresh banner
- * twice under TalkBack (review F28).
+ * it. The text is announced outright with `announceForAccessibility`, on
+ * both platforms, whenever it mounts or changes.
  *
- * `expected`, NOT observed: no Android device has run this, and the test
- * below only pins that the announce is absent, not that TalkBack speaks. It
- * rests on the live region firing for a freshly MOUNTED view rather than
- * only for a content change — if that is wrong, Android has no announcement
- * at all. Plan §C.12 owes the TalkBack pass (review F47).
+ * Android: `observed` on the `sakta224` emulator (API 36, `targetSdk=36`,
+ * RN 0.86.3) with TalkBack's verbose log, #259 R11. With only
+ * `accessibilityLiveRegion="polite"` on the `View` the text changed with
+ * `nodeLiveRegion=0` and 0 utterances; a live region on `Text` also gave 0;
+ * `announceForAccessibility` spoke the text with subtype
+ * `TYPE_ANNOUNCEMENT`. So there is no live region here: it never reached the
+ * platform node, and if a later RN wired it, Android would speak every banner
+ * twice. `announceForAccessibility` is deprecated on API 36 but spoke there
+ * (`observed`) — a deprecation clean-up that removes it leaves Android with
+ * no announcer at all.
+ *
+ * IT IS THE ONLY ANNOUNCER for the surfaces that use it. A screen that also
+ * announces the same event makes both platforms speak it twice. A caller
+ * whose event already has an announcer that speaks whichever screen is
+ * mounted (an app-wide reducer effect), or whose text changes on a timer,
+ * passes `announce={false}` (#259 T0).
  */
-export function Banner({ tone, text, action, secondary, testID }: BannerProps) {
+export function Banner({
+  tone,
+  text,
+  action,
+  secondary,
+  announce = true,
+  testID,
+}: BannerProps) {
   useEffect(() => {
-    if (Platform.OS === 'ios') {
+    if (announce) {
       AccessibilityInfo.announceForAccessibility(text);
     }
-  }, [text]);
+  }, [text, announce]);
   return (
-    <View
-      testID={testID}
-      accessibilityLiveRegion="polite"
-      style={[styles.base, tones[tone]]}
-    >
+    <View testID={testID} style={[styles.base, tones[tone]]}>
       <Text style={styles.text}>{text}</Text>
       {action ? (
         <Button
