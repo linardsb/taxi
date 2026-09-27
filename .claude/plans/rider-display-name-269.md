@@ -236,7 +236,9 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
 
 - **IMPLEMENT**: `git show origin/main:packages/shared/src/i18n/lv-rider.ts`. If it exists, #259's T1 has landed: skip this task and put the rider keys in `lv-rider.ts` in T4. If it does not, run #259's T1 script **verbatim** (`.claude/plans/arrival-announce-protocol-259.md:375-387`) from `packages/shared/src/i18n`.
 - **GOTCHA**:
-  - This ticket adds 10 `lv` keys (T4). Derived: 495 + 10 = 505 > 500, even before #135's 5 lines. #135 is on a local branch in the main checkout at `f2cc6c4`, not yet pushed, and it adds 5 lines to `lv.ts` (`git diff --stat origin/main...f2cc6c4`, observed). The split is therefore required whichever lands first.
+  - This ticket adds 11 `lv` keys (T4: 10 rider, 1 console). Derived, assuming one line per key: 495 + 11 = 506 > 500, so the split is required even without #135.
+  - **#135 collides with this file.** It is on a local branch in the main checkout at `f2cc6c4`, not yet pushed, and adds 5 lines to `lv.ts` (`git diff --stat origin/main...f2cc6c4`, observed). Whichever of #135 and #269 lands second must rebase its `rider.*` keys into `lv-rider.ts`. Tell the #135 session (SendMessage, or a note in its PR) when this split is pushed.
+  - The script's docblock says "split out of `lv.ts` when #259 pushed it past the 500-line cap". If #269 runs the script, change `#259` to `#269` in the generated `lv-rider.ts`, or the comment is false.
   - Prove the move is pure. Run #259's hash command (`:391`) before and after. The **two outputs must be identical**. Do not compare against #259's `344 2a276af52559cb83`, which is `d6deaa6`'s catalog; the key count has grown since.
   - Before running, check `gh pr list --state open` and `git diff --name-only origin/main...<branch> | grep i18n/lv.ts` for each remote branch. At `170c4b1` the only open PR is #289, which does not touch `lv.ts` (observed).
   - If #259 is being implemented in parallel, tell that session. Two splits of the same file conflict on every line.
@@ -270,6 +272,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
    * through this, so one bad row cannot fail a whole response (#261's reason).
    */
   export function readDisplayName(raw: string | null | undefined): string | null {
+    // `|| null`, not `?? null`: '' must become null. Same form as driver-ride.ts:41, which lints clean.
     return raw?.trim().slice(0, DISPLAY_NAME_MAX) || null;
   }
 
@@ -313,7 +316,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
   | `rider.name.removed` | `Vārds noņemts` | `Имя удалено` | `Name removed` |
   | `console.caller_known_name` | `Vārds: {name}` | `Имя: {name}` | `Name: {name}` |
 
-  Derived: 10 rider keys and 1 console key make 11 keys per catalog. That is 11 lines added to each of `lv.ts`/`lv-rider.ts`, `en.ts` and `ru.ts`. `en.ts` goes 382 → 393 and `ru.ts` 389 → 400, both under 500.
+  10 rider keys and 1 console key make 11 keys per catalog. The line count per catalog depends on how prettier wraps the long `rider.name.hint` values. Record it from T4's `wc -l` rather than predicting it. At `170c4b1`, `en.ts` has 382 lines and `ru.ts` 389 (observed), so even at 3 lines per key (33) both stay under 500.
 - **GOTCHA**: `packages/shared/tests/i18n.test.ts` checks parity. A key missing from one catalog fails there, and a `{name}` placeholder mismatch fails `formatMessage` typing. Cosmetic wording questions go to `.claude/references/ui-decisions.md`, not into this ticket.
 - **VALIDATE**: `pnpm --filter @taxi/shared test -- i18n` and `wc -l packages/shared/src/i18n/*.ts` (all ≤ 500)
 - **SATISFIES**: AC7, AC9
@@ -325,7 +328,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
   - **edge**: 120 × `'ā'` passes and 121 fails. `readDisplayName('   ')` → null, `readDisplayName(undefined)` → null, and a 130-char row reads back at 120. `callerLookupSchema.parse({...without displayName})` gives `displayName: null` (the default, so a new console still parses an old api).
   - **failure**: `'   '`, `''` and `'An\u0000na'` are each rejected by `displayNameSchema`.
   - Then run `pnpm --filter @taxi/shared build`. The apps import shared from `dist` (memory: CI parity gate).
-- **VALIDATE**: `pnpm --filter @taxi/shared test -- schemas-display-name && pnpm --filter @taxi/shared build && grep -c "displayNameSchema" packages/shared/dist/index.d.ts` (≥ 1; if the build emits the declarations elsewhere, grep `dist/` recursively)
+- **VALIDATE**: `pnpm --filter @taxi/shared test -- schemas-display-name && pnpm --filter @taxi/shared build && grep -c "displayNameSchema" packages/shared/dist/schemas/user.d.ts` (≥ 1; `tsc -p tsconfig.build.json` emits one `.d.ts` per source file, `package.json:15`)
 - **SATISFIES**: AC1, AC3
 
 ### T6 ADD `PUT /riders/me/display-name` (riders slice)
@@ -457,7 +460,7 @@ T17 amend #261's plan and correct the `session-store.ts` figure, T18 the gate.
     }, []);
     ```
 
-    Omit the key rather than setting `undefined`, because `userSchema.displayName` is `.optional()`, not nullable. Add it to the `useMemo` value and deps (:126-129).
+    Omit the key rather than setting `undefined`, because `userSchema.displayName` is `.optional()`, not nullable. The unused `_old` binding passes lint: `@typescript-eslint/no-unused-vars` is set with `ignoreRestSiblings: true` (`packages/config/eslint/base.mjs:31`, observed). Add it to the `useMemo` value and deps (:126-129).
   - `use-session.test.tsx`:
     - **expected**: sign in, `setDisplayName('Anna')`, then `state.session.user.displayName === 'Anna'` and `SecureStore.setItemAsync` receives JSON containing `"displayName":"Anna"`.
     - **edge**: `setDisplayName(null)` removes the key, so the stored JSON has no `displayName`.
@@ -614,7 +617,7 @@ Everything here is reachable with the seed plus the dev SMS provider. OTP codes 
 3. **Phone fill.** Set the rider's name to NULL by psql. Sign in as the seed dispatcher and open `/dispatch`, New order. Type `+37120000003`: the panel shows the name **input** (no name yet). Type «Dina Test», book any route, and psql shows `Dina Test`. Open New order and type the number again: the panel shows «Vārds: Dina Test» and no input.
 4. **No overwrite.** `PUT` «Anna» as the rider (step 1). Book again from the console with a name typed before the lookup resolved, or through curl `POST /dispatch/bookings` with `callerName: "Other"`. psql still shows `Anna`.
 5. **Rider app** (Android emulator `sakta224`, per `docs/runbooks/driver-device-day.md`'s emulator setup; the rider app builds the same way). Sign in and check `/book` shows «Vārds vadītājam: …» with the name from step 4. Tap it, change to «Anna B», Save, and it returns to `/book` showing «Anna B». With TalkBack on: the row is one stop reading label and hint; the field reads «Vārds, Anna B» once and does not chatter while you type (#287); Save announces «Vārds saglabāts». Airplane mode, then Save: the offline Banner appears and the text is kept.
-6. **Driver sees it** (#261's path). Book from the rider, accept as the seed driver (`docs/runbooks/driver-device-day.md` or the api harness), and `GET /rides/:id` with the driver token: `rider.displayName` is `"Anna B"`.
+6. **Driver sees it** (#261's path, optional). Run #261's Level 4 steps 1-2 (`.claude/plans/driver-ride-rider-identity.md:480-487`, on the stack from `.claude/plans/driver-15-offers-device-pass.md` §"START the stack and the accounts"). Skip #261's step 1 psql write, because steps 1-5 here already set the name. Expect «Pasažieris: Anna B» on the driver's active-ride screen. `ride-read.integration.spec.ts` already covers this read, so skipping the step loses no logic coverage.
 
 If step 5's emulator is unavailable in the implementing session, record it as not run in the report. The unit and integration tests cover the logic, and the missing part is the TalkBack reading only.
 
@@ -655,7 +658,7 @@ If step 5's emulator is unavailable in the implementing session, record it as no
 - **Q2 (ordering, worst case): the rider saves while a phone booking for the same number is in flight.**
   - Rider `PUT` commits first: the conditional fill sees a non-null name and writes nothing. The rider's name stands.
   - Fill commits first: the rider's unconditional `PUT` overwrites it. The rider's name stands.
-  - Postgres row locks serialise the two `UPDATE`s. The worst case is that the driver of the in-flight ride sees Dina's name if they read before the rider's `PUT` commits. The next read (every foreground re-read) shows the rider's.
+  - Postgres row locks serialise the two `UPDATE`s. Worst case: if the fill wins and the driver reads the ride before the rider's `PUT` commits, the driver's current copy shows Dina's name until the driver app next re-reads the ride. This plan did not check when that re-read happens.
 - **A2**: the 2048-byte SecureStore value limit is `expected` from Expo's docs, not observed. T7 measures the session and compares it with that figure. If the SDK 57 page states a different limit, use that.
 - **A3**: `textContentType="givenName"` nudges the iOS autofill to a first name. The rider can still type anything (D5).
 
