@@ -67,6 +67,7 @@ This finding is High because the follow-up PR will be built from the report. Tha
 - Drop "both" and "exactly one home remains", or limit them to the routes they cover.
 - Reassess the focus-gate alternative. The report calls it the weaker fix because it leaves the pollers growing. It is also the only one of the two that does not depend on finding every route to home.
 - Amend the matching bullet in Recommendation 2.
+- Correct the posted copy as well: edit, or reply to, the #295 review comment (`pull/295#issuecomment-5859111564`). The reopen comment on issue 279 links to that comment, not to the file, so the follow-up author will read the comment first.
 
 ### Low
 
@@ -108,7 +109,7 @@ Every figure in the report, and which run backs it:
 | CI `audit-diff`, `codeql`, CodeQL | success (`observed`) |
 | CI `ready` | **failure**, HTTP 401 (F1) |
 | Local gate | Not run. The diff is one Markdown file under `.claude/code-reviews/`, which no typecheck, lint, test or build task reads. CI's `check` is the gate for this head |
-| Citations in the landed report | All `file:line` references checked against `f02d255` (code-reviewer agent, read-only). All confirmed |
+| Citations in the landed report | All `file:line` references checked against `f02d255` (code-reviewer agent, read-only). All confirmed. I re-read this report's own F3 and F4 cites (`earnings-card.tsx:20`, `earnings-screen.test.tsx:117`, `vehicle-screen.tsx:76`, `:97`, `:100`) |
 
 ## What is good
 
@@ -120,5 +121,5 @@ Every figure in the report, and which run backs it:
 ## Recommendation
 
 1. **F1:** Linards rotates `PR_READY_TOKEN`, then re-runs `ready` on this PR and on any other PR opened since.
-2. **F2:** amend the landed report's F2 and Recommendation 2 to cover every route to home, then push. F3–F5 are one-line edits to the same file and can go in the same commit.
+2. **F2:** amend the landed report's F2 and Recommendation 2 to cover every route to home, then push. Correct the #295 review comment to match, since issue 279 links there. F3–F5 are one-line edits to the same file and can go in the same commit.
 3. Merge after `ready` is green.
