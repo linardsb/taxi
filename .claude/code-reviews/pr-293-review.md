@@ -34,8 +34,8 @@ Before this PR, Android spoke none of the status screen's Banners. After T0, it 
 
 **Fix:**
 - `status-line`: `announce={status !== null}`. Banner's effect is keyed on `[text, announce]`, so the first real status speaks once: the text changes and `announce` flips together.
-- `reconnecting`: `announce={joinedOnce}`. `joinedOnce` is a hook flag set on the first `joined: true` and never cleared, so only a drop after a live link speaks.
-- Tests: opening at `arrived` announces only the arrival line; a disconnect after a join announces the reconnecting copy once.
+- `reconnecting`: `announce={joinedOnce || firstJoinFailed}`. `joinedOnce` is a hook flag set on the first `joined: true` and never cleared, so a drop after a live link speaks. `firstJoinFailed` is needed as well, because `joinedOnce` alone would silence a first connection that never comes up (api down, or the join read failing while the socket is up): `status` stays `null` and `joinedOnce` never sets, so the rider would hear nothing about it, which is a regression on iOS, where the copy speaks on mount today. The hook exposes no such signal yet: the join read's failure path only schedules a retry (`use-ride-status.tsx`, the `retryTimer` branch), so set the flag there, or after a stated grace period.
+- Tests: opening at `arrived` announces only the arrival line; a disconnect after a join announces the reconnecting copy once; a first join that fails announces it once.
 
 ### Medium
 
@@ -65,7 +65,7 @@ The root CLAUDE.md requires a visible focus state on every interactive element. 
 
 **F8 · `packages/shared/src/realtime-events.ts:22` · a stale count.** The docblock still says "all 9 events". The catalog, its test (`tests/realtime-events.test.ts:579`) and `realtime-events.md` all say 10. This PR edited the same docblock (the doc-sync paragraph) and left the 9 as it was. **Fix:** 9 → 10.
 
-**F9 · `.claude/reports/arrival-announce-protocol-259-report.md` "Tests added" · the shared baseline is wrong.** The report says shared went 296 → 300. The base is 291: `observed` in the PR #290 round-1 review at `main`'s previous head, and #292 is docs-only. The diff adds 9 new `it` blocks and renames 1 (`git diff origin/main -- packages/shared/tests`), and 291 + 9 = 300 (`derived`). The 300 is right; only the starting figure is wrong. The report's gate section also quotes run 2 at `72b79d3`, while the PR body quotes `26ef638`. The source is the same at both (`git diff --stat 72b79d3 26ef638` touches only the plan and the report), and my run reproduced the counts, so nothing depends on it.
+**F9 · `.claude/reports/arrival-announce-protocol-259-report.md` "Tests added" · the shared baseline is wrong.** The report says shared went 296 → 300. The base is 291: `observed` in the PR #290 round-1 review at `103e9cb`, and neither `git diff --stat 103e9cb 5ef840a -- packages/shared/tests` nor `git diff --stat 5ef840a origin/main -- packages/shared` prints anything. The diff adds 9 new `it` blocks and renames 1 (`git diff origin/main -- packages/shared/tests`), and 291 + 9 = 300 (`derived`). The 300 is right; only the starting figure is wrong. The report's gate section also quotes run 2 at `72b79d3`, while the PR body quotes `26ef638`. The source is the same at both (`git diff --stat 72b79d3 26ef638` touches only the plan and the report), and my run reproduced the counts, so nothing depends on it.
 
 ## Answer to the PR's open question
 
@@ -81,8 +81,8 @@ Fix it here (F1). It is a regression T0 brings to Android, on the flow this tick
 | 9 → 10 events | PR body | matches `RT` and the catalog test (F8 is the one stale docblock) |
 | `active-ride-state.ts` 488, `booking-screen.tsx` 296 → 270, i18n line counts | report | re-observed with `wc -l`, all equal |
 | "`git diff --stat 748d3b9 26ef638` touches only the plan and the report" | PR body | re-observed. Also: source is unchanged from `72b79d3` (12:57 BST) onwards, so T24 (13:02–13:05 BST, Metro) and T21 (EAS from `748d3b9`) both ran on the shipped source |
-| T21 909.5 s | report | `derived`, and labelled that way; 12:00:17.9 → 12:15:27.4 = 909.5 s ✅ |
-| Two added lines matching `blind`, neither a contract, log or copy string | report | re-observed ✅ |
+| T21 909.5 s | report | `derived`, and labelled that way; 12:00:17.9 → 12:15:27.4 = 909.5 s |
+| Two added lines matching `blind`, neither a contract, log or copy string | report | re-observed |
 | Shared 296 → 300 | report | wrong base (F9) |
 | "No check reads `realtime-events.md`" (docblock rewrite) | diff | confirmed: only the hand-listed catalog test names the file, in a comment; no script or workflow reads it |
 
