@@ -1,20 +1,12 @@
 import { colors, fontSize, radius, spacing } from '@taxi/shared';
-import { useEffect, useRef, useState } from 'react';
-import {
-  AccessibilityInfo,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, Screen } from '@/components';
 import { useT } from '@/features/i18n';
 import type { OfferCardProps } from './offer-card-props';
 
 /** Half-period of the flash: 500 ms on / 500 ms off = 1 Hz, well under the 3 Hz photosensitivity line. */
 export const FLASH_HALF_PERIOD_MS = 500;
-/** A screen reader hears the countdown every 5 s, then every second for the last 5. */
-export const ANNOUNCE_EVERY_S = 5;
 
 /**
  * The full-screen offer card (#15; evidence §1.3, §5.3). The WHOLE card is the
@@ -38,7 +30,6 @@ export function OfferCard({
 }) {
   const t = useT();
   const [flashOn, setFlashOn] = useState(false);
-  const announced = useRef<number | null>(null);
 
   // No flash while an answer is in flight: derived at render (`lit`), so the
   // effect only ever owns the interval.
@@ -51,18 +42,6 @@ export function OfferCard({
     );
     return () => clearInterval(timer);
   }, [card.accepting]);
-
-  // Not a live region on the visible number: 20 announcements per card is
-  // noise. Every 5 s, then each of the last 5, on both platforms.
-  useEffect(() => {
-    const s = card.seconds;
-    const due = s <= ANNOUNCE_EVERY_S || s % ANNOUNCE_EVERY_S === 0;
-    if (!due || announced.current === s || s <= 0) return;
-    announced.current = s;
-    AccessibilityInfo.announceForAccessibility(
-      t('driver.offer.countdown', { seconds: s }),
-    );
-  }, [card.seconds, t]);
 
   const fg = lit ? colors.accentFg : colors.fg;
   const muted = lit ? colors.accentFg : colors.fgMuted;
@@ -116,9 +95,14 @@ export function OfferCard({
             ) : null}
           </View>
         )}
+        {/* Out of the tree (#279): TalkBack speaks text changes under the
+            focused card, one per second, queued behind its name. Time left is
+            spoken once, at arrival, by the offer reducer. */}
         <Text
           style={[styles.countdown, { color: fg }]}
           testID="offer-countdown"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
         >
           {card.accepting ? t('driver.offer.accepting') : card.countdown}
         </Text>

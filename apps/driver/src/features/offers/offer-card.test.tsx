@@ -1,5 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
-import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  AccessibilityInfo,
+  StyleSheet,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { formatMessage } from '@taxi/shared';
 import { OfferCard } from './offer-card';
 import type { OfferCardProps } from './offer-card-props';
@@ -18,7 +23,6 @@ const card = (over: Partial<OfferCardProps> = {}): OfferCardProps => ({
   trip: t('driver.offer.trip', { minutes: 18, km: '11.7', rate: '€0.90' }),
   km: 1,
   payment: t('driver.offer.payment_cash'),
-  seconds: 18,
   countdown: t('driver.offer.countdown', { seconds: 18 }),
   glance: false,
   queue: null,
@@ -111,8 +115,45 @@ describe('OfferCard (#15)', () => {
       disabled: true,
       busy: true,
     });
-    expect(screen.getByTestId('offer-countdown').props.children).toBe(
-      t('driver.offer.accepting'),
+    expect(
+      screen.getByTestId('offer-countdown', { includeHiddenElements: true })
+        .props.children,
+    ).toBe(t('driver.offer.accepting'));
+  });
+});
+
+describe('OfferCard says nothing about time (#279)', () => {
+  it('the visible countdown is out of the accessibility tree (#279, expected)', async () => {
+    await render(
+      <OfferCard card={card()} onAccept={jest.fn()} onDecline={jest.fn()} />,
     );
+    const countdown = screen.getByTestId('offer-countdown', {
+      includeHiddenElements: true,
+    });
+    expect(countdown.props.importantForAccessibility).toBe(
+      'no-hide-descendants',
+    );
+    expect(countdown.props.accessibilityElementsHidden).toBe(true);
+    expect(screen.queryByTestId('offer-countdown')).toBeNull();
+  });
+
+  it('never announces as the seconds run down (#279, edge)', async () => {
+    const announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation(() => undefined);
+    const view = await render(
+      <OfferCard card={card()} onAccept={jest.fn()} onDecline={jest.fn()} />,
+    );
+    for (const seconds of [15, 10, 5, 1]) {
+      await view.rerender(
+        <OfferCard
+          card={card({ countdown: t('driver.offer.countdown', { seconds }) })}
+          onAccept={jest.fn()}
+          onDecline={jest.fn()}
+        />,
+      );
+    }
+    expect(announce).not.toHaveBeenCalled();
+    announce.mockRestore();
   });
 });
