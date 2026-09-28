@@ -157,4 +157,28 @@ describe('usePickupPin (#275)', () => {
     act(() => result.current.clear());
     expect(result.current.state).toEqual({ kind: 'idle' });
   });
+
+  it('keeps a closed dialog closed when its read lands after clear() (edge, PR #300 L1)', async () => {
+    let resolveA: (r: Response) => void = () => undefined;
+    fetchMock().mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveA = resolve;
+        }),
+    );
+    const { result } = renderHook(() => usePickupPin());
+
+    let first: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.reveal(RIDE_A);
+    });
+    act(() => result.current.clear());
+    // Awaiting `first` means the late response has been fully handled.
+    await act(async () => {
+      resolveA(okJson({ pin: '1111' }) as Response);
+      await first;
+    });
+
+    expect(result.current.state).toEqual({ kind: 'idle' });
+  });
 });
