@@ -219,6 +219,17 @@ The gate, then Level 4.
 - **VALIDATE**: `pnpm --filter @taxi/shared test -- schemas-dispatch`
 - **SATISFIES**: AC6
 
+### T4b UPDATE the claims T3 makes false (retire the subject, not the sentence)
+
+- **IMPLEMENT**: once `dispatcherPickupPinSchema` exists, these statements are false. Rewrite each one so it names the second, logged way the PIN leaves: the dispatcher read at `arrived` (#275).
+  - `packages/shared/src/schemas/ride.ts:439`: "This is the ONLY schema that carries the PIN." becomes: the only *ride* schema; the one other carrier is `dispatcherPickupPinSchema`, a standalone response, not a ride shape. `rideSchema` must still never gain it.
+  - `services/api/src/features/rides/lifecycle/ride-pickup-pin.integration.spec.ts:254`: "the ONLY response that carries the PIN" becomes "the only *ride* response…".
+  - `.claude/references/ride-state-machine.md:15`: add one sentence: a dispatcher or admin can read the PIN at `arrived` via `GET /rides/:rideId/pickup-pin` (logged, #275), because the arrival SMS is a phone rider's only copy.
+  - `.claude/plans/pickup-pin.md`: append an AMENDMENTS line: 2026-09-28, #275 reverses ":11 … never reaches … the dispatcher" for one logged read at `arrived` (PR #277 L2).
+  - `notifications.repository.ts:72` ("for the phone rider's arrival SMS only") stays: it describes that method, which is still true.
+- **VALIDATE**: `grep -rn -i "only schema that carries the pin\|only response that carries the pin\|never reaches the driver, the dispatcher" packages/shared/src services/api/src apps .claude/references` prints nothing. The first grep at `a4ed925` printed `ride.ts:439` and `ride-pickup-pin.integration.spec.ts:254` (`observed`). Grep the noun too: `grep -rn -i "pickup pin\|pickupPin" .claude/references docs/epics`, and read each hit for an exclusivity claim.
+- **SATISFIES**: AC6
+
 ### T5 UPDATE `packages/shared/src/i18n/{lv,en,ru}.ts`: console keys
 
 - **IMPLEMENT**: add under the booking block (after `'console.booking_close'`, `lv.ts:217`) and the override block. LV wording below; EN and RU get translations with the same placeholders. Keep the LV wording consistent with `lv-rider.ts:54-58`.
@@ -332,8 +343,8 @@ The gate, then Level 4.
      - a random uuid → 404 `ride_not_found`;
      - a PIN ride at `accepted` (before `toArrived`) → 409 `ride_not_arrived`;
      - a phone ride booked with `{}` and taken to `arrived` → 409 `pickup_pin_not_set`.
-  3. **Board (expected + leak check)**: Dina books by phone with `{ pickupPin: true, announceArrival: true }`, then `GET /dispatch/board` as Dina. `dispatchBoardEventSchema.parse(body)`: the ride has `announceArrival: true, pickupPinRequired: true`, and `JSON.stringify(res.body)` does not contain `rideRow(id).pickupPin`.
-     - Use a PIN that cannot collide with other digits in the frame. If `JSON.stringify` contains the 4 digits by chance (a uuid or a timestamp), the assertion flakes. Assert on `JSON.stringify(ride)` for that ride's object instead, and check that no key named `pin` / `pickupPin` exists.
+  3. **Board (expected + leak check)**: Dina books by phone with `{ pickupPin: true, announceArrival: true }`, then `GET /dispatch/board` as Dina. `dispatchBoardEventSchema.parse(body)`: the ride has `announceArrival: true, pickupPinRequired: true`, and the frame carries no PIN (see the structural assertion below).
+     - **Assert on structure, not on a substring.** A 4-digit PIN can occur by chance inside a uuid, an ISO timestamp or a lat/lng, so `not.toContain(pin)` on any JSON string flakes. Walk the ride object recursively and assert that (a) no key matches `/pin/i` except `pickupPinRequired`, and (b) no string value equals the PIN.
 - **GOTCHA**:
   - Phone indices `p(53)`…`p(61)` and drivers `onlineDriver(8)`, `(9)` are in use (`observed`, grep of `p(` in the file). Grep both again and pick unused numbers.
   - The board read goes through `GET /dispatch/board` (`dispatch.controller.ts:50-54`). The socket cadence uses the same `buildBoardState`, and this ticket adds no socket event. So no socket-order test is needed; the existing `dispatch.integration.spec.ts` socket cases cover frame delivery.
@@ -389,7 +400,7 @@ The gate, then Level 4.
   - Update the docblock at `:16-19`: phone → caller name → pickup → destination → payment → **options** → note → book.
 - **GOTCHA**:
   - Focus visibility: keep the native checkbox focus ring. `apps/dispatch/src/app/globals.css` has no `outline`/`focus` rule today (`observed`, grep exit 1), so nothing suppresses it. Do not add inline `outline: none`.
-  - Space toggles a focused checkbox. Enter inside a checkbox submits the form (implicit submission). That is the same as the other inputs and is acceptable.
+  - Space toggles a focused checkbox. **Enter on a focused checkbox is unverified here**: if the browser submits the form, a dispatcher who presses Enter to tick «PIN kods» books without the PIN. Do not add a handler on speculation; Level 4 step 8 observes it in Chrome. If it submits, add an `onKeyDown` that turns Enter into a toggle on both checkboxes, plus a test, and record it under Divergences.
 - **VALIDATE**: `pnpm --filter @taxi/dispatch lint && pnpm --filter @taxi/dispatch typecheck`
 - **SATISFIES**: AC1, AC5
 
@@ -524,7 +535,7 @@ Board row (arrived, pickupPinRequired)  : [Rādīt PIN] [Atcelt braucienu]
 
 - **Default phone order**:
   - Tab traversal: +2 Tab stops between payment and note. The previous path was phone, name, pickup, destination, payment, note, book (7 stops); it is now 9 stops on a pure-Tab walk.
-  - Why justified: Enter submits from any text input (implicit submission), so a dispatcher who books from the destination field pays 0 extra actions. The cost falls only on one who tabs to the note.
+  - Why justified: Enter in a resolved address field with no suggestion highlighted is left to the form, so it submits (`address-field.tsx:183-190`, `observed` by reading: `if (!open || activeIndex < 0) return;` before any `preventDefault`). Condition: the suggestion list is closed or has no active item. Under that condition a dispatcher who books from the destination field pays 0 extra actions, and the +2 falls only on one who tabs to the note. With a suggestion highlighted, the first Enter picks it and a second Enter submits, which is the same as today.
   - Alternative rejected: an «Opcijas ▸» disclosure that hides both boxes. It saves the 2 stops but costs +2 actions (open, then tick) on every opted-in order. That is the order a blind caller makes, and it is the one this ticket exists for.
 - **Opted-in order**: +1 Space per option (≤ 2). This is the lowest possible for a per-booking opt-in.
 - **PIN recovery**: find the row, [Rādīt PIN], read aloud, [Esc] = 2 actions after the row is found.
@@ -601,8 +612,8 @@ Every step uses what this ticket ships plus the seed. Tokens and rides are minte
 4. `GET /rides/<id>/pickup-pin` as the dispatcher → 409 `ride_not_arrived`.
 5. Force-assign it to the driver (`POST /dispatch/rides/<id>/assign`), then as the driver `POST arriving` and `POST arrived`.
 6. `GET /rides/<id>/pickup-pin` → `{"pin":"NNNN"}`, equal to the `PIN: NNNN` in the stub SMS log line for that caller. The api log has `ride.pickup_pin.dispatcher_read` with `actorId` and **no** `NNNN` (`grep NNNN` on the log shows only the SMS stub line).
-7. As the driver, `POST /rides/<id>/start {"pin":"NNNN"}` → 201.
-8. **Console UI** (`pnpm --filter @taxi/dispatch dev` plus the api; sign in at `/login` as the dispatcher). Press ⌥N and type the step-2 caller's phone. The caller lookup offers the recent ride: prefill with it, so no Places key is needed. Tab through and check that the order passes both checkboxes, and that each hint is visible. Tick both with Space and book.
+7. As the driver, `POST /rides/<id>/start {"pin":"NNNN"}` → 201, then `POST /rides/<id>/complete`, so step 8 starts from a caller with no live ride. Nothing refuses a second booking for a caller with a live ride (`observed`: no `ConflictException(` in `rides.service.ts` or `bookings.service.ts`), so this is for a clean board, not a precondition.
+8. **Console UI** (`pnpm --filter @taxi/dispatch dev` plus the api; sign in at `/login` as the dispatcher). Press ⌥N and type the step-2 caller's phone. The caller lookup offers the recent ride: prefill with it, so no Places key is needed. `findRecentRides` has no status filter (`customers.repository.ts:183-196`), so the step-2 ride is listed whatever its status. Tab through and check that the order passes both checkboxes, and that each hint is visible. Tick both with Space. Then focus «PIN kods» and press **Enter**: record whether the form submits (T17 gotcha). If it did, reopen with ⌥N and continue. Book.
    - Board: the row shows «Pieteikšanās balsī».
    - Take the ride to `arrived` over curl (step 5). The row shows «Rādīt PIN». Click it: the PIN matches the SMS log. Press Escape.
    - DevTools → Application → Local Storage: no key contains the PIN.
