@@ -99,7 +99,7 @@ export const en = {
   'console.pin_hint': 'Read it to the caller. Do not tell the driver.',
   'console.pin_failed': 'Could not read the PIN. Try again.',
   'console.pin_error_not_arrived':
-    'The PIN can be read once the car has arrived.',
+    'The PIN can be read only while the car is waiting.',
   'console.assign_title': 'Assign a driver',
   'console.reassign_title': 'Reassign the ride',
   'console.assign_pick_driver': 'Pick a driver',

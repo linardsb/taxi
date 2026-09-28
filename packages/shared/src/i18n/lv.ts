@@ -132,7 +132,7 @@ export const lv = {
   'console.pin_title': 'PIN kods iekāpšanai',
   'console.pin_hint': 'Nosauciet to zvanītājam. Šoferim to nesakiet.',
   'console.pin_failed': 'Neizdevās nolasīt PIN. Mēģiniet vēlreiz.',
-  'console.pin_error_not_arrived': 'PIN var nolasīt, kad auto ir klāt.',
+  'console.pin_error_not_arrived': 'PIN var nolasīt, kamēr auto gaida.',
   'console.assign_title': 'Piešķirt šoferi',
   'console.reassign_title': 'Piešķirt braucienu atkārtoti',
   'console.assign_pick_driver': 'Izvēlieties šoferi',

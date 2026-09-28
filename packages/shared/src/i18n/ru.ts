@@ -102,7 +102,8 @@ export const ru = {
   'console.pin_title': 'PIN-код для посадки',
   'console.pin_hint': 'Назовите его звонящему. Водителю не говорите.',
   'console.pin_failed': 'Не удалось получить PIN. Попробуйте ещё раз.',
-  'console.pin_error_not_arrived': 'PIN можно получить, когда машина прибудет.',
+  'console.pin_error_not_arrived':
+    'PIN можно получить, только пока машина ждёт.',
   'console.assign_title': 'Назначить водителя',
   'console.reassign_title': 'Переназначить поездку',
   'console.assign_pick_driver': 'Выберите водителя',
