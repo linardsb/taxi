@@ -4,13 +4,13 @@
 
 ## This ticket reverses a #258 rule (Q1)
 
-#258 said "the PIN never reaches the driver, the dispatcher or the tracking page" (`pickup-pin.md:11`). #275 opens **one** door on the dispatcher leg: `GET /rides/:rideId/pickup-pin`, for dispatcher and admin only, at `arrived` only, and logged per read with the actor. The PIN never rides on a ride shape: `rideSchema` stays PIN-free, and the response is its own `dispatcherPickupPinSchema`. The driver and tracking legs are unchanged. User decision 2026-09-28 (PR #277 L2). The claims this makes false were rewritten (T4b), and `pickup-pin.md` carries an AMENDMENTS line.
+#258 said "the PIN never reaches the driver, the dispatcher or the tracking page" (`pickup-pin.md:11`). #275 opens **one** door on the dispatcher leg: `GET /rides/:rideId/pickup-pin`, for dispatcher and admin only, on a phone-booked ride only (PR #300 M1), at `arrived` only, and logged per read with the actor. The PIN never rides on a ride shape: `rideSchema` stays PIN-free, and the response is its own `dispatcherPickupPinSchema`. The driver and tracking legs are unchanged. User decision 2026-09-28 (PR #277 L2). The claims this makes false were rewritten (T4b), and `pickup-pin.md` carries an AMENDMENTS line.
 
 ## Summary
 
 - **Phone form.** Dina's form gets «PIN kods» and «Šoferis pieteiksies balsī» checkboxes, each with its hint as the accessible description. They sit between payment and note, persist with the draft, reset after a booking and are never prefilled.
 - **Board flags.** The board frame carries `announceArrival` and `pickupPinRequired`, both derived tolerantly from the request options, and a row booked with the announcement shows a text badge.
-- **PIN read.** On a PIN ride at `arrived`, «Rādīt PIN» opens a dialog that reads the PIN from the new dispatcher-only route.
+- **PIN read.** On a phone-booked PIN ride at `arrived`, «Rādīt PIN» opens a dialog that reads the PIN from the new dispatcher-only route.
 
 ## Tasks completed
 
@@ -50,14 +50,14 @@
 | shared `schemas-dispatch.test.ts` | `0042` keeps its zeros (expected); `42` and `12345` fail (failure) |
 | api `board-ride.spec.ts` | valid options (expected); `{}` → false (edge); `options: 'junk'` → false, no throw (failure); `null` → false (failure) |
 | api `board.service.spec.ts` | both flags reach the frame, and a sibling reads false (expected) |
-| api `pickup-pin-read.service.spec.ts` | `arrived` + PIN → `{ pin }` and one audit log with the actor (expected); no row → 404 (failure); no PIN → 409 `pickup_pin_not_set` (edge); `arriving` → 409 `ride_not_arrived` plus the rejection log (edge). `afterEach` asserts that no log call in any case contains the PIN. |
+| api `pickup-pin-read.service.spec.ts` | `arrived` + PIN → `{ pin }` and one audit log with the actor (expected); no row → 404 (failure); no PIN → 409 `pickup_pin_not_set` (edge); app ride with a PIN → 409 `pickup_pin_not_phone` (failure, PR #300 M1); `arriving` → 409 `ride_not_arrived` plus the rejection log (edge). `afterEach` asserts that no log call in any case contains the PIN. |
 | api `rides.integration.spec.ts` | flags through the real `findBoardRides` (expected); malformed `options` stays on the board, unbadged (edge) |
-| api `ride-pickup-pin.integration.spec.ts` | L2 recovery: phone booking → accept → arrived → Dina reads the PIN → the driver starts with it → 201 (expected). Refusals: rider 403, driver 403, unknown uuid 404, `accepted` 409 `ride_not_arrived`, no-PIN ride at `arrived` 409 `pickup_pin_not_set` (failure). Board: `GET /dispatch/board` has both flags true, no key matching `/pin/i` other than `pickupPinRequired`, and no string equal to the PIN (expected + leak check). |
+| api `ride-pickup-pin.integration.spec.ts` | L2 recovery: phone booking → accept → arrived → Dina reads the PIN, and an admin reads it too (PR #300 L2) → the driver starts with it → 201 (expected). Refusals: rider 403, driver 403, unknown uuid 404, `accepted` 409 `ride_not_arrived`, no-PIN ride at `arrived` 409 `pickup_pin_not_set`, app-booked PIN ride at `arrived` 409 `pickup_pin_not_phone` (PR #300 M1) (failure). Board: `GET /dispatch/board` has both flags true, no key matching `/pin/i` other than `pickupPinRequired`, and no string equal to the PIN (expected + leak check). |
 | dispatch `booking-draft.test.ts` | pre-#275 draft restores with both false (edge); a tick round-trips (expected); `pickupPin: 'yes'` → null (failure) |
 | dispatch `use-booking-form.test.tsx` | both ticks reach the body, `childSeat`/`femaleDriver` stay false, and the draft resets after success (expected + E4); no ticks → both false (regression); `prefillFrom('recent')` never sets an option (E5); a tick survives close-and-reopen (edge) |
 | dispatch `booking-form.test.tsx` | tab order now includes the two checkboxes (expected); ticking both through the DOM sends both (expected); Enter on a focused checkbox toggles it and prevents the default, so the form does not submit (edge, added after Level 4 step 8); each checkbox's accessible description is its hint (AC5) |
-| dispatch `ride-queue.test.tsx` | badge on the flagged row only, no flash, no live region (expected + regression); «Rādīt PIN» absent at `arriving` with the flag and at `arrived` without it, present at `arrived` with it (E13); click reports the ride, and the accessible name carries the address (expected) |
-| dispatch `use-pickup-pin.test.tsx` | 200 → shown with a bearer GET, `no-store` (expected); 409 `ride_not_arrived` → mapped key (edge); 500 → generic (failure); 401 → `/login` (failure); stale response loses (E12); no PIN in `localStorage`, and `clear()` → idle (E11) |
+| dispatch `ride-queue.test.tsx` | badge on the flagged row only, no flash, no live region (expected + regression); «Rādīt PIN» absent at `arriving` with the flag and at `arrived` without it, absent on an app-booked ride at `arrived` with it (PR #300 M1), present on a phone ride at `arrived` with it (E13); click reports the ride, and the accessible name carries the address (expected) |
+| dispatch `use-pickup-pin.test.tsx` | 200 → shown with a bearer GET, `no-store` (expected); 409 `ride_not_arrived` → mapped key (edge); 500 → generic (failure); 401 → `/login` (failure); stale response loses (E12); no PIN in `localStorage`, and `clear()` → idle (E11); a read still in flight at `clear()` lands and the state stays idle (PR #300 L1) |
 | dispatch `pin-dialog.test.tsx` | shown → digits and hint in `role="status"` (expected); loading inside the same status (edge); error → `role="alert"`, no status (failure); «Aizvērt» → `onClose` (expected) |
 | dispatch `dispatch-page.test.tsx` | click «Rādīt PIN» on an `arrived` PIN ride → the stubbed PIN is shown → Escape → no PIN text anywhere in the document (expected) |
 
@@ -70,7 +70,8 @@
 
 ## Validation results
 
-- **Full gate, final** (`observed`): `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://127.0.0.1:6381 pnpm turbo run typecheck lint test build --force`, started 2026-09-28T14:39:48Z from cleared `dist`/`.next`, after the Enter fix. Exit 0, `Tasks: 22 successful, 22 total`, 2m05s wall.
+- **Full gate at the head `36df1f2`** (`observed`, recorded in `.claude/last-gate.json`: `head 36df1f2`, `dirty: false`): `pnpm turbo run typecheck lint test build --force`, started 2026-09-28T15:40:05Z, after the commit at 14:45:22Z. Exit 0, `Tasks: 22 successful, 22 total`, `elapsed 1m44.782s`. Its counts equal the table below digit for digit, and CI's `check` job (run 36445642185) reproduced them at the same head. This is the run the PR body cites.
+- **Full gate before the commit** (`observed`, on the uncommitted tree; corrected label, PR #300 L4 — this run was called "final" but predates `36df1f2`): `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://127.0.0.1:6381 pnpm turbo run typecheck lint test build --force`, started 2026-09-28T14:39:48Z from cleared `dist`/`.next`, after the Enter fix. Exit 0, `Tasks: 22 successful, 22 total`, 2m05s wall.
 
   | package | result |
   |---|---|
@@ -81,7 +82,7 @@
   | driver | 46 suites, 357 tests |
   | api | 91 suites, 927 tests, none skipped (`REDIS_TEST_URL` set) |
 
-  The first gate (14:22:52Z, same 22/22, dispatch 301) predates the Enter fix and is superseded by this run.
+  The first gate (14:22:52Z, same 22/22, dispatch 301) predates the Enter fix and is superseded by both runs above. The PR #300 round-1 fixes change these counts; their gate is in `.claude/reports/pr-300-review-fixes.md`.
 
 - **Level 3 targeted run** (`observed`, before the gate): `COMPOSE_PROJECT_NAME=taxi pnpm --filter @taxi/api test -- rides.integration ride-pickup-pin arrival-announce` → 4 suites, 52 tests passed. The pickup-PIN file ran 12 cases, the 9 it had plus the 3 new ones, which confirms the new cases executed and were not skipped.
 - **Lint.** `@taxi/api` shows 16 warnings, all pre-existing `no-unsafe-argument` on the `request(ctx.app.getHttpServer())` lines. `@taxi/dispatch` is clean.

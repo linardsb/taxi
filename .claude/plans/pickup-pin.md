@@ -834,4 +834,4 @@ Why it is not 10: the last point sits outside the plan.
   - T14: the 4-digit check uses `pickupPinSchema.safeParse`, not a local regex.
   - T16: `docs/runbooks/rider-a11y-walkthrough.md` gained step 13 (the #276 rows).
   - T18: EAS `0df8edea-…`, APK baked to `:3021` (3001 held by another session's api); `eas init` permission additions reverted before building. Step (e) found that TalkBack linear navigation skips the disabled Start button — logged for #276, not fixed here.
-- 2026-09-28 — #275 reverses ":11 … never reaches … the dispatcher" for one logged read at `arrived` (`GET /rides/:rideId/pickup-pin`, PR #277 L2). The driver and tracking legs are unchanged, and `rideSchema` stays PIN-free.
+- 2026-09-28 — #275 reverses ":11 … never reaches … the dispatcher" for one logged read at `arrived`, on a phone-booked ride only (`GET /rides/:rideId/pickup-pin`, PR #277 L2; phone-only since PR #300 M1). The driver and tracking legs are unchanged, and `rideSchema` stays PIN-free.

@@ -36,7 +36,7 @@ So that a phone caller gets the same pickup protections as an app rider, and a f
   - `pickupPinRequired` is **not a second badge** (user decision: announce only). It decides whether «Rādīt PIN» appears. Its name says "a PIN is required", so nobody reads it as the PIN.
 - **PIN read** (api `rides/lifecycle` slice, shared, console `override` slice).
   - A new route `GET /rides/:rideId/pickup-pin` on `RideLifecycleController`, `@Roles('dispatcher', 'admin')`, backed by a new `PickupPinReadService`. It returns `{ pin }`, parsed by a new shared `dispatcherPickupPinSchema`.
-  - It refuses as follows: `404 ride_not_found` when there is no ride; `409 pickup_pin_not_set` when the ride has no PIN; `409 ride_not_arrived` when the status is not `arrived`.
+  - It refuses as follows: `404 ride_not_found` when there is no ride; `409 pickup_pin_not_set` when the ride has no PIN; `409 pickup_pin_not_phone` when the ride was not booked by phone (PR #300 M1); `409 ride_not_arrived` when the status is not `arrived`.
   - It logs `ride.pickup_pin.dispatcher_read` with `rideId`, `actorId` and `at`, never the PIN.
   - Console: `use-pickup-pin.ts` (the fetch, fired from the click handler) and `pin-dialog.tsx` (`DialogShell`). The PIN lives in hook state only. It is never in the board frame, so it never reaches `localStorage`, and closing the dialog drops it.
 
@@ -247,7 +247,7 @@ The gate, then Level 4.
 | `console.pin_title` | `PIN kods iekāpšanai` |
 | `console.pin_hint` | `Nosauciet to zvanītājam. Šoferim to nesakiet.` |
 | `console.pin_failed` | `Neizdevās nolasīt PIN. Mēģiniet vēlreiz.` |
-| `console.pin_error_not_arrived` | `PIN var nolasīt, kad auto ir klāt.` |
+| `console.pin_error_not_arrived` | `PIN var nolasīt, kamēr auto gaida.` (PR #300 L3: the api answers `ride_not_arrived` for any status but `arrived`, including `in_progress`) |
 
 - Reuse `console.loading` (`lv.ts:50`) and `console.booking_close` (`:217`, «Aizvērt»). Do not add twins.
 - **GOTCHA**: `ru.ts` is 420 lines. +12 keys is ≤ ~434 (`derived`: 420 + 12, plus a few for any wrapped two-line value). That is under the 500 cap, but check `wc -l` after. The badge wording is cosmetic: if it gets debated, log it in `ui-decisions.md` and move on.
@@ -304,10 +304,11 @@ The gate, then Level 4.
   - `pickup-pin-read.service.ts`: `@Injectable() class PickupPinReadService`, with `read(actorId: string, rideId: string): Promise<DispatcherPickupPin>`. The order:
     1. no row → `logRejected(…, 'ride_not_found')` → `NotFoundException('ride_not_found')`
     2. `pin === null` → `'pickup_pin_not_set'` → `ConflictException('pickup_pin_not_set')`
-    3. `status !== 'arrived'` → `'ride_not_arrived'` → `ConflictException('ride_not_arrived')`
-    4. log `ride.pickup_pin.dispatcher_read` `{ rideId, actorId, at }` at `log` level → `return dispatcherPickupPinSchema.parse({ pin })`
+    3. `bookingChannel !== 'phone'` → `'pickup_pin_not_phone'` → `ConflictException('pickup_pin_not_phone')` (PR #300 M1; the repository read selects `bookingChannel` too)
+    4. `status !== 'arrived'` → `'ride_not_arrived'` → `ConflictException('ride_not_arrived')`
+    5. log `ride.pickup_pin.dispatcher_read` `{ rideId, actorId, at }` at `log` level → `return dispatcherPickupPinSchema.parse({ pin })`
 
-    The rejection log is `ride.pickup_pin.dispatcher_read_rejected` `{ rideId, actorId, cause, at }` at `warn`. `type RejectCause = 'ride_not_found' | 'pickup_pin_not_set' | 'ride_not_arrived'`.
+    The rejection log is `ride.pickup_pin.dispatcher_read_rejected` `{ rideId, actorId, cause, at }` at `warn`. `type RejectCause = 'ride_not_found' | 'pickup_pin_not_set' | 'pickup_pin_not_phone' | 'ride_not_arrived'`.
   - Class docblock:
     - Why it exists: PR #277 L2; the arrival SMS is the phone rider's only copy.
     - Which #258 rule it reverses, and why that is acceptable: Dina is trusted staff, and the PIN guards against the wrong car, not against the dispatcher. User decision 2026-09-28.
@@ -518,7 +519,7 @@ Board ─[⌥N]→ Order form
 Board row (any bucket, announceArrival) : "Brīvības 1 · Pieņemts · Jānis · [Pieteikšanās balsī] · 3 min"
 Board row (arrived, pickupPinRequired)  : [Rādīt PIN] [Atcelt braucienu]
   [Rādīt PIN] → PIN dialog: loading → "4 2 0 7" + "Nosauciet to zvanītājam. Šoferim to nesakiet." ─[Aizvērt|Esc]→ Board
-                           └ error → "PIN var nolasīt, kad auto ir klāt." / "Neizdevās nolasīt PIN…" ─[Aizvērt]→ Board
+                           └ error → "PIN var nolasīt, kamēr auto gaida." / "Neizdevās nolasīt PIN…" ─[Aizvērt]→ Board
 ```
 
 **States**
@@ -568,6 +569,7 @@ Board row (arrived, pickupPinRequired)  : [Rādīt PIN] [Atcelt braucienu]
 | E5 | `prefillFrom` never sets an option | T16 (assert `draft.pickupPin` stays `false` after `prefillFrom('recent', …)`) |
 | E6 | PIN read before `arrived` → 409 `ride_not_arrived` | T11, T12 |
 | E7 | PIN read on a non-PIN ride → 409 `pickup_pin_not_set` | T11, T12 |
+| E7a | PIN read on an app-booked PIN ride at `arrived` → 409 `pickup_pin_not_phone` (PR #300 M1) | T11, T12 |
 | E8 | PIN read by a rider or driver token → 403 | T12 |
 | E9 | The PIN never appears on a log line | T11 (with mutation) |
 | E10 | The PIN never appears on the board frame | T12 case 3 |
@@ -633,8 +635,8 @@ VoiceOver on macOS Safari over the booking form: each checkbox is announced with
 - [ ] **AC3** A board row for a ride booked with `announceArrival` shows a text badge that is not an alarm. `BoardRide` and the wire carry `announceArrival` and `pickupPinRequired`, derived tolerantly from the request options.
 - [ ] **AC4** A board frame without the new fields (cached by the previous build) parses, with both `false`.
 - [ ] **AC5** Every new control is ≥ 44 px, keeps a visible focus ring, and has an accessible name (plus an accessible description for the checkboxes). The docblock and test pin the tab order as phone → name → pickup → destination → payment → options → note → book.
-- [ ] **AC6** L2 is settled. `GET /rides/:rideId/pickup-pin` (dispatcher/admin) returns `{ pin }` for a PIN ride at `arrived`, and the console shows it in a dialog from «Rādīt PIN», visible only on such rows. The PIN is never on the board frame, never in `localStorage`, and never on a row.
-- [ ] **AC7** Every successful read logs `ride.pickup_pin.dispatcher_read` with the actor. No log line carries the PIN (unit-tested with a mutation check). Refusals: 403 for rider/driver, 404 `ride_not_found`, 409 `pickup_pin_not_set`, 409 `ride_not_arrived`.
+- [ ] **AC6** L2 is settled. `GET /rides/:rideId/pickup-pin` (dispatcher/admin) returns `{ pin }` for a phone-booked PIN ride at `arrived`, and the console shows it in a dialog from «Rādīt PIN», visible only on such rows (phone-only since PR #300 M1). The PIN is never on the board frame, never in `localStorage`, and never on a row.
+- [ ] **AC7** Every successful read logs `ride.pickup_pin.dispatcher_read` with the actor. No log line carries the PIN (unit-tested with a mutation check). Refusals: 403 for rider/driver, 404 `ride_not_found`, 409 `pickup_pin_not_set`, 409 `pickup_pin_not_phone` (PR #300 M1), 409 `ride_not_arrived`.
 - [ ] **AC8** `pnpm turbo run typecheck lint test build --force` is green with `REDIS_TEST_URL` set; name the run in the report.
 - [ ] **AC9** Level 4 steps 1–8 were run and recorded.
 - [ ] **AC10** #275's L2 checkbox is ticked with a pointer to this plan's Q1.
@@ -658,7 +660,7 @@ VoiceOver on macOS Safari over the booking form: each checkbox is announced with
 
 - **Q1 (decided 2026-09-28, the user: "Dispatcher PIN read").** This **reverses an epic-level rule from #258**: "The PIN never reaches the driver, the dispatcher or the tracking page" (`pickup-pin.md:11`).
   - The driver and tracking legs are unchanged.
-  - The dispatcher leg now has one door: an explicit, logged, per-ride read at `arrived`. It never passes through a ride shape (`rideSchema` stays PIN-free, so #258's fail-closed construction holds for every existing path).
+  - The dispatcher leg now has one door: an explicit, logged, per-ride read at `arrived`, for a **phone-booked** ride only (decided 2026-09-28 on PR #300 M1: an app rider has the PIN on screen and gets no arrival SMS, so there is nothing to recover). It never passes through a ride shape (`rideSchema` stays PIN-free, so #258's fail-closed construction holds for every existing path).
   - The report and PR body must name this reversal, not bury it.
 - **Q2 (decided 2026-09-28: badge announce rides only).** `pickupPinRequired` still travels on the frame, because the «Rādīt PIN» action needs it. It is rendered only as that button, not as a badge. If the user reads "announce only" as "no PIN flag on the wire at all", the alternative is to show «Rādīt PIN» on every `arrived` row and let non-PIN rides 409. That is noisier and has one more failing click. Assumed: the flag is acceptable.
 - **Q3 (worst case, ordering).** Dina opens the PIN for ride A and, while the fetch is in flight, closes and opens ride B. Worst case without a guard: A's PIN is displayed under B's dialog, and Dina reads the wrong PIN to B's caller. The driver's start then fails, and five such reads lock the ride. The `requestId` guard in T21 and its test (E12) close this. The `key={target.rideId}` remount alone does not, because the state lives in the hook, not the dialog.
