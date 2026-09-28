@@ -63,9 +63,9 @@
 
 **Mutation checks** (`observed`, all reverted and green again):
 
-- **T11, success path.** `pin` added to the success log → 1 of 4 red. `pin` added to the rejection log → 3 of 4 red.
+- **T11, success path** (at `36df1f2`, 4 cases). `pin` added to the success log → 1 of 4 red. `pin` added to the rejection log → 3 of 4 red. PR #300 added a fifth case; the re-observed rejection-log count is in `pr-300-review-fixes.md`.
   - The first attempt turned all 4 red. The failing `afterEach` skipped `restoreAllMocks`, so the leftover spy calls leaked into the next case. The hook now reads the calls, restores, then asserts.
-- **T21, stale guard.** The `requestId` comparison removed → the stale-response case goes red (1 of 6).
+- **T21, stale guard** (at `36df1f2`). The `requestId` comparison removed → the stale-response case goes red (1 of 6). After PR #300 L1 it is 2 of 7: the new in-flight `clear()` case goes red too.
 - **Enter handler.** `preventDefault()` removed → the Enter case goes red (1 of 12).
 
 ## Validation results

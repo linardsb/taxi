@@ -47,6 +47,13 @@ Triage (Linards, 2026-09-28): M1 option (a), phone only; fix L1–L4 in this PR.
 
 The first gate at the pre-amend head `7a7c227` failed in 25 s on `@taxi/shared#lint` (prettier: the longer RU string crossed the line width). That was mine; formatted and amended into `20655c0`.
 
+## Earlier mutation counts, re-observed at the fixed tree
+
+The new cases change two counts the implementation report and PR body quoted from `36df1f2` (`observed`, 2026-09-28, each reverted):
+
+- **Stale guard**: `if (requestId === latest.current) setState(next);` → `setState(next);` → `Tests 2 failed | 5 passed (7)`: the Q3 stale-response case and the new L1 case. Was 1 of 6.
+- **Rejection log carries the PIN**: `logRejected` given `pin: ride?.pin` (through a module-level stash) → `Tests: 2 failed, 3 passed, 5 total`: the M1 app-ride case and the `arriving` case, the two rejections where a PIN exists. The report's earlier "3 of 4" came from a mutation it does not spell out, so this is a re-run of the same idea, not the same edit; the counts are not comparable.
+
 ## Sweep of retired claims
 
 Run in `wt-275` after the edits (`grep -nE "<pattern>"` over the plan, `pickup-pin.md`, the implementation report, `pickup-pin-read.service.ts`, `row-actions.tsx`, `use-pickup-pin.ts`):
@@ -60,6 +67,7 @@ Run in `wt-275` after the edits (`grep -nE "<pattern>"` over the plan, `pickup-p
 | `36df1f2` | report :73, :74 | the L4 relabel |
 | `kad auto ir klāt` | none | retired |
 | `final` | report :74 | the "was called final" note |
+| `of 4 red`, `of 6)` | report T11, T21 lines | labelled "at `36df1f2`"; T21 carries the 2-of-7 figure, T11 points here |
 
 Outside that list: `.claude/references/ride-state-machine.md:15` said "a dispatcher or admin can read the PIN at `arrived`" with no channel limit; it now says a phone-booked ride's PIN, and names the 409. Checked and left as is because they are still true: `ride.ts:439-442` and `realtime-events.ts:256` (name the two carriers, no channel claim), `ride-lifecycle.controller.ts:139` ("a phone caller's pickup PIN"), and the integration spec docblock :35.
 
