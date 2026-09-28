@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { rideOffers, rides, users, type Db } from '@taxi/db';
 import {
   fareSplitSchema,
+  type BookingChannel,
   type FareSplit,
   type PaymentMethodType,
   type RideStatus,
@@ -89,9 +90,16 @@ export class RideLifecycleRepository {
    */
   async findPickupPinTarget(
     rideId: string,
-  ): Promise<{ status: RideStatus; pin: string | null } | undefined> {
+  ): Promise<
+    | { status: RideStatus; pin: string | null; bookingChannel: BookingChannel }
+    | undefined
+  > {
     const [row] = await this.db
-      .select({ status: rides.status, pin: rides.pickupPin })
+      .select({
+        status: rides.status,
+        pin: rides.pickupPin,
+        bookingChannel: rides.bookingChannel,
+      })
       .from(rides)
       .where(eq(rides.id, rideId))
       .limit(1);

@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { RideStatus } from '@taxi/shared';
+import type { BookingChannel, RideStatus } from '@taxi/shared';
 import { PickupPinReadService } from './pickup-pin-read.service';
 import type { RideLifecycleRepository } from './ride-lifecycle.repository';
 
@@ -14,9 +14,19 @@ const ACTOR_ID = '7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b';
 // in the refusals too.
 const PIN = '0042';
 
-function setup(target: { status: RideStatus; pin: string | null } | undefined) {
+// A phone ride unless a case says otherwise: the read exists for phone callers.
+function setup(
+  target:
+    | {
+        status: RideStatus;
+        pin: string | null;
+        bookingChannel?: BookingChannel;
+      }
+    | undefined,
+) {
+  const row = target && { bookingChannel: 'phone', ...target };
   const lifecycle = {
-    findPickupPinTarget: jest.fn(() => Promise.resolve(target)),
+    findPickupPinTarget: jest.fn(() => Promise.resolve(row)),
   } as unknown as RideLifecycleRepository;
   return new PickupPinReadService(lifecycle);
 }
@@ -77,6 +87,21 @@ describe('PickupPinReadService (#275)', () => {
     const error = await rejection(service.read(ACTOR_ID, RIDE_ID));
     expect(error).toBeInstanceOf(ConflictException);
     expect(error.message).toBe('pickup_pin_not_set');
+  });
+
+  it('answers 409 pickup_pin_not_phone for an app ride, which has the PIN on screen (failure, PR #300 M1)', async () => {
+    const service = setup({
+      status: 'arrived',
+      pin: PIN,
+      bookingChannel: 'app',
+    });
+
+    const error = await rejection(service.read(ACTOR_ID, RIDE_ID));
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.message).toBe('pickup_pin_not_phone');
+    const [entry] = warn.mock.calls[0] as [Record<string, unknown>];
+    expect(entry.cause).toBe('pickup_pin_not_phone');
+    expect(log).not.toHaveBeenCalled();
   });
 
   it('answers 409 ride_not_arrived before the arrival SMS is sent (edge)', async () => {

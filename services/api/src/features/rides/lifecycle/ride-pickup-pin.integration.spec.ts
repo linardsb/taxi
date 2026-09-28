@@ -167,12 +167,12 @@ describe('pickup PIN (integration, #258)', () => {
     };
   }
 
-  async function dispatcher(n: number) {
-    const user = await insertUser(ctx.db, { phone: p(n), role: 'dispatcher' });
-    const { accessToken } = await tokens.issue({
-      id: user.id,
-      role: 'dispatcher',
-    });
+  async function dispatcher(
+    n: number,
+    role: 'dispatcher' | 'admin' = 'dispatcher',
+  ) {
+    const user = await insertUser(ctx.db, { phone: p(n), role });
+    const { accessToken } = await tokens.issue({ id: user.id, role });
     return { id: user.id, auth: `Bearer ${accessToken}` };
   }
 
@@ -681,6 +681,9 @@ describe('pickup PIN (integration, #258)', () => {
     const res = await readPin(ride.id, dina.auth).expect(200);
     const { pin } = dispatcherPickupPinSchema.parse(res.body);
     expect(pin).toBe((await rideRow(ride.id)).pickupPin);
+    // The route admits admin too (Q6); a `@Roles` typo on it must go red here.
+    const admin = await dispatcher(88, 'admin');
+    await readPin(ride.id, admin.auth).expect(200);
 
     // The SMS was never read: the PIN reached the start through Dina alone.
     await start(ride.id, d.auth, pin).expect(201);
@@ -710,6 +713,17 @@ describe('pickup PIN (integration, #258)', () => {
     await toArrived(plain.ride.id, d2.auth);
     expect(refusal(await readPin(plain.ride.id, dina.auth))).toBe(
       '409 pickup_pin_not_set',
+    );
+
+    // An app rider has the PIN on screen and gets no arrival SMS: nothing to
+    // recover, so Dina cannot read it out (PR #300 M1).
+    const appRider = await rider(89);
+    const d3 = await onlineDriver(14);
+    const app = await book(appRider.auth, { pickupPin: true });
+    await accept(app, d3.auth);
+    await toArrived(app.id, d3.auth);
+    expect(refusal(await readPin(app.id, dina.auth))).toBe(
+      '409 pickup_pin_not_phone',
     );
   });
 
