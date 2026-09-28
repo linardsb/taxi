@@ -194,7 +194,6 @@ describe('offerCardProps (#15)', () => {
       t('driver.offer.you_keep', { amount: '€10.54', pct: 85 }),
     );
     expect(props!.payment).toBe(t('driver.offer.payment_cash'));
-    expect(props!.seconds).toBe(18);
     expect(props!.countdown).toBe(t('driver.offer.countdown', { seconds: 18 }));
     // 0.009° of latitude ≈ 1.0 km (1° ≈ 111.2 km); one decimal.
     expect(props!.km).toBe(1);
@@ -236,8 +235,8 @@ describe('offerCardProps (#15)', () => {
       null,
       t,
     )!;
-    expect(at18.seconds).toBe(18);
-    expect(at3.seconds).toBe(3);
+    expect(at18.countdown).toBe(t('driver.offer.countdown', { seconds: 18 }));
+    expect(at3.countdown).toBe(t('driver.offer.countdown', { seconds: 3 }));
     expect(at3.a11yLabel).toBe(at18.a11yLabel);
     expect(at18.a11yLabel).not.toMatch(/18/);
   });

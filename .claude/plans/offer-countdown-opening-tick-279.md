@@ -668,7 +668,8 @@ index b10fac5..b883e89 100644
 -  | { type: 'announce'; key: MessageKey };
 +  /**
 +   * Time left, spoken ONCE, at arrival (#279). TalkBack queues every
-+   * announcement as uninterruptible behind the ~20 s card read, so any later
++   * announcement as uninterruptible behind the card read (19.62 s at the
++   * default rate, 35.55 s at rate 50: runbook «#279 re-run»), so any later
 +   * tick was spoken after the offer had expired (#276 D1).
 +   */
 +  | { type: 'announce'; seconds: number };
@@ -707,7 +708,8 @@ index a21c517..6e6e596 100644
 +
 +/**
 + * #279: TalkBack queues every announcement as uninterruptible behind the
-+ * ~20 s card read (#276 D1), so any countdown line after the first was
++ * card read (19.62 s at the default rate, 35.55 s at rate 50: runbook
++ * «#279 re-run»; #276 D1), so any countdown line after the first was
 + * spoken after the offer had expired. One line, at arrival, is all it gets.
 + */
 +describe('what TalkBack is told about time (#279)', () => {

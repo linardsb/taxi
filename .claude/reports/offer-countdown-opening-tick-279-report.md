@@ -52,11 +52,11 @@ Both counts match the plan's prediction.
 ## Validation results
 
 - Level 1: `pnpm --filter @taxi/driver exec tsc --noEmit` exit 0. `eslint src/features/offers` exit 0 (`observed`).
-- Level 3 gate, from cleared `dist` dirs and `apps/dispatch/.next`: `COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force` → `Tasks: 22 successful, 22 total`, `Cached: 0 cached, 22 total`, 2m26s (`observed`).
+- Level 3 gate, from cleared `dist` dirs and `apps/dispatch/.next`: `COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force` → `Tasks: 22 successful, 22 total`, `Cached: 0 cached, 22 total`, 2m26s (`observed`, commit not recorded; the traceable run is the PR body's, at `ae31fc5`: same counts, 1m41.235s).
   - Driver: `46 passed` suites, `357 passed` tests.
   - Api: `Tests: 39 skipped, 874 passed, 913 total`, `2 skipped` suites.
   - `REDIS_TEST_URL` was unset, so the 39 Redis-gated api tests did not run. The diff is driver-only and docs, so this does not bear on it.
-- Level 4, TalkBack on `sakta224` against the branch head: driver source tree `89147e9a4ef7`, the value of `git rev-parse HEAD:apps/driver/src`. A tree hash is used because the `wip:` commit sha will not survive the squash. Pass rule results (`observed`):
+- Level 4, TalkBack on `sakta224` against the branch head: driver source tree `89147e9a4ef7`, the value of `git rev-parse HEAD:apps/driver/src` at `ae31fc5` (the review-fix commit after it changes an unread prop and docblocks, so the tree moved). A tree hash is used because the `wip:` commit sha will not survive the squash. Pass rule results (`observed`):
 
 | Check | Default rate | Rate 50 (`settings get` → `50`) |
 |---|---|---|

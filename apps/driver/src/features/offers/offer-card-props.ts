@@ -22,7 +22,6 @@ export interface OfferCardProps {
   /** Straight-line km from the phone's newest fix; null without one. */
   km: number | null;
   payment: string;
-  seconds: number;
   countdown: string;
   glance: boolean;
   queue: string | null;
@@ -107,7 +106,6 @@ export function offerCardProps(
     trip,
     km,
     payment,
-    seconds,
     countdown: t('driver.offer.countdown', { seconds }),
     glance: state.speedMps !== null && state.speedMps > GLANCE_SPEED_MPS,
     queue,

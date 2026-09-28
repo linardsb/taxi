@@ -79,7 +79,7 @@ Means that already exist: a provisioned dispatcher (`pnpm --filter @taxi/api pro
 11. Kill the app mid-ride, reopen. Expect: the gate lands on the active-ride screen at the right status.
 12. Two devices online in the RIX zone (queue mode in the seed), a RIX pickup booked: expect both to show «Rindā: N. no 2 · rix» on home, updating when one declines.
 13. Rider app on a second phone: book cash, and while device A's card is up switch to card; device A accepts. Expect: the active-ride screen opens with the «Ar karti» pill and a one-time «Pasažieris nomainīja apmaksas veidu: Ar karti» banner, announced by the screen reader.
-14. TalkBack / VoiceOver on the card: expect the whole-card label («Jauns brauciens. Cena €X, jūs saņemat €Y. Atlikušas N sekundes…»), one «Atlikušas N s» announcement at arrival and none after it (#279), and the decline button as a separate 44 px target.
+14. TalkBack / VoiceOver on the card: expect the whole-card label («Jauns brauciens. Cena €X, jūs saņemat €Y. …», no seconds in it since #263), one «Atlikušas N s» announcement at arrival and none after it (#279), and the decline button as a separate 44 px target.
 
 ## Field results
 

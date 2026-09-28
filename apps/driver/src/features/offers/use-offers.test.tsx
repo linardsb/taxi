@@ -275,7 +275,8 @@ describe('OffersProvider (#15)', () => {
 
 /**
  * #279: TalkBack queues every announcement as uninterruptible behind the
- * ~20 s card read (#276 D1), so any countdown line after the first was
+ * card read (19.62 s at the default rate, 35.55 s at rate 50: runbook
+ * «#279 re-run»; #276 D1), so any countdown line after the first was
  * spoken after the offer had expired. One line, at arrival, is all it gets.
  */
 describe('what TalkBack is told about time (#279)', () => {

@@ -23,7 +23,6 @@ const card = (over: Partial<OfferCardProps> = {}): OfferCardProps => ({
   trip: t('driver.offer.trip', { minutes: 18, km: '11.7', rate: '€0.90' }),
   km: 1,
   payment: t('driver.offer.payment_cash'),
-  seconds: 18,
   countdown: t('driver.offer.countdown', { seconds: 18 }),
   glance: false,
   queue: null,
@@ -148,10 +147,7 @@ describe('OfferCard says nothing about time (#279)', () => {
     for (const seconds of [15, 10, 5, 1]) {
       await view.rerender(
         <OfferCard
-          card={card({
-            seconds,
-            countdown: t('driver.offer.countdown', { seconds }),
-          })}
+          card={card({ countdown: t('driver.offer.countdown', { seconds }) })}
           onAccept={jest.fn()}
           onDecline={jest.fn()}
         />,

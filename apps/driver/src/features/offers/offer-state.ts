@@ -104,7 +104,8 @@ export type OfferEffect =
   | { type: 'alert_stop' }
   /**
    * Time left, spoken ONCE, at arrival (#279). TalkBack queues every
-   * announcement as uninterruptible behind the ~20 s card read, so any later
+   * announcement as uninterruptible behind the card read (19.62 s at the
+   * default rate, 35.55 s at rate 50: runbook «#279 re-run»), so any later
    * tick was spoken after the offer had expired (#276 D1).
    */
   | { type: 'announce'; seconds: number };
