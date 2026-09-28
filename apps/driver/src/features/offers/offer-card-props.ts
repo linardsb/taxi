@@ -123,8 +123,8 @@ export function offerCardProps(
     // No `seconds` in here (#263): a name that changes every tick fires a
     // content-changed event every tick, and TalkBack re-reads all seven
     // segments on each one — which saturated the speech queue and starved the
-    // throttled countdown announcements in `OfferCard`. Time left reaches the
-    // audio channel through those announcements only.
+    // per-tick countdown announcements `OfferCard` made then. Time left reaches
+    // the audio channel through one announcement at arrival (#279).
     a11yLabel: [
       t('driver.offer.a11y_card', { amount: fare, net }),
       payment,

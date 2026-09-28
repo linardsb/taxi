@@ -151,7 +151,9 @@ export function OffersProvider({ children }: { children: ReactNode }) {
         alertsRef.current.stop();
         return;
       case 'announce':
-        AccessibilityInfo.announceForAccessibility(tRef.current(effect.key));
+        AccessibilityInfo.announceForAccessibility(
+          tRef.current('driver.offer.countdown', { seconds: effect.seconds }),
+        );
         return;
     }
   };

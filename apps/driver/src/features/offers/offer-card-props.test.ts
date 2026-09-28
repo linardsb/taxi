@@ -228,7 +228,7 @@ describe('offerCardProps (#15)', () => {
 
   it('the accessible name does not change as the countdown ticks (#263, edge)', () => {
     // A name that mutates every second makes TalkBack re-read the whole card
-    // on each change and starves the throttled countdown announcements.
+    // on each change, queued ahead of anything else it has to say.
     const pending = pendingFor({ commissionPctOverride: null });
     const at18 = offerCardProps(shown(pending), null, t)!;
     const at3 = offerCardProps(

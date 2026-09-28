@@ -6,7 +6,7 @@ import {
   waitFor,
 } from '@testing-library/react-native';
 import { useEffect } from 'react';
-import { Text } from 'react-native';
+import { AccessibilityInfo, Text } from 'react-native';
 import { formatMessage, splitFare, type RideOfferEvent } from '@taxi/shared';
 import { ApiError } from '@/features/auth';
 import type { RuntimeListener } from '@/features/location';
@@ -270,5 +270,67 @@ describe('OffersProvider (#15)', () => {
       ),
     );
     warn.mockRestore();
+  });
+});
+
+/**
+ * #279: TalkBack queues every announcement as uninterruptible behind the
+ * ~20 s card read (#276 D1), so any countdown line after the first was
+ * spoken after the offer had expired. One line, at arrival, is all it gets.
+ */
+describe('what TalkBack is told about time (#279)', () => {
+  const COUNTDOWN_20 = t('driver.offer.countdown', { seconds: 20 });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockListeners.length = 0;
+    ctx = null;
+    jest.useFakeTimers({
+      doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'],
+    });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  async function arrive() {
+    const announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation(() => undefined);
+    const handlers = await mountWithSocket();
+    // `wire()` reads `Date.now()`: built after the clock is faked.
+    await act(async () => handlers['ride:offer']!(wire()));
+    return announce;
+  }
+
+  it('time left is announced once, on arrival (#279, expected)', async () => {
+    const announce = await arrive();
+    expect(screen.getByTestId('phase')).toHaveTextContent('pending');
+    expect(announce.mock.calls).toEqual([[COUNTDOWN_20]]);
+    announce.mockRestore();
+  });
+
+  it('no tick is announced while the card is still being read (#279, edge)', async () => {
+    const announce = await arrive();
+    // Crosses the old 15, 10 and 5 s announcements.
+    await act(async () => {
+      jest.advanceTimersByTime(15_000);
+    });
+    expect(screen.getByTestId('phase')).toHaveTextContent('pending');
+    expect(announce.mock.calls).toEqual([[COUNTDOWN_20]]);
+    announce.mockRestore();
+  });
+
+  it('an offer that expires mid-read leaves no countdown line behind (#279, failure)', async () => {
+    const announce = await arrive();
+    await act(async () => {
+      jest.advanceTimersByTime(21_000);
+    });
+    expect(screen.getByTestId('phase')).toHaveTextContent('idle');
+    expect(screen.getByTestId('offer-banner-kind')).toHaveTextContent(
+      'expired',
+    );
+    expect(announce.mock.calls).toEqual([[COUNTDOWN_20]]);
+    announce.mockRestore();
   });
 });
