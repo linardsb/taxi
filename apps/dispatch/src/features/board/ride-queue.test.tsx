@@ -177,7 +177,9 @@ describe('RideQueue', () => {
     );
 
     // Two cancel buttons, and no two share a name.
-    const cancels = screen.getAllByRole('button', { name: /^Atcelt braucienu/ });
+    const cancels = screen.getAllByRole('button', {
+      name: /^Atcelt braucienu/,
+    });
     expect(cancels).toHaveLength(2);
     expect(new Set(cancels.map((b) => b.getAttribute('aria-label'))).size).toBe(
       2,
@@ -363,10 +365,12 @@ describe('RideQueue', () => {
     expect(without).not.toHaveTextContent(badge);
     // State, not an alarm: the row carries no flash and no live region.
     expect(withFlag).not.toHaveClass('console-flash');
-    expect(withFlag!.querySelector('[role="alert"], [role="status"]')).toBeNull();
+    expect(
+      withFlag!.querySelector('[role="alert"], [role="status"]'),
+    ).toBeNull();
   });
 
-  it('offers «Rādīt PIN» only on a PIN ride at arrived (edge, #275)', () => {
+  it('offers «Rādīt PIN» only on a phone PIN ride at arrived (edge, #275)', () => {
     const showPin = formatMessage('lv', 'console.show_pin');
     const at = (status: BoardRide['status'], pickupPinRequired: boolean) =>
       ride({
@@ -384,6 +388,20 @@ describe('RideQueue', () => {
     const noPin = queue([at('arrived', false)]);
     expect(screen.queryByText(showPin)).toBeNull();
     noPin.unmount();
+
+    // An app rider has the PIN on screen and gets no SMS (PR #300 M1).
+    const app = queue([
+      ride({
+        status: 'arrived',
+        pickupPinRequired: true,
+        bookingChannel: 'app',
+        driverId: 'd0000000-0000-4000-8000-000000000001',
+        driverName: 'Jānis Ozols',
+        unclaimedSeconds: 0,
+      }),
+    ]);
+    expect(screen.queryByText(showPin)).toBeNull();
+    app.unmount();
 
     queue([at('arrived', true)]);
     expect(screen.getByText(showPin)).toBeInTheDocument();

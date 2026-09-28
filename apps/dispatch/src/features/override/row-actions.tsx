@@ -3,6 +3,7 @@
 import {
   formatMessage,
   type BoardRideStatus,
+  type BookingChannel,
   type Language,
 } from '@taxi/shared';
 import { assignVerb } from './assign-state';
@@ -21,14 +22,17 @@ const LANG: Language = 'lv';
  * only ever 409. Cancel stays available on every live row — a dispatcher can
  * always kill a ride.
  *
- * «Rādīt PIN» (#275) appears only on a PIN ride at `arrived`: the arrival SMS
- * is the phone caller's only copy of the PIN and is sent there, so before it
- * there is nothing to recover, and the api would 409. It goes FIRST in the
- * cluster, because at `arrived` it is the action that saves the ride.
+ * «Rādīt PIN» (#275) appears only on a PHONE PIN ride at `arrived`: the
+ * arrival SMS is the phone caller's only copy of the PIN and is sent there, so
+ * before it there is nothing to recover, and the api would 409. An app rider
+ * has the PIN on screen and gets no SMS, so their row never offers it (PR #300
+ * M1). It goes FIRST in the cluster, because at `arrived` it is the action
+ * that saves the ride.
  */
 export function RideRowActions({
   status,
   address,
+  bookingChannel,
   pickupPinRequired,
   onAssign,
   onCancel,
@@ -43,6 +47,7 @@ export function RideRowActions({
    * mode this slice is built for. Cancelling the wrong ride is the failure.
    */
   address: string;
+  bookingChannel: BookingChannel;
   /** Whether the ride has a PIN (#275) — never the PIN itself. */
   pickupPinRequired: boolean;
   onAssign: () => void;
@@ -65,16 +70,18 @@ export function RideRowActions({
 
   return (
     <span style={{ display: 'flex', gap: 'var(--spacing-xs)' }}>
-      {status === 'arrived' && pickupPinRequired && (
-        <button
-          type="button"
-          onClick={onShowPin}
-          aria-label={formatMessage(LANG, 'console.show_pin_at', { address })}
-          style={buttonStyle(false)}
-        >
-          {formatMessage(LANG, 'console.show_pin')}
-        </button>
-      )}
+      {status === 'arrived' &&
+        bookingChannel === 'phone' &&
+        pickupPinRequired && (
+          <button
+            type="button"
+            onClick={onShowPin}
+            aria-label={formatMessage(LANG, 'console.show_pin_at', { address })}
+            style={buttonStyle(false)}
+          >
+            {formatMessage(LANG, 'console.show_pin')}
+          </button>
+        )}
       {verb !== null && (
         <button
           type="button"

@@ -135,6 +135,7 @@ function RideRow({
       <RideRowActions
         status={ride.status}
         address={ride.pickup.address}
+        bookingChannel={ride.bookingChannel}
         pickupPinRequired={ride.pickupPinRequired}
         onAssign={() => onAssign(ride)}
         onCancel={() => onCancel(ride)}
