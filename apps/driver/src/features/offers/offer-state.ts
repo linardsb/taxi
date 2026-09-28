@@ -1,6 +1,5 @@
 import type {
   DriverQueueEvent,
-  MessageKey,
   PaymentMethodType,
   RideOffer,
 } from '@taxi/shared';
@@ -103,7 +102,13 @@ export type OfferEffect =
   | { type: 'route_home' }
   | { type: 'alert_start' }
   | { type: 'alert_stop' }
-  | { type: 'announce'; key: MessageKey };
+  /**
+   * Time left, spoken ONCE, at arrival (#279). TalkBack queues every
+   * announcement as uninterruptible behind the card read (19.62 s at the
+   * default rate, 35.55 s at rate 50: runbook «#279 re-run»), so any later
+   * tick was spoken after the offer had expired (#276 D1).
+   */
+  | { type: 'announce'; seconds: number };
 
 export interface OfferDecision {
   state: OfferState;
@@ -208,7 +213,10 @@ export function decide(state: OfferState, event: OfferEvent): OfferDecision {
         effects: [
           { type: 'alert_start' },
           { type: 'route_offer' },
-          { type: 'announce', key: 'driver.offer.title' },
+          {
+            type: 'announce',
+            seconds: Math.ceil(incoming.durationMs / 1000),
+          },
         ],
       };
     }

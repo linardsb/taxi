@@ -424,12 +424,76 @@ The owed ear-checks (§"Also on this day", row 2) are **closed for TalkBack**:
 | Leg | Result |
 |---|---|
 | Offer card read once, not re-read per tick (after #263) | ✅ |
-| Countdown announcements | ❌ queued behind the 19.7 s card read, all spoken after `dispatch.offer.expired` → [#279](https://github.com/linardsb/taxi/issues/279) |
+| Countdown announcements | ❌ queued behind the 19.7 s card read, all spoken after `dispatch.offer.expired` → [#279](https://github.com/linardsb/taxi/issues/279); now one announcement at arrival, see «#279 re-run» below |
 | Earnings announcement once on spinner→value (after #262) | ✅ |
-| Earnings link, ready state | ✅ (loading and failed not reached this pass) |
+| Earnings link, ready state | ✅ (loading and failed not reached this pass; both reached in «#279 re-run» below) |
 | PIN field label, disabled Start «Sākt braucienu, Poga. atspējots» | ✅ (PR #277's "Start is skipped" not reproduced) |
 | PIN value re-read | ❌ unspaced `0042`; keystroke chatter unconfirmed → [#280](https://github.com/linardsb/taxi/issues/280) |
 | Error `Banner` («Nav savienojuma ar serveri.») | ❌ not announced; the iOS-only guard, fix owned by #259 T0 |
+
+**#279 re-run (2026-09-28)**, branch `fix/offer-countdown-opening-tick-279`, driver source tree
+`89147e9a4ef7` (`git rev-parse HEAD:apps/driver/src`; a commit sha would not survive the squash),
+served by Metro to #276's debug APK. Api on `:3041`, TalkBack VERBOSE, `lv-LV`, one dispatcher
+phone order per run, nothing touched. The emulator clock ran **0.93 s behind the host**
+(`observed`: −0.925, −0.937, −0.931 s, each `adb shell date +%s.%N` compared with the midpoint of
+its own `adb` round trip, all ≤ 0.13 s). Times below are emulator time; `expires_at` is converted
+UTC → BST (+1 h) → emulator (−0.93 s). Speech times are read from the completion lines
+(§"Driving TalkBack from `adb`").
+
+Default rate (`tts_default_rate` unset). Offer `sent_at 10:32:41.954Z`, `expires_at 10:33:01.954Z`
+→ **11:33:01.024** emulator:
+
+```
+11:32:41.213 TYPE_ANNOUNCEMENT               Atlikušas 20 s              completed 11:32:43.391
+11:32:43.402 TYPE_VIEW_ACCESSIBILITY_FOCUSED  Jauns brauciens. … (194 ch)  completed 11:33:03.025
+11:33:02.368 TYPE_ANNOUNCEMENT               Piedāvājuma laiks beidzās   queued; spoken from 11:33:03.027
+```
+
+Rate 50 (`settings get secure tts_default_rate` → `50`). Offer `sent_at 10:34:20.481Z`,
+`expires_at 10:34:40.481Z` → **11:34:39.551** emulator:
+
+```
+11:34:19.711 TYPE_ANNOUNCEMENT               Atlikušas 20 s              completed 11:34:22.618
+11:34:22.625 TYPE_VIEW_ACCESSIBILITY_FOCUSED  Jauns brauciens. … (232 ch)  completed 11:34:58.176
+11:34:40.917 TYPE_ANNOUNCEMENT               Piedāvājuma laiks beidzās   queued; spoken from 11:34:58.177
+```
+
+| Check | Default | Rate 50 |
+|---|---|---|
+| `TYPE_ANNOUNCEMENT` «Atlikušas…» lines | 1 («20 s») | 1 («20 s») |
+| `ttsOutput= {Atlikušas` evaluations (#276: 18) | 0 | 0 |
+| «Atlikušas» spoken after expiry | none; finished 17.63 s before it (`derived`: 01.024 − 43.391 + 60) | none; finished 16.93 s before it (39.551 − 22.618) |
+| Standalone «Jauns brauciens» announcement | none | none |
+| The rate reached TTS | — | «Atlikušas 20 s», same text, 2.91 s vs 2.18 s (×1.33) |
+| Card name's `utterance completed` after expiry | 2.00 s (03.025 − 01.024) | 18.63 s (58.176 − 39.551) |
+| Expiry banner starts after expiry by | 2.00 s | 18.63 s |
+
+The rate-50 card carried #260's trip line («Brauciens ~3 min · 1.6 km · €1.92/km. »), 38
+characters the default run's card did not, so its 18.63 s mixes the slower rate with a longer
+name: 101 ms per character at the default rate (19 623 ms ÷ 194) against 153 ms at rate 50
+(35 551 ms ÷ 232). No countdown line is involved in either overrun. The plan's spike (same AVD,
+same day) measured the overrun as 1.8 s and 11.5 s, both with the 194-character name. At the
+default rate the two runs agree: 19.51 s for the name read in the spike, 19.62 s here. At
+rate 50 the spike's read took 27.92 s over 194 characters, and this run's took 35.55 s over 232.
+The clock offset was also re-measured on a fresh boot (−0.93 s here, −0.58 s in the spike).
+Nothing else was held constant, so the remaining difference is not attributed. One ordering
+differed too, cause not isolated: in the spike «Poga» followed the name and the banner waited
+for both, but here «Poga» was never spoken and the banner's fragment line came before the
+name's completion.
+
+D2, the earnings link, through the plan's `d2-proxy.mjs`
+(`.claude/plans/offer-countdown-opening-tick-279.md`, Appendix B) in `hang` mode:
+`node d2-proxy.mjs 3042 3041`, Metro restarted with `--clear` and
+`EXPO_PUBLIC_API_URL=http://10.0.2.2:3042`, one warm-up launch in `pass` mode.
+
+| State | How reached | TalkBack focus read (`observed`) |
+|---|---|---|
+| Loading (spinner) | explore-touch at (540, 664), 2.98 s after the proxy logged the request | «Ieņēmumi» → «Poga» → «Lai aktivizētu, Dubultskāriens» |
+| Failed first load («—») | explore-touch at (540, 634), 11.42 s after the request, past the app's 8 s client timeout | «Ieņēmumi. —» → «Poga» → «Lai aktivizētu, Dubultskāriens» |
+
+«Ieņēmumi» is spoken once in each state, as `.claude/references/ui-decisions.md` (2026-09-09)
+records. In `hang` mode the label can read «Ieņēmumi» alone only while loading: the ready
+state needs a response, and the failed state adds «—».
 
 ### Presence must be established through the app, never by SQL
 
@@ -473,6 +537,26 @@ the app in EN even after a force-stop and relaunch; `persist.sys.locale` only pr
 boot. `adb reboot` first, then the LV strings the §Steps cells quote actually appear
 (9 s to `sys.boot_completed` on a warm VM).
 
+**#279's re-run (2026-09-28) added five more:**
+
+- **Install the debug APK, not a release build.** A release APK ignores Metro and runs its own
+  bundle. Check `adb shell pm dump lv.saktacab.driver | grep flags=` for `DEBUGGABLE`, and the
+  Metro log for `Android Bundled` after the deep link.
+- **Grant TalkBack's notification permission before enabling it:**
+  `adb shell pm grant com.google.android.marvin.talkback android.permission.POST_NOTIFICATIONS`.
+  Otherwise its «Vai atļaut … sūtīt jums paziņojumus?» dialog takes focus, the offer card is
+  never focused, and the run does not count (the spike lost one run to it).
+- **Measure the emulator clock offset before comparing speech with DB times.** It was −0.58 s
+  in the spike and −0.93 s in the re-run on the same AVD. Sample `adb shell date +%s.%N`
+  against the midpoint of the host time before and after the call, three times.
+- **Where the earnings card sits depends on what is above it.** At y≈555–774 with the socket
+  status line showing (`derived`: screenshot at 800 px tall, 185–258 px × 3), but online with the battery-optimisation banner it moved to
+  y≈1066–1283. Screenshot before choosing the explore-touch point.
+- **The D2 proxy's log must be read with `grep -a`, and never truncated while node writes it.**
+  Truncation leaves NUL bytes and plain `grep` stops matching. Compare counts instead. The
+  proxy's WebSocket pass-through is unreliable («Atjaunojas…» on some launches); D2 does not
+  need the socket, so run the offer runs directly against the api.
+
 ### Driving TalkBack from `adb`
 
 TalkBack is on the `google_apis` image already — no Play Store image needed.
@@ -511,6 +595,19 @@ The file survives a reboot.
 `TYPE_WINDOW_CONTENT_CHANGED` is the platform re-reading a node whose name changed. Counting
 utterances without splitting by subtype conflates a throttled announcement with a
 re-announcement, which is the whole of #263.
+
+**A `Speaking fragment` line is when TalkBack handed the text on, which is not always when it
+was heard.** Usually it follows the previous item's
+`Received utterance completed for "talkback_N"` within a few ms (all of #276's D1 log). In
+#279's re-run, though, the expiry banner's fragment line came 0.66 s (default rate) and 17.26 s
+(rate 50) **before** the card name's completion, and was followed by
+`Interrupted N with talkback_M` only when the name completed. So for "when was this heard",
+take the later of the item's fragment line and the completion of the item ahead of it,
+grouped by `utteranceId`.
+
+**On this image the preferences file is under `/data/user_de/0/`.** On 2026-09-28
+`pref_log_level` = `2` was in `/data/user_de/0/$PKG/shared_prefs/${PKG}_preferences.xml`, and
+`/data/data/$PKG/shared_prefs/` held no such file. If the log stays silent, write it there.
 
 **Moving accessibility focus:** `input keyevent KEYCODE_DPAD_DOWN` (or `KEYCODE_TAB`).
 `input swipe` is **not** recognised as a TalkBack gesture in any shape tried, and

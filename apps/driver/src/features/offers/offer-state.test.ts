@@ -349,3 +349,35 @@ describe('decide — revocation and the rest', () => {
     expect(dismissed.effects).toEqual([]);
   });
 });
+
+describe('decide — what the countdown says (#279)', () => {
+  const announces = (effects: OfferEffect[]) =>
+    effects.filter((e) => e.type === 'announce');
+
+  it('announces the whole window once, at arrival (#279, expected)', () => {
+    expect(announces(received(pending({}, T0)).effects)).toEqual([
+      { type: 'announce', seconds: 20 },
+    ]);
+  });
+
+  it('rounds a part-second window up, as the card draws it (#279, edge)', () => {
+    expect(
+      announces(received(pending({ durationMs: 7_300 }, T0)).effects),
+    ).toEqual([{ type: 'announce', seconds: 8 }]);
+  });
+
+  it('no tick announces, whenever it falls (#279, edge)', () => {
+    let state = received(pending({}, T0)).state;
+    for (const at of [5_000, 10_000, 15_000, 19_000]) {
+      const next = decide(state, { type: 'tick', nowMs: T0 + at });
+      expect(next.effects).toEqual([]);
+      state = next.state;
+    }
+  });
+
+  it('expiry clears the card with no announcement (#279, failure)', () => {
+    const shown = received(pending({}, T0)).state;
+    const done = decide(shown, { type: 'tick', nowMs: T0 + 20_000 });
+    expect(types(done.effects)).toEqual(['alert_stop', 'route_home']);
+  });
+});
