@@ -55,3 +55,11 @@ The PR body's size table. It is re-derived after the push and re-stated against 
 ## Needs a manual look
 
 None. L3's open question, whether TalkBack spoke «Pieņem…» before this PR, is now recorded as unconfirmed rather than tested. Neither device run pressed accept.
+
+## L2 cost: Run A/B re-run at `5ed281b`
+
+`observed`, this session, `npx jest src/features/offers --verbose` in `apps/driver` at `5ed281b`, with the tree restored and `git status --porcelain` empty after each run:
+- **Run A** (the 4 source files from `origin/main`): `Tests: 6 failed, 50 passed, 56 total`, down from 7 at `ae31fc5`. «never announces as the seconds run down» is now green on the old source. The old effect keyed off `card.seconds`, the `card()` fixture no longer sets it, and `undefined` never meets the `due` condition. Still red: «the visible countdown is out of the accessibility tree», both reducer arrival cases and all 3 provider cases.
+- **Run B** (only the old card effect re-inserted, reading `seconds` through an `any` cast): `Tests: 56 passed, 56 total`, down from 4 failed. The bug needed the effect and the prop together, and L2 removed the prop.
+
+So after L2 the card case pins the new contract, a card that announces nothing whatever its countdown shows, rather than reproducing #276's bug. The red-on-old proof now rests on Run A's provider and reducer cases, which drive the real props. I did not re-add a dead prop to keep Run B meaningful. The impl report and the PR body now name `ae31fc5` as the head for the 7/4 figures and quote these.

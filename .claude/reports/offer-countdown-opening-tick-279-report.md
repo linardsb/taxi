@@ -47,7 +47,9 @@ The driver offer card now produces one countdown announcement, «Atlikušas N s�
   - Red: «never announces as the seconds run down» and all 3 provider cases.
   - All reducer tests stay green.
 
-Both counts match the plan's prediction.
+Both counts match the plan's prediction. Both ran at the `ae31fc5` tree.
+
+Re-run at `5ed281b` (review round 1, L2 dropped the unread `OfferCardProps.seconds`): Run A gives `6 failed, 50 passed`, because «never announces as the seconds run down» goes green on the old source. The old effect keyed off `card.seconds`, and the fixed fixture no longer sets it. Run B gives `56 passed`, because the old effect alone no longer has its input. From `5ed281b` on, the card case pins the new contract (the card announces nothing, whatever its countdown shows), and the red-on-old proof is Run A's 3 provider cases plus the reducer arrival cases (`observed`, `pr-298-review-fixes.md`).
 
 ## Validation results
 
