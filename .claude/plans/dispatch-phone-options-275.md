@@ -243,7 +243,7 @@ The gate, then Level 4.
 | `console.option_announce_arrival_hint` | `Ieradies šoferis izkāps un skaļi pateiks „Sakta”.` |
 | `console.badge_announce_arrival` | `Pieteikšanās balsī` |
 | `console.show_pin` | `Rādīt PIN` |
-| `console.show_pin_at` | `Rādīt PIN: {address}` |
+| `console.show_pin_at` | `Rādīt PIN — {address}` (amended: em dash, as the other `_at` keys) |
 | `console.pin_title` | `PIN kods iekāpšanai` |
 | `console.pin_hint` | `Nosauciet to zvanītājam. Šoferim to nesakiet.` |
 | `console.pin_failed` | `Neizdevās nolasīt PIN. Mēģiniet vēlreiz.` |
@@ -400,7 +400,7 @@ The gate, then Level 4.
   - Update the docblock at `:16-19`: phone → caller name → pickup → destination → payment → **options** → note → book.
 - **GOTCHA**:
   - Focus visibility: keep the native checkbox focus ring. `apps/dispatch/src/app/globals.css` has no `outline`/`focus` rule today (`observed`, grep exit 1), so nothing suppresses it. Do not add inline `outline: none`.
-  - Space toggles a focused checkbox. **Enter on a focused checkbox is unverified here**: if the browser submits the form, a dispatcher who presses Enter to tick «PIN kods» books without the PIN. Do not add a handler on speculation; Level 4 step 8 observes it in Chrome. If it submits, add an `onKeyDown` that turns Enter into a toggle on both checkboxes, plus a test, and record it under Divergences.
+  - Space toggles a focused checkbox. **Enter on a focused checkbox SUBMITS the form in Chrome** (`observed`, Level 4 step 8, 2026-09-28). So both checkboxes carry an `onKeyDown` that prevents Enter's default and flips the box, and `booking-form.test.tsx` pins it (the keyDown returns `false`, the box toggles, `book` is not called).
 - **VALIDATE**: `pnpm --filter @taxi/dispatch lint && pnpm --filter @taxi/dispatch typecheck`
 - **SATISFIES**: AC1, AC5
 
@@ -681,4 +681,14 @@ VoiceOver on macOS Safari over the booking form: each checkbox is announced with
 **Confidence**: 8/10. The api pieces mirror `arrival-announce.service.ts` closely. The main risk is the fixture sweep that T1's required output fields force; typecheck finds every site.
 
 ## AMENDMENTS
+
+- 2026-09-28 — implementation divergences (report `.claude/reports/dispatch-phone-options-275-report.md`, Deviations 1–10):
+  - T5: `console.show_pin_at` is «Rādīt PIN — {address}» (em dash, matching the other `_at` keys). EN/RU wording chosen at implementation.
+  - T17: Enter on a checkbox submitted the form in Chrome, so the `onKeyDown` Enter-toggle shipped with a test (gotcha rewritten above).
+  - T21: `clear()` also invalidates an in-flight read, so a late response cannot repaint a closed dialog. The `role="status"` region wraps the loading text as well as the PIN, so it is mounted before the PIN lands; the error state swaps it for `role="alert"`. `PinState` is exported from the slice barrel.
+  - T11: two mutation checks (success log and rejection log). `afterEach` reads the spy calls, restores, then asserts, so a red case cannot leak into the next.
+  - T12: the board leak check walks the RAW response body. The file docblock's "rider-only read" was retired alongside `:254` (T4b's rule).
+  - T16: the persist case waits on `localStorage` with `waitFor`, not fake timers.
+  - T1: the fixture sweep touched `ride-queue.test.tsx` and `assign-state.test.ts` only; `use-board.test.tsx:372` and `board-state.test.ts:58` build unclaimed events, not rides.
+  - T9/T12 phone indices used: `rides.integration` riders 34–35; `ride-pickup-pin` drivers 11–13, dispatchers 80/82/86, callers 81/84/85/87, rider 83.
 

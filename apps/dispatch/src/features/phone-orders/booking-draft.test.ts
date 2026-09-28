@@ -104,6 +104,29 @@ describe('booking draft', () => {
     expect(deserializeDraft('{"phone":"+37129999000"}', NOW)).toBeNull();
   });
 
+  it('restores a draft persisted before #275, with both options off (edge)', () => {
+    // The previous build's shape: no `pickupPin`, no `announceArrival`.
+    const old: Partial<BookingDraft> = bookableDraft();
+    delete old.pickupPin;
+    delete old.announceArrival;
+    const restored = deserializeDraft(JSON.stringify(old), NOW);
+    expect(restored?.phone).toBe('+37129999000');
+    expect(restored?.pickupPin).toBe(false);
+    expect(restored?.announceArrival).toBe(false);
+  });
+
+  it('round-trips a ticked pickup option through storage (expected)', () => {
+    const draft = { ...bookableDraft(), pickupPin: true };
+    const restored = deserializeDraft(serializeDraft(draft), NOW);
+    expect(restored?.pickupPin).toBe(true);
+    expect(restored?.announceArrival).toBe(false);
+  });
+
+  it('rejects a draft whose option is not a boolean — parsed, never cast (failure)', () => {
+    const raw = JSON.stringify({ ...bookableDraft(), pickupPin: 'yes' });
+    expect(deserializeDraft(raw, NOW)).toBeNull();
+  });
+
   it('rejects unparseable storage bytes (failure)', () => {
     expect(deserializeDraft('not json', NOW)).toBeNull();
   });

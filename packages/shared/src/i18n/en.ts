@@ -92,6 +92,14 @@ export const en = {
   'console.assign_ride_at': 'Assign the ride at {address}',
   'console.reassign_ride_at': 'Reassign the ride at {address}',
   'console.cancel_ride_at': 'Cancel the ride at {address}',
+  'console.badge_announce_arrival': 'Voice announcement',
+  'console.show_pin': 'Show PIN',
+  'console.show_pin_at': 'Show the PIN for {address}',
+  'console.pin_title': 'Pickup PIN',
+  'console.pin_hint': 'Read it to the caller. Do not tell the driver.',
+  'console.pin_failed': 'Could not read the PIN. Try again.',
+  'console.pin_error_not_arrived':
+    'The PIN can be read once the car has arrived.',
   'console.assign_title': 'Assign a driver',
   'console.reassign_title': 'Reassign the ride',
   'console.assign_pick_driver': 'Pick a driver',
@@ -167,6 +175,13 @@ export const en = {
   'console.booking_submitting': 'Booking…',
   'console.booking_created': 'Order created',
   'console.booking_close': 'Close',
+  'console.booking_options': 'Pickup',
+  'console.option_pickup_pin': 'PIN code',
+  'console.option_pickup_pin_hint':
+    'The caller gets the PIN by SMS when the car arrives.',
+  'console.option_announce_arrival': 'Driver announces arrival by voice',
+  'console.option_announce_arrival_hint':
+    'On arrival the driver steps out and says “Sakta” out loud.',
   'console.address_search_hint': 'Type the street and house number',
   'console.address_searching': 'Searching addresses…',
   'console.address_no_results': 'No addresses found',

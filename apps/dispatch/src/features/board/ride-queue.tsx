@@ -67,12 +67,14 @@ function RideRow({
   flash,
   onAssign,
   onCancel,
+  onShowPin,
 }: Readonly<{
   ride: BoardRide;
   serverNowMs: number;
   flash: boolean;
   onAssign: (ride: BoardRide) => void;
   onCancel: (ride: BoardRide) => void;
+  onShowPin: (ride: BoardRide) => void;
 }>) {
   return (
     <li
@@ -104,6 +106,20 @@ function RideRow({
           {formatMessage(LANG, STATUS_KEY[ride.status])}
         </span>
         {ride.driverName !== null && <span>{ride.driverName}</span>}
+        {/* STATE, not an alarm (ISA-18.2, apps/dispatch/CLAUDE.md): no flash,
+            no live region. Text inside a border, so it never rests on colour
+            alone (#275). */}
+        {ride.announceArrival && (
+          <span
+            style={{
+              padding: '0 var(--spacing-xs)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            {formatMessage(LANG, 'console.badge_announce_arrival')}
+          </span>
+        )}
         <span style={{ color: 'var(--color-fg-muted)' }}>
           {ageOf(serverNowMs, ride.requestedAt)}
         </span>
@@ -119,8 +135,10 @@ function RideRow({
       <RideRowActions
         status={ride.status}
         address={ride.pickup.address}
+        pickupPinRequired={ride.pickupPinRequired}
         onAssign={() => onAssign(ride)}
         onCancel={() => onCancel(ride)}
+        onShowPin={() => onShowPin(ride)}
       />
     </li>
   );
@@ -133,6 +151,7 @@ function Bucket({
   flashRideIds,
   onAssign,
   onCancel,
+  onShowPin,
 }: Readonly<{
   title: string;
   rides: BoardRide[];
@@ -140,6 +159,7 @@ function Bucket({
   flashRideIds: ReadonlySet<string>;
   onAssign: (ride: BoardRide) => void;
   onCancel: (ride: BoardRide) => void;
+  onShowPin: (ride: BoardRide) => void;
 }>) {
   return (
     <section style={{ display: 'grid', gap: 'var(--spacing-sm)' }}>
@@ -181,6 +201,7 @@ function Bucket({
               flash={flashRideIds.has(ride.rideId)}
               onAssign={onAssign}
               onCancel={onCancel}
+              onShowPin={onShowPin}
             />
           ))}
         </ul>
@@ -201,12 +222,14 @@ export function RideQueue({
   flashRideIds,
   onAssign,
   onCancel,
+  onShowPin,
 }: Readonly<{
   rides: BoardRide[];
   serverNowMs: number;
   flashRideIds: ReadonlySet<string>;
   onAssign: (ride: BoardRide) => void;
   onCancel: (ride: BoardRide) => void;
+  onShowPin: (ride: BoardRide) => void;
 }>) {
   const requested = rides.filter((r) => r.status === 'requested');
   const offered = rides.filter(
@@ -222,6 +245,7 @@ export function RideQueue({
       flashRideIds={flashRideIds}
       onAssign={onAssign}
       onCancel={onCancel}
+      onShowPin={onShowPin}
     />
   );
 

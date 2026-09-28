@@ -215,6 +215,8 @@ describe('pickupZoneOf', () => {
             driverId: 'd0000000-0000-4000-8000-000000000001',
             driverName: 'Jānis',
             bookingChannel: 'app',
+            announceArrival: false,
+            pickupPinRequired: false,
             requestedAt: '2026-08-17T11:59:00.000Z',
             unclaimedSeconds: 0,
             cascade: null,

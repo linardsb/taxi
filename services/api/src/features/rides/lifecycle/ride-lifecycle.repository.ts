@@ -81,6 +81,23 @@ export class RideLifecycleRepository {
     return row;
   }
 
+  /**
+   * The one read that hands the PIN to someone other than the rider (#275):
+   * `PickupPinReadService`, for Dina to read to a phone caller whose arrival
+   * SMS never came (PR #277 L2). Status and PIN only — nothing else is needed
+   * to decide, and nothing else should sit beside the PIN.
+   */
+  async findPickupPinTarget(
+    rideId: string,
+  ): Promise<{ status: RideStatus; pin: string | null } | undefined> {
+    const [row] = await this.db
+      .select({ status: rides.status, pin: rides.pickupPin })
+      .from(rides)
+      .where(eq(rides.id, rideId))
+      .limit(1);
+    return row;
+  }
+
   /** The rider's phone and display name, for `toDriverRide` (#261). */
   async findRiderIdentity(
     riderId: string,

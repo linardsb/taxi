@@ -58,6 +58,13 @@ export interface BookingDraft {
   destination: DraftAddress;
   note: string;
   paymentMethod: BookablePaymentMethod;
+  /**
+   * The caller's pickup opt-ins (#275): `options.pickupPin` and
+   * `options.announceArrival` on the booking. Per trip — never prefilled, and
+   * reset with the draft, so the next caller does not inherit a tick.
+   */
+  pickupPin: boolean;
+  announceArrival: boolean;
   /** Set when a venue or a past job filled the pickup — audit for the form. */
   prefilledFrom: 'venue' | 'recent' | null;
 }
@@ -80,6 +87,8 @@ export function emptyDraft(idempotencyKey: string): BookingDraft {
     // Cash by default: the phone channel's caller has no app and therefore no
     // enrolled card, so `card` on a phone order is unsettleable at the kerb.
     paymentMethod: 'cash',
+    pickupPin: false,
+    announceArrival: false,
     prefilledFrom: null,
   };
 }
@@ -204,6 +213,11 @@ const draftSchema = z.object({
   destination: draftAddressSchema,
   note: z.string(),
   paymentMethod: z.enum(['cash', 'card']),
+  // Defaulted, not required: a draft persisted by the build before #275 lacks
+  // both, and a required field would drop it — losing a half-taken order on
+  // the first load after deploy.
+  pickupPin: z.boolean().default(false),
+  announceArrival: z.boolean().default(false),
   prefilledFrom: z.enum(['venue', 'recent']).nullable(),
 });
 

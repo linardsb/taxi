@@ -126,6 +126,13 @@ export const lv = {
   'console.assign_ride_at': 'Piešķirt braucienu — {address}',
   'console.reassign_ride_at': 'Piešķirt atkārtoti braucienu — {address}',
   'console.cancel_ride_at': 'Atcelt braucienu — {address}',
+  'console.badge_announce_arrival': 'Pieteikšanās balsī',
+  'console.show_pin': 'Rādīt PIN',
+  'console.show_pin_at': 'Rādīt PIN — {address}',
+  'console.pin_title': 'PIN kods iekāpšanai',
+  'console.pin_hint': 'Nosauciet to zvanītājam. Šoferim to nesakiet.',
+  'console.pin_failed': 'Neizdevās nolasīt PIN. Mēģiniet vēlreiz.',
+  'console.pin_error_not_arrived': 'PIN var nolasīt, kad auto ir klāt.',
   'console.assign_title': 'Piešķirt šoferi',
   'console.reassign_title': 'Piešķirt braucienu atkārtoti',
   'console.assign_pick_driver': 'Izvēlieties šoferi',
@@ -215,6 +222,13 @@ export const lv = {
   'console.booking_submitting': 'Pasūta…',
   'console.booking_created': 'Pasūtījums izveidots',
   'console.booking_close': 'Aizvērt',
+  'console.booking_options': 'Iekāpšana',
+  'console.option_pickup_pin': 'PIN kods',
+  'console.option_pickup_pin_hint':
+    'Zvanītājs saņems PIN īsziņā, kad auto būs klāt.',
+  'console.option_announce_arrival': 'Šoferis pieteiksies balsī',
+  'console.option_announce_arrival_hint':
+    'Ieradies šoferis izkāps un skaļi pateiks „Sakta”.',
   // The address combobox. `address_offline` is the offline rule in words: the
   // typed text is KEPT, the order simply cannot be sent yet.
   'console.address_search_hint': 'Ierakstiet ielu un mājas numuru',

@@ -20,12 +20,19 @@ const LANG: Language = 'lv';
  * pickup is not reassignable, and a greyed control invites a click that can
  * only ever 409. Cancel stays available on every live row — a dispatcher can
  * always kill a ride.
+ *
+ * «Rādīt PIN» (#275) appears only on a PIN ride at `arrived`: the arrival SMS
+ * is the phone caller's only copy of the PIN and is sent there, so before it
+ * there is nothing to recover, and the api would 409. It goes FIRST in the
+ * cluster, because at `arrived` it is the action that saves the ride.
  */
 export function RideRowActions({
   status,
   address,
+  pickupPinRequired,
   onAssign,
   onCancel,
+  onShowPin,
 }: Readonly<{
   status: BoardRideStatus;
   /**
@@ -36,8 +43,11 @@ export function RideRowActions({
    * mode this slice is built for. Cancelling the wrong ride is the failure.
    */
   address: string;
+  /** Whether the ride has a PIN (#275) — never the PIN itself. */
+  pickupPinRequired: boolean;
   onAssign: () => void;
   onCancel: () => void;
+  onShowPin: () => void;
 }>) {
   const verb = assignVerb(status);
 
@@ -55,6 +65,16 @@ export function RideRowActions({
 
   return (
     <span style={{ display: 'flex', gap: 'var(--spacing-xs)' }}>
+      {status === 'arrived' && pickupPinRequired && (
+        <button
+          type="button"
+          onClick={onShowPin}
+          aria-label={formatMessage(LANG, 'console.show_pin_at', { address })}
+          style={buttonStyle(false)}
+        >
+          {formatMessage(LANG, 'console.show_pin')}
+        </button>
+      )}
       {verb !== null && (
         <button
           type="button"

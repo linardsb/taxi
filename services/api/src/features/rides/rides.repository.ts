@@ -14,7 +14,12 @@ import {
 } from '@taxi/shared';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
-import { boardPickupSchema, isBoardStatus, type BoardRide } from './board-ride';
+import {
+  boardFlagsOf,
+  boardPickupSchema,
+  isBoardStatus,
+  type BoardRide,
+} from './board-ride';
 import { assertEntryStatus, type RideEntryStatus } from './ride-entry';
 import { toAwaiting, toRide, toTrip, type AwaitingRide } from './ride-row';
 import type { DbTx } from './ride-transition.service';
@@ -208,6 +213,7 @@ export class RidesRepository {
           driverId: ride.driverId,
           driverName,
           bookingChannel: ride.bookingChannel,
+          ...boardFlagsOf(ride.request),
           createdAt: ride.createdAt,
           geozoneId: ride.geozoneId,
         },

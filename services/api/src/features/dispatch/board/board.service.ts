@@ -183,6 +183,8 @@ export class BoardService implements OnModuleInit, OnModuleDestroy {
         driverId: r.driverId,
         driverName: r.driverName,
         bookingChannel: r.bookingChannel,
+        announceArrival: r.announceArrival,
+        pickupPinRequired: r.pickupPinRequired,
         requestedAt: r.createdAt.toISOString(),
         // NO LONGER the same arithmetic as the sweeper's `isStale`: #120's M3
         // re-based the ALERT's clock on the ride's last entry into the pool,
