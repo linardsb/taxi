@@ -91,6 +91,11 @@ Enumerate every figure and ask of each: **which run produced this?**
 - Correct arithmetic does not make a figure observed. #107's `30 = 6 cells × 5 polls` was sound arithmetic,
   truthfully passed its own "show the arithmetic" AC, and still described a run that never happened.
 
+If the PR body carries a **Claim check (log-only, #302)** block, compare it with your figure findings and
+add a `### Claim-check comparison` line to the report with three counts: flags you confirmed, flags you
+rejected, and your figure findings it missed. This is the 10-PR log #302 needs before the check may block.
+Its flags are not findings until you re-derive them.
+
 When a figure credits a mechanism ("proves the cache saves 5×"), ask **what was held constant to isolate
 it**. If the experiment cannot distinguish the credited mechanism from something else in the path, the
 attribution is the defect even when the count is right.

@@ -53,9 +53,9 @@ git log origin/{base}..HEAD --oneline
 - Linked issue: look for `#123`, `Fixes #…` in the commits/branch name.
 - PR template: if `.github/PULL_REQUEST_TEMPLATE.md` exists, fill it; else use the default below.
 
-## Phase 2.5 — Generate the validation block, then find the inherited figures (blocking)
+## Phase 2.5 — Generate the validation block, find the inherited figures (blocking), then the claim check (log-only)
 
-Two scripts live beside this skill. **They are referenced here so that deleting them shows up in a
+Three scripts live beside this skill. **They are referenced here so that deleting them shows up in a
 diff** — the previous copies lived only under `~/.claude/skills/`. Ten lines across five `.claude/`
 reports and reviews named them (`git grep -n record-gate c70572b`), but nothing on an executable path
 did, so the #129 cleanup destroyed the files and left only the prose about them (ledger L2).
@@ -63,6 +63,7 @@ did, so the #129 cleanup destroyed the files and left only the prose about them 
 ```bash
 .claude/skills/piv-create-pr/scripts/record-gate.sh --clean
 .claude/skills/piv-create-pr/scripts/inherited-figures.sh <draft-body.md> <report.md> [--pr {N}]
+.claude/skills/piv-create-pr/scripts/claim-check.mjs <draft-body.md>
 ```
 
 **`record-gate.sh` runs the gate and prints the Validation block. Paste it; do not retype it.** It
@@ -80,9 +81,18 @@ head, or say why it is head-independent. Pass `--pr {N}` when updating an existi
 body is the most-read surface and the only one no working-tree grep can reach. No implementation report
 (a docs-only PR) is an ordinary case: it prints a note and exits 0, which is not a pass.
 
-**What neither script can catch — these stay by-eye checks:**
+**`claim-check.mjs` is log-only (#302): it never blocks and always exits 0, and a missing key or a failed
+call is a note.** It asks TypeSafe's Jev whether each figure labelled `observed` names its run, whether it
+could have been measured at all, whether a case-dependent figure names its case, and whether each cited
+`file:line` at `HEAD` says what the body claims. Paste its `<details>` block under `## Validation`; for the
+first 10 PRs that block is the log each review compares against. Re-derive every line in its
+**extreme-case list** by hand before opening the PR — that list is where #87's shape lands, because no
+sentence-level judgement can see it.
 
-- **A right number under a wrong label.** #87's figure was correct; the label was the defect.
+**What none of the scripts can catch — these stay by-eye checks:**
+
+- **A right number under a wrong label.** #87's figure was correct; the label was the defect. claim-check lists extreme-case claims for you but
+  does not judge them.
 - **A claim with no numeral at all.** #121 shipped "GitHub retargets the base branch automatically"
   — no digit for a numeric check to bind to, and false.
 - **Retire the claim's subject, not its digits.** A retired claim survives as a verb ("the cache this

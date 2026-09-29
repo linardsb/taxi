@@ -33,7 +33,7 @@ pnpm turbo run typecheck lint test build --force   # CI parity — all packages,
 ```
 
 **Expected:** every task green. Turbo's summary names any failing package/task, and the task count is
-the check on the run itself: `Tasks: 22 successful, 22 total` at 2026-09-18's head. Fewer tasks than the
+the check on the run itself: `Tasks: 22 successful, 22 total` at 2026-09-18's head; 23 since #302 added `@taxi/pr-scripts#test`. Fewer tasks than the
 graph is a *short* gate, not a pass — `.claude/skills/piv-create-pr/scripts/record-gate.sh` derives the
 expected count from `turbo --dry=json` and prints the holes, so prefer it when the number will be
 quoted anywhere.
