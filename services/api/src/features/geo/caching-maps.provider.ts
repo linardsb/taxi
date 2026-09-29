@@ -79,13 +79,13 @@ function renderPoints(from: LatLng, to: LatLng, stops: LatLng[]): string {
 }
 
 /**
- * The `v1` segment is deliberate: a change to `RouteResult`'s shape bumps it
- * rather than poisoning live cache entries mid-deploy.
- *
- * It stays `v1` through the caller namespacing added here — `RouteResult`'s
- * shape did not change, and inserting the segment already makes every
- * pre-existing key unreachable. They age out, which is exactly the outcome the
- * paragraph above describes.
+ * The version segment is deliberate: a change to what a cached `RouteResult`
+ * MEANS — its shape, or its source — bumps it rather than poisoning live cache
+ * entries mid-deploy. `v2` is #134's: `v1` entries were the stub's straight
+ * line x 1.35, and a deploy that binds OSRM must not quote them for a day.
+ * The old keys are never read again and age out. (The caller segment needed
+ * no bump of its own: inserting it already made every older key
+ * unreachable.)
  */
 export function routeCacheKey(
   caller: MapsCaller,
@@ -93,7 +93,7 @@ export function routeCacheKey(
   to: LatLng,
   stops: LatLng[] = [],
 ): string {
-  return `maps:route:v1:${caller}:${renderPoints(from, to, stops)}`;
+  return `maps:route:v2:${caller}:${renderPoints(from, to, stops)}`;
 }
 
 /**
@@ -108,7 +108,7 @@ export function routeFailureKey(
   to: LatLng,
   stops: LatLng[] = [],
 ): string {
-  return `maps:route:fail:v1:${caller}:${renderPoints(from, to, stops)}`;
+  return `maps:route:fail:v2:${caller}:${renderPoints(from, to, stops)}`;
 }
 
 /**
