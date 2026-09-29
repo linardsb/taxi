@@ -7,8 +7,9 @@ name: Deploy
 # a hand-triggered deploy at least once (#13).
 #
 # What one run does: build the api image for linux/amd64 (CX22 is x86), push it
-# to ghcr.io tagged with the commit, then over SSH: pull, run the migrations
-# with the NEW image, `up -d --wait`, reload Caddy, prune. Migrations run
+# to ghcr.io tagged with the commit, then over SSH: pull, build the OSRM
+# routing graph if the box has none (#134), run the migrations with the NEW
+# image, `up -d --wait`, reload Caddy, prune. Migrations run
 # BEFORE the new API starts, so code that needs a column never runs against a
 # table without it.
 #
@@ -110,6 +111,13 @@ jobs:
           # REST OF THIS SCRIPT and forward it into the container. Everything
           # below would be swallowed and the step would exit 0 on the
           # migration's status. pull/up/prune/ps do not touch stdin.
+          # The routing graph (#134), BEFORE anything that needs it. A no-op
+          # of about a second once the graph exists; on a box with none it
+          # downloads the Latvia extract and builds it (runbook §5.5 has the
+          # observed times) — here, bounded by the job's 20 min, rather than
+          # inside \`up\`'s 120 s below. A failed build fails this step with
+          # the old stack still running, exactly like a failed migration.
+          \$compose run --rm osrm-prep </dev/null
           \$compose run --rm api node node_modules/@taxi/db/dist/migrate-run.js </dev/null
           # 120 s is a BACKSTOP, not the api's budget. The api healthcheck
           # resolves itself first: a container goes healthy on its FIRST
@@ -117,10 +125,10 @@ jobs:
           # start_period 20 s + 5 retries x 10 s = 70 s (compose.prod.yml), at
           # which point \`up --wait\` fails on its own. Reasoning about the api
           # alone is valid — the flag is project-scoped — because the \`run\`
-          # above already resolved api's depends_on service_healthy on db and
-          # redis, so both are healthy before this line. If the api ever
-          # legitimately needs longer, raise start_period/retries, not this
-          # flag. Without the flag \`--wait\` waits forever.
+          # above already resolved api's depends_on service_healthy on db,
+          # redis and osrm, so all three are healthy before this line. If the
+          # api ever legitimately needs longer, raise start_period/retries, not
+          # this flag. Without the flag \`--wait\` waits forever.
           \$compose up -d --wait --wait-timeout 120
           # Caddy reads its config at start only, and \`up\` does not recreate a
           # service when a bind-mounted file's CONTENT changes (not part of the
