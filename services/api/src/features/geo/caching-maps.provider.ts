@@ -190,8 +190,8 @@ function classify(
  * caller, TTL and whether they negative-cache. What is still ABSENT is
  * in-flight coalescing: requests arriving before the first `setWithTtl` lands
  * all miss and all reach the source. The tracking page's throttle BOUNDS that
- * path; nothing here closes it. Deferred to #134, where the real
- * concurrency shape is measurable.
+ * path; nothing here closes it. Since #134 the source is self-hosted OSRM,
+ * so for routes that is load on our own box, not spend — still open.
  */
 export class CachingMapsProvider implements MapsProvider {
   private readonly logger = new Logger(CachingMapsProvider.name);

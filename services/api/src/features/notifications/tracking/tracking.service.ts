@@ -182,7 +182,8 @@ export class TrackingService {
    * the token-scoped throttle in `view()`. IN-FLIGHT COALESCING REMAINS OPEN —
    * requests arriving before the first `setWithTtl` lands all miss and all
    * reach the source. The throttle BOUNDS that path; nothing here closes it.
-   * Deferred to #134.
+   * #134 made the source self-hosted OSRM, so what is left is load on our own
+   * box, not spend — still open.
    *
    * The displayed position stays raw; only the route origin is snapped.
    *

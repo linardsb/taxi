@@ -34,13 +34,13 @@ const NO_PLACES =
   'StubMapsProvider has no address search: set GOOGLE_MAPS_API_KEY to bind GooglePlacesProvider (#19).';
 
 /**
- * Dev/pilot implementation of the MapsProvider seam (@taxi/shared). Computes a
- * route from geometry instead of spending money at Google; the real routing
+ * Dev/test implementation of the MapsProvider seam (@taxi/shared). Computes a
+ * route from geometry instead of calling a routing server; the real routing
  * implementation is `OsrmMapsProvider` (#134).
  *
- * `GeoModule` refuses to boot this under `NODE_ENV=production` (unless
- * `ALLOW_STUB_MAPS_PROVIDER=true`, #13's documented switch that #134 deletes) — a silent stub
- * that prices real rides off straight-line distance is worse than no boot.
+ * `GeoModule` refuses to boot this for routes under `NODE_ENV=production`,
+ * unconditionally — a silent stub that prices real rides off straight-line
+ * distance is worse than no boot.
  */
 @Injectable()
 export class StubMapsProvider implements MapsProvider {
