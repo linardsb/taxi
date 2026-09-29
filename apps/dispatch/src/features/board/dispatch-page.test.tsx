@@ -1,5 +1,5 @@
 import { DRIVER_LOCATION_TTL_SECONDS, formatMessage } from '@taxi/shared';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardState, PillState } from './board-state';
 
@@ -359,5 +359,82 @@ describe('DispatchPage — the browser clock and the api clock are not swapped',
     );
 
     expect(bannerFor('console.stale_banner_silent')).toBeInTheDocument();
+  });
+});
+
+describe('DispatchPage — the PIN read (#275)', () => {
+  // The literal, as `use-assign.test.tsx` uses it: not on the auth barrel.
+  const SESSION_KEY = 'taxi.console.session';
+  const RIDE_ID = '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c';
+
+  it('shows the PIN from «Rādīt PIN» and leaves none behind after Escape (expected)', async () => {
+    window.localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({
+        accessToken: 'token-abc',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        user: {
+          id: '99999999-8888-4777-8666-555555555555',
+          phone: '+37129999000',
+          role: 'dispatcher',
+          language: 'lv',
+          createdAt: '2026-08-01T00:00:00.000Z',
+        },
+      }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ pin: '4207' }),
+      })),
+    );
+    try {
+      mount(
+        'live',
+        boardWith({
+          frame: {
+            ...frame(),
+            rides: [
+              {
+                rideId: RIDE_ID,
+                status: 'arrived',
+                pickup: {
+                  location: { lat: 56.95, lng: 24.11 },
+                  address: 'Brīvības 1',
+                },
+                driverId: 'd0000000-0000-4000-8000-000000000001',
+                driverName: 'Jānis Ozols',
+                bookingChannel: 'phone',
+                announceArrival: false,
+                pickupPinRequired: true,
+                requestedAt: new Date(NOW - 120_000).toISOString(),
+                unclaimedSeconds: 0,
+                cascade: null,
+              },
+            ],
+          },
+        }),
+      );
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: formatMessage('lv', 'console.show_pin_at', {
+            address: 'Brīvības 1',
+          }),
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent('4207'),
+      );
+
+      fireEvent.keyDown(screen.getByRole('status'), { key: 'Escape' });
+      expect(screen.queryByText('4207')).toBeNull();
+      expect(document.body.textContent).not.toContain('4207');
+    } finally {
+      vi.unstubAllGlobals();
+      window.localStorage.clear();
+    }
   });
 });

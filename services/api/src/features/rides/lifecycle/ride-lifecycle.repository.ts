@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { rideOffers, rides, users, type Db } from '@taxi/db';
 import {
   fareSplitSchema,
+  type BookingChannel,
   type FareSplit,
   type PaymentMethodType,
   type RideStatus,
@@ -74,6 +75,31 @@ export class RideLifecycleRepository {
         riderId: rides.riderId,
         driverId: rides.driverId,
         request: rides.request,
+      })
+      .from(rides)
+      .where(eq(rides.id, rideId))
+      .limit(1);
+    return row;
+  }
+
+  /**
+   * The one read that hands the PIN to someone other than the rider (#275):
+   * `PickupPinReadService`, for Dina to read to a phone caller whose arrival
+   * SMS never came (PR #277 L2). Status, PIN and booking channel: the channel
+   * because only a phone ride's PIN may be read (PR #300 M1). Nothing else
+   * should sit beside the PIN.
+   */
+  async findPickupPinTarget(
+    rideId: string,
+  ): Promise<
+    | { status: RideStatus; pin: string | null; bookingChannel: BookingChannel }
+    | undefined
+  > {
+    const [row] = await this.db
+      .select({
+        status: rides.status,
+        pin: rides.pickupPin,
+        bookingChannel: rides.bookingChannel,
       })
       .from(rides)
       .where(eq(rides.id, rideId))

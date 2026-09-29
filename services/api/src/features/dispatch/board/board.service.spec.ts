@@ -56,6 +56,8 @@ const boardRide = (over: Partial<BoardRide> = {}): BoardRide => ({
   driverId: null,
   driverName: null,
   bookingChannel: 'phone',
+  announceArrival: false,
+  pickupPinRequired: false,
   createdAt: new Date(NOW.getTime() - 90_000),
   // Stamped by `setGeozone` at first dispatch — the zone the cascade explains.
   geozoneId: ZONE_ID,
@@ -210,6 +212,23 @@ describe('BoardService.buildBoardState', () => {
         status: 'online',
       },
     ]);
+  });
+
+  it('carries both #275 option flags from the board row to the frame (expected)', async () => {
+    const { service } = build({
+      rides: [
+        boardRide({ announceArrival: true, pickupPinRequired: true }),
+        boardRide({ id: '4f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c' }),
+      ],
+    });
+
+    const frame = dispatchBoardEventSchema.parse(
+      await service.buildBoardState(CITY),
+    );
+    expect(frame.rides[0]!.announceArrival).toBe(true);
+    expect(frame.rides[0]!.pickupPinRequired).toBe(true);
+    expect(frame.rides[1]!.announceArrival).toBe(false);
+    expect(frame.rides[1]!.pickupPinRequired).toBe(false);
   });
 
   it('counts unclaimedSeconds only for requested rides — an assigned ride reads 0 (expected)', async () => {

@@ -14,7 +14,8 @@ const LANG: Language = 'lv';
  * The keyboard-first booking form (#19).
  *
  * TAB ORDER IS THE SPEC: phone → caller name → pickup → destination → payment
- * → note → book, which is the order a caller speaks in (evidence F2.4). No
+ * → options (#275) → note → book, which is the order a caller speaks in
+ * (evidence F2.4). No
  * scheduled-time field — #21 owns the promoting timer, and a control that can
  * only ever mean "now" is a tab stop that costs a keystroke and buys nothing.
  *
@@ -168,6 +169,80 @@ export function BookingForm({
                   : 'console.payment_card',
               )}
             </label>
+          ))}
+        </fieldset>
+
+        {/* The caller's pickup opt-ins (#275). Each hint is the box's
+            accessible description, so a screen reader speaks what the caller
+            gets along with the name. */}
+        <fieldset
+          style={{
+            display: 'grid',
+            gap: 'var(--spacing-xs)',
+            border: 'none',
+            margin: 0,
+            padding: 0,
+          }}
+        >
+          <legend style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>
+            {formatMessage(LANG, 'console.booking_options')}
+          </legend>
+          {(
+            [
+              {
+                id: 'booking-pickup-pin',
+                label: 'console.option_pickup_pin',
+                hint: 'console.option_pickup_pin_hint',
+                checked: form.draft.pickupPin,
+                onChange: form.setPickupPin,
+              },
+              {
+                id: 'booking-announce-arrival',
+                label: 'console.option_announce_arrival',
+                hint: 'console.option_announce_arrival_hint',
+                checked: form.draft.announceArrival,
+                onChange: form.setAnnounceArrival,
+              },
+            ] as const
+          ).map((option) => (
+            <div key={option.id}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--spacing-xs)',
+                  minHeight: 44,
+                  fontSize: 'var(--font-size-sm)',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  id={option.id}
+                  aria-describedby={`${option.id}-hint`}
+                  checked={option.checked}
+                  onChange={(event) => option.onChange(event.target.checked)}
+                  // Enter TOGGLES here instead of submitting. Chrome submits
+                  // the form on Enter in a focused checkbox (observed, #275
+                  // Level 4), so a dispatcher pressing Enter to tick «PIN
+                  // kods» would book without the PIN.
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    option.onChange(!option.checked);
+                  }}
+                />
+                {formatMessage(LANG, option.label)}
+              </label>
+              <span
+                id={`${option.id}-hint`}
+                style={{
+                  color: 'var(--color-fg-muted)',
+                  fontSize: 'var(--font-size-sm)',
+                }}
+              >
+                {formatMessage(LANG, option.hint)}
+              </span>
+            </div>
           ))}
         </fieldset>
 

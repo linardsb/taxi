@@ -1,6 +1,8 @@
 import { drivers, rideOffers, rides } from '@taxi/db';
 import {
   authSessionSchema,
+  dispatchBoardEventSchema,
+  dispatcherPickupPinSchema,
   formatMessage,
   IDEMPOTENCY_KEY_HEADER,
   rideCreatedSchema,
@@ -28,8 +30,9 @@ import { AuthTokenService } from '../../auth';
 import { DispatchService } from '../../dispatch';
 
 /**
- * The pickup PIN (#258) end to end: mint, the rider-only read, the start gate,
- * the lockout under forced concurrency, and the phone rider's arrival SMS.
+ * The pickup PIN (#258) end to end: mint, the rider's read, the start gate,
+ * the lockout under forced concurrency, and the phone rider's arrival SMS —
+ * plus the dispatcher's logged read at `arrived` and the board flags (#275).
  *
  * `+371320` is this file's E.164 range — see phoneFor() and the registry in
  * `ride-lifecycle.integration.spec.ts`. `users.phone` is unique across a run
@@ -164,12 +167,12 @@ describe('pickup PIN (integration, #258)', () => {
     };
   }
 
-  async function dispatcher(n: number) {
-    const user = await insertUser(ctx.db, { phone: p(n), role: 'dispatcher' });
-    const { accessToken } = await tokens.issue({
-      id: user.id,
-      role: 'dispatcher',
-    });
+  async function dispatcher(
+    n: number,
+    role: 'dispatcher' | 'admin' = 'dispatcher',
+  ) {
+    const user = await insertUser(ctx.db, { phone: p(n), role });
+    const { accessToken } = await tokens.issue({ id: user.id, role });
     return { id: user.id, auth: `Bearer ${accessToken}` };
   }
 
@@ -194,7 +197,7 @@ describe('pickup PIN (integration, #258)', () => {
   async function bookByPhone(
     dispatcherAuth: string,
     callerPhone: string,
-    options: { pickupPin?: boolean },
+    options: { pickupPin?: boolean; announceArrival?: boolean },
   ) {
     const res = await http
       .post('/dispatch/bookings')
@@ -251,7 +254,7 @@ describe('pickup PIN (integration, #258)', () => {
     return pin === undefined ? req : req.send({ pin });
   };
 
-  /** The rider's own read: the ONLY response that carries the PIN. */
+  /** The rider's own read: the only ride response that carries the PIN. */
   async function riderRead(rideId: string, riderAuth: string) {
     const res = await http
       .get(`/rides/${rideId}`)
@@ -659,5 +662,107 @@ describe('pickup PIN (integration, #258)', () => {
       formatMessage('lv', 'sms.driver_arrived', { plate: d2.plate }),
     );
     expect(withoutPin).not.toContain('PIN');
+  });
+
+  /** Dina's PIN read (#275) — the raw response, so refusals can be asserted. */
+  const readPin = (rideId: string, auth: string) =>
+    http.get(`/rides/${rideId}/pickup-pin`).set('authorization', auth);
+
+  const refusal = (res: { status: number; body: unknown }) =>
+    `${res.status} ${(res.body as { message: string }).message}`;
+
+  it('lets Dina read a phone caller their PIN at arrived, and that PIN starts the ride — the L2 recovery (expected, #275)', async () => {
+    const dina = await dispatcher(80);
+    const d = await onlineDriver(11);
+    const { ride } = await bookByPhone(dina.auth, p(81), { pickupPin: true });
+    await accept(ride, d.auth);
+    await toArrived(ride.id, d.auth);
+
+    const res = await readPin(ride.id, dina.auth).expect(200);
+    const { pin } = dispatcherPickupPinSchema.parse(res.body);
+    expect(pin).toBe((await rideRow(ride.id)).pickupPin);
+    // The route admits admin too (Q6); a `@Roles` typo on it must go red here.
+    const admin = await dispatcher(88, 'admin');
+    await readPin(ride.id, admin.auth).expect(200);
+
+    // The SMS was never read: the PIN reached the start through Dina alone.
+    await start(ride.id, d.auth, pin).expect(201);
+    expect((await rideRow(ride.id)).status).toBe('in_progress');
+  });
+
+  it('refuses the PIN read to a rider and a driver, for an unknown ride, before arrived, and on a ride with no PIN (failure, #275)', async () => {
+    const dina = await dispatcher(82);
+    const d = await onlineDriver(12);
+    const r = await rider(83);
+    const { ride } = await bookByPhone(dina.auth, p(84), { pickupPin: true });
+    await accept(ride, d.auth);
+
+    await readPin(ride.id, r.auth).expect(403);
+    await readPin(ride.id, d.auth).expect(403);
+    expect(refusal(await readPin(randomUUID(), dina.auth))).toBe(
+      '404 ride_not_found',
+    );
+    // `accepted`: the arrival SMS has not been sent, so there is nothing to recover.
+    expect(refusal(await readPin(ride.id, dina.auth))).toBe(
+      '409 ride_not_arrived',
+    );
+
+    const d2 = await onlineDriver(13);
+    const plain = await bookByPhone(dina.auth, p(85), {});
+    await accept(plain.ride, d2.auth);
+    await toArrived(plain.ride.id, d2.auth);
+    expect(refusal(await readPin(plain.ride.id, dina.auth))).toBe(
+      '409 pickup_pin_not_set',
+    );
+
+    // An app rider has the PIN on screen and gets no arrival SMS: nothing to
+    // recover, so Dina cannot read it out (PR #300 M1).
+    const appRider = await rider(89);
+    const d3 = await onlineDriver(14);
+    const app = await book(appRider.auth, { pickupPin: true });
+    await accept(app, d3.auth);
+    await toArrived(app.id, d3.auth);
+    expect(refusal(await readPin(app.id, dina.auth))).toBe(
+      '409 pickup_pin_not_phone',
+    );
+  });
+
+  it('puts both option flags on the board frame and never the PIN (expected + leak check, #275)', async () => {
+    const dina = await dispatcher(86);
+    const { ride } = await bookByPhone(dina.auth, p(87), {
+      pickupPin: true,
+      announceArrival: true,
+    });
+    const pin = (await rideRow(ride.id)).pickupPin!;
+
+    const res = await http
+      .get('/dispatch/board')
+      .set('authorization', dina.auth)
+      .expect(200);
+    const row = dispatchBoardEventSchema
+      .parse(res.body)
+      .rides.find((b) => b.rideId === ride.id);
+    expect(row?.announceArrival).toBe(true);
+    expect(row?.pickupPinRequired).toBe(true);
+
+    // On STRUCTURE, not a substring: a 4-digit PIN can sit inside a uuid, a
+    // timestamp or a coordinate by chance. The raw body, before the parse
+    // could strip an unknown key.
+    const raw = (res.body as { rides: { rideId: string }[] }).rides.find(
+      (b) => b.rideId === ride.id,
+    );
+    const pinKeys: string[] = [];
+    const walk = (value: unknown) => {
+      if (Array.isArray(value)) value.forEach(walk);
+      else if (value !== null && typeof value === 'object') {
+        for (const [k, v] of Object.entries(value)) {
+          if (/pin/i.test(k) && k !== 'pickupPinRequired') pinKeys.push(k);
+          walk(v);
+        }
+      }
+    };
+    walk(raw);
+    expect(pinKeys).toEqual([]);
+    expect(flatten(raw).strings).not.toContain(pin);
   });
 });

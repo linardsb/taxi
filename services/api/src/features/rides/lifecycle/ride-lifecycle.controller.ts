@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -10,6 +11,7 @@ import {
   rideCancelSchema,
   ridePaymentMethodUpdateSchema,
   rideStartSchema,
+  type DispatcherPickupPin,
   type DriverRide,
   type JwtClaims,
   type Ride,
@@ -20,6 +22,7 @@ import {
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../../auth';
 import { ArrivalAnnounceService } from './arrival-announce.service';
+import { PickupPinReadService } from './pickup-pin-read.service';
 import type { LifecycleActor } from './ride-lifecycle.policy';
 import { RideLifecycleService } from './ride-lifecycle.service';
 
@@ -38,6 +41,7 @@ export class RideLifecycleController {
   constructor(
     private readonly lifecycle: RideLifecycleService,
     private readonly announce: ArrivalAnnounceService,
+    private readonly pinRead: PickupPinReadService,
   ) {}
 
   @Post(':rideId/arriving')
@@ -129,5 +133,18 @@ export class RideLifecycleController {
     @Param('rideId', ParseUUIDPipe) rideId: string,
   ): Promise<{ ok: true }> {
     return this.announce.request(user.sub, rideId);
+  }
+
+  /**
+   * Dina reads a phone caller's pickup PIN at `arrived` (#275). Logged per
+   * read; admin can, as admin can cancel.
+   */
+  @Get(':rideId/pickup-pin')
+  @Roles('dispatcher', 'admin')
+  pickupPin(
+    @CurrentUser() user: JwtClaims,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+  ): Promise<DispatcherPickupPin> {
+    return this.pinRead.read(user.sub, rideId);
   }
 }

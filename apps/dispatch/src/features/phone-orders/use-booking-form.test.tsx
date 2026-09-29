@@ -203,4 +203,68 @@ describe('useBookingForm', () => {
     expect(result.current.errorKey).toBeNull();
     expect(result.current.bookedRideId).toBeNull();
   });
+
+  it('sends both ticked pickup options, and childSeat/femaleDriver stay false (expected — #275)', async () => {
+    const { result } = renderHook(() => useBookingForm(false));
+    fillBookable(result);
+    act(() => result.current.setPickupPin(true));
+    act(() => result.current.setAnnounceArrival(true));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    const [body] = api.book.mock.calls[0] as [{ options: unknown }, string];
+    expect(body.options).toEqual({
+      childSeat: false,
+      femaleDriver: false,
+      pickupPin: true,
+      announceArrival: true,
+    });
+    // The next caller starts unticked: the draft rotates on success.
+    expect(result.current.draft.pickupPin).toBe(false);
+    expect(result.current.draft.announceArrival).toBe(false);
+  });
+
+  it('sends both options false when nothing is ticked (regression — #275)', async () => {
+    const { result } = renderHook(() => useBookingForm(false));
+    fillBookable(result);
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    const [body] = api.book.mock.calls[0] as [{ options: unknown }, string];
+    expect(body.options).toEqual({
+      childSeat: false,
+      femaleDriver: false,
+      pickupPin: false,
+      announceArrival: false,
+    });
+  });
+
+  it('never prefills a pickup option from a recent ride (edge — #275)', () => {
+    const { result } = renderHook(() => useBookingForm(false));
+    act(() => result.current.prefillFrom('recent', PICKUP, DESTINATION));
+    expect(result.current.draft.pickupPin).toBe(false);
+    expect(result.current.draft.announceArrival).toBe(false);
+  });
+
+  it('keeps a tick across close-and-reopen before booking (edge — #275)', async () => {
+    const first = renderHook(() => useBookingForm(false));
+    fillBookable(first.result);
+    act(() => first.result.current.setPickupPin(true));
+
+    // The persist is debounced: wait for the tick to be ON DISK before the
+    // unmount, or the reopen proves nothing.
+    await waitFor(() =>
+      expect(
+        window.localStorage.getItem(BOOKING_DRAFT_STORAGE_KEY),
+      ).toContain('"pickupPin":true'),
+    );
+    first.unmount();
+
+    const second = renderHook(() => useBookingForm(false));
+    expect(second.result.current.draft.pickupPin).toBe(true);
+  });
 });

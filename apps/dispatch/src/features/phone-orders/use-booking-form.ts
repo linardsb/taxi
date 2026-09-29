@@ -95,6 +95,8 @@ export interface BookingForm {
   setCallerName: (name: string) => void;
   setNote: (note: string) => void;
   setPaymentMethod: (method: 'cash' | 'card') => void;
+  setPickupPin: (on: boolean) => void;
+  setAnnounceArrival: (on: boolean) => void;
   setAddressTextFor: (field: AddressField, text: string) => void;
   resolveAddress: (
     field: AddressField,
@@ -232,6 +234,15 @@ export function useBookingForm(offline: boolean): BookingForm {
       setDraft((current) => ({ ...current, paymentMethod: method })),
     [],
   );
+  const setPickupPin = useCallback(
+    (on: boolean) => setDraft((current) => ({ ...current, pickupPin: on })),
+    [],
+  );
+  const setAnnounceArrival = useCallback(
+    (on: boolean) =>
+      setDraft((current) => ({ ...current, announceArrival: on })),
+    [],
+  );
   const setAddressTextFor = useCallback(
     (field: AddressField, text: string) =>
       setDraft((current) => setAddressText(current, field, text)),
@@ -247,7 +258,8 @@ export function useBookingForm(offline: boolean): BookingForm {
 
   /**
    * STABLE FIELDS ONLY — pickup, dropoff, and (through the phone field) the
-   * passenger. Never the payment method, never the note, never the category:
+   * passenger. Never the payment method, never the note, never the category,
+   * never the pickup options (#275):
    * evidence F2.2's "Clean jobs" toggle exists because prefilling per-trip
    * fields produces confidently wrong bookings.
    */
@@ -310,12 +322,13 @@ export function useBookingForm(offline: boolean): BookingForm {
         destination: draft.destination.point,
         stops: [],
         category: 'standard',
-        // Hard false until Dina's form gets its checkboxes (#275).
+        // `childSeat`/`femaleDriver` stay hard false: the phone form has no
+        // control for them.
         options: {
           childSeat: false,
           femaleDriver: false,
-          pickupPin: false,
-          announceArrival: false,
+          pickupPin: draft.pickupPin,
+          announceArrival: draft.announceArrival,
         },
         paymentMethod: draft.paymentMethod,
         vehicleCount: 1,
@@ -368,6 +381,8 @@ export function useBookingForm(offline: boolean): BookingForm {
     setCallerName,
     setNote,
     setPaymentMethod,
+    setPickupPin,
+    setAnnounceArrival,
     setAddressTextFor,
     resolveAddress,
     prefillFrom,

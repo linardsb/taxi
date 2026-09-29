@@ -13,5 +13,8 @@ export { CancelDialog } from './cancel-dialog';
  * place where "can a dispatcher on a call get stuck in a dialog" is decided.
  */
 export { DialogShell, dialogButtonStyle } from './dialog-shell';
+export { PinDialog } from './pin-dialog';
 export { RideRowActions } from './row-actions';
 export { useAssign } from './use-assign';
+export { usePickupPin } from './use-pickup-pin';
+export type { PinState } from './use-pickup-pin';
