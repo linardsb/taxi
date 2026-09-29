@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTIVE_DRIVER_RIDE_STATUSES,
+  DISPATCHER_NOTE_VISIBLE_STATUSES,
   isInStatusSet,
   RIDER_NAME_VISIBLE_STATUSES,
   RIDER_PHONE_VISIBLE_STATUSES,
@@ -104,5 +105,48 @@ describe('driverRideSchema (#261)', () => {
         rider: { displayName: null, phone: '20000003' },
       }),
     ).toThrow();
+  });
+});
+
+describe('driverRideSchema dispatcherNote (#303)', () => {
+  const withRider = { ...ride, rider: { displayName: null, phone: null } };
+  // Built here so the length is checked, not stated: LV and RU characters.
+  const NOTE_280 = 'Ratiņkrēsls, коляска. '.repeat(13).slice(0, 280);
+
+  it('parses and round-trips a note (expected)', () => {
+    expect(
+      driverRideSchema.parse({ ...withRider, dispatcherNote: 'Ratiņkrēsls' })
+        .dispatcherNote,
+    ).toBe('Ratiņkrēsls');
+  });
+
+  it('defaults to null, accepts 280 LV+RU characters, pins the window (edge)', () => {
+    // An api from before #303 sends no key at all.
+    expect(driverRideSchema.parse(withRider).dispatcherNote).toBeNull();
+    expect(NOTE_280).toHaveLength(280);
+    expect(
+      driverRideSchema.parse({ ...withRider, dispatcherNote: NOTE_280 })
+        .dispatcherNote,
+    ).toBe(NOTE_280);
+    // A later edit that widens the window onto the offer must fail here.
+    expect([...DISPATCHER_NOTE_VISIBLE_STATUSES]).toEqual([
+      'accepted',
+      'arriving',
+      'arrived',
+      'in_progress',
+    ]);
+    expect(DISPATCHER_NOTE_VISIBLE_STATUSES).toBe(ACTIVE_DRIVER_RIDE_STATUSES);
+  });
+
+  it('refuses an empty note and 281 characters (failure)', () => {
+    expect(
+      driverRideSchema.safeParse({ ...withRider, dispatcherNote: '' }).success,
+    ).toBe(false);
+    expect(
+      driverRideSchema.safeParse({
+        ...withRider,
+        dispatcherNote: `${NOTE_280}x`,
+      }).success,
+    ).toBe(false);
   });
 });

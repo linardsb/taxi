@@ -384,6 +384,7 @@ export const lv = {
   'driver.ride.rider_name': 'Pasažieris: {name}',
   'driver.ride.call_rider': 'Zvanīt pasažierim',
   'driver.ride.call_rider_hint': 'Zvana {name}',
+  'driver.ride.dispatcher_note': 'Dispečera piezīme',
   'driver.ride.announce_note':
     'Pasažieris lūdz: ierodoties izkāpiet un piesakieties balsī.',
   'driver.ride.announce_prompt_name':

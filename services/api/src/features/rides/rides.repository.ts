@@ -56,6 +56,8 @@ export interface CreateRideInput {
   pickupPin: string | null;
   /** From `PricingService.quote` (#260) — the route the price came from. */
   trip: TripEstimate;
+  /** Dina's note (#303); null off the phone path and when blank. */
+  dispatcherNote: string | null;
 }
 
 @Injectable()
@@ -97,6 +99,7 @@ export class RidesRepository {
           pickupPin: input.pickupPin,
           tripDistanceMeters: input.trip.distanceMeters,
           tripDurationSeconds: input.trip.durationSeconds,
+          dispatcherNote: input.dispatcherNote,
         })
         .returning();
 
@@ -250,6 +253,7 @@ export class RidesRepository {
         quote: FareQuote;
         pickupPin: string | null;
         trip: TripEstimate | null;
+        dispatcherNote: string | null;
       }
     | undefined
   > {
@@ -296,6 +300,7 @@ export class RidesRepository {
       quote,
       pickupPin: row.pickupPin,
       trip: toTrip(row),
+      dispatcherNote: row.dispatcherNote,
     };
   }
 

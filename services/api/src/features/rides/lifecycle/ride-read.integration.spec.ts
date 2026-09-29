@@ -1,4 +1,4 @@
-import { drivers, rideOffers, rides, users } from '@taxi/db';
+import { dispatchAuditLog, drivers, rideOffers, rides, users } from '@taxi/db';
 import {
   authSessionSchema,
   driverRideSchema,
@@ -7,6 +7,7 @@ import {
   rideSchema,
   RT,
   type LatLng,
+  type RideOfferEvent,
   type RideStatusEvent,
 } from '@taxi/shared';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -25,6 +26,7 @@ import {
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
 import { AuthTokenService } from '../../auth';
 import { DispatchService } from '../../dispatch';
+import { DispatchRepository } from '../../dispatch/dispatch.repository';
 
 /**
  * `GET /rides/:rideId` with a DRIVER token (#15): the read that re-joins a
@@ -117,7 +119,7 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
   let plateSeq = 0;
   const nextPlate = () => `RR${String(++plateSeq).padStart(4, '0')}`;
 
-  async function onlineDriver(n: number, location: LatLng) {
+  async function onlineDriver(n: number, location: LatLng, pushToken?: string) {
     const session = await signIn(p(n), 'driver');
     const auth = `Bearer ${session.accessToken}`;
     const id = session.user.id;
@@ -134,6 +136,13 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
         hasChildSeat: false,
       })
       .expect(201);
+    if (pushToken) {
+      await http
+        .put('/drivers/me/push-token')
+        .set('authorization', auth)
+        .send({ token: pushToken })
+        .expect(204);
+    }
     await http
       .put('/drivers/me/status')
       .set('authorization', auth)
@@ -431,5 +440,196 @@ describe('GET /rides/:rideId as a driver (integration, #15)', () => {
       .get(`/rides/${ride.id}`)
       .set('authorization', dina.auth)
       .expect(403);
+  });
+  // ---- #303: Dina's booking note reaches the assigned driver, and no one else ----
+
+  /** 280 characters mixing Latvian and Russian; the length is asserted, not stated. */
+  const NOTE_280 =
+    'Ratiņkrēsls, zvanīt pie vārtiem. Инвалидная коляска, ждать у ворот. '
+      .repeat(5)
+      .slice(0, 280);
+  const MARKER = 'Инвалидная коляска';
+
+  async function bookByPhone(
+    dispatcherAuth: string,
+    callerPhone: string,
+    dispatcherNote: string | null,
+  ) {
+    const res = await http
+      .post('/dispatch/bookings')
+      .set('authorization', dispatcherAuth)
+      .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
+      .send({
+        callerPhone,
+        pickup: CENTRE_PICKUP,
+        destination: DESTINATION,
+        paymentMethod: 'cash',
+        dispatcherNote,
+      })
+      .expect(201);
+    const { ride } = rideCreatedSchema.parse(res.body);
+    createdRides.push(ride.id);
+    return { ride, raw: JSON.stringify(res.body) };
+  }
+
+  async function acceptOffer(rideId: string, driverAuth: string) {
+    const offer = await pendingOffer(rideId);
+    await http
+      .post(`/dispatch/offers/${offer!.id}/accept`)
+      .set('authorization', driverAuth)
+      .expect(201);
+  }
+
+  const driverNote = async (rideId: string, auth: string) =>
+    driverRideSchema.parse(
+      (
+        await http
+          .get(`/rides/${rideId}`)
+          .set('authorization', auth)
+          .expect(200)
+      ).body,
+    ).dispatcherNote;
+
+  function waitForEvent<T extends { rideId: string }>(
+    socket: Socket,
+    event: string,
+    rideId: string,
+    timeoutMs = 3_000,
+  ): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        socket.off(event, onEvent);
+        reject(new Error(`timed out waiting for ${event} on ride ${rideId}`));
+      }, timeoutMs);
+      function onEvent(payload: T) {
+        if (payload.rideId !== rideId) return;
+        clearTimeout(timer);
+        socket.off(event, onEvent);
+        resolve(payload);
+      }
+      socket.on(event, onEvent);
+    });
+  }
+
+  async function waitUntil(predicate: () => boolean, what: string) {
+    const deadline = Date.now() + 3_000;
+    while (!predicate()) {
+      if (Date.now() > deadline)
+        throw new Error(`timed out waiting for ${what}`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  it('gives the assigned driver the note for the whole active ride, and nobody else ever (expected + edge — #303)', async () => {
+    expect(NOTE_280).toHaveLength(280);
+    const d = await onlineDriver(
+      7,
+      near(CENTRE_PICKUP.location, 0.001, 0),
+      'ExponentPushToken[ridereadnote00001]',
+    );
+    const socket = await connectClient(port, d.token);
+    const dina = await dispatcher(61);
+
+    const { ride, raw } = await bookByPhone(dina.auth, p(55), NOTE_280);
+    expect(raw).not.toContain(MARKER);
+
+    // D3 on both offer legs: never before accept.
+    const offered = waitForEvent<RideOfferEvent>(socket, RT.rideOffer, ride.id);
+    const pushesBefore = ctx.push.sent.length;
+    await offerTo(ride);
+    expect(JSON.stringify(await offered)).not.toContain(MARKER);
+    await waitUntil(
+      () =>
+        ctx.push.sent
+          .slice(pushesBefore)
+          .some((s) => s.message.data?.rideId === ride.id),
+      'the offer push',
+    );
+    const offerPush = ctx.push.sent
+      .slice(pushesBefore)
+      .find((s) => s.message.data?.rideId === ride.id)!;
+    expect(offerPush.message.data?.offer).toBeDefined();
+    expect(offerPush.message.data?.offer).not.toContain(MARKER);
+
+    await acceptOffer(ride.id, d.auth);
+    // Byte for byte through Postgres.
+    expect(await driverNote(ride.id, d.auth)).toBe(NOTE_280);
+
+    // The rider's own read never carries it.
+    const caller = await signIn(p(55), 'rider');
+    const riderBody = (
+      await http
+        .get(`/rides/${ride.id}`)
+        .set('authorization', `Bearer ${caller.accessToken}`)
+        .expect(200)
+    ).body as Record<string, unknown>;
+    expect(riderBody).not.toHaveProperty('dispatcherNote');
+    expect(JSON.stringify(riderBody)).not.toContain(MARKER);
+
+    for (const step of ['arriving', 'arrived', 'start'] as const) {
+      await http
+        .post(`/rides/${ride.id}/${step}`)
+        .set('authorization', d.auth)
+        .expect(201);
+      expect(await driverNote(ride.id, d.auth)).toBe(NOTE_280);
+    }
+
+    const completed = await http
+      .post(`/rides/${ride.id}/complete`)
+      .set('authorization', d.auth)
+      .expect(201);
+    expect(
+      driverRideSchema.parse((completed.body as { ride: unknown }).ride)
+        .dispatcherNote,
+    ).toBeNull();
+    expect(await driverNote(ride.id, d.auth)).toBeNull();
+  });
+
+  it('still gives the driver the note when the booking audit write fails (failure — #303)', async () => {
+    const d = await onlineDriver(8, near(CENTRE_PICKUP.location, 0.001, 0));
+    const dina = await dispatcher(62);
+    const spy = jest
+      .spyOn(ctx.app.get(DispatchRepository), 'insertBookingAudit')
+      .mockRejectedValueOnce(new Error('audit down'));
+    try {
+      const { ride } = await bookByPhone(dina.auth, p(56), 'Ratiņkrēsls');
+      expect(spy).toHaveBeenCalledTimes(1);
+      // Before the offer: the accept path writes assignment rows later.
+      expect(
+        await ctx.db
+          .select()
+          .from(dispatchAuditLog)
+          .where(eq(dispatchAuditLog.rideId, ride.id)),
+      ).toHaveLength(0);
+
+      await offerTo(ride);
+      await acceptOffer(ride.id, d.auth);
+      expect(await driverNote(ride.id, d.auth)).toBe('Ratiņkrēsls');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('gives no note for a blank one or an app booking (edge — #303)', async () => {
+    const dina = await dispatcher(63);
+    const d9 = await onlineDriver(9, near(CENTRE_PICKUP.location, 0.001, 0));
+    const { ride: phoneRide } = await bookByPhone(dina.auth, p(57), '   ');
+    await offerTo(phoneRide);
+    await acceptOffer(phoneRide.id, d9.auth);
+
+    // One candidate per offer: d9 is now on_ride, and only online drivers are offered.
+    const d10 = await onlineDriver(10, near(CENTRE_PICKUP.location, 0.001, 0));
+    const r = await rider(58);
+    const appRide = await book(r.auth);
+    await offerTo(appRide);
+    await acceptOffer(appRide.id, d10.auth);
+
+    expect(await driverNote(phoneRide.id, d9.auth)).toBeNull();
+    expect(await driverNote(appRide.id, d10.auth)).toBeNull();
+    const rows = await ctx.db
+      .select({ note: rides.dispatcherNote })
+      .from(rides)
+      .where(inArray(rides.id, [phoneRide.id, appRide.id]));
+    expect(rows.map((row) => row.note)).toEqual([null, null]);
   });
 });

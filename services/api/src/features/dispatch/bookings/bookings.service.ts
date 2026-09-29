@@ -35,6 +35,9 @@ export class BookingsService {
     body: DispatcherBookingBody,
   ): Promise<RideCreated> {
     const { callerPhone, callerName, dispatcherNote, ...rideBody } = body;
+    // Blank is "no note" (#303 D4): the console sends whitespace as typed, and
+    // the driver would get an empty box.
+    const note = dispatcherNote?.trim() ? dispatcherNote.trim() : null;
 
     // A driver's or a dispatcher's own number must not become a rider identity:
     // the booking would turn a working driver into their own passenger, and
@@ -68,6 +71,8 @@ export class BookingsService {
       // docblock in `RidesService.request` for why the rider key is the wrong
       // one here.
       dispatcherId,
+      // In the ride's own insert (#303), so it survives the audit failure below.
+      note,
     );
 
     // AFTER the ride exists, and deliberately not inside its transaction: the
@@ -79,7 +84,7 @@ export class BookingsService {
         rideId: created.ride.id,
         dispatcherId,
         payload: {
-          ...(dispatcherNote === null ? {} : { note: dispatcherNote }),
+          ...(note === null ? {} : { note }),
         },
       })
       .catch((error: unknown) => this.auditFailed(created.ride.id, error));

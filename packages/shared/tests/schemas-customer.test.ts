@@ -3,7 +3,9 @@ import {
   addressSearchQuerySchema,
   addressSuggestionSchema,
   callerLookupSchema,
+  DISPATCHER_NOTE_MAX,
   dispatcherBookingBodySchema,
+  driverRideSchema,
   resolvePlaceBodySchema,
 } from '../src';
 
@@ -66,6 +68,21 @@ describe('dispatcherBookingBodySchema', () => {
         booking({ dispatcherNote: 'x'.repeat(281) }),
       ).success,
     ).toBe(false);
+  });
+
+  it("accepts exactly the note length the driver's read accepts (edge — PR #304 L1)", () => {
+    // A cap raised on one side only would fail every longer note on the
+    // driver's read: the active-ride screen would show its error state.
+    const note = 'x'.repeat(DISPATCHER_NOTE_MAX);
+    const driverNote = driverRideSchema.shape.dispatcherNote;
+    for (const value of [note, `${note}x`]) {
+      expect(
+        dispatcherBookingBodySchema.safeParse(
+          booking({ dispatcherNote: value }),
+        ).success,
+      ).toBe(driverNote.safeParse(value).success);
+    }
+    expect(driverNote.safeParse(note).success).toBe(true);
   });
 
   it('rejects a payment method settlement cannot finish (edge)', () => {

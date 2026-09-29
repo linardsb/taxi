@@ -54,6 +54,13 @@ export const RIDER_PHONE_VISIBLE_STATUSES = [
 /** When a driver may see the rider's name: the whole active ride (#261). */
 export const RIDER_NAME_VISIBLE_STATUSES = ACTIVE_DRIVER_RIDE_STATUSES;
 
+/**
+ * When a driver may see Dina's booking note (#303, D3): the whole active
+ * ride, never the offer. It can hold health data, so a declining driver
+ * gets nothing — the same line #259 D2 draws for the announce flag.
+ */
+export const DISPATCHER_NOTE_VISIBLE_STATUSES = ACTIVE_DRIVER_RIDE_STATUSES;
+
 /** Membership in a status set; widened so a narrow `as const` tuple accepts any status. */
 export function isInStatusSet(
   set: readonly RideStatus[],

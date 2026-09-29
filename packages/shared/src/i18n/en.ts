@@ -312,6 +312,7 @@ export const en = {
   'driver.ride.rider_name': 'Rider: {name}',
   'driver.ride.call_rider': 'Call rider',
   'driver.ride.call_rider_hint': 'Calls {name}',
+  'driver.ride.dispatcher_note': "Dispatcher's note",
   'driver.ride.announce_note':
     'Rider asks: on arrival, get out and announce yourself.',
   'driver.ride.announce_prompt_name': 'Get out and say aloud: "Sakta, {name}!"',
