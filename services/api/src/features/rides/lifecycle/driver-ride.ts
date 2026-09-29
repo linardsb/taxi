@@ -1,6 +1,7 @@
 import { NotFoundException, type Logger } from '@nestjs/common';
 import {
   assertRideSplitConsistent,
+  DISPATCHER_NOTE_VISIBLE_STATUSES,
   isInStatusSet,
   readDisplayName,
   RIDER_NAME_VISIBLE_STATUSES,
@@ -30,16 +31,21 @@ type RiderIdentity = { phone: string; displayName: string | null };
  *
  * `announceRequestedAt` (#259) is gated the same way, on the snapshot's own
  * status: a request is replayed only while the car waits at `arrived`.
+ * `dispatcherNote` (#303) is gated on the snapshot's status as well.
  */
 export function toDriverRide(
   ride: Ride,
   identity: RiderIdentity | undefined,
   announceRequestedAt: string | null = null,
+  dispatcherNote: string | null = null,
 ): DriverRide {
   const name = readDisplayName(identity?.displayName);
   return {
     ...ride,
     announceRequestedAt: ride.status === 'arrived' ? announceRequestedAt : null,
+    dispatcherNote: isInStatusSet(DISPATCHER_NOTE_VISIBLE_STATUSES, ride.status)
+      ? dispatcherNote
+      : null,
     rider: {
       displayName: isInStatusSet(RIDER_NAME_VISIBLE_STATUSES, ride.status)
         ? name
@@ -120,6 +126,7 @@ export async function readDriverRide(
     found.ride.status === 'arrived'
       ? await readAnnounceReplay(deps, driverId, rideId)
       : null,
+    found.dispatcherNote,
   );
 }
 

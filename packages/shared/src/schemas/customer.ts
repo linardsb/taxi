@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { SAVED_PLACE_KINDS } from '../enums';
 import { addressPointSchema } from './geo';
-import { rideRequestBodySchema } from './ride';
+import { DISPATCHER_NOTE_MAX, rideRequestBodySchema } from './ride';
 import { DISPLAY_NAME_MAX, phoneSchema } from './user';
 
 /**
@@ -125,6 +125,6 @@ export const dispatcherBookingBodySchema = rideRequestBodySchema.extend({
    * characters raw is still a 400: the console's field is capped to match.
    */
   callerName: z.string().max(DISPLAY_NAME_MAX).optional(),
-  dispatcherNote: z.string().max(280).nullable().default(null),
+  dispatcherNote: z.string().max(DISPATCHER_NOTE_MAX).nullable().default(null),
 });
 export type DispatcherBookingBody = z.infer<typeof dispatcherBookingBodySchema>;

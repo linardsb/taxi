@@ -112,7 +112,11 @@ describe('toDriverRide (#261)', () => {
     const base = ride('arriving');
     const { rider, ...rest } = toDriverRide(base, undefined);
     expect(rider).toEqual({ displayName: null, phone: null });
-    expect(rest).toEqual({ ...base, announceRequestedAt: null });
+    expect(rest).toEqual({
+      ...base,
+      announceRequestedAt: null,
+      dispatcherNote: null,
+    });
   });
 });
 
@@ -139,12 +143,39 @@ describe('toDriverRide announceRequestedAt (#259)', () => {
   });
 });
 
+describe('toDriverRide dispatcherNote (#303)', () => {
+  const NOTE = 'Ratiņkrēsls, zvanīt pie vārtiem';
+  const NOTE_WINDOW = NAME_WINDOW;
+
+  it.each(RIDE_STATUSES)(
+    'carries the note only inside the window at %s',
+    (status) => {
+      expect(
+        driverRideSchema.parse(toDriverRide(ride(status), ANNA, null, NOTE))
+          .dispatcherNote,
+      ).toBe(NOTE_WINDOW.has(status) ? NOTE : null);
+    },
+  );
+
+  it('keeps a null note null inside the window (edge)', () => {
+    expect(
+      toDriverRide(ride('accepted'), ANNA, null, null).dispatcherNote,
+    ).toBeNull();
+  });
+});
+
 describe('readDriverRide replay leg (#259, PR #293 F2)', () => {
-  function deps(status: RideStatus, lastRequestedAt: jest.Mock) {
+  function deps(
+    status: RideStatus,
+    lastRequestedAt: jest.Mock,
+    dispatcherNote: string | null = null,
+  ) {
     const warn = jest.fn();
     const d = {
       rides: {
-        findWithQuote: jest.fn(() => Promise.resolve({ ride: ride(status) })),
+        findWithQuote: jest.fn(() =>
+          Promise.resolve({ ride: ride(status), dispatcherNote }),
+        ),
       },
       lifecycle: { findRiderIdentity: jest.fn(() => Promise.resolve(ANNA)) },
       realtime: { joinRideRoom: jest.fn() },
@@ -191,5 +222,13 @@ describe('readDriverRide replay leg (#259, PR #293 F2)', () => {
     expect(
       (await readDriverRide(d, DRIVER_ID, RIDE_ID)).announceRequestedAt,
     ).toBe(AT);
+  });
+
+  it('passes the stored note through at accepted (expected, #303)', async () => {
+    const { d } = deps('accepted', down(), 'Ratiņkrēsls');
+
+    expect((await readDriverRide(d, DRIVER_ID, RIDE_ID)).dispatcherNote).toBe(
+      'Ratiņkrēsls',
+    );
   });
 });

@@ -561,3 +561,42 @@ describe('ActiveRideScreen arrival-announce protocol (#259)', () => {
     expect(mockDismissNotice).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ActiveRideScreen dispatcher note (#303)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const NOTE_280 =
+    'Ratiņkrēsls, zvanīt pie vārtiem. Инвалидная коляска, ждать у ворот. '
+      .repeat(5)
+      .slice(0, 280);
+  const withNote = (status: RideStatus, dispatcherNote: string | null) =>
+    showing(status, { ride: ride({ status, dispatcherNote }) });
+
+  it('shows the note as one screen-reader stop carrying label and text (expected)', async () => {
+    mockState = withNote('accepted', 'Ratiņkrēsls');
+    await render(<ActiveRideScreen />);
+    expect(screen.getByTestId('dispatcher-note').props.accessibilityLabel).toBe(
+      `${t('driver.ride.dispatcher_note')}. Ratiņkrēsls`,
+    );
+  });
+
+  it('renders a 280-character LV+RU note whole, never truncated (edge)', async () => {
+    expect(NOTE_280).toHaveLength(280);
+    mockState = withNote('in_progress', NOTE_280);
+    await render(<ActiveRideScreen />);
+    const text = screen.getByText(NOTE_280);
+    expect(text.props.numberOfLines).toBeUndefined();
+  });
+
+  it('draws no box when there is no note (edge)', async () => {
+    mockState = withNote('arrived', null);
+    await render(<ActiveRideScreen />);
+    expect(screen.queryByTestId('dispatcher-note')).toBeNull();
+  });
+
+  it('hides a note held in memory once the status leaves the window (failure — the client gate)', async () => {
+    mockState = withNote('offered', 'Ratiņkrēsls');
+    await render(<ActiveRideScreen />);
+    expect(screen.queryByTestId('dispatcher-note')).toBeNull();
+  });
+});
