@@ -26,7 +26,8 @@ Hosting decision and its reasoning: `docs/epics/sakta-cab.architecture.md` →
 ```
 phone / driver app ──https──▶ Cloudflare proxy ──https (Origin CA cert)──▶ Caddy :443 ──http──▶ api :3001
                                                                                                   ├──▶ db    (Postgres 16 + PostGIS 3.4, compose network only)
-                                                                                                  └──▶ redis (7, compose network only)
+                                                                                                  ├──▶ redis (7, compose network only)
+                                                                                                  └──▶ osrm  (routing, Latvia graph, compose network only)
 ```
 
 | Service | Image | Reachable from | Persistent data |
@@ -35,6 +36,8 @@ phone / driver app ──https──▶ Cloudflare proxy ──https (Origin CA 
 | `api` | `ghcr.io/linardsb/taxi-api:<tag>` | `caddy` only | none |
 | `db` | `postgis/postgis:16-3.4-alpine` | `api` only | `db-data` volume — **the only thing that matters** |
 | `redis` | `redis:7-alpine` | `api` only | none (presence, live positions, idempotency keys — all rebuilt or expired) |
+| `osrm` | `ghcr.io/project-osrm/osrm-backend:v26.4.0` | `api` only | `osrm-data` volume — the routing graph, rebuilt from the internet by `osrm-prep` (§5.5), so not backed up |
+| `osrm-prep` | same image, one-shot | nothing (exits) | writes `osrm-data`; a no-op once the graph exists |
 
 On the box, everything lives in `/opt/taxi`:
 
@@ -59,8 +62,11 @@ iptables chain ahead of ufw's). That is why the overlay *removes* the 5432 and
 
 Hetzner Cloud console → new server:
 
-- **Type** CX22 (2 vCPU / 4 GB / 40 GB NVMe), x86 — not the ARM CAX line; OSRM
-  (#134) publishes amd64-only images.
+- **Type** CX22 (2 vCPU / 4 GB / 40 GB NVMe), x86. OSRM is no longer a reason
+  to avoid the ARM CAX line — the pinned `osrm-backend:v26.4.0` publishes
+  `linux/amd64` and `linux/arm64` (`observed`, its manifest list read
+  2026-09-29, #134) — but the api image is built for amd64 only
+  (`deploy.yml`), so ARM still needs that changed first.
 - **Location** Falkenstein or Helsinki.
 - **Image** Ubuntu 24.04.
 - **Networking** IPv4 **and** IPv6. IPv4 costs ~€0.60/mo extra (`observed`
@@ -228,8 +234,8 @@ compose hostnames, so the database password lives in one place.
 | `PUBLIC_TRACKING_BASE_URL` | `https://sakta.lv` | Where SMS tracking links point. **Production applies four rules** (#136, #246), and a value must clear all of them. (1) Not a localhost origin. (2) **Lowercase `http://` or `https://`** — the link builder strips exactly that spelling, so `HTTPS://` or `ftp://` is carried into the SMS as part of the host. (3) **No `@`, `?`, `#`, `\`, whitespace or control character** anywhere in what reaches the SMS — each breaks the link differently and the refusal names which. (4) **At most 10 characters of host**, measured after the scheme is stripped. The host is a term in the rider SMS's 70-character UCS-2 segment budget and the binding template (RU `driver_assigned`) has **zero spare at 10**, so `saktacab.lv` (11) would double the SMS bill on every phone-booked ride. A trailing slash does not count — `https://sakta.lv/` is 8 — and the scheme is not counted either, but rule (2) means its *spelling* is still checked. A path prefix (`https://sakta.lv/app`) is supported and **does** count against the 10. 404s until #18/#19. |
 | `PUSH_PROVIDER` | `expo` | **Required in production** (#14): the push factory refuses to boot on the stub, which delivers nothing — a driver whose app was force-quit would never get the "you've gone offline" nudge. Expo's push API needs no credential, so this value is the whole switch. |
 | `EXPO_PUSH_ACCESS_TOKEN` | empty | Optional: Expo's "enhanced push security" token, sent as a Bearer on every push. Empty reads as unset. |
-| `ALLOW_STUB_MAPS_PROVIDER` | `true` | **The one documented relaxation** (#13). Quotes are straight-line × 1.35 and there is no polyline until #134 binds OSRM and deletes this variable. Safe only while **the pilot is closed**, so no rider is quoted at all — that is the load-bearing condition, and the due date. The empty `STRIPE_SECRET_KEY` covers the **card rail only**; a cash ride quoted straight-line is real money at the kerb. Unset this before the first real rider, whether or not #134 has landed, and let the deploy fail. Literal `true`/`false` only. |
-| `GOOGLE_MAPS_API_KEY` | a Maps Platform key with *Places API (New)* enabled | **Required in production** even with the switch on: the switch accepts straight-line quotes, not a dead address typeahead (#19). Google's free monthly credit covers pilot volume; re-check before opening the pilot. |
+| `OSRM_URL` | **not in this file** | Routes (#134). The overlay sets it to `http://osrm:5000`, like `DATABASE_URL`. **Production refuses to boot without it, and nothing relaxes that.** #13's routes switch (`ALLOW_STUB_*`) is deleted: a box whose file still carries that line boots — `envSchema` strips unknown keys — and the line does nothing. Leave it there until the first OSRM deploy has passed §8, because it is what lets §5.2 roll back to a pre-#134 image; then delete it. |
+| `GOOGLE_MAPS_API_KEY` | a Maps Platform key with *Places API (New)* enabled | **Required in production**: OSRM routes but does not search addresses, and a missing key is a dead typeahead (#19). Google's free monthly credit covers pilot volume; re-check before opening the pilot. |
 | `MAPS_ROUTE_CACHE_TTL_SECONDS` … `MAPS_PLACE_CACHE_TTL_SECONDS`, `PLACES_*` | omit → schema defaults | The spend knobs. Defaults are the pilot's; `env.schema.ts` explains each. |
 | `TWILIO_ACCOUNT_SID` | `AC…` from console.twilio.com | **All three or none — the schema refuses a partial trio in every environment.** A **trial** account is enough for testing: it sends only to numbers verified in the console (Atis, Dina, Linards) and the sender must be the trial number. Paid account + alphanumeric sender (`SaktaCab`) before the pilot opens (#137). |
 | `TWILIO_AUTH_TOKEN` | the auth token | |
@@ -256,7 +262,6 @@ CORS_ORIGINS=https://sakta.lv
 PUBLIC_TRACKING_BASE_URL=https://sakta.lv
 PUSH_PROVIDER=expo
 EXPO_PUSH_ACCESS_TOKEN=
-ALLOW_STUB_MAPS_PROVIDER=true
 GOOGLE_MAPS_API_KEY=
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
@@ -294,11 +299,12 @@ exit code and that neither case reaches 45 s.)
 
    It builds the image for `linux/amd64`, pushes `ghcr.io/linardsb/taxi-api`
    tagged `sha-<12 chars>` and `latest`, copies the four compose files to
-   `/opt/taxi`, then on the box: `docker login ghcr.io`, `pull`, **migrate
-   with the new image**, `up -d --wait`, reloads Caddy, records
+   `/opt/taxi`, then on the box: `docker login ghcr.io`, `pull`, **build the
+   routing graph** (`run --rm osrm-prep` — a no-op once it exists, §5.5),
+   **migrate with the new image**, `up -d --wait`, reloads Caddy, records
    `API_IMAGE_TAG` in `.env`, prunes every image no container uses. The first
    run also creates the `db-data` volume and runs `initdb` with
-   `POSTGRES_PASSWORD`.
+   `POSTGRES_PASSWORD`, and creates `osrm-data` and builds the graph into it.
 
    That list is `observed` end-to-end, not read off the file: 2026-09-03 the
    box script was extracted from the workflow exactly as `bash -s` receives it,
@@ -362,6 +368,11 @@ docker compose -f docker-compose.yml -f compose.prod.yml pull api
 docker compose -f docker-compose.yml -f compose.prod.yml up -d --wait api
 ```
 
+**Rolling back past #134** (to an image from before OSRM): that image refuses
+to boot in production unless the host file carries #13's routes switch set to
+`true` — which is why §3 says to keep that line until the first OSRM deploy has
+passed §8. The `osrm` services stay up and are simply unused by the old api.
+
 If the deploy being rolled back **also shipped a migration**, the old code
 runs against the new schema. Additive migrations (a new nullable column, a new
 table) are fine; a destructive one is not, and the honest rollback is a restore
@@ -379,6 +390,8 @@ dc restart api
 dc exec db psql -U taxi -d taxi    # the database
 dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js   # migrate without a deploy (no-op when current)
 dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile        # after a by-hand Caddyfile edit; the deploy does this itself
+dc logs --tail 50 osrm-prep        # when the graph was built, or why it failed
+dc exec osrm cat /data/graph/READY # the graph's build time (UTC)
 ```
 
 ### 5.4 Switch the SMS provider
@@ -457,6 +470,85 @@ Behaviour is unchanged; the retirement is then a no-op on the box.
    an image that is not the problem. Steps 1-5 and this rollback's mechanics
    were exercised against a real container; the *live* rollback under real
    traffic is **untested**, for the same reason step 6 is owed.
+
+### 5.5 The routing graph (OSRM, #134)
+
+Routes come from `osrm-routed` on a graph built from Geofabrik's Latvia
+extract. Two services in `compose.prod.yml`: **`osrm-prep`** builds the graph
+into the `osrm-data` volume (download → `osrm-extract` → `osrm-partition` →
+`osrm-customize`, the MLD pipeline) and exits; **`osrm`** serves it. The api
+`depends_on` `osrm` healthy, and `osrm`'s healthcheck is a real Rīga route, so
+an api never starts against a routing server that cannot route.
+
+**First build — hands-off.** The deploy runs `run --rm osrm-prep` before the
+migration; on a box with no graph that step downloads and builds it, bounded by
+the job's 20 min rather than `up`'s 120 s. It builds into `/data/next` and swaps
+it in only after every step succeeded, so a failed download or build fails the
+step with the old stack still running.
+
+What it costs, all `observed` on 2026-09-29 on a **laptop, not the box**
+(Intel Mac, Docker VM with 4 CPUs / 7.75 GiB, image `v26.4.0`, extract
+`latvia-latest.osm.pbf` of 140 652 214 bytes downloaded that day):
+
+| Step | Wall | Peak RSS |
+|---|---|---|
+| `osrm-extract` (car profile) | 46 s | 1 315 884 kB (`time -v`) |
+| `osrm-partition` | 8 s | 293 852 kB |
+| `osrm-customize` | 3 s | 256 256 kB |
+| whole first `up -d --wait osrm` on an empty volume, download included | 81 s | — |
+| forced rebuild (`OSRM_REBUILD=1`) with `osrm` still serving | 207 s | — |
+| second `up` (graph present, prep a no-op) | 2 s | — |
+| `osrm-routed` serving, after a few routes | — | 257 368 kB `VmRSS` |
+
+The graph on disk is 370.5 MB (`du`, same run). The 81 s and 207 s differ by
+more than the extract — the download is the unmeasured variable, so budget
+from the slower. On the CX22's 2 vCPU the extract is `derived` at ~92 s
+(46 s × 4/2 CPUs, **if** it is CPU-bound and scales linearly — not measured),
+and its ~1.3 GB peak runs beside a stack of ~1 GB (`expected`, #134's issue estimate) inside
+4 GB. **Record the box's own figures here after the first deploy**: `dc logs
+osrm-prep | grep -E 'peak bytes|RAM'` and `dc exec osrm grep VmRSS
+/proc/1/status`.
+
+**Refresh** — OSM edits (a new street, a changed one-way) reach routes only
+through a rebuild. Monthly is plenty for a pilot; nothing schedules it:
+
+```bash
+cd /opt/taxi && alias dc='docker compose -f docker-compose.yml -f compose.prod.yml'
+dc run --rm -e OSRM_REBUILD=1 osrm-prep </dev/null   # builds beside the live graph
+dc restart osrm                                       # loads the new one; a few seconds of failed routes
+dc exec osrm cat /data/graph/READY                    # the new build time
+```
+
+A failed refresh leaves the old graph serving (`observed` 2026-09-29: a 404
+from the download URL exited 1 and `READY` kept its earlier timestamp).
+
+**Stale quotes after the switch to OSRM — one-off, by hand.** The quote cache
+holds a route for `MAPS_ROUTE_CACHE_TTL_SECONDS` (24 h default) and its keys
+do not name the provider, so on a box that served stub quotes before #134 a
+cached corridor keeps its straight-line distance for up to a day. `observed`
+2026-09-29 against the dev Redis: a production-mode api bound to OSRM quoted
+Old Town → RIX at €13.94, the stub's figure, until its keys were isolated.
+After the first OSRM deploy:
+
+```bash
+dc exec -T redis sh -c "redis-cli --scan --pattern 'maps:route:*' | xargs -r redis-cli del"
+```
+
+The ETA cache (5 min) ages out on its own. Not needed on a box that never ran
+the stub.
+
+**Locally**, for real routes in dev: build the graph in a directory under
+`$HOME` (the Docker VM does not share the scratchpad), run it, set
+`OSRM_URL=http://localhost:5000` in the root env file:
+
+```bash
+I=ghcr.io/project-osrm/osrm-backend:v26.4.0
+curl -fL -o latvia.osm.pbf https://download.geofabrik.de/europe/latvia-latest.osm.pbf
+docker run --rm -v "$PWD:/data" $I osrm-extract -p /opt/car.lua /data/latvia.osm.pbf
+docker run --rm -v "$PWD:/data" $I osrm-partition /data/latvia.osrm
+docker run --rm -v "$PWD:/data" $I osrm-customize /data/latvia.osrm
+docker run -d --name osrm -p 5000:5000 -v "$PWD:/data:ro" $I osrm-routed --algorithm mld /data/latvia.osrm
+```
 
 ## 6 · Backups and restore
 
@@ -700,8 +792,8 @@ support thread if a driver asks about one.
 
 Rates `observed` from vendor pages on 2026-08-14 (research §3, §5.2); totals
 `derived` here. Conditions: **IPv4 taken** (§1.1 — the research's €5.49 assumed
-IPv6-only), no paid maps provider (the stub behind the switch until #134, then
-self-hosted OSRM at €0 marginal), Twilio **trial** (€0) through testing, no
+IPv6-only), no paid routing provider (self-hosted OSRM since #134, €0
+marginal; it adds disk and RAM on the same box, not a line), Twilio **trial** (€0) through testing, no
 Hetzner backup add-on (`pg_dump` to R2's free tier instead), Cloudflare free
 plan.
 
@@ -797,7 +889,8 @@ dc run --rm api node node_modules/@taxi/db/dist/migrate-run.js                  
 Gates — each of these must **fail the container at boot** (`up -d --wait`
 exits non-zero, `dc logs api` names the variable; §3 carries the run behind the
 `up -d --wait` half). The six rows this loop did not touch — `JWT_SECRET`,
-`ALLOW_STUB_MAPS_PROVIDER`, `PUBLIC_TRACKING_BASE_URL`, the partial `TWILIO_*`
+the maps routes gate (then #13's switch — its row below is #134's replacement),
+`PUBLIC_TRACKING_BASE_URL`, the partial `TWILIO_*`
 trio, `GOOGLE_MAPS_API_KEY` and `PUSH_PROVIDER` — were `observed`
 on 2026-09-03 against the image built from PR #147's round-1 fix commit,
 before any server existed. All but `PUSH_PROVIDER` were also observed on
@@ -824,7 +917,7 @@ the provider factory, during `InstanceLoader`.
 | Break | Refusal |
 |---|---|
 | `JWT_SECRET=dev-only-change-me` | `JWT_SECRET is the value committed to .env.example and is public` |
-| `ALLOW_STUB_MAPS_PROVIDER` unset | `No production MapsProvider is bound: StubMapsProvider prices rides off straight-line distance … (set ALLOW_STUB_MAPS_PROVIDER=true …)` |
+| no `OSRM_URL` — with #13's old switch line still `true`, without it, and blank (#134, `observed` 2026-09-29, three boots) | `No production MapsProvider is bound: no OSRM_URL is set, so routes would fall back to StubMapsProvider, which prices rides off straight-line distance and returns no polyline (#134; compose.prod.yml sets it to the osrm service). Fix every gap named before running with NODE_ENV=production.` — exit 1 all three times. The overlay sets `OSRM_URL`, so on the box this row is reached only by editing `compose.prod.yml` |
 | `PUBLIC_TRACKING_BASE_URL=http://localhost:3000` | `PUBLIC_TRACKING_BASE_URL is a localhost origin` |
 | `PUBLIC_TRACKING_BASE_URL=https://u@sakta.lv` (#246, **`derived`** — see the note under this table) | `PUBLIC_TRACKING_BASE_URL would put "u@sakta.lv" in the rider SMS (#136), and the "@" breaks the link: everything before it is read as userinfo, so the link resolves to a different host than the one it reads as. Configure a bare origin, optionally with a path prefix: https://<domain> or https://<domain>/<prefix>.` |
 | `PUBLIC_TRACKING_BASE_URL=https://sakta.lv ` — one trailing space (#246, **`derived`**) | `PUBLIC_TRACKING_BASE_URL would put "sakta.lv " in the rider SMS (#136), and every SMS linkifier ends the link there: the rider taps a truncated URL and the token never travels. Configure a bare origin, optionally with a path prefix: https://<domain> or https://<domain>/<prefix>.` — the most ordinary way this is hit, because §3 has you hand-write the file |
@@ -833,7 +926,7 @@ the provider factory, during `InstanceLoader`.
 | two of three `TWILIO_*` | `TWILIO_FROM_NUMBER is missing: TWILIO_* must be set all together or not at all` |
 | `SMS_PROVIDER=stub`, or **no `SMS_PROVIDER` line at all** (#137, `observed`) | `Error: No production SmsProvider is bound: SMS_PROVIDER is stub (or unset, which defaults to stub), and StubSmsProvider delivers nothing and logs OTP codes in full. Set SMS_PROVIDER to twilio, bulkgate or budgetsms together with that kind's whole credential group — TWILIO_* (#85), BULKGATE_* or BUDGETSMS_* (#137). A complete credential group does NOT bind on its own. Then run with NODE_ENV=production.` — thrown by `smsProviderFactory`, so production only. **This is the deploy-day failure if the box's env file is not migrated first — see §5.4's preamble.** |
 | `SMS_PROVIDER=auto` (#137, `observed`) | `ZodError: … "message": "SMS_PROVIDER must be one of: stub \| twilio \| bulkgate \| budgetsms. 'auto' was retired (#137) — name the provider outright; 'stub' delivers nothing and production refuses it."` — `code: "invalid_enum_value"`, raised by `envSchema`, so it fires in **every** environment and stops a local `pnpm test` the same way it stops the container |
-| `GOOGLE_MAPS_API_KEY` unset (switch on) | `No production MapsProvider is bound: no GOOGLE_MAPS_API_KEY is set` |
+| `GOOGLE_MAPS_API_KEY` unset | `No production MapsProvider is bound: no GOOGLE_MAPS_API_KEY is set` |
 | `PUSH_PROVIDER` unset | `No production PushProvider is bound: StubPushProvider delivers nothing. Set PUSH_PROVIDER=expo (#14) …` |
 | `SMS_PROVIDER=bulkgate` with its group incomplete (#137, `observed`) | Three issues in one `ZodError`: `BULKGATE_APPLICATION_TOKEN is missing: BULKGATE_* must be set all together or not at all (a partial config silently binds the stub).`, the same for `BULKGATE_SENDER_ID_VALUE`, then `SMS_PROVIDER=bulkgate needs BULKGATE_APPLICATION_TOKEN, BULKGATE_SENDER_ID_VALUE.` The last issue names **only the keys actually missing** — this run set `BULKGATE_APPLICATION_ID` and omitted the other two, so it lists two, not the whole group. From `envSchema`, so every environment |
 
@@ -851,6 +944,20 @@ promoted on 2026-09-21. The refusal reaches `docker logs` by the same
 directly below, which *were* observed against the image — that is the reason
 to expect it, not evidence that it happened.
 
+**Quotes price off roads (#134).** With the graph built and the stack up, a
+quote for a real Rīga corridor must differ from straight-line × 1.35. `observed`
+2026-09-29, image built from #134's branch, production env from §3 plus
+`OSRM_URL`, OSRM `v26.4.0` on the local graph (§5.5), each api on its own
+empty Redis database so no cached route could answer:
+
+| Corridor | OSRM (`route_fetched`) | Stub, same image in development | Quote OSRM → stub |
+|---|---|---|---|
+| Brīvības iela 36 → Stacijas laukums | 1 507 m, 169 s | 1 196 m (886 m straight × 1.35), 108 s | €3.63 → €3.50 |
+| Old Town → RIX | 10 851 m, 1 205 s | 11 655 m (8 634 m × 1.35), 1 049 s | €13.69 → €13.94 |
+
+On the box: `POST /rides/quote` with a rider token, then
+`dc logs api | grep -A4 route_fetched` — `distanceMeters` is the road figure.
+
 And one that must **not** be a boot failure: with `STRIPE_SECRET_KEY` empty,
 the API boots and a card settlement answers **502 `payment_provider_error`**,
 never 201 — see §9.
@@ -860,7 +967,6 @@ never 201 — see §9.
 | What | Why | Until |
 |---|---|---|
 | `/t/:token` links 404 | The dispatch app is not deployed; `PUBLIC_TRACKING_BASE_URL` had to be a real hostname because the schema refuses localhost | #18/#19 |
-| Quotes are straight-line × 1.35, no polyline | `ALLOW_STUB_MAPS_PROVIDER=true` | #134 |
 | **Card rides cannot settle** | Cash-only pilot: `CardPaymentsDisabledProvider` answers every charge with `provider_error` / `card_payments_disabled`, so `POST /rides/:id/settle` on a card ride is a 502 and the ride stays `completed`. The payment method locks at acceptance, so it cannot be re-settled as cash. **Do not offer card at booking while the pilot is cash-only** — that is the rider app's and the console's to enforce (payments barrel, KNOWN GAPS). | the SIA + a Stripe key |
 | SMS reaches verified numbers only | Twilio trial | #137 |
 | Direct-to-IP requests bypass Cloudflare | §2.3 | before the pilot opens |
@@ -871,7 +977,9 @@ never 201 — see §9.
 
 Hetzner bills hourly with no commitment. Resize in place to CX33 (4 vCPU /
 8 GB, €8.49 `observed` 2026-08-14) from the console when metrics say so —
-adding OSRM (#134) is `expected` to cost ~750 MB RSS, which still fits CX22.
+OSRM (#134) serves at ~257 MB RSS and peaks ~1.3 GB while building its graph
+(`observed` on a laptop, §5.5 — the box's own figures are still owed), which
+fits CX22.
 To stop paying between testing sessions: take a snapshot (€0.0143/GB/mo
 `observed` 2026-08-14), destroy the server, recreate from the snapshot later —
 the volume comes back with it, but take a §6.1 backup first anyway. A demo day

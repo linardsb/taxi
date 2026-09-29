@@ -105,17 +105,21 @@ epic carries the posture, not just the ticket.
 
 1. **Routing packaging — DECIDED: its own ticket, #134.** `OsrmMapsProvider` + the OSRM container
    ship beside #13, not inside it (#13's AC says nothing about maps, and its own comment concedes the
-   stub replacement is a prerequisite of a *later* step). In the interim #13 ships
-   **`ALLOW_STUB_MAPS_PROVIDER`** — a documented, single-purpose config switch on the routes clause of
+   stub replacement is a prerequisite of a *later* step). In the interim #13 shipped
+   **a routes-only stub switch** — a documented, single-purpose config switch on the routes clause of
    `mapsProviderSourceFactory` (the #103 precedent: code-level kill switch → config-level). Default
    `false`; production still refuses to boot on the stub unless the switch says otherwise, and the
    switch does **not** cover a missing `GOOGLE_MAPS_API_KEY`. **This is debt with a due date, and the
    date is the pilot opening**: it is defensible only while the pilot is closed, so nobody is quoted
    at all. The absent Stripe key was written here as half the justification and is not — it closes the
    card rail, while a cash ride quoted off geometry is real money at the kerb (PR #147, round 2 N4).
-   #134 deletes the switch. Quotes are straight-line × 1.35 with no polyline until then.
-2. **ARM vs x86 — DECIDED: x86.** CX22 is x86; the OSRM amd64-only verification moves to #134, and the
-   box must not move to the ARM CAX line before that ticket resolves it.
+   **Closed by #134 (2026-09-29):** `OsrmMapsProvider` over a self-hosted OSRM container
+   (`compose.prod.yml`) is bound, the switch is deleted, and production refuses to boot without
+   `OSRM_URL` unconditionally.
+2. **ARM vs x86 — DECIDED: x86.** CX22 is x86. #134 resolved the verification: the pinned
+   `osrm-backend:v26.4.0` publishes both `linux/amd64` and `linux/arm64` (`observed`, the image
+   index's manifest list read 2026-09-29), so OSRM no longer blocks the ARM CAX line — moving still
+   needs its own reason, and the api image is built for amd64 only (`deploy.yml`).
 3. **Payments posture — DECIDED: refuse, never pretend.** Production with no `STRIPE_SECRET_KEY` binds
    `CardPaymentsDisabledProvider`, which answers every card charge `ok: false` (`provider_error`,
    `card_payments_disabled`) and moves nothing — a card settlement is a 502, never a silent 201. The
@@ -141,7 +145,7 @@ What the chosen approach needs that doesn't exist yet:
 - The entire API feature layer (scaffold is a hello-world NestJS app).
 - The three new-subsystem contracts in `@taxi/shared`: `DemandSignalProvider` seam, commission resolver, return-window types.
 - Hetzner environment — **built by #13** (`services/api/Dockerfile`, `compose.prod.yml`, `Caddyfile`, `.github/workflows/deploy.yml`, `scripts/backup-db.sh`, `docs/runbooks/hetzner-deploy.md`). What remains is the box itself: provisioning, domain, Cloudflare and the first manual deploy are runbook steps, not code.
-- `OsrmMapsProvider` — #134. Until it lands, production boots the stub for routes behind `ALLOW_STUB_MAPS_PROVIDER=true` (see the decisions above); #134 deletes the switch and makes the `geo.module.ts` gate unconditional again.
+- ~~`OsrmMapsProvider`~~ — shipped by #134: self-hosted OSRM on the Latvia extract, and the `geo.module.ts` gate is unconditional again (see the decisions above).
 - Telephony seam interface (click-to-dial/caller-ID stub for Dina's console).
 
 ## Spikes & experiments
