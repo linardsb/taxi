@@ -85,8 +85,9 @@ export class RideLifecycleRepository {
   /**
    * The one read that hands the PIN to someone other than the rider (#275):
    * `PickupPinReadService`, for Dina to read to a phone caller whose arrival
-   * SMS never came (PR #277 L2). Status and PIN only — nothing else is needed
-   * to decide, and nothing else should sit beside the PIN.
+   * SMS never came (PR #277 L2). Status, PIN and booking channel: the channel
+   * because only a phone ride's PIN may be read (PR #300 M1). Nothing else
+   * should sit beside the PIN.
    */
   async findPickupPinTarget(
     rideId: string,

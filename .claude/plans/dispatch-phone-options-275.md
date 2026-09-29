@@ -12,7 +12,7 @@ Three changes to the dispatcher console, plus the api read the third one needs.
 
 1. **Phone-order form: two checkboxes.** «PIN kods» (`options.pickupPin`, #258) and «Šoferis pieteiksies balsī» (`options.announceArrival`, #259). Today the form sends both as a type-forced `false` (`apps/dispatch/src/features/phone-orders/use-booking-form.ts:313-319`). Each box carries a one-line hint telling Dina what the caller gets. For the PIN, that is "the PIN arrives in the arrival SMS".
 2. **Board badge.** A ride booked with `announceArrival` shows a text badge on its board row. Dina can then act as the pickup assistant for a rider who cannot see the car (dispatcher-as-Aira, `docs/research/rider-ux-evidence.md:30`).
-3. **Dispatcher PIN read (PR #277 L2, user decision 2026-09-28).** A phone rider gets their PIN only in the arrival SMS (`services/api/src/features/notifications/ride-notifications.service.ts:189-198`). If that SMS fails, the driver cannot start the ride and the only way out is a cancel. The recovery: on a PIN ride at `arrived`, Dina gets «Rādīt PIN» on the row. It opens a dialog that fetches the PIN from a new dispatcher-only route, and she reads it to the caller. Every read is logged; the PIN never is.
+3. **Dispatcher PIN read (PR #277 L2, user decision 2026-09-28).** A phone rider gets their PIN only in the arrival SMS (`services/api/src/features/notifications/ride-notifications.service.ts:189-198`). If that SMS fails, the driver cannot start the ride and the only way out is a cancel. The recovery: on a phone-booked PIN ride at `arrived` (phone only since PR #300 M1), Dina gets «Rādīt PIN» on the row. It opens a dialog that fetches the PIN from a new dispatcher-only route, and she reads it to the caller. Every read is logged; the PIN never is.
 
 ## User Story
 
@@ -433,7 +433,7 @@ The gate, then Level 4.
   - The `ride()` builder gains `announceArrival: false, pickupPinRequired: false` (T1's gotcha).
   - Cases:
     - `announceArrival: true` renders «Pieteikšanās balsī» in that row, and a sibling row without the flag has none (expected + regression);
-    - «Rādīt PIN» appears only for `status: 'arrived', pickupPinRequired: true`; it is absent at `arriving` with the flag, and at `arrived` without it (edge);
+    - «Rādīt PIN» appears only for `status: 'arrived', pickupPinRequired: true` on a phone booking (PR #300 M1); it is absent at `arriving` with the flag, and at `arrived` without it (edge);
     - clicking it calls `onShowPin` with that ride;
     - its accessible name includes the address.
 - **VALIDATE**: `npx vitest run --root apps/dispatch src/features/board/ride-queue.test.tsx`
@@ -517,7 +517,7 @@ Board ─[⌥N]→ Order form
 
 ```
 Board row (any bucket, announceArrival) : "Brīvības 1 · Pieņemts · Jānis · [Pieteikšanās balsī] · 3 min"
-Board row (arrived, pickupPinRequired)  : [Rādīt PIN] [Atcelt braucienu]
+Board row (arrived, phone, pickupPinRequired) : [Rādīt PIN] [Atcelt braucienu]
   [Rādīt PIN] → PIN dialog: loading → "4 2 0 7" + "Nosauciet to zvanītājam. Šoferim to nesakiet." ─[Aizvērt|Esc]→ Board
                            └ error → "PIN var nolasīt, kamēr auto gaida." / "Neizdevās nolasīt PIN…" ─[Aizvērt]→ Board
 ```
@@ -692,5 +692,5 @@ VoiceOver on macOS Safari over the booking form: each checkbox is announced with
   - T12: the board leak check walks the RAW response body. The file docblock's "rider-only read" was retired alongside `:254` (T4b's rule).
   - T16: the persist case waits on `localStorage` with `waitFor`, not fake timers.
   - T1: the fixture sweep touched `ride-queue.test.tsx` and `assign-state.test.ts` only; `use-board.test.tsx:372` and `board-state.test.ts:58` build unclaimed events, not rides.
-  - T9/T12 phone indices used: `rides.integration` riders 34–35; `ride-pickup-pin` drivers 11–13, dispatchers 80/82/86, callers 81/84/85/87, rider 83.
+  - T9/T12 phone indices used: `rides.integration` riders 34–35; `ride-pickup-pin` drivers 11–14, dispatchers 80/82/86, admin 88, callers 81/84/85/87, riders 83/89 (14, 88 and 89 added by the PR #300 round-1 fixes).
 
