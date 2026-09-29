@@ -1,7 +1,7 @@
 import { customers, dispatchAuditLog, rides, users } from '@taxi/db';
 import { IDEMPOTENCY_KEY_HEADER } from '@taxi/shared';
 import { Logger } from '@nestjs/common';
-import { DrizzleQueryError, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
@@ -271,38 +271,62 @@ describe('POST /dispatch/bookings (#19)', () => {
     expect(res.status).toBe(403);
   });
 
-  it("keeps Dina's note out of every error log when the ride insert fails (failure — #303 PR #304 H1)", async () => {
+  it("keeps Dina's note out of every log when the ride insert fails (failure — #303 PR #304 H1)", async () => {
     // Nest's default ExceptionsHandler logs any non-HttpException it catches,
     // and drizzle's message carries every bound param: the note, PIN, token.
     const NOTE = 'Ratiņkrēsls, neredzīgs';
-    const pg = Object.assign(new Error('duplicate key'), { code: '23505' });
-    const create = jest
-      .spyOn(RidesRepository.prototype, 'create')
-      .mockRejectedValue(
-        new DrizzleQueryError('insert into "rides" …', ['x', NOTE], pg),
+    const first = await book(p(17), randomUUID());
+    expect(first.status).toBe(201);
+    const firstId = (first.body as { ride: { id: string } }).ride.id;
+    createdRides.push(firstId);
+    const [taken] = await ctx.db
+      .select({ token: rides.trackingToken })
+      .from(rides)
+      .where(eq(rides.id, firstId));
+    const token = taken?.token;
+    if (!token) throw new Error('the first ride has no tracking token');
+
+    // A real insert failure, not a mocked error: the second ride reuses the
+    // first one's token, so Postgres refuses it with a unique violation.
+    const repo = ctx.app.get(RidesRepository);
+    const create = repo.create.bind(repo);
+    const clash = jest
+      .spyOn(repo, 'create')
+      .mockImplementation((input) =>
+        create({ ...input, trackingToken: token }),
       );
-    const logged = jest
-      .spyOn(Logger.prototype, 'error')
-      .mockImplementation(() => undefined);
+    const levels = [
+      'log',
+      'error',
+      'warn',
+      'debug',
+      'verbose',
+      'fatal',
+    ] as const;
+    const spies = levels.map((level) =>
+      jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined),
+    );
 
     try {
-      const res = await book(p(17), randomUUID(), { dispatcherNote: NOTE });
+      const res = await book(p(18), randomUUID(), { dispatcherNote: NOTE });
 
       expect(res.status).toBe(500);
       expect(JSON.stringify(res.body)).not.toContain(NOTE);
-      const lines = logged.mock.calls
-        .flat()
-        .map((arg) =>
+      const lines = spies
+        .flatMap((spy) => (spy.mock.calls as unknown[][]).flat())
+        .map((arg: unknown) =>
           arg instanceof Error
             ? `${arg.message} ${arg.stack ?? ''}`
             : JSON.stringify(arg),
-        );
-      // The premise: the sanitised line fired, so the spy sees this path.
-      expect(lines.join('\n')).toContain('query_failed:23505');
-      expect(lines.join('\n')).not.toContain(NOTE);
+        )
+        .join('\n');
+      // The premise: the real insert failed and the spies see this path.
+      expect(lines).toContain('query_failed:23505');
+      expect(lines).not.toContain(NOTE);
+      expect(lines).not.toContain(token);
     } finally {
-      create.mockRestore();
-      logged.mockRestore();
+      clash.mockRestore();
+      spies.forEach((spy) => spy.mockRestore());
     }
   });
 });
