@@ -1,6 +1,7 @@
 import { customers, dispatchAuditLog, rides, users } from '@taxi/db';
 import { IDEMPOTENCY_KEY_HEADER } from '@taxi/shared';
-import { eq, inArray } from 'drizzle-orm';
+import { Logger } from '@nestjs/common';
+import { DrizzleQueryError, eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
@@ -10,6 +11,7 @@ import {
   type TestApp,
 } from '../../../../test/harness';
 import { AuthTokenService } from '../../auth';
+import { RidesRepository } from '../../rides';
 
 /** `+371253` is this spec file's E.164 range — see phoneFor(). */
 const p = (n: number) => phoneFor('+371253', n);
@@ -267,5 +269,40 @@ describe('POST /dispatch/bookings (#19)', () => {
       .send(body(p(16)));
 
     expect(res.status).toBe(403);
+  });
+
+  it("keeps Dina's note out of every error log when the ride insert fails (failure — #303 PR #304 H1)", async () => {
+    // Nest's default ExceptionsHandler logs any non-HttpException it catches,
+    // and drizzle's message carries every bound param: the note, PIN, token.
+    const NOTE = 'Ratiņkrēsls, neredzīgs';
+    const pg = Object.assign(new Error('duplicate key'), { code: '23505' });
+    const create = jest
+      .spyOn(RidesRepository.prototype, 'create')
+      .mockRejectedValue(
+        new DrizzleQueryError('insert into "rides" …', ['x', NOTE], pg),
+      );
+    const logged = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      const res = await book(p(17), randomUUID(), { dispatcherNote: NOTE });
+
+      expect(res.status).toBe(500);
+      expect(JSON.stringify(res.body)).not.toContain(NOTE);
+      const lines = logged.mock.calls
+        .flat()
+        .map((arg) =>
+          arg instanceof Error
+            ? `${arg.message} ${arg.stack ?? ''}`
+            : JSON.stringify(arg),
+        );
+      // The premise: the sanitised line fired, so the spy sees this path.
+      expect(lines.join('\n')).toContain('query_failed:23505');
+      expect(lines.join('\n')).not.toContain(NOTE);
+    } finally {
+      create.mockRestore();
+      logged.mockRestore();
+    }
   });
 });

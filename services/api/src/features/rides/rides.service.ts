@@ -24,7 +24,7 @@ import { PricingService } from '../pricing';
 import { RealtimeService } from '../realtime';
 import { mintPickupPin } from './pickup-pin';
 import { entryStatusFor } from './ride-entry';
-import { rideFailureReason } from './ride-failure-reason';
+import { rideFailureReason, rideFailureToThrow } from './ride-failure-reason';
 import type { RiderVisibleRide } from './rider-visible-ride';
 import {
   DISPATCHER_BOOKING_MAX_PER_WINDOW,
@@ -315,7 +315,7 @@ export class RidesService {
         reason: rideFailureReason(error),
         at: new Date().toISOString(),
       });
-      throw error;
+      throw rideFailureToThrow(error);
     }
   }
 
