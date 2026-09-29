@@ -200,6 +200,15 @@ test('10 failure, budget (R3): a hanging API is cut off by the budget, not the p
   assert.ok(r.ms < 10_000, `took ${r.ms} ms`);
 });
 
+test('10b failure, per-request timeout (D1): a hanging API is cut off by the request timeout under a long budget', async () => {
+  stub.mode = 'hang';
+  const r = await run([bodyFile('b10b.md', 'Gate took 58 s (observed).\n')],
+    { ...stubEnv(), CLAIM_CHECK_TIMEOUT_MS: '300', CLAIM_CHECK_BUDGET_MS: '20000' });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: L1 provenance,not_measured,worst_case: timeout 0\.3 s/m);
+  assert.ok(r.ms < 10_000, `took ${r.ms} ms`);
+});
+
 test('11 usage: no argument and a directory both exit 2', async () => {
   assert.equal((await run([], {}, tmpdir())).code, 2);
   assert.equal((await run([tmp], {}, tmpdir())).code, 2);
