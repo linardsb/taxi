@@ -90,7 +90,7 @@ So that I know about a wheelchair, a gate code or a blind rider before I reach t
 
 - `db/migrations/0014_<drizzle-generated-name>.sql` plus `db/migrations/meta/0014_snapshot.json` and the `_journal.json` entry, all by `pnpm --filter @taxi/db generate`. Never hand-written.
 
-No new source files. Every change extends an existing file.
+No new source files were planned. Implementation added one: `services/api/src/features/rides/ride-failure-reason.ts` + spec (AC8 fix, see AMENDMENTS 2026-09-29 implementation).
 
 ### Relevant Documentation YOU SHOULD READ THESE BEFORE IMPLEMENTING!
 
@@ -320,7 +320,7 @@ Facts read from code for the probe (`observed`): the rider `GET` returns `findFo
 - **IMPLEMENT**:
   - `request()` gains a sixth parameter after `rateLimitSubject`: `dispatcherNote: string | null = null,` with a docblock of at most 3 lines: "Dina's note (#303), server-side like `bookingChannel`: the rider body has no such field. Stored on the ride, read only by its driver."
   - pass it to `createRide(key, request, riderId, bookingChannel, dispatcherNote)` (`:142`), add the parameter to `createRide` (`:255-260`), and `dispatcherNote,` in the `rides.create({ … })` call (`:264-273`).
-- **GOTCHA**: **the file is 485 lines and the cap is 500** (`max-lines`, `packages/config/eslint/base.mjs`, counts comments and blanks). The patched file is **496 lines** (`observed`); do not add anything else here, not even a comment.
+- **GOTCHA**: **the file is 485 lines and the cap is 500** (`max-lines`, `packages/config/eslint/base.mjs`, counts comments and blanks). The patched file is **496 lines** (`observed`); do not add anything else here, not even a comment. As shipped: **497**, after the one-line import of `rideFailureReason` (AMENDMENTS).
 - **GOTCHA**: never log the note. `ride.request.created` (`:282-292`) and `ride.request.failed` (`:299-305`) stay as they are.
 - **VALIDATE**: `wc -l services/api/src/features/rides/rides.service.ts` (≤ 500) `&& pnpm --filter @taxi/api lint`
 - **SATISFIES**: AC3
@@ -568,4 +568,9 @@ State comes from the #15 device-pass recipe, `.claude/plans/driver-15-offers-dev
 ## AMENDMENTS
 
 - 2026-09-29 — Probe pass at Linards' request ("increase confidence to 10 and address all risks"). The code was implemented, gated and reverted; the patch is saved. Added PROBE RESULTS, corrected the line budget (491 derived → 496 observed), added the `driver-ride.spec.ts:115` fix to T10, gave one dispatcher per T11 case, resolved T13's gate case to `offered` (proven non-vacuous by M5), and rewrote T0 for the prepared worktree.
-
+- 2026-09-29 — Implementation (report `.claude/reports/driver-booking-note-303-report.md`). Superseded or added, as shipped:
+  - **AC8 fix, not in any task:** drizzle-orm 0.45.2's `DrizzleQueryError` message carries the bound params, and `ride.request.failed` logged `error.message`, so a failed ride insert would have logged the note. Added `rides/ride-failure-reason.ts` (`rideFailureReason`: a query failure → `query_failed:<SQLSTATE>`, otherwise the message) with a 3-case spec, wired at `ride.request.failed`. `rides.service.ts` is 497 lines.
+  - **T9:** the note is read through a `noteArg` helper (`mock.calls[0][5]` tripped `no-unsafe-member-access`), and the failure case also asserts `rides.request` ran before `insertBookingAudit` (`invocationCallOrder`, `?? 0` fails closed).
+  - **T4:** `NOTE_280` is built as `'Ratiņkrēsls, коляска. '.repeat(13).slice(0, 280)`.
+  - **T13:** "in_progress still shows it" is covered by the 280-character case, which renders at `in_progress`. It has no separate case.
+  - **Level 4 step 6:** run with a whitespace-only note (`'   '`), the D4 case, instead of an empty one.

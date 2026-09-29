@@ -1,5 +1,6 @@
 import {
   colors,
+  DISPATCHER_NOTE_VISIBLE_STATUSES,
   fontSize,
   formatEur,
   isInStatusSet,
@@ -168,6 +169,9 @@ export function ActiveRideScreen() {
   const riderPhone = isInStatusSet(RIDER_PHONE_VISIBLE_STATUSES, ride.status)
     ? ride.rider.phone
     : null;
+  const note = isInStatusSet(DISPATCHER_NOTE_VISIBLE_STATUSES, ride.status)
+    ? ride.dispatcherNote
+    : null;
   const prompt = announcePrompt(ride);
   return (
     <Screen>
@@ -231,6 +235,24 @@ export function ActiveRideScreen() {
             <Text style={styles.promptText}>
               {t(prompt.key, prompt.params)}
             </Text>
+          </View>
+        ) : null}
+        {note ? (
+          // One screen-reader stop. The label is composed: an explicit label
+          // REPLACES child text, so a static one would drop the note from the
+          // audio channel (the bug `home-screen.tsx` records as F4).
+          <View
+            style={styles.note}
+            accessible
+            accessibilityLabel={[t('driver.ride.dispatcher_note'), note].join(
+              '. ',
+            )}
+            testID="dispatcher-note"
+          >
+            <Text style={styles.noteLabel}>
+              {t('driver.ride.dispatcher_note')}
+            </Text>
+            <Text style={styles.detail}>{note}</Text>
           </View>
         ) : null}
         <Text style={styles.detail}>
@@ -327,5 +349,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   promptText: { fontSize: fontSize.lg, fontWeight: '600', color: colors.fg },
+  note: {
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    gap: spacing.xs,
+  },
+  noteLabel: { fontSize: fontSize.sm, color: colors.fgMuted },
   nav: { gap: spacing.sm, marginTop: 'auto' },
 });

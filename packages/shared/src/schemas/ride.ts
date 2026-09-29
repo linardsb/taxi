@@ -332,6 +332,12 @@ export const driverRideSchema = rideSchema.extend({
    * api from before this change still parses.
    */
   announceRequestedAt: z.string().datetime().nullable().default(null),
+  /**
+   * Dina's free-text booking note (#303), phone bookings only. Null outside
+   * `DISPATCHER_NOTE_VISIBLE_STATUSES` and when there is none. `.default(null)`:
+   * a new app reading an api from before this change still parses.
+   */
+  dispatcherNote: z.string().min(1).max(280).nullable().default(null),
 });
 export type DriverRide = z.infer<typeof driverRideSchema>;
 

@@ -33,6 +33,11 @@ const BODY = {
   vehicleCount: 1,
 } as unknown as DispatcherBookingBody;
 
+/** The sixth `RidesService.request` argument: the note (#303). */
+function noteArg(rides: { request: jest.Mock }): unknown {
+  return (rides.request.mock.calls[0] as unknown[])[5];
+}
+
 function build() {
   // Typed as the mocks, cast at the constructor — the other order gives every
   // method its real signature and `mockResolvedValue` disappears.
@@ -77,8 +82,15 @@ describe('BookingsService', () => {
       'Anna',
     );
 
-    const [riderId, key, rideBody, channel, rateSubject] = rides.request.mock
-      .calls[0] as [string, string, Record<string, unknown>, string, string];
+    const [riderId, key, rideBody, channel, rateSubject, note] = rides.request
+      .mock.calls[0] as [
+      string,
+      string,
+      Record<string, unknown>,
+      string,
+      string,
+      string | null,
+    ];
     expect(riderId).toBe(RIDER_ID);
     expect(key).toBe('idem-1');
     expect(channel).toBe('phone');
@@ -91,6 +103,8 @@ describe('BookingsService', () => {
     expect(rideBody).not.toHaveProperty('callerPhone');
     expect(rideBody).not.toHaveProperty('callerName');
     expect(rideBody).not.toHaveProperty('dispatcherNote');
+    // #303: the note goes to the ride's own insert, beside the body.
+    expect(note).toBe('zvana no bāra');
 
     expect(dispatch.insertBookingAudit).toHaveBeenCalledWith({
       rideId: RIDE_ID,
@@ -131,6 +145,30 @@ describe('BookingsService', () => {
     expect(rides.request).toHaveBeenCalledTimes(1);
   });
 
+  it('trims the note, and a blank one becomes no note (edge, #303 D4)', async () => {
+    const padded = build();
+    await padded.service.book(DISPATCHER_ID, 'idem-6', {
+      ...BODY,
+      dispatcherNote: '  Ratiņkrēsls  ',
+    });
+    expect(noteArg(padded.rides)).toBe('Ratiņkrēsls');
+    expect(padded.dispatch.insertBookingAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { note: 'Ratiņkrēsls' } }),
+    );
+
+    // The console sends whitespace as typed; the driver must not get an
+    // empty box.
+    const blank = build();
+    await blank.service.book(DISPATCHER_ID, 'idem-7', {
+      ...BODY,
+      dispatcherNote: '   ',
+    });
+    expect(noteArg(blank.rides)).toBeNull();
+    expect(blank.dispatch.insertBookingAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: {} }),
+    );
+  });
+
   it('keeps the phone number out of the log line (edge)', async () => {
     const { service } = build();
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
@@ -166,7 +204,7 @@ describe('BookingsService', () => {
   });
 
   it('does not fail a committed booking when the audit write fails (failure)', async () => {
-    const { dispatch, service } = build();
+    const { rides, dispatch, service } = build();
     dispatch.insertBookingAudit.mockRejectedValue(new Error('db down'));
     const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
 
@@ -178,6 +216,13 @@ describe('BookingsService', () => {
     expect(error).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'dispatch.booking.audit_failed' }),
     );
+    // #303: the note already went into the ride's insert BEFORE the audit
+    // rejected, so the driver still gets it.
+    expect(noteArg(rides)).toBe('zvana no bāra');
+    const [requested] = rides.request.mock.invocationCallOrder;
+    const [audited] = dispatch.insertBookingAudit.mock.invocationCallOrder;
+    // `?? 0` fails closed: no audit call at all cannot pass as "after".
+    expect(requested).toBeLessThan(audited ?? 0);
     error.mockRestore();
   });
 });

@@ -317,6 +317,7 @@ export const ru = {
   'driver.ride.rider_name': 'Пассажир: {name}',
   'driver.ride.call_rider': 'Позвонить пассажиру',
   'driver.ride.call_rider_hint': 'Звонок: {name}',
+  'driver.ride.dispatcher_note': 'Заметка диспетчера',
   'driver.ride.announce_note':
     'Пассажир просит: по прибытии выйдите и назовитесь вслух.',
   'driver.ride.announce_prompt_name':

@@ -110,6 +110,13 @@ export const rides = pgTable(
      */
     tripDistanceMeters: integer('trip_distance_meters'),
     tripDurationSeconds: integer('trip_duration_seconds'),
+    /**
+     * Dina's free-text note for the driver on a phone booking (#303), written
+     * in the ride's own insert so it cannot be lost with the audit row. NULL =
+     * no note, an app booking, or a legacy row. Can hold health data: never
+     * logged, never projected onto `Ride`; only the driver read carries it.
+     */
+    dispatcherNote: text('dispatcher_note'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

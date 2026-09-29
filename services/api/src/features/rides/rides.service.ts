@@ -24,6 +24,7 @@ import { PricingService } from '../pricing';
 import { RealtimeService } from '../realtime';
 import { mintPickupPin } from './pickup-pin';
 import { entryStatusFor } from './ride-entry';
+import { rideFailureReason } from './ride-failure-reason';
 import type { RiderVisibleRide } from './rider-visible-ride';
 import {
   DISPATCHER_BOOKING_MAX_PER_WINDOW,
@@ -92,6 +93,9 @@ export class RidesService {
      * same caller must not be able to collide on a key.
      */
     rateLimitSubject: string = riderId,
+    /** Dina's note (#303), server-side like `bookingChannel`: the rider body has
+     * no such field. Stored on the ride, read only by its driver. */
+    dispatcherNote: string | null = null,
   ): Promise<RideCreated> {
     // The server's identity wins. A body-supplied `riderId` was already
     // stripped by `.omit()` — this re-parse is what makes that structural.
@@ -139,7 +143,13 @@ export class RidesService {
 
     try {
       await this.assertWithinRateLimit(rateLimitSubject, bookingChannel);
-      return await this.createRide(key, request, riderId, bookingChannel);
+      return await this.createRide(
+        key,
+        request,
+        riderId,
+        bookingChannel,
+        dispatcherNote,
+      );
     } catch (error) {
       // Release, best-effort. Without it a maps outage — or a single 429 —
       // burns the rider's key for 24 h and every honest retry replays a ride
@@ -257,6 +267,7 @@ export class RidesService {
     request: RideRequest,
     riderId: string,
     bookingChannel: BookingChannel,
+    dispatcherNote: string | null,
   ): Promise<RideCreated> {
     try {
       const { quote, split, trip } = await this.pricing.quote(request);
@@ -270,6 +281,7 @@ export class RidesService {
         trackingToken: mintTrackingToken(),
         pickupPin: request.options.pickupPin ? mintPickupPin() : null,
         trip,
+        dispatcherNote,
       });
 
       // ---- POST-COMMIT: nothing below may throw out of this method ----
@@ -300,7 +312,7 @@ export class RidesService {
         event: 'ride.request.failed',
         riderId,
         category: request.category,
-        reason: error instanceof Error ? error.message : 'unknown',
+        reason: rideFailureReason(error),
         at: new Date().toISOString(),
       });
       throw error;
