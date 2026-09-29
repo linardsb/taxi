@@ -50,3 +50,27 @@ Misses at threshold 0.5:
 
 observed 2026-09-29T20:06:22.246Z · model jev-1.13.0 · 50 rows · labelled-set blob a55775ce7e8b4694f720e70c88f1fad2386fc2ca · head b801c7b
 ```
+
+## Rows the live selector never asks
+
+`--eval` sends every row's question unconditionally. The body check does not. It asks `provenance` and
+`not_measured` only when `observed` appears in the state, and never asks `worst_case` of an extreme-case sentence
+or of a unit with no figure. Running each row's `state` through `findClaims` and `questionsFor` at `2b04bf6`
+(observed, 2026-09-29) finds 10 rows whose question the tool would not ask. All 10 are labelled negatives:
+
+- `provenance`: `p-206-numstat`, `p-206-726`
+- `not_measured`: `m-138-693`, `m-206-probeB`, `m-142-gate`
+- `worst_case`: `w-87`, `w-139-f6-per-tick`, `w-139-dark-latency`, `w-121-500-rows`, `w-236-75s`
+
+Two of the misses above are among them: `p-206-726` (0.65) and `m-138-693` (0.55). Neither false positive can
+occur in a body check. Recounted at threshold 0.5 over **in-path rows only** (`derived` from the table above:
+remove each excluded row's cell; every excluded row not listed under Misses is a TN):
+
+| Question | All rows: TP FP FN TN → P / R | In-path: TP FP FN TN → P / R |
+|---|---|---|
+| `provenance` | 6 2 0 5 → 0.75 / 1.00 | 6 1 0 4 → 0.86 / 1.00 |
+| `not_measured` | 2 1 2 6 → 0.67 / 0.50 | 2 0 2 4 → 1.00 / 0.50 |
+| `worst_case` | 1 0 6 7 → 1.00 / 0.14 | 1 0 6 2 → 1.00 / 0.14 |
+
+`worst_case` recall stays 1 of 7 either way: the question misses docblock-style case-dependent figures. It is
+recorded, not tuned (plan Task 7). The labels were not changed.
