@@ -15,7 +15,7 @@ Dina's phone-booking note is trimmed once in `BookingsService` (blank → null),
 - T4 → `packages/shared/tests/schemas-driver-ride.test.ts` (UPDATE)
 - T5 → `db/src/schema/rides.ts` (UPDATE), `db/migrations/0014_redundant_mandroid.sql` + `meta/0014_snapshot.json` + `_journal.json` (CREATE/UPDATE, drizzle-generated, from patch). SQL is exactly `ALTER TABLE "rides" ADD COLUMN "dispatcher_note" text;`
 - T6 → `services/api/src/features/rides/rides.repository.ts` (UPDATE, from patch)
-- T7 → `services/api/src/features/rides/rides.service.ts` (UPDATE, from patch) — 496 lines, cap 500 (`observed`, `wc -l`)
+- T7 → `services/api/src/features/rides/rides.service.ts` (UPDATE, from patch) — 496 lines at T7, before the AC8 import; 497 at `579d434` (see Validation), cap 500 (`observed`, `wc -l`)
 - T8 → `services/api/src/features/dispatch/bookings/bookings.service.ts` (UPDATE, from patch)
 - T9 → `services/api/src/features/dispatch/bookings/bookings.service.spec.ts` (UPDATE)
 - T10 → `driver-ride.ts` (UPDATE, from patch), `driver-ride.spec.ts` (UPDATE: `:115` fix from patch, new cases here)
@@ -82,7 +82,7 @@ Artifacts are in the session scratchpad (`/private/tmp/claude-501/…/scratchpad
 - [x] AC5 — T9 blank case, T11 case 4, T13 null case
 - [x] AC6 — T11 case 1 (280 LV+RU, byte for byte through Postgres); T13 280-char case (no `numberOfLines`)
 - [x] AC7 — T11 case 1 (offer socket, offer push, rider GET, booking 201); rider-read case shown RED with a planted leak and GREEN without
-- [x] AC8 — no new log call in the diff (`git diff origin/main | grep '^+.*logger\.'` is empty); `dispatch.booking.audit_failed` logs `error.name` only; `ride.request.failed` logged `error.message`, which carried the note — fixed, see Deviations
+- [x] AC8 — no new log call in the diff (`git diff origin/main | grep '^+.*logger\.'` is empty); `dispatch.booking.audit_failed` logs `error.name` only; `ride.request.failed` logged `error.message`, which carried the note — fixed, see Deviations. **Half-fixed at `579d434`:** the rethrown `DrizzleQueryError` still reached Nest's default `ExceptionsHandler`, which logs it whole (PR #304 review H1); closed in the review-fix pass by `rideFailureToThrow`, see `pr-304-review-fixes.md`
 - [x] AC9 — full gate above
 - [x] AC10 — #271 comment linked above
 - [x] Level 4 manual pass, steps 1–6 — below; step 7 not performable
@@ -90,7 +90,7 @@ Artifacts are in the session scratchpad (`/private/tmp/claude-501/…/scratchpad
 ## Deviations from the plan
 
 - **Level 4 step 6 used a whitespace-only note (`'   '`), not an empty one.** It is the D4 case and the stricter of the two: an empty note is sent as null by the console and never reaches the trim.
-- **Added `services/api/src/features/rides/ride-failure-reason.ts` (+ spec), which the plan did not list ("No new source files").** AC8 found a leak the plan missed: drizzle-orm 0.45.2's `DrizzleQueryError` builds its message as `Failed query: …\nparams: …` (`node_modules/drizzle-orm/errors.js:12-13`, `observed`), and `ride.request.failed` logged `error.message`. A failed `rides` insert would therefore have written the note into the error log. `rideFailureReason` reduces a `DrizzleQueryError` to `query_failed:<SQLSTATE>` and keeps any other error's message. The same params also carry the pickup PIN and tracking token, which leaked the same way before this ticket; the fix closes those too. In a separate file because `rides.service.ts` is at the cap (497/500). The spec tests the helper and the premise (drizzle's message contains the note); the one-line wiring in `rides.service.ts` has no dedicated test.
+- **Added `services/api/src/features/rides/ride-failure-reason.ts` (+ spec), which the plan did not list ("No new source files").** AC8 found a leak the plan missed: drizzle-orm 0.45.2's `DrizzleQueryError` builds its message as `Failed query: …\nparams: …` (`node_modules/drizzle-orm/errors.js:12-13`, `observed`), and `ride.request.failed` logged `error.message`. A failed `rides` insert would therefore have written the note into the error log. `rideFailureReason` reduces a `DrizzleQueryError` to `query_failed:<SQLSTATE>` and keeps any other error's message. The same params also carry the pickup PIN and tracking token, which leaked the same way before this ticket. This fix cleaned only the `ride.request.failed` line: the rethrown error was still logged whole by Nest's default handler (PR #304 review H1), closed in the review-fix pass by `rideFailureToThrow`. In a separate file because `rides.service.ts` is at the cap (497/500). The spec tests the helper and the premise (drizzle's message contains the note); the one-line wiring in `rides.service.ts` had no dedicated test at `579d434`; the review-fix pass adds one through `POST /dispatch/bookings`.
 - **T13 "in_progress still shows it"** is covered by the 280-character case running at `in_progress`, not by a separate case. Same assertion surface, one fewer render.
 - **T9 failure case** asserts call order with `invocationCallOrder` and a `?? 0` fallback (fails closed if the audit was never called) rather than only asserting the argument; this makes "before the audit rejected" a checked claim.
 - **T9 helper `noteArg`** reads the sixth argument through `unknown[]`: indexing `mock.calls[0][5]` directly tripped `no-unsafe-member-access`.
