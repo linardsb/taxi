@@ -112,7 +112,7 @@ jobs:
           # below would be swallowed and the step would exit 0 on the
           # migration's status. pull/up/prune/ps do not touch stdin.
           # The routing graph (#134), BEFORE anything that needs it. A no-op
-          # of about a second once the graph exists; on a box with none it
+          # once the graph exists (runbook §5.5); on a box with none it
           # downloads the Latvia extract and builds it (runbook §5.5 has the
           # observed times) — here, bounded by the job's 20 min, rather than
           # inside \`up\`'s 120 s below. A failed build fails this step with

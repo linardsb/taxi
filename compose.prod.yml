@@ -77,8 +77,8 @@ services:
       start_period: 20s
 
   # Builds the OSRM routing graph for the Latvia OSM extract (#134), ONCE: a
-  # one-shot that exits 0 in about a second when the graph is already in the
-  # volume. On a box with none it downloads the extract from Geofabrik and
+  # one-shot that exits 0 at once when the graph is already in the volume (a
+  # whole second `up` took 2 s, observed on a laptop, runbook §5.5). On a box with none it downloads the extract from Geofabrik and
   # runs extract -> partition -> customize (MLD); runbook §5.5 has the
   # observed times and memory. It builds into /data/next and swaps it in only
   # after every step succeeded, so a failed download or build leaves the old

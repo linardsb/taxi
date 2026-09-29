@@ -283,7 +283,9 @@ this overlay and an image built from the round-2 head, `up -d --wait
 --wait-timeout 45 api` on this table's values — **exit 0 in 12 s**, api healthy;
 with `PUSH_PROVIDER` alone removed, **exit 1 in 15 s**, `container … is
 unhealthy`, `RestartCount` 4. It fails, and it fails inside the timeout rather
-than parking on it. (Times vary — 8–15 s over the runs; what is stable is the
+than parking on it. #134 changed the overlay (the api now waits on `osrm`
+healthy); the healthy half was re-observed on the changed overlay on
+2026-09-29 — §5.5 has the run. (Times vary — 8–15 s over the runs; what is stable is the
 exit code and that neither case reaches 45 s.)
 
 ## 4 · First deploy
@@ -312,6 +314,20 @@ exit code and that neither case reaches 45 s.)
    that drains stdin on `run`/`exec` the way the real CLI does. **All 11
    markers print.** Before the round-2 fix only the first 5 did — the migration
    swallowed the rest of the script and the step still exited 0 (round 2, N1).
+
+   Re-run for #134's added `run --rm osrm-prep` line, 2026-09-29, by a
+   different harness: the step's own `run:` text executed by `bash` with an
+   `ssh` shim that inserts `echo MARK-n` after every executable line of the
+   expanded heredoc and pipes it to `bash -s`, the same draining `docker` shim,
+   and a GNU-style `sed -i` shim (the Mac's is BSD). Its rule counts **17**
+   markers (it skips comments and `then` lines, so its totals are not
+   comparable with the 11 above). Both branches of the tag `if` run to the
+   end, exit 0: **14 print** when the box env file already has
+   `API_IMAGE_TAG` (the 3 `else`-branch markers are the unreachable ones),
+   **16** when it does not (the `sed` line's). The same harness on
+   `origin/main`'s script: 13 of 16. **Negative control**: with the
+   `</dev/null` removed from the osrm-prep line only **6** print and the step
+   still **exits 0** — the #147 failure, reproduced on the new line.
 3. **Seed once, by hand:**
 
    ```bash
@@ -486,6 +502,15 @@ the job's 20 min rather than `up`'s 120 s. It builds into `/data/next` and swaps
 it in only after every step succeeded, so a failed download or build fails the
 step with the old stack still running.
 
+That sequence is `observed` end to end on 2026-09-29 through this overlay, on
+the laptop, fresh project and fresh volumes, an image built from #134's branch,
+and a host env file from §3 that still carried #13's old switch line: `run --rm
+osrm-prep` exit 0 in 61 s (download and build), `run --rm api …migrate-run.js`
+exit 0 in 7 s, `up -d --wait --wait-timeout 120` (api, osrm, osrm-prep; not
+Caddy, which needs the certs) exit 0 in 8 s with api, osrm, db and redis
+healthy and osrm-prep `Exited (0)`; a seeded quote Old Town → RIX through that
+api priced off 10 851 m. A second `up`, the routine-deploy shape, exit 0 in 2 s.
+
 What it costs, all `observed` on 2026-09-29 on a **laptop, not the box**
 (Intel Mac, Docker VM with 4 CPUs / 7.75 GiB, image `v26.4.0`, extract
 `latvia-latest.osm.pbf` of 140 652 214 bytes downloaded that day):
@@ -515,27 +540,25 @@ through a rebuild. Monthly is plenty for a pilot; nothing schedules it:
 ```bash
 cd /opt/taxi && alias dc='docker compose -f docker-compose.yml -f compose.prod.yml'
 dc run --rm -e OSRM_REBUILD=1 osrm-prep </dev/null   # builds beside the live graph
-dc restart osrm                                       # loads the new one; a few seconds of failed routes
+dc restart osrm                                       # loads the new one; routes fail meanwhile (below)
 dc exec osrm cat /data/graph/READY                    # the new build time
 ```
+
+The restart is a short routing outage: `observed` 2026-09-29 on the laptop
+stack, a poller hitting a route every ~0.2 s saw 5 failures spread over 2
+wall-clock seconds, then only successes. A quote in that window fails (the
+quote path does not negative-cache), so refresh outside busy hours.
 
 A failed refresh leaves the old graph serving (`observed` 2026-09-29: a 404
 from the download URL exited 1 and `READY` kept its earlier timestamp).
 
-**Stale quotes after the switch to OSRM — one-off, by hand.** The quote cache
-holds a route for `MAPS_ROUTE_CACHE_TTL_SECONDS` (24 h default) and its keys
-do not name the provider, so on a box that served stub quotes before #134 a
-cached corridor keeps its straight-line distance for up to a day. `observed`
-2026-09-29 against the dev Redis: a production-mode api bound to OSRM quoted
-Old Town → RIX at €13.94, the stub's figure, until its keys were isolated.
-After the first OSRM deploy:
-
-```bash
-dc exec -T redis sh -c "redis-cli --scan --pattern 'maps:route:*' | xargs -r redis-cli del"
-```
-
-The ETA cache (5 min) ages out on its own. Not needed on a box that never ran
-the stub.
+**No stale stub quotes — nothing to flush.** The quote cache holds a route
+for `MAPS_ROUTE_CACHE_TTL_SECONDS` (24 h default), and before #134 its keys did
+not say which provider priced them: `observed` 2026-09-29 against the dev
+Redis, a production-mode api bound to OSRM quoted Old Town → RIX at €13.94 —
+the stub's figure, read from a cached `v1` key. #134 moved the keys to `v2`
+(`caching-maps.provider.ts`), so the first OSRM deploy never reads a stub-era
+entry; the old keys expire unread within the TTL.
 
 **Locally**, for real routes in dev: build the graph in a directory under
 `$HOME` (the Docker VM does not share the scratchpad), run it, set
