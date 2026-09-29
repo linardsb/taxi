@@ -163,13 +163,19 @@ describe('CustomersService', () => {
       repository.updateCustomer.mockResolvedValue(CUSTOMER);
 
       await expect(
-        service.upsert({
+        service.upsert('dispatcher-1', {
           phone: '+37129999000',
           label: 'Hotel Roma',
           isVenue: true,
           notes: null,
         }),
       ).resolves.toEqual(CUSTOMER);
+      // The filing dispatcher is the marker: a row minted here is provisional,
+      // so the person's own OTP signup adopts it (#123).
+      expect(repository.findOrCreateUser).toHaveBeenCalledWith(
+        '+37129999000',
+        'dispatcher-1',
+      );
     });
 
     it('refuses a number that belongs to a driver (failure)', async () => {
@@ -180,7 +186,7 @@ describe('CustomersService', () => {
       });
 
       await expect(
-        service.upsert({
+        service.upsert('dispatcher-1', {
           phone: '+37129999000',
           label: 'Jānis',
           isVenue: false,

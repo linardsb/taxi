@@ -64,6 +64,8 @@ function build(
   storedRole: UserRole = 'driver',
   kv: InMemoryKeyValueStore = new InMemoryKeyValueStore(),
   envOverrides: Partial<Env> = {},
+  /** The stored row was minted by a dispatcher and is adoptable (#123). */
+  provisional = false,
 ) {
   const serviceEnv = { ...env, ...envOverrides };
   const sms = new RecordingSmsProvider();
@@ -90,6 +92,22 @@ function build(
         createdAt: new Date('2026-08-01T00:00:00.000Z'),
       });
     },
+    // Mimics the real conditional UPDATE: only a provisional RIDER row moves.
+    adoptProvisional: (input: {
+      phone: string;
+      role: SignupRole;
+    }): Promise<User | undefined> =>
+      Promise.resolve(
+        provisional && storedRole === 'rider'
+          ? {
+              id: USER_ID,
+              phone: input.phone,
+              role: input.role,
+              language: 'lv',
+              createdAt: new Date('2026-08-01T00:00:00.000Z'),
+            }
+          : undefined,
+      ),
   } as unknown as AuthRepository;
 
   return {
@@ -291,6 +309,21 @@ describe('AuthService.verifyOtp', () => {
     expect(created).toEqual([{ role: 'rider' }]);
     // …and the stored role still wins in the response and the token.
     expect(session.user.role).toBe('dispatcher');
+  });
+
+  it('issues the session for the ADOPTED row when a dispatcher minted it (expected, #123)', async () => {
+    const { service, sms } = build('rider', undefined, {}, true);
+    await service.requestOtp({ phone: PHONE, role: 'driver' });
+
+    const session = await service.verifyOtp({
+      phone: PHONE,
+      code: sms.lastCodeFor(PHONE)!,
+    });
+
+    // The phone booking's `rider` role gave way to the signup's: without the
+    // adoption this person gets a rider session and a driver app that cannot
+    // work.
+    expect(session.user.role).toBe('driver');
   });
 
   it('burns the code after the attempt cap — the correct code then fails too (edge)', async () => {

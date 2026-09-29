@@ -12,7 +12,11 @@ export type SignupRole = (typeof SIGNUP_ROLES)[number];
 
 export const otpRequestSchema = z.object({
   phone: phoneSchema,
-  /** Used ONLY when the phone has no user yet; an existing user's stored role wins. */
+  /**
+   * Used when the phone has no user yet, or when its only user is a
+   * provisional row a dispatcher minted on the caller's behalf (#123) — the
+   * signup adopts that row. Any other existing user's stored role wins.
+   */
   role: z.enum(SIGNUP_ROLES),
 });
 export type OtpRequest = z.infer<typeof otpRequestSchema>;

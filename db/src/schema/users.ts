@@ -1,4 +1,10 @@
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 import { userRoleEnum } from './enums';
 
 /** Mirrors `userSchema` (@taxi/shared). Phone is the identity — E.164, unique. */
@@ -33,6 +39,19 @@ export const users = pgTable('users', {
    * ends up in a log, exactly as for the two payment refs above.
    */
   pushToken: text('push_token'),
+  /**
+   * The dispatcher who minted this row on the caller's behalf (#123), NULL for
+   * a row its owner created by OTP. Set ONLY by the phone path's insert, never
+   * by a conflict clause, so a rider who signed up first can never become
+   * provisional by being phone-booked later.
+   *
+   * Non-NULL means "provisional": the person never took part in creating it,
+   * so their first OTP signup ADOPTS the row (`AuthRepository.adoptProvisional`
+   * sets the signup role and clears this) instead of colliding with it. A FK
+   * rather than a boolean because "who filed this identity" is the question a
+   * support call asks. Not on `userSchema`, like the handles above.
+   */
+  provisionedBy: uuid('provisioned_by').references((): AnyPgColumn => users.id),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

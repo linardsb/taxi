@@ -10,7 +10,6 @@ import {
 import {
   rideRequestSchema,
   RT,
-  type ApiErrorBody,
   type BookingChannel,
   type Ride,
   type RideCreated,
@@ -25,19 +24,29 @@ import { RealtimeService } from '../realtime';
 import { mintPickupPin } from './pickup-pin';
 import { entryStatusFor } from './ride-entry';
 import { rideFailureReason, rideFailureToThrow } from './ride-failure-reason';
+import {
+  assertWithinRideRateLimit,
+  recordIdempotency,
+} from './ride-request-guards';
 import type { RiderVisibleRide } from './rider-visible-ride';
 import {
-  DISPATCHER_BOOKING_MAX_PER_WINDOW,
   RIDE_IDEMPOTENCY_PENDING,
   RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS,
-  RIDE_IDEMPOTENCY_TTL_SECONDS,
-  RIDE_REQUEST_MAX_PER_WINDOW,
-  RIDE_REQUEST_WINDOW_SECONDS,
-  dispatcherBookingRateKey,
+  callerIdempotencyKey,
   rideIdempotencyKey,
-  rideRequestRateKey,
 } from './rides.policy';
 import { RidesRepository } from './rides.repository';
+
+/**
+ * A request with no rider yet (#123): the phone path resolves its rider only
+ * after the reservation, the cap and the quote. The `.omit()` parse is also
+ * what strips a body-supplied `riderId` — the server's identity is added back
+ * once, when it is known.
+ */
+const rideDraftSchema = rideRequestSchema.omit({ riderId: true });
+type RideDraft = Omit<RideRequest, 'riderId'>;
+/** The app path knows its rider; the phone path resolves one late (#123). */
+type RideRider = { id: string } | { resolve: () => Promise<string> };
 
 /**
  * Orchestrates a ride request: validate → quote → persist → notify.
@@ -88,28 +97,72 @@ export class RidesService {
      * it in place would 429 the 25-car venue this argument is built on.
      * `bookingChannel` selects `DISPATCHER_BOOKING_MAX_PER_WINDOW` instead.
      *
-     * Note what does NOT move: `rideIdempotencyKey` stays rider-scoped, because
-     * the thing being deduplicated is a RIDE, and two dispatchers booking the
-     * same caller must not be able to collide on a key.
+     * Note what does NOT move: the idempotency key stays scoped to the RIDER,
+     * because the thing being deduplicated is a RIDE, and two dispatchers
+     * booking the same caller must not be able to collide on a key. The phone
+     * path scopes it by the caller's phone instead (`requestForCaller`), which
+     * is the same person — `users.phone` is unique.
      */
     rateLimitSubject: string = riderId,
     /** Dina's note (#303), server-side like `bookingChannel`: the rider body has
      * no such field. Stored on the ride, read only by its driver. */
     dispatcherNote: string | null = null,
   ): Promise<RideCreated> {
-    // The server's identity wins. A body-supplied `riderId` was already
-    // stripped by `.omit()` — this re-parse is what makes that structural.
-    const request = rideRequestSchema.parse({ ...body, riderId });
+    return this.book(
+      rideIdempotencyKey(riderId, idempotencyKey),
+      { id: riderId },
+      body,
+      bookingChannel,
+      rateLimitSubject,
+      dispatcherNote,
+    );
+  }
+
+  /**
+   * The phone path (#19, #123): the rider is a caller's PHONE, and their
+   * `users` row is resolved — found or minted — by `resolveRiderId` only
+   * AFTER the reservation, the dispatcher's cap and the quote. A booking the
+   * idempotency guard, the cap or a maps outage refuses therefore mints
+   * nothing. The reservation is keyed on the phone because no rider id exists
+   * yet when it is taken, and must be taken before the cap (a replay must not
+   * burn quota).
+   */
+  async requestForCaller(
+    caller: { phone: string; resolveRiderId: () => Promise<string> },
+    idempotencyKey: string,
+    body: RideRequestBody,
+    dispatcherId: string,
+    dispatcherNote: string | null,
+  ): Promise<RideCreated> {
+    return this.book(
+      callerIdempotencyKey(caller.phone, idempotencyKey),
+      { resolve: caller.resolveRiderId },
+      body,
+      'phone',
+      dispatcherId,
+      dispatcherNote,
+    );
+  }
+
+  private async book(
+    key: string,
+    rider: RideRider,
+    body: RideRequestBody,
+    bookingChannel: BookingChannel,
+    rateLimitSubject: string,
+    dispatcherNote: string | null,
+  ): Promise<RideCreated> {
+    const draft = rideDraftSchema.parse(body);
 
     // #22 replaces this with a fan-out into N rides sharing one `orderId`.
-    if (request.vehicleCount > 1) {
+    if (draft.vehicleCount > 1) {
       throw new BadRequestException('multi_taxi_not_supported');
     }
 
     // A past pickup would enter at `scheduled` and sit there forever, because
     // the promoting timer is #21's. Rejecting it is cheaper than a support
     // ticket.
-    if (request.scheduledFor && request.scheduledFor.getTime() <= Date.now()) {
+    if (draft.scheduledFor && draft.scheduledFor.getTime() <= Date.now()) {
       throw new BadRequestException('scheduled_in_past');
     }
 
@@ -124,14 +177,13 @@ export class RidesService {
     // The SHORT window, not the settled one: a marker nobody promotes is a key
     // no rider can clear, so it gets the shortest life that still covers a slow
     // first request. `recordIdempotency` promotes it on the way out.
-    const key = rideIdempotencyKey(riderId, idempotencyKey);
     const reserved = await this.kv.setIfAbsent(
       key,
       RIDE_IDEMPOTENCY_PENDING,
       RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS,
     );
     if (!reserved) {
-      const replayed = await this.replay(key, riderId);
+      const replayed = await this.replay(key, rateLimitSubject);
       if (replayed) return replayed;
       // The mapping pointed at a ride that no longer exists — defensive only,
       // rides are never deleted. Falling through creates one, because if the
@@ -142,11 +194,16 @@ export class RidesService {
     }
 
     try {
-      await this.assertWithinRateLimit(rateLimitSubject, bookingChannel);
+      await assertWithinRideRateLimit(
+        this.kv,
+        this.logger,
+        rateLimitSubject,
+        bookingChannel,
+      );
       return await this.createRide(
         key,
-        request,
-        riderId,
+        draft,
+        rider,
         bookingChannel,
         dispatcherNote,
       );
@@ -264,13 +321,19 @@ export class RidesService {
    */
   private async createRide(
     key: string,
-    request: RideRequest,
-    riderId: string,
+    draft: RideDraft,
+    rider: RideRider,
     bookingChannel: BookingChannel,
     dispatcherNote: string | null,
   ): Promise<RideCreated> {
+    let riderId: string | null = 'id' in rider ? rider.id : null;
     try {
-      const { quote, split, trip } = await this.pricing.quote(request);
+      const { quote, split, trip } = await this.pricing.quote(draft);
+      // AFTER the quote (#123): on the phone path this is what mints the
+      // caller's `users` row, and a maps outage must not leave one behind.
+      const resolved = 'id' in rider ? rider.id : await rider.resolve();
+      riderId = resolved;
+      const request: RideRequest = { ...draft, riderId: resolved };
 
       const ride = await this.rides.create({
         orderId: randomUUID(),
@@ -285,8 +348,8 @@ export class RidesService {
       });
 
       // ---- POST-COMMIT: nothing below may throw out of this method ----
-      await this.recordIdempotency(key, ride.id);
-      this.notifyRider(riderId, ride);
+      await recordIdempotency(this.kv, this.logger, key, ride.id);
+      this.notifyRider(resolved, ride);
       // Fire-and-forget: onRideCreated catches everything itself — an SMS
       // failure never fails a booking.
       void this.notifications.onRideCreated(ride);
@@ -295,7 +358,7 @@ export class RidesService {
         event: 'ride.request.created',
         rideId: ride.id,
         orderId: ride.orderId,
-        riderId,
+        riderId: resolved,
         status: ride.status,
         totalCents: quote.totalCents,
         commissionPct: split.commissionPct,
@@ -311,7 +374,7 @@ export class RidesService {
       this.logger.error({
         event: 'ride.request.failed',
         riderId,
-        category: request.category,
+        category: draft.category,
         reason: rideFailureReason(error),
         at: new Date().toISOString(),
       });
@@ -329,7 +392,7 @@ export class RidesService {
    */
   private async replay(
     key: string,
-    riderId: string,
+    subjectId: string,
   ): Promise<RideCreated | undefined> {
     const stored = await this.kv.get(key);
 
@@ -339,7 +402,9 @@ export class RidesService {
     if (stored === null || stored === RIDE_IDEMPOTENCY_PENDING) {
       this.logger.warn({
         event: 'ride.request.replay_conflicted',
-        riderId,
+        // The rider on the app path, the dispatcher on the phone path: the
+        // key's own scope may be a phone number, which never reaches a log.
+        subjectId,
         at: new Date().toISOString(),
       });
       throw new HttpException(
@@ -353,7 +418,7 @@ export class RidesService {
       this.logger.error({
         event: 'ride.request.replay_missing',
         rideId: stored,
-        riderId,
+        subjectId,
         at: new Date().toISOString(),
       });
       return undefined;
@@ -365,7 +430,7 @@ export class RidesService {
     // `ride:status`. Re-emitting is the other error: #10 may have moved the
     // ride on, and `previousStatus: null` would be a lie.
     try {
-      this.realtime.joinRideRoom(riderId, found.ride.id);
+      this.realtime.joinRideRoom(found.ride.riderId, found.ride.id);
     } catch (error) {
       this.logger.warn({
         event: 'ride.request.notify_failed',
@@ -381,87 +446,12 @@ export class RidesService {
     this.logger.log({
       event: 'ride.request.replayed',
       rideId: found.ride.id,
-      riderId,
+      riderId: found.ride.riderId,
       status: found.ride.status,
       at: new Date().toISOString(),
     });
 
     return { ride: found.ride, split };
-  }
-
-  /**
-   * Promotes the reservation to the ride id AND to the full window — the marker
-   * was written with the short in-flight one.
-   *
-   * Swallows, for exactly the reason `notifyRider` does: the ride is already
-   * committed. Letting a Redis blip here throw would run the caller's release,
-   * delete the reservation, and hand the rider a 500 — so their retry reserves
-   * a FREE key and books the second car this whole feature exists to prevent.
-   *
-   * The residue when it fails — or when the process dies before this runs — is
-   * a key stuck at `pending`, so that attempt's retries get 409 until it
-   * expires. Bounded to `RIDE_IDEMPOTENCY_PENDING_TTL_SECONDS` rather than a
-   * day, which is the whole reason the two windows are separate constants.
-   */
-  private async recordIdempotency(key: string, rideId: string): Promise<void> {
-    try {
-      await this.kv.setWithTtl(key, rideId, RIDE_IDEMPOTENCY_TTL_SECONDS);
-    } catch (error) {
-      this.logger.error({
-        event: 'ride.request.idempotency_write_failed',
-        rideId,
-        reason: error instanceof Error ? error.message : 'unknown',
-        at: new Date().toISOString(),
-      });
-    }
-  }
-
-  /**
-   * Spent before the quote, so a throttled request costs no paid Routes call.
-   * INCR-then-check like the auth slice: a GET-then-INCR would let a burst all
-   * read the same count and every one of them through.
-   */
-  private async assertWithinRateLimit(
-    subjectId: string,
-    bookingChannel: BookingChannel,
-  ): Promise<void> {
-    // The CHANNEL picks both, because the subject alone does not say which
-    // actor's model the cap was sized against. A rider's 20 is far below what
-    // one dispatcher's shift produces — see `DISPATCHER_BOOKING_MAX_PER_WINDOW`
-    // for the arithmetic, and plan Q7 for the 25-car venue it exists to admit.
-    const viaDispatcher = bookingChannel === 'phone';
-    const key = viaDispatcher
-      ? dispatcherBookingRateKey(subjectId)
-      : rideRequestRateKey(subjectId);
-    const maxPerWindow = viaDispatcher
-      ? DISPATCHER_BOOKING_MAX_PER_WINDOW
-      : RIDE_REQUEST_MAX_PER_WINDOW;
-
-    const attempts = await this.kv.incrWithTtl(
-      key,
-      RIDE_REQUEST_WINDOW_SECONDS,
-    );
-    if (attempts <= maxPerWindow) return;
-
-    // The key can expire between the INCR and this read, and a
-    // retryAfterSeconds of 0 would read as "retry now" on a rejection.
-    const retryAfterSeconds = Math.max(1, await this.kv.ttl(key));
-    this.logger.warn({
-      event: 'ride.request.throttled',
-      // The rider on the app path, the DISPATCHER on the phone path — whoever
-      // the cap was counted against, so the line names the actor that was
-      // actually throttled rather than a bystander.
-      subjectId,
-      attempts,
-      at: new Date().toISOString(),
-    });
-    throw new HttpException(
-      {
-        message: 'too_many_requests',
-        retryAfterSeconds,
-      } satisfies ApiErrorBody,
-      HttpStatus.TOO_MANY_REQUESTS,
-    );
   }
 
   /**
