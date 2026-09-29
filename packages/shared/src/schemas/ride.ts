@@ -322,6 +322,14 @@ export const driverRideRiderSchema = z.object({
   displayName: z.string().min(1).max(120).nullable(),
   phone: phoneSchema.nullable(),
 });
+
+/**
+ * Dina's booking note cap (#303), shared by the console body that accepts it
+ * and the driver read that returns it: raising one alone would make every
+ * longer note fail `driverRideSchema` on the driver's read (PR #304 L1).
+ */
+export const DISPATCHER_NOTE_MAX = 280;
+
 export const driverRideSchema = rideSchema.extend({
   rider: driverRideRiderSchema,
   /**
@@ -337,7 +345,12 @@ export const driverRideSchema = rideSchema.extend({
    * `DISPATCHER_NOTE_VISIBLE_STATUSES` and when there is none. `.default(null)`:
    * a new app reading an api from before this change still parses.
    */
-  dispatcherNote: z.string().min(1).max(280).nullable().default(null),
+  dispatcherNote: z
+    .string()
+    .min(1)
+    .max(DISPATCHER_NOTE_MAX)
+    .nullable()
+    .default(null),
 });
 export type DriverRide = z.infer<typeof driverRideSchema>;
 
