@@ -120,6 +120,7 @@ test('2 parsing, edge: table rows, indented code, nested bullets, section intros
   assert.ok(questionsFor(bullet).includes('provenance'));
 
   assert.equal(findClaims('```\nlatency 99 ms\n```\n').length, 0, 'fenced code is ignored');
+  assert.equal(findClaims('It took 12 s. **L3** — `a/x.ts:2` names it.\n').length, 2, 'a bold lead-in starts a sentence');
   assert.equal(findClaims('## Validation — observed\n\nGate took 58 s.\n')[0].heading, '## Validation — observed');
 
   const cites = findClaims('The override lives at `test/harness.ts:454,541` today.\n')[0].citations;

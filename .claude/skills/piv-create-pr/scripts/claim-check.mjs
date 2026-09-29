@@ -112,14 +112,15 @@ function codeMask(lines) {
   return code;
 }
 
-// Splits at `. `, `? ` or `! ` followed by an uppercase letter or a backtick, never inside backticks.
+// Splits at `. `, `? ` or `! ` followed by an uppercase letter, a backtick or `*` (a bold lead-in such as
+// `**L3** —`), never inside backticks.
 function splitSentences(text) {
   const out = [];
   let start = 0;
   let tick = false;
   for (let i = 0; i < text.length; i++) {
     if (text[i] === '`') tick = !tick;
-    else if (!tick && '.?!'.includes(text[i]) && text[i + 1] === ' ' && /[A-Z`]/.test(text[i + 2] ?? '')) {
+    else if (!tick && '.?!'.includes(text[i]) && text[i + 1] === ' ' && /[A-Z`*]/.test(text[i + 2] ?? '')) {
       out.push(text.slice(start, i + 1).trim());
       start = i + 2;
     }
