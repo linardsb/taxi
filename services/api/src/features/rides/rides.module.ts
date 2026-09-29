@@ -4,6 +4,7 @@ import { NotificationsModule } from '../notifications';
 import { PricingModule } from '../pricing';
 import { RealtimeModule } from '../realtime';
 import { ArrivalAnnounceService } from './lifecycle/arrival-announce.service';
+import { PickupPinReadService } from './lifecycle/pickup-pin-read.service';
 import { RideLifecycleController } from './lifecycle/ride-lifecycle.controller';
 import { RideLifecycleRepository } from './lifecycle/ride-lifecycle.repository';
 import { RideLifecycleService } from './lifecycle/ride-lifecycle.service';
@@ -32,6 +33,7 @@ import { RidesService } from './rides.service';
     RideLifecycleService,
     RideLifecycleRepository,
     ArrivalAnnounceService,
+    PickupPinReadService,
   ],
   // #10 dispatches the rides this slice creates; the lifecycle transitions
   // them. The repository, the transition writer and `claimDriver` are exported

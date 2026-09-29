@@ -21,6 +21,8 @@ const ride = (over: Partial<BoardRide>): BoardRide => ({
   bookingChannel: 'phone',
   requestedAt: '2026-08-15T11:58:00.000Z',
   unclaimedSeconds: 120,
+  announceArrival: false,
+  pickupPinRequired: false,
   cascade: null,
   ...over,
 });
@@ -60,6 +62,7 @@ describe('RideQueue', () => {
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
+        onShowPin={noop}
       />,
     );
 
@@ -88,6 +91,7 @@ describe('RideQueue', () => {
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
+        onShowPin={noop}
       />,
     );
     expect(
@@ -112,6 +116,7 @@ describe('RideQueue', () => {
         flashRideIds={new Set(['3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c'])}
         onAssign={noop}
         onCancel={noop}
+        onShowPin={noop}
       />,
     );
 
@@ -144,6 +149,7 @@ describe('RideQueue', () => {
         flashRideIds={none}
         onAssign={onAssign}
         onCancel={onCancel}
+        onShowPin={noop}
       />,
     );
 
@@ -171,7 +177,9 @@ describe('RideQueue', () => {
     );
 
     // Two cancel buttons, and no two share a name.
-    const cancels = screen.getAllByRole('button', { name: /^Atcelt braucienu/ });
+    const cancels = screen.getAllByRole('button', {
+      name: /^Atcelt braucienu/,
+    });
     expect(cancels).toHaveLength(2);
     expect(new Set(cancels.map((b) => b.getAttribute('aria-label'))).size).toBe(
       2,
@@ -196,6 +204,7 @@ describe('RideQueue', () => {
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
+        onShowPin={noop}
       />,
     );
 
@@ -230,6 +239,7 @@ describe('RideQueue', () => {
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
+        onShowPin={noop}
       />,
     );
 
@@ -267,6 +277,7 @@ describe('RideQueue', () => {
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
+        onShowPin={noop}
       />,
     );
 
@@ -312,6 +323,7 @@ describe('RideQueue', () => {
         flashRideIds={none}
         onAssign={noop}
         onCancel={noop}
+        onShowPin={noop}
       />,
     );
 
@@ -321,5 +333,98 @@ describe('RideQueue', () => {
     expect(
       screen.getAllByText(formatMessage('lv', 'console.status_requested')),
     ).toHaveLength(1);
+  });
+
+  const queue = (
+    rides: BoardRide[],
+    onShowPin: (r: BoardRide) => void = noop,
+  ) =>
+    render(
+      <RideQueue
+        rides={rides}
+        serverNowMs={NOW}
+        flashRideIds={none}
+        onAssign={noop}
+        onCancel={noop}
+        onShowPin={onShowPin}
+      />,
+    );
+
+  it('badges ONLY the ride booked with a voice announcement (expected + regression, #275)', () => {
+    queue([
+      ride({ announceArrival: true }),
+      ride({
+        rideId: '4f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c',
+        pickup: { location: { lat: 56.96, lng: 24.12 }, address: 'Hanzas 3' },
+      }),
+    ]);
+
+    const badge = formatMessage('lv', 'console.badge_announce_arrival');
+    const [withFlag, without] = screen.getAllByRole('listitem');
+    expect(withFlag).toHaveTextContent(badge);
+    expect(without).not.toHaveTextContent(badge);
+    // State, not an alarm: the row carries no flash and no live region.
+    expect(withFlag).not.toHaveClass('console-flash');
+    expect(
+      withFlag!.querySelector('[role="alert"], [role="status"]'),
+    ).toBeNull();
+  });
+
+  it('offers «Rādīt PIN» only on a phone PIN ride at arrived (edge, #275)', () => {
+    const showPin = formatMessage('lv', 'console.show_pin');
+    const at = (status: BoardRide['status'], pickupPinRequired: boolean) =>
+      ride({
+        status,
+        pickupPinRequired,
+        driverId: 'd0000000-0000-4000-8000-000000000001',
+        driverName: 'Jānis Ozols',
+        unclaimedSeconds: 0,
+      });
+
+    const arriving = queue([at('arriving', true)]);
+    expect(screen.queryByText(showPin)).toBeNull();
+    arriving.unmount();
+
+    const noPin = queue([at('arrived', false)]);
+    expect(screen.queryByText(showPin)).toBeNull();
+    noPin.unmount();
+
+    // An app rider has the PIN on screen and gets no SMS (PR #300 M1).
+    const app = queue([
+      ride({
+        status: 'arrived',
+        pickupPinRequired: true,
+        bookingChannel: 'app',
+        driverId: 'd0000000-0000-4000-8000-000000000001',
+        driverName: 'Jānis Ozols',
+        unclaimedSeconds: 0,
+      }),
+    ]);
+    expect(screen.queryByText(showPin)).toBeNull();
+    app.unmount();
+
+    queue([at('arrived', true)]);
+    expect(screen.getByText(showPin)).toBeInTheDocument();
+  });
+
+  it('reports the ride back from «Rādīt PIN», named with its address (expected, #275)', () => {
+    const onShowPin = vi.fn();
+    const target = ride({
+      status: 'arrived',
+      pickupPinRequired: true,
+      driverId: 'd0000000-0000-4000-8000-000000000001',
+      driverName: 'Jānis Ozols',
+      unclaimedSeconds: 0,
+    });
+    queue([target], onShowPin);
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: formatMessage('lv', 'console.show_pin_at', {
+          address: 'Brīvības 1',
+        }),
+      }),
+    );
+    expect(onShowPin).toHaveBeenCalledWith(target);
   });
 });

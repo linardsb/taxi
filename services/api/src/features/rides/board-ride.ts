@@ -23,6 +23,39 @@ import {
  */
 export const boardPickupSchema = rideRequestSchema.pick({ pickup: true });
 
+/** The request's opt-ins, validated apart from the pickup — see `boardFlagsOf`. */
+const boardOptionsSchema = rideRequestSchema.pick({ options: true });
+
+/**
+ * The two option flags the board carries (#275), read off the request snapshot.
+ *
+ * A SEPARATE parse from `boardPickupSchema`, because the failure mode differs:
+ * a bad pickup costs the card (there is nothing to render), a bad `options`
+ * must cost only the badge. So a failure here yields `false`, never a dropped
+ * row. A request with no `options` key parses to all-false through the
+ * schema's own default, which is the right answer for a legacy row.
+ *
+ * `pickupPinRequired` comes from the request flag, not the `pickup_pin` column:
+ * the two are equal by construction (`RidesService` mints if and only if the
+ * flag is set), and the board projection must never touch the PIN column.
+ *
+ * No log on the fallback: it would repeat every 2 s per bad row, and the
+ * options were validated at write time.
+ */
+export function boardFlagsOf(request: unknown): {
+  announceArrival: boolean;
+  pickupPinRequired: boolean;
+} {
+  const parsed = boardOptionsSchema.safeParse(request);
+  if (!parsed.success) {
+    return { announceArrival: false, pickupPinRequired: false };
+  }
+  return {
+    announceArrival: parsed.data.options.announceArrival,
+    pickupPinRequired: parsed.data.options.pickupPin,
+  };
+}
+
 const BOARD_STATUS_SET = new Set<string>(BOARD_LIVE_RIDE_STATUSES);
 
 /**
@@ -42,6 +75,10 @@ export interface BoardRide {
   driverId: string | null;
   driverName: string | null;
   bookingChannel: BookingChannel;
+  /** `options.announceArrival` (#275), for the console's badge. */
+  announceArrival: boolean;
+  /** Whether the ride has a pickup PIN (#275) — never the PIN itself. */
+  pickupPinRequired: boolean;
   createdAt: Date;
   /**
    * The zone the ride was DISPATCHED from — stamped once by `setGeozone` at

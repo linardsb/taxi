@@ -227,6 +227,11 @@ export type RideAnnounceRequestedEvent = z.infer<
  * so a patch that reordered zones would invent positions the store never
  * issued. The next full frame carries the real ranks, on the same self-healing
  * rule `drivers` already runs on.
+ *
+ * A ride's `announceArrival` and `pickupPinRequired` (#275) are
+ * `.default(false)` because a frame cached by the previous build is re-parsed
+ * at load (`use-board.ts`), and a required field would throw there and drop
+ * Dina's cached phone list.
  */
 export const dispatchBoardEventSchema = z.object({
   cityId: z.string().uuid(),
@@ -239,6 +244,19 @@ export const dispatchBoardEventSchema = z.object({
       driverId: z.string().uuid().nullable(),
       driverName: z.string().nullable(),
       bookingChannel: z.enum(BOOKING_CHANNELS),
+      /**
+       * The ride's `options.announceArrival` (#275), so the console can badge
+       * it and Dina can act as the pickup assistant (dispatcher-as-Aira). A
+       * request for a procedure, not a statement about the rider (#259 D1).
+       */
+      announceArrival: z.boolean().default(false),
+      /**
+       * Whether the ride was booked with a pickup PIN (#275). NEVER the PIN:
+       * this frame is broadcast to every dispatcher socket every 2 s and
+       * persisted to localStorage. The PIN travels only on `riderRideSchema`
+       * and `dispatcherPickupPinSchema`.
+       */
+      pickupPinRequired: z.boolean().default(false),
       requestedAt: z.string().datetime(),
       unclaimedSeconds: z.number().int().nonnegative(),
       /**

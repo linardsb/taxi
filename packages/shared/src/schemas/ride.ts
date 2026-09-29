@@ -436,7 +436,9 @@ export type RideStart = z.infer<typeof rideStartSchema>;
  * The rider's own `GET /rides/:rideId` (#258): a `Ride` plus its pickup PIN
  * (null when the rider did not opt in).
  *
- * This is the ONLY schema that carries the PIN. `rideSchema` must never gain
+ * This is the only RIDE schema that carries the PIN; the one other carrier is
+ * `dispatcherPickupPinSchema` (#275), a standalone response for the logged
+ * dispatcher read at `arrived`, not a ride shape. `rideSchema` must never gain
  * it: the driver read, `complete`, `settle` and the dispatcher's `RideCreated`
  * are all `rideSchema`, and leaving the PIN off it keeps them clean by
  * construction — a forgotten path strips it rather than leaks it. `.extend`

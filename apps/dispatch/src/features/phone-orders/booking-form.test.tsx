@@ -121,15 +121,73 @@ describe('BookingForm', () => {
     const order = fields.map((field) =>
       field.getAttribute('role') === 'combobox' ? 'combobox' : field.id,
     );
-    // phone → caller name → pickup → destination → note, which is the order a
-    // caller speaks in (evidence F2.4).
+    // phone → caller name → pickup → destination → (payment radios) →
+    // options (#275) → note, which is the order a caller speaks in (F2.4).
     expect(order).toEqual([
       'booking-phone',
       'booking-caller-name',
       'combobox',
       'combobox',
+      'booking-pickup-pin',
+      'booking-announce-arrival',
       'booking-note',
     ]);
+  });
+
+  it('books with both pickup options ticked through the DOM (expected — #275)', async () => {
+    render(<BookingForm offline={false} onClose={vi.fn()} />);
+
+    await fillBookable();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'PIN kods' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Šoferis pieteiksies balsī' }),
+    );
+
+    const submit = screen.getByRole('button', { name: 'Pasūtīt' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(api.book).toHaveBeenCalledTimes(1));
+    const [body] = api.book.mock.calls[0] as [
+      { options: Record<string, boolean> },
+      string,
+    ];
+    expect(body.options.pickupPin).toBe(true);
+    expect(body.options.announceArrival).toBe(true);
+    expect(body.options.childSeat).toBe(false);
+    expect(body.options.femaleDriver).toBe(false);
+  });
+
+  it('toggles a pickup option on Enter instead of submitting the form (edge — #275)', async () => {
+    render(<BookingForm offline={false} onClose={vi.fn()} />);
+    await fillBookable();
+    const pin = screen.getByRole('checkbox', { name: 'PIN kods' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Pasūtīt' })).toBeEnabled(),
+    );
+
+    // `false` = the default was prevented, which is what stops Chrome's
+    // implicit submission; jsdom does not implement that submission itself.
+    expect(fireEvent.keyDown(pin, { key: 'Enter' })).toBe(false);
+    expect(pin).toBeChecked();
+    fireEvent.keyDown(pin, { key: 'Enter' });
+    expect(pin).not.toBeChecked();
+    expect(api.book).not.toHaveBeenCalled();
+  });
+
+  it('describes each pickup option with its hint (expected — #275, AC5)', () => {
+    render(<BookingForm offline={false} onClose={vi.fn()} />);
+
+    expect(
+      screen.getByRole('checkbox', { name: 'PIN kods' }),
+    ).toHaveAccessibleDescription(
+      'Zvanītājs saņems PIN īsziņā, kad auto būs klāt.',
+    );
+    expect(
+      screen.getByRole('checkbox', { name: 'Šoferis pieteiksies balsī' }),
+    ).toHaveAccessibleDescription(
+      'Ieradies šoferis izkāps un skaļi pateiks „Sakta”.',
+    );
   });
 
   it('persists the draft on every keystroke (expected — AC #9)', async () => {

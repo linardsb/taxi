@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DRIVER_STATUSES } from '../enums';
+import { pickupPinSchema } from './ride';
 
 /**
  * What a dispatcher puts on the wire to override the algorithm (S9-2).
@@ -73,3 +74,14 @@ export const dispatchRosterSchema = z.object({
   drivers: z.array(dispatchDriverSchema),
 });
 export type DispatchRoster = z.infer<typeof dispatchRosterSchema>;
+
+/**
+ * `GET /rides/:rideId/pickup-pin` — dispatcher/admin only (#275, PR #277 L2).
+ *
+ * A standalone response, not a field on any ride shape, so `rideSchema` stays
+ * PIN-free by construction (see `riderRideSchema`). It exists because the
+ * arrival SMS is a phone rider's only other copy of the PIN: when that SMS
+ * fails, Dina reads the PIN to the caller instead of cancelling the ride.
+ */
+export const dispatcherPickupPinSchema = z.object({ pin: pickupPinSchema });
+export type DispatcherPickupPin = z.infer<typeof dispatcherPickupPinSchema>;

@@ -227,6 +227,27 @@ describe('dispatchBoardEventSchema', () => {
     expect(dispatchBoardEventSchema.parse(overWire)).toEqual(emitted);
   });
 
+  it('reads a ride cached by the previous build, with neither #275 flag, as both false (edge)', () => {
+    // `base` predates #275: no `announceArrival`, no `pickupPinRequired`. A
+    // frame persisted before the deploy is re-parsed at load, so it must not throw.
+    const parsed = dispatchBoardEventSchema.parse(base);
+    expect(parsed.rides[0]!.announceArrival).toBe(false);
+    expect(parsed.rides[0]!.pickupPinRequired).toBe(false);
+  });
+
+  it('carries both #275 flags through the JSON round-trip (expected)', () => {
+    const emitted = dispatchBoardEventSchema.parse({
+      ...base,
+      rides: [
+        { ...base.rides[0]!, announceArrival: true, pickupPinRequired: true },
+      ],
+    });
+    const overWire: unknown = JSON.parse(JSON.stringify(emitted));
+    const parsed = dispatchBoardEventSchema.parse(overWire);
+    expect(parsed.rides[0]!.announceArrival).toBe(true);
+    expect(parsed.rides[0]!.pickupPinRequired).toBe(true);
+  });
+
   it('parses an empty board before any orders land (edge)', () => {
     const parsed = dispatchBoardEventSchema.parse({
       ...base,

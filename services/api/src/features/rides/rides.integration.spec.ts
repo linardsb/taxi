@@ -659,6 +659,43 @@ describe('rides (integration)', () => {
       const board = await repo().findBoardRides(100);
       expect(board.map((r) => r.id)).not.toContain(bad.id);
     });
+
+    it('reads both #275 option flags off the request (expected)', async () => {
+      const r = await rider(34);
+      const res = await http
+        .post('/rides')
+        .set('authorization', r.auth)
+        .set(IDEMPOTENCY_KEY_HEADER, idem())
+        .send({
+          pickup: CENTRE,
+          destination: RIX,
+          paymentMethod: 'cash',
+          options: { announceArrival: true, pickupPin: true },
+        })
+        .expect(201);
+      const ride = rideCreatedSchema.parse(res.body).ride;
+
+      const row = (await repo().findBoardRides(100)).find(
+        (b) => b.id === ride.id,
+      );
+      expect(row?.announceArrival).toBe(true);
+      expect(row?.pickupPinRequired).toBe(true);
+    });
+
+    it('keeps a ride with malformed options on the board, unbadged — degrade, not drop (edge)', async () => {
+      const ride = await createRide(35);
+      await ctx.db
+        .update(rides)
+        .set({ request: { ...ride.request, options: 'junk' } })
+        .where(eq(rides.id, ride.id));
+
+      const row = (await repo().findBoardRides(100)).find(
+        (b) => b.id === ride.id,
+      );
+      expect(row?.pickup).toEqual(CENTRE);
+      expect(row?.announceArrival).toBe(false);
+      expect(row?.pickupPinRequired).toBe(false);
+    });
   });
 
   /**

@@ -21,8 +21,10 @@ import {
   AssignDialog,
   assignVerb,
   CancelDialog,
+  PinDialog,
   pickupZoneOf,
   useAssign,
+  usePickupPin,
 } from '@/features/override';
 import {
   BookingForm,
@@ -35,7 +37,8 @@ const LANG: Language = 'lv';
 /** Which override dialog is open, and on which ride. */
 type OverrideTarget =
   | { kind: 'assign'; rideId: string; status: BoardRideStatus }
-  | { kind: 'cancel'; rideId: string };
+  | { kind: 'cancel'; rideId: string }
+  | { kind: 'pin'; rideId: string };
 
 const timeOf = (ms: number) =>
   new Date(ms).toLocaleTimeString('lv-LV', {
@@ -61,6 +64,8 @@ export default function DispatchPage() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const assignApi = useAssign();
   const { loadRoster, reset } = assignApi;
+  const pinApi = usePickupPin();
+  const { reveal, clear: clearPin } = pinApi;
 
   const openBookingForm = useCallback(() => setBookingOpen(true), []);
   // Closing keeps the draft: it lives in localStorage, so ⌥N reopens it exactly
@@ -95,6 +100,17 @@ export default function DispatchPage() {
       setTarget({ kind: 'cancel', rideId: ride.rideId });
     },
     [reset],
+  );
+
+  // NOT gated on `disabledReasonKey`: that refuses WRITES while the socket is
+  // down, and this is a REST read that can still work; a failed fetch shows
+  // `console.pin_failed` (#275).
+  const openPin = useCallback(
+    (ride: { rideId: string }) => {
+      setTarget({ kind: 'pin', rideId: ride.rideId });
+      void reveal(ride.rideId);
+    },
+    [reveal],
   );
   const flashRideIds = new Set(
     board.alerts.filter((a) => a.kind === 'unclaimed').map((a) => a.rideId),
@@ -267,6 +283,7 @@ export default function DispatchPage() {
             flashRideIds={flashRideIds}
             onAssign={openAssign}
             onCancel={openCancel}
+            onShowPin={openPin}
           />
           <div style={{ display: 'grid', gap: 'var(--spacing-lg)' }}>
             {view === 'zones' ? (
@@ -351,6 +368,17 @@ export default function DispatchPage() {
             void assignApi.cancel(target.rideId, reason).then((outcome) => {
               if (outcome.ok) setTarget(null);
             });
+          }}
+        />
+      )}
+
+      {target?.kind === 'pin' && (
+        <PinDialog
+          key={target.rideId}
+          state={pinApi.state}
+          onClose={() => {
+            clearPin();
+            setTarget(null);
           }}
         />
       )}

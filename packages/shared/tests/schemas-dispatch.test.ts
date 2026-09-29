@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dispatcherPickupPinSchema,
   dispatchRosterSchema,
   forceAssignBodySchema,
   reassignBodySchema,
@@ -85,5 +86,22 @@ describe('dispatchRosterSchema', () => {
     expect(
       dispatchRosterSchema.safeParse({ at: 'now', drivers: [] }).success,
     ).toBe(false);
+  });
+});
+
+describe('dispatcherPickupPinSchema', () => {
+  it('keeps the leading zeros of a PIN (expected)', () => {
+    expect(dispatcherPickupPinSchema.parse({ pin: '0042' })).toEqual({
+      pin: '0042',
+    });
+  });
+
+  it('rejects a PIN shorter or longer than 4 digits (failure)', () => {
+    expect(dispatcherPickupPinSchema.safeParse({ pin: '42' }).success).toBe(
+      false,
+    );
+    expect(dispatcherPickupPinSchema.safeParse({ pin: '12345' }).success).toBe(
+      false,
+    );
   });
 });

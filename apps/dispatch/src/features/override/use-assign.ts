@@ -29,7 +29,7 @@ type Outcome = { ok: true } | { ok: false; key: MessageKey };
  * mid-shift if the envelope ever moved, instead of failing loudly (review
  * F26/F45).
  */
-async function errorCodeOf(res: Response): Promise<string | undefined> {
+export async function errorCodeOf(res: Response): Promise<string | undefined> {
   try {
     const parsed = apiErrorBodySchema.safeParse(await res.json());
     if (parsed.success) return parsed.data.message;
