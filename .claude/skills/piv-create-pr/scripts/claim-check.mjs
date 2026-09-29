@@ -298,11 +298,15 @@ async function runAll(requests, key, budgetMs) {
   const worker = async () => {
     while (next < requests.length && !budget.signal.aborted) {
       const i = next++;
+      // Not AbortSignal.timeout(): inside AbortSignal.any() on Node 20 it is garbage-collected and never fires
+      // (observed under --expose-gc on v20.20.2). This controller is held by its own timer, cleared below.
+      const perRequest = new AbortController();
+      const t = setTimeout(() => perRequest.abort(), TIMEOUT_MS);
       try {
-        out[i] = { ok: true, body: await askJev(requests[i], key, AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), budget.signal])) };
+        out[i] = { ok: true, body: await askJev(requests[i], key, AbortSignal.any([perRequest.signal, budget.signal])) };
       } catch (e) {
-        out[i] = { ok: false, reason: budget.signal.aborted ? 'budget' : e.name === 'TimeoutError' ? `timeout ${TIMEOUT_MS / 1000} s` : (e.cause?.code ?? e.message) };
-      }
+        out[i] = { ok: false, reason: budget.signal.aborted ? 'budget' : perRequest.signal.aborted ? `timeout ${TIMEOUT_MS / 1000} s` : (e.cause?.code ?? e.message) };
+      } finally { clearTimeout(t); }
     }
   };
   try { await Promise.all(Array.from({ length: Math.min(CONCURRENCY, requests.length) }, worker)); }
