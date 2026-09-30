@@ -32,7 +32,7 @@ export class PricingService {
   ) {}
 
   async quote(
-    request: RideRequest,
+    request: Omit<RideRequest, 'riderId'>,
   ): Promise<{ quote: FareQuote; split: FareSplit; trip: TripEstimate }> {
     // Read BEFORE the maps call: this throws hard on a missing row (the
     // config-not-constant rule), and an unseeded environment should not spend

@@ -6,7 +6,7 @@ import {
   type SignupRole,
   type User,
 } from '@taxi/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { DRIZZLE } from '../../common/db/db.module';
 
@@ -56,7 +56,8 @@ export class AuthRepository {
    * conflict branch touches `phone` and nothing else, so an existing user's
    * stored role always wins over whatever the OTP request claimed. That one
    * omission is the whole privilege-escalation defence — do not add `role`
-   * to the conflict `set`.
+   * to the conflict `set`. The one sanctioned exception is a row a dispatcher
+   * minted, and it lives in `adoptProvisional`, not here (#123).
    *
    * `onConflictDoNothing().returning()` returns [] on conflict, which is why
    * this is DO UPDATE with a no-op SET — the only form that always returns
@@ -72,5 +73,41 @@ export class AuthRepository {
       .onConflictDoUpdate({ target: users.phone, set: { phone: input.phone } })
       .returning();
     return toUser(row!);
+  }
+
+  /**
+   * The ONE place an existing row's role may change on sign-in (#123), and
+   * only for a row a dispatcher minted on the person's behalf. Runs after
+   * `findOrCreate`, never instead of it, so a provisional row inserted by a
+   * concurrent phone booking is already there to adopt.
+   *
+   * Three conditions, each load-bearing:
+   * - `provisioned_by IS NOT NULL` — a row its owner created by OTP is never
+   *   touched, so `findOrCreate`'s "stored role wins" defence holds for it.
+   * - `role = 'rider'` — the phone path only ever mints riders; a staff row
+   *   that somehow carries the marker (#20 provisions staff accounts) must not
+   *   be demoted to a driver by whoever holds the SIM.
+   * - `role` is a `SignupRole` — `otpRequestSchema` and the OTP record both
+   *   admit only `rider`/`driver`, so an adoption cannot reach a staff role.
+   *
+   * Clearing the marker makes it one-shot: the next OTP for this number finds a
+   * row its owner has now claimed, and the stored role wins again.
+   */
+  async adoptProvisional(input: {
+    phone: string;
+    role: SignupRole;
+  }): Promise<User | undefined> {
+    const [row] = await this.db
+      .update(users)
+      .set({ role: input.role, provisionedBy: null })
+      .where(
+        and(
+          eq(users.phone, input.phone),
+          isNotNull(users.provisionedBy),
+          eq(users.role, 'rider'),
+        ),
+      )
+      .returning();
+    return row ? toUser(row) : undefined;
   }
 }

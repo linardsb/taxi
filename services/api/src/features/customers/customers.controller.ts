@@ -82,10 +82,11 @@ export class CustomersController {
   @Post()
   @Roles('dispatcher', 'admin')
   upsert(
+    @CurrentUser() user: JwtClaims,
     @Body(new ZodValidationPipe(customerUpsertBodySchema))
     body: CustomerUpsertBody,
   ): Promise<Customer> {
-    return this.customers.upsert(body);
+    return this.customers.upsert(user.sub, body);
   }
 
   /**

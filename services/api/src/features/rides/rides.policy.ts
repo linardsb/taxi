@@ -134,3 +134,14 @@ export const RIDE_IDEMPOTENCY_PENDING = 'pending';
  */
 export const rideIdempotencyKey = (riderId: string, key: string): string =>
   `rides:idem:${riderId}:${key}`;
+
+/**
+ * The PHONE path's key (#123), scoped by the caller's phone because no rider
+ * id exists yet when it is reserved — the `users` row is resolved after the
+ * cap, so a refused booking mints nothing. Same person as the rider scope
+ * (`users.phone` is unique), and a namespace of its own so the two can never
+ * meet. A phone in a Redis key has precedent in `otp:code:<phone>`; the key
+ * itself is never logged.
+ */
+export const callerIdempotencyKey = (phone: string, key: string): string =>
+  `rides:idem:phone:${phone}:${key}`;

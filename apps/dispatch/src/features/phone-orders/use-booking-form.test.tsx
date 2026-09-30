@@ -105,7 +105,7 @@ describe('useBookingForm', () => {
     await waitFor(() => expect(api.book).toHaveBeenCalledTimes(2));
     const secondKey = (api.book.mock.calls[1] as [unknown, string])[1];
 
-    // A reused key is rider-scoped and settled for 24 h server-side, so the
+    // A reused key is caller-scoped and settled for 24 h server-side, so the
     // second booking REPLAYS the first ride: the console renders success
     // carrying the old ride id and no car is dispatched for this call.
     expect(secondKey).not.toBe(firstKey);

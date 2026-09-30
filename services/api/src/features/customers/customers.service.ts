@@ -84,15 +84,22 @@ export class CustomersService {
    * Refuses a phone that belongs to a driver or a dispatcher: a customer record
    * on a driver's number would make the caller pop offer to book that driver a
    * ride as themselves.
+   *
+   * A row it mints is provisional, filed by `dispatcherId` (#123): the person
+   * never took part, so their own OTP signup adopts it.
    */
-  async upsert(body: CustomerUpsertBody): Promise<Customer> {
+  async upsert(
+    dispatcherId: string,
+    body: CustomerUpsertBody,
+  ): Promise<Customer> {
     const existing = await this.repository.findUserByPhone(body.phone);
     if (existing !== undefined && existing.role !== 'rider') {
       throw new BadRequestException('phone_belongs_to_staff');
     }
 
     const user =
-      existing ?? (await this.repository.findOrCreateUser(body.phone));
+      existing ??
+      (await this.repository.findOrCreateUser(body.phone, dispatcherId));
     const customer = await this.repository.findOrCreateCustomer(user.id);
     const updated = await this.repository.updateCustomer(customer.id, {
       label: body.label,

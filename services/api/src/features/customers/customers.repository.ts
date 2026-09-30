@@ -80,13 +80,19 @@ export class CustomersRepository {
    * NEVER in the `set`, so a booking for an existing rider cannot rename them or
    * downgrade a role. It takes no name at all: `fillEmptyDisplayName` is the one
    * name writer on the phone path (#269).
+   *
+   * `provisionedBy` (#123) marks a NEW row as minted on the caller's behalf, so
+   * their later OTP signup adopts it. In `values` only, never in the conflict
+   * `set`: a rider who signed up themselves must not become adoptable because
+   * Dina booked them.
    */
   async findOrCreateUser(
     phone: string,
+    provisionedBy: string,
   ): Promise<{ id: string; role: UserRole }> {
     const [row] = await this.db
       .insert(users)
-      .values({ phone, role: 'rider' })
+      .values({ phone, role: 'rider', provisionedBy })
       .onConflictDoUpdate({ target: users.phone, set: { phone } })
       .returning({ id: users.id, role: users.role });
     if (row === undefined) {

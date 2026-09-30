@@ -302,7 +302,23 @@ export class AuthService {
     await this.burn(phone);
     await this.kv.del(cooldownKey(phone));
 
-    const user = await this.repo.findOrCreate({ phone, role: record.role });
+    const found = await this.repo.findOrCreate({ phone, role: record.role });
+    // A row Dina minted for this number is the person's, now they have proved
+    // they hold it: adopt it at the role they signed up for (#123).
+    const adopted = await this.repo.adoptProvisional({
+      phone,
+      role: record.role,
+    });
+    if (adopted) {
+      this.logger.log({
+        event: 'auth.user.adopted',
+        userId: adopted.id,
+        phone: masked,
+        role: adopted.role,
+        at,
+      });
+    }
+    const user = adopted ?? found;
     const { accessToken, expiresAt } = await this.tokens.issue(user);
 
     this.logger.log({
