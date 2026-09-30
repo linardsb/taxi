@@ -456,7 +456,10 @@ async function runEval(path, key, threshold, keyProblem) {
   const rows = [];
   readFileSync(path, 'utf8').split('\n').forEach((l, i) => {
     if (!l.trim()) return;
-    try { rows.push(JSON.parse(l)); } catch { process.stdout.write(`note: line ${i + 1} is not JSON; skipped\n`); }
+    let row;
+    try { row = JSON.parse(l); } catch { return void process.stdout.write(`note: line ${i + 1} is not JSON; skipped\n`); }
+    if (typeof row?.state !== 'object' || row.state === null) return void process.stdout.write(`note: line ${i + 1} has no \`state\` object; skipped\n`);
+    rows.push(row);
   });
   if (!key) return void process.stdout.write(`note: ${keyProblem}: no Jev call made; ${rows.length} rows not scored.\n`);
   const git = (args) => { try { return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return 'none'; } };

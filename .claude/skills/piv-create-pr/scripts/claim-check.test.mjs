@@ -292,6 +292,17 @@ test('16 failure (PR #308 L1): a 200 null body is a note, not a crash', async ()
   assert.match(r.out, /Jev unavailable: 1 of 1 requests failed, first: response body is not a JSON object/);
 });
 
+test('16b failure (PR #308 L1, eval half): a null or state-less JSONL row is skipped with a note, not a crash', async () => {
+  stub.mode = 'ok'; stub.noul = 0.9;
+  const row = JSON.stringify({ id: 'r1', question: 'worst_case', label: true, state: { sentence: 'It took 5 s.', heading: '' } });
+  const r = await run(['--eval', bodyFile('e16b.jsonl', `null\n{"id":"x"}\n${row}\n`)], stubEnv());
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, /crashed/);
+  assert.match(r.out, /^note: line 1 has no `state` object; skipped$/m);
+  assert.match(r.out, /^note: line 2 has no `state` object; skipped$/m);
+  assert.match(r.out, /· 1 rows ·/);
+});
+
 test('17 expected (PR #308 M2): --details-out writes the block alone, even when a quoted sentence holds <details>', async () => {
   stub.mode = 'ok'; stub.noul = 0.04;
   const out = join(tmp, 'details.md');

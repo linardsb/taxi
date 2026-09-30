@@ -26,7 +26,7 @@ eval are committed.
 ## Tests added
 
 `claim-check.test.mjs`: 12 offline tests (1–11 as in the plan, plus 10b) and 3 live tests (L1–L3) at `acb3f63`.
-The PR #308 fix pass adds 9 offline tests (2b, 4b, 12–18), so 21 offline: see
+The PR #308 fix pass adds 10 offline tests (2b, 4b, 12–18, 16b), so 22 offline: see
 `.claude/reports/pr-308-review-fixes.md`.
 
 - `pnpm --filter @taxi/pr-scripts test`: `# pass 11`, `# skipped 3`, `# fail 0` (observed, 2026-09-29, head `87987da`); `# pass 12` after 10b.
@@ -118,7 +118,7 @@ The PR #308 fix pass adds 9 offline tests (2b, 4b, 12–18), so 21 offline: see
   always skips under the gate because turbo's strict env strips the key. The offline half (`questionsFor` asks it
   `worst_case` only) is not asserted offline either. Found by PR #308's review (L5). It ran green live on
   2026-09-30 in the fix pass.
-- **D6 after the PR #308 fix pass**: `claim-check.mjs` is 513 lines (`wc -l`, observed on the fix-pass tree).
+- **D6 after the PR #308 fix pass**: `claim-check.mjs` is 516 lines (`wc -l`, observed on the fix-pass tree).
 - **D9: the eval baseline.** The eval ran at `b801c7b`, and the report is committed after it.
 
 ## Issues encountered

@@ -890,3 +890,14 @@ and missed counts per question. The blocking decision and threshold come from th
     the body check does not; 10 negative rows fall outside the check's path.
   - Task 2: a plain line directly after a list item continues that item, so a wrapped bullet stays one unit.
     Found by the dogfood run in `piv-create-pr`.
+- 2026-09-30, PR #308 round-1 review fix pass (details in `.claude/reports/pr-308-review-fixes.md`):
+  - Task 3: a `TYPESAFE_API_KEY` holding whitespace or a control character is refused unprinted, and every
+    failure reason is scrubbed of the key and flattened to one capped line (H1, L3).
+  - Task 3: a run with no verdicts is "Jev unavailable". `failed` counts requests, not questions, and an aborted
+    body read is a timeout or the budget (M1). A non-object 200 body and a JSONL row with no `state` object are
+    notes, not crashes (L1).
+  - Task 3: `--details-out <file>` writes the `<details>` block alone. Task 9's Phase 2.5 text says to paste that
+    file, and that the script exits 0 except on usage (2) (M2, L4).
+  - Task 2: a fence closes only on a bare run of its own character, at least as long as the opener (L2).
+  - Task 5: added tests 2b, 4b, 12–18 and 16b (10 offline tests). #302's derived-figure acceptance case stays
+    live-only (report D13).

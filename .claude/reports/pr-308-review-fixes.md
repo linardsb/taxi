@@ -1,6 +1,7 @@
 # PR #308 review fixes, round 1
 
-**Review**: `.claude/code-reviews/pr-308-review.md` (round 1 plus the base-moved addendum) · **Fix commit** `a068261`
+**Review**: `.claude/code-reviews/pr-308-review.md` (round 1 plus the base-moved addendum) · **Fix commits** `a068261`,
+then the L1 eval half and the plan amendment in the commit after `89d485a`
 on `feature/jev-claim-check-302` · 2026-09-30
 
 **Scope**: no steer was given, so the review's own recommendation applies. Fix H1, M1 and M2, and pick up
@@ -19,7 +20,7 @@ well as for the missing redaction.
 | H1 | A key containing a newline was echoed into the `<details>` block via undici's `Headers.append` message | `main` refuses a key that fails `/^[\x21-\x7e]+$/` with a note that names no value. `runAll` replaces the key with `[redacted]` before flattening (empty-key guard, so `replaceAll('')` never runs) | 12 (CLI: note, no `SECRETKEY`, `stub.hits === 0`), 13 (`checkBody` directly, past the CLI check: `[redacted]`, one line) | CLI check → `if (false)`: 12 red. Redaction → `String(s)`: 13 red |
 | M1 | `200 {}` logged as "No claim units to judge." with `0 flagged`. Failures were counted per question. An aborted body read became `{}` | One `failed` entry per request. `unavailable` is set whenever there are no verdicts. `askJev` rethrows when `signal.aborted`. The no-units line only prints when there are no units | 14 (`200 {}`), 15 (headers sent, body never finished, `TIMEOUT_MS=300` → `timeout 0.3 s`) | `unavailable` never set: 14 red. Rethrow removed: 15 red |
 | M2 | The PR body had been cut at the first `<details>` in stdout, which is a quoted one | `--details-out <file>` writes the block alone. A failed write is a note, exit 0. Phase 2.5 says paste the file | 17 (the file starts `<details><summary>` and ends `</details>\n` even with a quoted `<details>`; stdout ends with the same block), 18 (ENOENT is a note, exit 0) | Both red on the unfixed script (flag absent) |
-| L1 | `200 null` crashed the run | `askJev` rejects a non-object body | 16 | Check → `if (false)`: 16 red |
+| L1 | `200 null` crashed the run; so did a `null` JSONL row under `--eval` (`evalSet`, the review's second half, missed in `a068261` and caught before round 2: `observed`, `note: claim-check crashed … reading 'state'`) | `askJev` rejects a non-object body; `runEval` skips a row with no `state` object, with a note | 16, 16b | Check → `if (false)`: 16 red; row check → `if (false)`: 16b red |
 | L2 | A ```` fence closed on an inner ```; a ```js line closed a ``` fence | Close only on a bare run of the opener's character, at least as long | 2b | Reverted to `startsWith(fence)`: 2b red |
 | L3 | Server strings entered the block raw | `oneLine` (key scrub, whitespace collapse, 200-char cap) on the failure reason, `choice` and `model` | 13's one-line assertion | (with H1) |
 | L4 | Phase 2.5 said "always exits 0" | "exits 0 on every path except usage (2)" in `SKILL.md` and the plan's task text | none (prose) | — |
@@ -31,7 +32,8 @@ well as for the missing redaction.
 - **Redaction depends on the literal key.** A runtime that escaped the newline (`\n` as two characters) would slip past `replaceAll`. The CLI check stops that key before any call, and test 12 pins it.
 
 **Not done from L5**:
-- The crash handler is still unexercised. After L1, no input found here reaches it.
+- The crash handler is still unexercised. No test drives it. That is not a claim that it is unreachable: the
+  first version of this report said it was, and L1's eval half disproved it.
 - An offline assertion for the derived-figure case was not added. D13 records the gap.
 
 ## Verbatim review probes on the fixed tree
@@ -54,12 +56,12 @@ Run 2026-09-30T08:25Z (`observed`):
 
 `observed` 2026-09-30:
 
-- **`node --test`** in the package: `# tests 24`, `# pass 21`, `# fail 0`, `# skipped 3`.
-- **Under turbo**: `pnpm turbo run test --filter @taxi/pr-scripts --force` gives the same counts, `Tasks: 1 successful, 1 total`, `0 cached`.
+- **`node --test`** in the package: `# tests 25`, `# pass 22`, `# fail 0`, `# skipped 3` (after 16b; `# pass 21` at `89d485a`).
+- **Under turbo**: `pnpm turbo run test --filter @taxi/pr-scripts --force` at `a068261`: `# pass 21`, `Tasks: 1 successful, 1 total`, `0 cached`.
 - **Live**: `CLAIM_CHECK_LIVE=1` gives `# pass 24`, `# fail 0`, `# skipped 0` (08:25Z). L2 is #302's derived-figure edge case.
 - **Full gate**: not run locally.
   - `wt-302` has no env file, and the hook blocks copying one in.
-  - 23 live claude processes share the test DB.
+  - Other sessions were live: `ps aux | grep -c "[c]laude"` printed 23. That count includes any process line containing "claude", so it is an upper bound on sessions, not a count of them.
   - The gate for this change is CI's `check` job on the pushed head, cited in the PR body.
   - The diff touches only `.claude/` and the `@taxi/pr-scripts` package. No `package.json`, `turbo.json` or workspace file changed, so the task count stays 23.
 
@@ -74,7 +76,7 @@ Every `grep -n` below ran on the fixed tree, 2026-09-30. "Body" means the publis
 | `1897` | 0 | 0 | 6 | Size bullet re-derived to 2027. The other hits are log entry 1 (kept) and the deleted fragment |
 | `12 offline` | 0 | `:28` now says "at `acb3f63`" and adds 21 | 3 | Tests bullet → 21 |
 | `pass 12` | 0 | `:32`, `:53` are gate runs at named heads (kept) | 3 | The body's line sits under the `acb3f63` gate it came from, kept. The fix-pass figures are added |
-| `487` | 0 | D6 now adds 513 | 9 | D6 → "487 at `acb3f63` and 513 at `a068261`". The per-file split is re-derived |
+| `487` | 0 | D6 now adds 516 | 9 | D6 → "487 at `acb3f63`" plus the final head's count. The per-file split is re-derived |
 | `claim-check.mjs:<n>` citations | 0 | 0 | 0 | none to move |
 | `Paste its` (`<details>` from stdout) | `:654` → "the `--details-out` file" | 0 | 0 | `SKILL.md` corrected |
 
