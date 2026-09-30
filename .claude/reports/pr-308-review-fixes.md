@@ -25,7 +25,7 @@ well as for the missing redaction.
 | L3 | Server strings entered the block raw | `oneLine` (key scrub, whitespace collapse, 200-char cap) on the failure reason, `choice` and `model` | 13's one-line assertion | (with H1) |
 | L4 | Phase 2.5 said "always exits 0" | "exits 0 on every path except usage (2)" in `SKILL.md` and the plan's task text | none (prose) | — |
 | L5 (part) | Test 4 did not pin that untracked or `../` citations are never read. Test 9's title described a case it did not build | 4b: a reader spy stays empty, `readAtHead` throws `not tracked`, and a dirty tracked file reads its HEAD content. Test 9 retitled. The report's D13 records that the derived-figure acceptance case is live-only | 4b | `readAtHead` → `readFileSync`: 4b red |
-| L-new | The Size command was a two-dot diff | The body now uses `origin/main...a068261` (three-dot) | none (prose) | — |
+| L-new | The Size command was a two-dot diff | The body's Size command became three-dot, `origin/main...<head>`; its head and totals are the body's, re-derived each push, not restated here | none (prose) | — |
 
 **H1, step 4: what new failure mode does the fix's mechanism have?**
 - **The format check can refuse a real key.** The note makes that visible, so it is not silent. Keys are printable tokens, and the live key used here passed the check.
@@ -73,8 +73,8 @@ Every `grep -n` below ran on the fixed tree, 2026-09-30. "Body" means the publis
 |---|---|---|---|---|
 | `always exits 0` | `:29` "except on a usage error" (true, kept). `:653` now quotes it as corrected | `:10` "except on usage (2)" (true, kept) | 0 | `SKILL.md` Phase 2.5 corrected |
 | `origin/main..HEAD` (two-dot) | 0 | 0 | 3 | Size bullet → three-dot. The 2 hits inside log entry 1 are its quoted sentence, a record of the `acb3f63` run, kept. The fragment copy was deleted with M2 |
-| `1897` | 0 | 0 | 6 | Size bullet re-derived to 2027. The other hits are log entry 1 (kept) and the deleted fragment |
-| `12 offline` | 0 | `:28` now says "at `acb3f63`" and adds 21 | 3 | Tests bullet → 21 |
+| `1897` | 0 | 0 | 6 | Size bullet re-derived at `a068261` (the body carries the current head's total). The other hits are log entry 1 (kept) and the deleted fragment |
+| `12 offline` | 0 | `:28` now says "at `acb3f63`" and adds 21 | 3 | Tests bullet re-derived at `a068261` (the body carries the current count) |
 | `pass 12` | 0 | `:32`, `:53` are gate runs at named heads (kept) | 3 | The body's line sits under the `acb3f63` gate it came from, kept. The fix-pass figures are added |
 | `487` | 0 | D6 now adds 516 | 9 | D6 → "487 at `acb3f63`" plus the final head's count. The per-file split is re-derived |
 | `claim-check.mjs:<n>` citations | 0 | 0 | 0 | none to move |

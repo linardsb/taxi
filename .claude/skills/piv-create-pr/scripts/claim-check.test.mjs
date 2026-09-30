@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,9 +47,10 @@ function run(args, env = {}, cwd = repo) {
 }
 
 // Stub of POST /v1/systemone. Its answers copy the shape of a real jev-1.13.0 response (observed 2026-09-29).
-const stub = { mode: 'ok', noul: 0.96, hits: 0, sockets: new Set(), url: '' };
+const stub = { mode: 'ok', noul: 0.96, hits: 0, auth: '', sockets: new Set(), url: '' };
 const server = createServer((req, res) => {
   stub.hits++;
+  stub.auth = req.headers.authorization;
   let b = '';
   req.on('data', (c) => { b += c; });
   req.on('end', () => {
@@ -69,8 +70,10 @@ const server = createServer((req, res) => {
     const answers = Object.fromEntries(Object.entries(JSON.parse(b).questions).map(([id, q]) => [id, q.type === 'choice'
       ? { type: 'choice', choice: 'supports', confidence: 1, probabilities: { supports: 1, contradicts: 0, not_established: 0 } }
       : { type: 'noul', noul: stub.noul }]));
+    const choice = stub.mode === 'nl' ? 'supports\ninjected' : 'supports';
+    for (const a of Object.values(answers)) if (a.type === 'choice') a.choice = choice;
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ model: 'jev-1.13.0', answers, usage: { input_tokens: 1, output_tokens: 1 } }));
+    res.end(JSON.stringify({ model: stub.mode === 'nl' ? 'jev-1.13.0\ninjected' : 'jev-1.13.0', answers, usage: { input_tokens: 1, output_tokens: 1 } }));
   });
 });
 server.on('connection', (s) => { stub.sockets.add(s); s.on('close', () => stub.sockets.delete(s)); });
@@ -320,6 +323,49 @@ test('18 failure (PR #308 M2): an unwritable --details-out is a note and exit 0'
   assert.equal(r.code, 0);
   assert.match(r.out, /^note: --details-out not written, paste from the <details><summary> line below: ENOENT$/m);
   assert.match(r.out, /<details><summary>/);
+});
+
+test('19 edge (PR #308 round 2 N1): a key with a trailing CRLF is trimmed and sent, as fetch did before the H1 check', async () => {
+  stub.mode = 'ok'; stub.hits = 0; stub.auth = '';
+  const r = await run([bodyFile('b19.md', 'Gate took 58 s (observed).\n')], { ...stubEnv(), TYPESAFE_API_KEY: ' dummy\r\n' });
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, /holds whitespace/);
+  assert.equal(stub.hits, 1);
+  assert.equal(stub.auth, 'Bearer dummy');
+});
+
+test('20 failure (PR #308 round 2 N2): a crash leaves no --details-out file behind, not the previous run\'s', async () => {
+  stub.mode = 'ok';
+  const out = join(tmp, 'details20.md');
+  writeFileSync(out, '<details><summary>Claim check (log-only, #302): stale</summary>\n');
+  const body = bodyFile('b20.md', 'Gate took 58 s (observed).\n');
+  chmodSync(body, 0o000);
+  try {
+    const r = await run([body, '--details-out', out], stubEnv());
+    assert.equal(r.code, 0);
+    assert.match(r.out, /^note: claim-check crashed, nothing judged: /m);
+    assert.equal(existsSync(out), false);
+  } finally { chmodSync(body, 0o644); }
+});
+
+test('21 failure (PR #308 round 2 N3): the collapsed summary line says when Jev never judged anything', async () => {
+  stub.mode = 'empty';
+  const out = join(tmp, 'details21.md');
+  const body = bodyFile('b21.md', 'Gate took 58 s (observed).\n');
+  await run([body, '--details-out', out], stubEnv());
+  assert.match(readFileSync(out, 'utf8'), /^<details><summary>Claim check \(log-only, #302\): 0 flagged, 0 to re-derive · Jev unavailable<\/summary>\n/);
+  await run([body, '--details-out', out], { CLAIM_CHECK_BASE_URL: stub.url });
+  assert.match(readFileSync(out, 'utf8'), /^<details><summary>Claim check \(log-only, #302\): 0 flagged, 0 to re-derive · Jev not called<\/summary>\n/);
+});
+
+test('22 edge (PR #308 round 2 N5): --eval flattens a multi-line model and choice to one line', async () => {
+  stub.mode = 'nl';
+  const row = JSON.stringify({ id: 'c1', question: 'citation', label: 'supports', state: { sentence: 'It took 5 s.', heading: '' } });
+  const r = await run(['--eval', bodyFile('e22.jsonl', `${row}\n`)], stubEnv());
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, /\ninjected/);
+  assert.match(r.out, /· model jev-1\.13\.0 injected ·/);
+  assert.match(r.out, /c1 {2}citation {2}label supports {2}got supports injected /);
 });
 
 test('L1 live, expected: #107 counterfactual flagged on both questions, its measured sibling not', liveOpt, async () => {

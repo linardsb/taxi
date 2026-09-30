@@ -476,7 +476,8 @@ body path, or a path that is not a regular file.
        `units N · questions Q · flagged F · extreme E · unresolved U · failed X · model <response model field> · head <short sha> · <ISO date>`.
     5. The paste-ready block
        `<details><summary>Claim check (log-only, #302): F flagged, E to re-derive</summary>` … `</details>`,
-       holding items 1–4.
+       holding items 1–4. When Jev judged nothing, the summary ends ` · Jev unavailable` or ` · Jev not called`
+       (PR #308 round 2 N3).
 - **GOTCHA**:
   - A Noul answer has no `confidence` field, so print `noul` as `p`. For a Choice, print `choice` and
     `probabilities[choice]`.
@@ -901,3 +902,10 @@ and missed counts per question. The blocking decision and threshold come from th
   - Task 2: a fence closes only on a bare run of its own character, at least as long as the opener (L2).
   - Task 5: added tests 2b, 4b, 12–18 and 16b (10 offline tests). #302's derived-figure acceptance case stays
     live-only (report D13).
+- 2026-09-30, PR #308 round-2 review fix pass (details in `.claude/reports/pr-308-review-fixes-round-2.md`):
+  - Task 3: the key is trimmed of leading and trailing `[\t\n\r ]` before the printable-ASCII check (N1). A set
+    `--details-out` file is deleted right after argument parsing, so a crash leaves no earlier run's block (N2).
+    The summary line ends ` · Jev unavailable` or ` · Jev not called` when Jev judged nothing (N3).
+  - Task 4: `--eval` passes `model` and `choice` through `oneLine` (N5).
+  - Task 9: Phase 2.5's fallback covers the crash note (N2).
+  - Task 5: added tests 19–22 (4 offline tests).

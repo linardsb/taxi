@@ -88,7 +88,9 @@ could have been measured at all, whether a case-dependent figure names its case,
 `## Validation`; for the first 10 PRs that block is the log each review compares against. **Never cut the
 block out of stdout**: the verdict list above it quotes sentences, and a quoted `<details>` is found first
 (PR #308 M2 hid half a PR body in a stray collapsed box that way). If the file was not written, stdout says
-so; paste from its `<details><summary>` line. Re-derive every line in its
+so; paste from its `<details><summary>` line. If stdout says `claim-check crashed`, there is no block and
+no file (the script deletes the old one first): write `Claim check: crashed, nothing judged` under
+`## Validation` and never paste an earlier run's file. Re-derive every line in its
 **extreme-case list** by hand before opening the PR — that list is where #87's shape lands, because no
 sentence-level judgement can see it.
 

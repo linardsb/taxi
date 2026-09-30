@@ -49,7 +49,7 @@
 // out, a failed --details-out write and a crash each become a printed `note:`. 2 only for usage: no path, or a
 // path that is not a regular file.
 
-import { readFileSync, writeFileSync, statSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync, realpathSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
@@ -398,8 +398,10 @@ export function formatReport(r, threshold = 0.5) {
   body.push(...(r.unresolved.length ? r.unresolved.map((u) => `  L${u.line}  ${u.raw}  ${u.reason}`) : ['  (none)']));
   body.push('', `units ${r.units.length} · questions ${qCount} · flagged ${flagged} · extreme ${r.extreme.length} · unresolved ${r.unresolved.length} · failed ${r.failed.length + r.unjudged.length} · model ${r.model} · head ${r.head} · ${r.date}`);
   const notes = r.notes.map((n) => `note: ${n}`);
+  // The summary is all a reader sees with the box closed, so a run Jev never judged says so there (PR #308 N3).
+  const state = r.unavailable ? ' · Jev unavailable' : r.requests.length && !r.sent ? ' · Jev not called' : '';
   const block = [
-    `<details><summary>Claim check (log-only, #302): ${flagged} flagged, ${r.extreme.length} to re-derive</summary>`,
+    `<details><summary>Claim check (log-only, #302): ${flagged} flagged, ${r.extreme.length} to re-derive${state}</summary>`,
     '', '```text', ...notes, ...body, '```', '', '</details>', '',
   ].join('\n');
   return { text: [...notes, ...(notes.length ? [''] : []), ...body, '', block].join('\n'), block };
@@ -417,9 +419,9 @@ export async function evalSet(rows, key) {
   const results = rows.map((row, i) => {
     const o = out[i];
     if (!o?.ok) return { row, error: o?.reason ?? 'budget' };
-    model = o.body.model ?? model;
+    if (o.body.model !== undefined) model = oneLine(o.body.model, key);
     const a = o.body.answers?.[row.question];
-    if (a?.choice !== undefined) return { row, choice: a.choice, p: a.probabilities?.[a.choice] };
+    if (a?.choice !== undefined) return { row, choice: oneLine(a.choice, key), p: a.probabilities?.[a.choice] };
     if (typeof a?.noul === 'number') return { row, p: a.noul };
     return { row, error: 'no answer' };
   });
@@ -489,11 +491,14 @@ async function main(argv) {
   }
   const path = evalPath ?? bodyPath;
   if (!path || (evalPath && (bodyPath || detailsOut))) return usage();
+  // A crash or an early exit must not leave the previous run's block to be pasted as this one's (PR #308 N2).
+  if (detailsOut) try { rmSync(detailsOut, { force: true }); } catch { /* the write below reports it */ }
   // statSync().isFile(), not "readable": a directory is readable and extracts nothing.
   let isFile = false;
   try { isFile = statSync(path).isFile(); } catch { /* reported below */ }
   if (!isFile) { process.stderr.write(`cannot read file ${path}\n`); return 2; }
-  let key = process.env.TYPESAFE_API_KEY || '';
+  // Trimmed as fetch trims a header value, so a key read from a CRLF env file still works (PR #308 N1).
+  let key = (process.env.TYPESAFE_API_KEY || '').replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, '');
   let keyProblem = 'TYPESAFE_API_KEY is not set';
   // A header value must be printable ASCII; anything else fails inside fetch with the key in the message (H1).
   if (key && !/^[\x21-\x7e]+$/.test(key)) { key = ''; keyProblem = 'TYPESAFE_API_KEY holds whitespace or a control character (value not printed)'; }
