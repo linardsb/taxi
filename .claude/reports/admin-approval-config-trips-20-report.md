@@ -60,6 +60,7 @@ PR 2 (admin shell + drivers UI) depends on this merging; PR 3 and PR 4 depend on
 
 - **Gate**, `observed` at `4d4eb5d` (the squashed commit; code identical to this report's commit), run from cleared `dist` and `apps/dispatch/.next`: `REDIS_TEST_URL=redis://localhost:6381 COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force` → exit 0, `Tasks: 23 successful, 23 total`, `Cached: 0 cached`, 2m3.2s.
   - api 996 passed = 977 baseline + 19 new: 5 in existing specs, 3 in the admin unit spec, 11 in the admin integration spec.
+  - PR #309's round-1 fix pass adds 3 api tests (1 in `reassign.service.spec.ts`, 2 in the admin integration spec), so 999 = 996 + 3 (`derived`). Its gate run is quoted in `.claude/reports/pr-309-review-fixes.md`.
   - shared 317, db 17, dispatch 303, rider 231, driver 364; every package 0 failed.
   - An earlier gate at `5e76d9e`, before the two extra cases, was also green (api 994).
 
