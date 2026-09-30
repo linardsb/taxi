@@ -221,6 +221,11 @@ export class DriversService {
       // Re-reading AFTER the Redis write closes that: a reject that commits
       // later than this read also clears Redis later than our write (PR #309
       // L1). Postgres already says offline, so the 200 would be the lie.
+      // It checks approval, not status (PR #309 R1): a reject-then-re-approve
+      // or a server offline in the same gap still answers 200 with Redis online
+      // and Postgres offline, undispatchable until the next toggle. Not
+      // `status !== 'online'`: a force-assign there writes a legitimate
+      // `on_ride`, and `markOffline` would cut that ride's tracking feed.
       if ((await this.drivers.find(userId))?.approvalStatus !== 'approved') {
         await this.locations.markOffline(cityId, userId);
         throw new ConflictException('driver_not_approved');
