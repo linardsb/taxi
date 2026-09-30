@@ -42,6 +42,12 @@ Retired or moved values: `grep -nE "22 offline|\b516\b|pass 22|2143|260e57c|F fl
 | `260e57c` (as current head) | 0 | 0 | 0 | `:46`, `:58`, `:264` | Body moved to the new head |
 | summary shape `F flagged, E to re-derive` | `:478` | 0 | `:50` (a quoted run, kept) | log entry 1 (a record of `acb3f63`, kept) | Plan `:478` notes the suffix |
 
+## PR body
+
+- Re-derived after the push: the Tests bullet (26 offline, tests 19–22 named), the Size bullet and its per-file split (`git diff --shortstat` and `--numstat`, three-dot, at the head it names), and D6 (521 lines).
+- The Validation block now quotes CI run 36705346692 at `72c7141`, job `check`: `23 successful, 23 total`, `0 cached`, `3m24.582s`, and `@taxi/pr-scripts` `# tests 29`, `# pass 26`, `# fail 0`, `# skipped 3` (observed). It names that head, which is not the final one: the commit adding this section moves it.
+- The body's totals are not restated here; the body carries them for the head it names.
+
 ## Needs a human look
 
-- None beyond the merge. Log entry 1 in the body still records the `acb3f63` run and was not re-run; no body claim the check judges changed in this pass.
+- The body's Size, Tests and Validation figures changed in this pass, and `claim-check.mjs` was not re-run on them. Log entry 1 in the body still records the `acb3f63` run only.
