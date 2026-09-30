@@ -872,3 +872,18 @@ and missed counts per question. The blocking decision and threshold come from th
   - Tests spawn asynchronously; `spawnSync` deadlocks against the in-process stub (`observed`, `deadlock.mjs`).
   - The indented-code rule was tightened so nested bullets are kept.
   - Added the CodeQL gotcha to Task 1.
+- 2026-09-30, implementation (superseded parts; details in `.claude/reports/jev-claim-check-pr-bodies-report.md`):
+  - Task 3: the per-request timeout is an `AbortController` per request, aborted by its own `setTimeout` and cleared in
+    `finally`. It is not `AbortSignal.timeout()`, which is garbage-collected inside `AbortSignal.any()` on Node 20
+    and never fires (observed under `--expose-gc`).
+  - Task 2, **figure**: the detector also ignores file names that contain digits and reference codes (`L2`,
+    `T11`, `AC1`).
+  - Task 2, **keep rule**: a unit is kept only if its **own** text has a figure, a provenance word or a
+    citation. The heading, intro and header still decide which questions are asked.
+  - Task 2: the sentence splitter also breaks before `*`, for a bold lead-in such as `**L3** —`.
+  - Task 3: the `<details>` block also carries the `note:` lines. Exports add `gitContext` and `questionsFor`.
+  - Task 5: added test 10b, which covers the per-request timeout path. It does not pin the GC fix.
+  - Task 6: the set has 4 `not_measured` true rows, against a target of ≥ 5. Five `worst_case` rows take their
+    sentence from code docblocks that a review cited.
+  - Task 7: the eval report adds an in-path recount. `--eval` asks every row's question unconditionally, while
+    the body check does not; 10 negative rows fall outside the check's path.

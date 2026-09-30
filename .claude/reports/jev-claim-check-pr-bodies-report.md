@@ -1,6 +1,6 @@
 # Implementation Report — Jev claim check for PR bodies (log-only, #302)
 
-**Plan**: `.claude/plans/jev-claim-check-pr-bodies.md`   **Branch**: `feature/jev-claim-check-302` (worktree `~/taxi-worktrees/wt-302`, cut from `origin/main` `96053d0`)   **Status**: PARTIAL, pending the Level 3 gate (see Issues)
+**Plan**: `.claude/plans/jev-claim-check-pr-bodies.md`   **Branch**: `feature/jev-claim-check-302` (worktree `~/taxi-worktrees/wt-302`, cut from `origin/main` `96053d0`)   **Status**: COMPLETE
 
 ## Summary
 
@@ -25,9 +25,10 @@ eval are committed.
 
 ## Tests added
 
-`claim-check.test.mjs`: 11 offline tests (1–11, as in the plan) and 3 live tests (L1–L3).
+`claim-check.test.mjs`: 12 offline tests (1–11 as in the plan, plus 10b) and 3 live tests (L1–L3).
 
-- `pnpm --filter @taxi/pr-scripts test`: `# pass 11`, `# skipped 3`, `# fail 0` (observed, 2026-09-29, head `87987da`).
+- `pnpm --filter @taxi/pr-scripts test`: `# pass 11`, `# skipped 3`, `# fail 0` (observed, 2026-09-29, head `87987da`); `# pass 12` after 10b.
+- `pnpm turbo run test --filter @taxi/pr-scripts --force` (the gate's path, strict env): `# pass 11`, `# fail 0`, `# skipped 3`, `Tasks: 1 successful, 1 total` (observed at `2b04bf6`, before 10b).
 - `CLAIM_CHECK_LIVE=1 node --test …/claim-check.test.mjs`: `# pass 14`, `# fail 0` (observed, 2026-09-29, head `eff2aea`).
 - **Mutation 1** (the no-key early return deleted): test 7 red, `expected: 0, actual: 1` on the request counter.
   Tests 5 and 6 stayed green (observed).
@@ -36,6 +37,7 @@ eval are committed.
   (observed, after the timer fix below). The first run of this mutation, before the fix, went red at
   **60094 ms**, not ~20 s. That exposed the defect in Deviation D1.
 - The new splitter assertion in test 2 goes red when the `*` is reverted (observed).
+- **Test 10b** (hanging stub, `TIMEOUT_MS=300`, `BUDGET_MS=20000` → `timeout 0.3 s`, under 10 s) stays **green 3 of 3** with D1 reverted to `AbortSignal.timeout()` (observed). The GC collection needs heap pressure that a 300 ms run does not produce. 10b pins the timeout path, **not** the D1 fix; D1 stands on the `--expose-gc` probe and the first mutation-2 run.
 
 ## Validation results
 
@@ -44,8 +46,12 @@ eval are committed.
   **23** (`turbo run typecheck lint test build --dry=json`, tasks with a command, observed at `96053d0` plus
   Task 1).
 - Level 2: see Tests.
-- **Level 3: `record-gate.sh --clean` NOT RUN.** The worktree has no `.env`, and the hook refuses a copy (see
-  Issues). Blocking for "done".
+- **Level 3** (observed): `COMPOSE_PROJECT_NAME=taxi REDIS_TEST_URL=redis://127.0.0.1:6381 record-gate.sh --clean`
+  at `ad27eef`, 2026-09-30T05:50–05:53Z. Exit 0, `Tasks: 23 successful, 23 total`, `0 cached`, `short_gate` false,
+  2m46.359s. `@taxi/pr-scripts:test` gave `# pass 12`, `# fail 0` and `# skipped 3`. `tasks_not_in_graph` adds
+  `@taxi/pr-scripts#build`, `#lint` and `#typecheck` (legitimate; the package defines only `test`) to the six
+  already there. The record's head is the pre-commit `wip:` sha: `piv-create-pr` must re-run the gate at the
+  final head.
 - Level 4 (observed, head `e2d5733`, live key):
   1. PR #128: the original "`i18n.ts` dropped 454 → 47" sentence is no longer in the published body; only
      the review-fix paragraph quoting it is. 28 units, 5 flagged. That paragraph (L49) got `not_measured`
@@ -58,7 +64,7 @@ eval are committed.
 - PR #300 live run: 18 units, 45 questions, 4 flagged, 1.0 s wall (observed, head `96053d0` plus the script).
   The closest call the plan's probes predicted (0.40) came out as `provenance` 0.50–0.86 on four mutation
   bullets and their intro. That is the Q7 false-positive signal the 10-PR log is meant to measure.
-- Eval (Task 7): see `.claude/reports/jev-claim-check-eval-2026-09-29.md` (observed, head `b801c7b`, `jev-1.13.0`,
+- Eval (Task 7): 10 of 50 rows (all negatives) carry a question the live selector would never ask; the eval report lists them and recounts in-path. In-path at 0.5: `provenance` P 0.86 / R 1.00, `not_measured` P 1.00 / R 0.50, `worst_case` P 1.00 / R 0.14 (`derived`, arithmetic in the report). All-rows figures: see `.claude/reports/jev-claim-check-eval-2026-09-29.md` (observed, head `b801c7b`, `jev-1.13.0`,
   3.1 s). At 0.5:
   - `provenance`: P 0.75, R 1.00 (6 TP, 2 FP).
   - `not_measured`: P 0.67, R 0.50.
@@ -100,15 +106,13 @@ eval are committed.
   - Rows to eyeball: `p-218-lockfile`, `w-99-throttle`, `w-113-complete-diff`.
   - Several pairs share one review verdict across two questions.
 - **D8: exports.** `gitContext` and `questionsFor` are exported beyond the plan's list, for tests 2–4 and L1–L2.
+- **D10: test 10b added** (see Tests). It does not pin D1.
+- **D11: the eval report gained an in-path recount**, because `--eval` asks every row's question unconditionally and the body check does not. No labels or questions changed.
 - **D9: the eval baseline.** The eval ran at `b801c7b`, and the report is committed after it.
 
 ## Issues encountered
 
-- **The `.env` copy was blocked by the PreToolUse hook**, so the worktree has none. The Level 3 gate needs it for
-  the db and Redis suites. Linards has to run
-  `! cp /Users/Berzins/Desktop/taxi/.env /Users/Berzins/taxi-worktrees/wt-302/.env`. After that:
-  `COMPOSE_PROJECT_NAME=taxi .claude/skills/piv-create-pr/scripts/record-gate.sh --clean`, then quote its task
-  count (`expected` 23).
+- **The `.env` copy was blocked by the PreToolUse hook.** Linards copied it by hand, and the gate then ran.
 - Several sessions were live in the main checkout, so this work used a worktree from the start.
 - Latest migration at base: `db/migrations/0014_redundant_mandroid.sql` (this ticket adds none).
 - After merge, the memory file `taxi-pr-figures-gate-scripts.md` ("gate task count … (22)") goes stale. Name
