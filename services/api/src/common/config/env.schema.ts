@@ -15,14 +15,14 @@ import { checkSmsCredentialGroups, smsEnvFields } from './sms-env.schema';
  * already gives it (`GOOGLE_MAPS_API_KEY`, `STRIPE_SECRET_KEY`, the three SMS
  * credential groups).
  *
- * APPLIED TO THE THREE PROVIDER SWITCHES, and to them because their default
- * is itself the value production refuses: `ALLOW_STUB_MAPS_PROVIDER`
- * (`false`), `PUSH_PROVIDER` (`stub`) and `SMS_PROVIDER` (`stub`, in
- * `sms-env.schema.ts`). A blank there costs the operator that gate's own
- * named message instead of a generic one; it cannot cost them the gate,
- * because the gate still fires.
+ * APPLIED TO THE TWO PROVIDER SWITCHES, and to them because their default
+ * is itself the value production refuses: `PUSH_PROVIDER` (`stub`) and
+ * `SMS_PROVIDER` (`stub`, in `sms-env.schema.ts`). A blank there costs the
+ * operator that gate's own named message instead of a generic one; it cannot
+ * cost them the gate, because the gate still fires. (#13's maps switch was a
+ * third until #134 deleted it.)
  *
- * DELIBERATELY NOT `NODE_ENV` — the fourth and last enum carrying a default
+ * DELIBERATELY NOT `NODE_ENV` — the third and last enum carrying a default
  * across the two files, and the one where that condition fails. Its default
  * is `development`, which is what makes the `NODE_ENV !== 'production'` gate
  * in the `superRefine` below skip every secret check, and each provider
@@ -233,44 +233,33 @@ export const envSchema = z
       .positive()
       .default(2_592_000),
     /**
-     * `true` lets `mapsProviderSourceFactory` bind `StubMapsProvider` for
-     * ROUTES under `NODE_ENV=production`. Default `false`: the gate stays
-     * exactly as it was — production refuses to boot on the stub.
+     * Base URL of the self-hosted OSRM routing server (#134) — the `osrm`
+     * service in `compose.prod.yml`, which sets this itself, so a host env
+     * file never needs to. Present binds `OsrmMapsProvider` for routes in
+     * every environment; absent binds `StubMapsProvider` (haversine x 1.35,
+     * no polyline), which `mapsProviderSourceFactory` refuses to boot on
+     * under `NODE_ENV=production`, with no switch to relax it.
      *
-     * WHY IT EXISTS (#13). No real routing `MapsProvider` exists in the tree,
-     * and the one that will — `OsrmMapsProvider`, #134 — is its own ticket, so
-     * without this the first deploy cannot boot at all. It is the #103 move (a
-     * code-level gate becomes a config-level switch) applied to ONE clause of
-     * ONE factory and nothing else: it does not touch the secret rules below,
-     * the `PUBLIC_TRACKING_BASE_URL` rule, the SMS or payments gates, or the
-     * same factory's `GOOGLE_MAPS_API_KEY` refusal — a switch that accepts
-     * straight-line quotes has not accepted a dead address typeahead.
-     *
-     * WHAT IT COSTS. Every quote is priced off haversine distance × 1.35 at
-     * 40 km/h (`stub-maps.provider.ts`), and `route()` returns no polyline, so
-     * the tracking page's ETA and any route line are geometry, not roads.
-     *
-     * WHY IT IS SAFE TODAY, and only today: the pilot is not open, so no rider
-     * is quoted a straight-line price at all. That is the whole of it, and the
-     * due date is the pilot OPENING, not #134. The empty `STRIPE_SECRET_KEY`
-     * buys less than it looks: `CardPaymentsDisabledProvider` refuses the CARD
-     * rail only, and a cash ride quoted at haversine x 1.35 is real money at
-     * the kerb. So: unset this before the first real rider, whether or not OSRM
-     * has landed, and let the deploy fail instead.
-     *
-     * #134 DELETES THIS VARIABLE together with the branch that reads it. Debt
-     * with a due date, not a feature. `z.enum`, not `z.coerce.boolean()`, which
-     * reads the string "false" as `true`. The preprocess is the blank-means-
-     * unset rule at the top of this file (#242) — a blanked line still refuses
-     * to boot in production, through the maps gate's own message rather than a
-     * generic enum error.
+     * Same blank-means-unset `.optional().transform()` shape as
+     * `GOOGLE_MAPS_API_KEY`, so a blanked line reaches the factory's own
+     * named refusal instead of a generic URL error.
      */
-    ALLOW_STUB_MAPS_PROVIDER: z
-      .preprocess(
-        (v) => (v === '' ? undefined : v),
-        z.enum(['true', 'false']).default('false'),
-      )
-      .transform((v) => v === 'true'),
+    OSRM_URL: z
+      .string()
+      .optional()
+      .transform((v) => (v === undefined || v === '' ? undefined : v))
+      // http(s) only: `osrm:5000` is a valid URL (scheme `osrm:`) that would
+      // boot and then fail every route at runtime.
+      .pipe(
+        z
+          .string()
+          .url()
+          .regex(
+            /^https?:\/\//,
+            'OSRM_URL must be http(s), e.g. http://osrm:5000',
+          )
+          .optional(),
+      ),
     /**
      * TEST MODE ONLY, structurally. `sk_live_…` is refused at boot: the repo
      * rule is "Stripe stays in test mode until the SIA exists", and spike #5

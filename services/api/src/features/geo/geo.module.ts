@@ -13,38 +13,33 @@ import {
   MAPS_PROVIDER_ETA,
   MAPS_PROVIDER_SOURCE,
 } from './maps.tokens';
+import { OsrmMapsProvider, type RoutesProvider } from './osrm-maps.provider';
 import { StubMapsProvider } from './stub-maps.provider';
 
 /**
- * Refuses to boot in production while the stub is the only bound ROUTES
- * provider — unless `ALLOW_STUB_MAPS_PROVIDER=true` accepts that explicitly.
- * `StubMapsProvider` prices rides off straight-line distance and returns no
- * polyline, so an internet-facing deploy that reached it would quote real money
- * off geometry. Structural rather than conventional, exactly like
- * `smsProviderFactory` — with one documented, single-purpose exception (#13):
- * the switch exists so the first deploy can boot before a real routes provider
- * does, and it is defensible only while the pilot is closed, so nobody is
- * quoted at all. The absent Stripe key does not extend that — it closes the
- * card rail, and a cash ride quoted off geometry is real money at the kerb
- * (`env.schema.ts` says why). #134 binds `OsrmMapsProvider`
- * here and deletes the switch, at which point the routes clause below is
- * unconditional again.
+ * Refuses to boot in production on the stub, UNCONDITIONALLY — for routes and
+ * for address search alike. `StubMapsProvider` prices rides off straight-line
+ * distance and returns no polyline, so an internet-facing deploy that reached
+ * it would quote real money off geometry; its `searchAddress` throws, so the
+ * console's typeahead would die on Dina's first keystroke. Structural rather
+ * than conventional, exactly like `smsProviderFactory`.
+ *
+ * #13 shipped a config switch that relaxed the routes clause so the first
+ * deploy could boot before a routing provider existed; #134 bound
+ * `OsrmMapsProvider` and deleted it. A host env file that still sets the old
+ * variable boots anyway — `envSchema` strips unknown keys — and gains nothing
+ * from it.
  */
 export function mapsProviderSourceFactory(env: Env): MapsProvider {
   if (env.NODE_ENV === 'production') {
-    // TWO independent production gaps, reported in ONE throw. The routes gap
-    // is conditional on the #13 switch; the address-search gap is conditional
-    // on the key, and the switch does NOT cover it — accepting straight-line
-    // quotes is not accepting a typeahead that throws on Dina's first
-    // keystroke. #134 deletes the first clause. Naming both means the deploy
-    // that fixes routes does not then discover address search from a support
-    // call.
+    // TWO independent production gaps, reported in ONE throw, so the deploy
+    // that fixes one does not then discover the other from a support call.
     const gaps = [
-      ...(env.ALLOW_STUB_MAPS_PROVIDER
-        ? []
-        : [
-            'StubMapsProvider prices rides off straight-line distance and returns no polyline (set ALLOW_STUB_MAPS_PROVIDER=true to accept that until #134 binds OsrmMapsProvider)',
-          ]),
+      ...(env.OSRM_URL === undefined
+        ? [
+            'no OSRM_URL is set, so routes would fall back to StubMapsProvider, which prices rides off straight-line distance and returns no polyline (#134; compose.prod.yml sets it to the osrm service)',
+          ]
+        : []),
       ...(env.GOOGLE_MAPS_API_KEY === undefined
         ? [
             'no GOOGLE_MAPS_API_KEY is set, so the address typeahead would throw on every keystroke (#19)',
@@ -58,38 +53,47 @@ export function mapsProviderSourceFactory(env: Env): MapsProvider {
     }
   }
 
-  const routes = new StubMapsProvider();
-  if (env.GOOGLE_MAPS_API_KEY === undefined) return routes;
-  return composePlaces(
-    routes,
-    new GooglePlacesProvider(
-      env.GOOGLE_MAPS_API_KEY,
-      // Shares the routes timeout rather than earning a knob of its own: both
-      // bound a dispatcher's keystroke-to-answer latency, and a second number
-      // would be one more thing to keep in step for no observed difference.
-      env.MAPS_ROUTE_TIMEOUT_MS,
-    ),
-  );
+  const stub = new StubMapsProvider();
+  // OSRM in dev too when a URL is given; the stub otherwise, so a checkout
+  // with no routing container still quotes (deterministically, off geometry).
+  const routes: RoutesProvider =
+    env.OSRM_URL === undefined
+      ? stub
+      : new OsrmMapsProvider(env.OSRM_URL, env.MAPS_ROUTE_TIMEOUT_MS);
+  const places: PlacesProvider =
+    env.GOOGLE_MAPS_API_KEY === undefined
+      ? stub
+      : new GooglePlacesProvider(
+          env.GOOGLE_MAPS_API_KEY,
+          // Shares the routes timeout rather than earning a knob of its own:
+          // both bound a dispatcher's keystroke-to-answer latency, and a
+          // second number would be one more thing to keep in step for no
+          // observed difference.
+          env.MAPS_ROUTE_TIMEOUT_MS,
+        );
+  if (routes === stub && places === stub) return stub;
+  return compose(routes, stub, places);
 }
 
 /**
- * ONE `MapsProvider` from two implementations that each own part of it. Places
- * (New) is a different API from Routes with a different price list, so
- * `GooglePlacesProvider` implements two methods rather than pretending to be a
- * whole seam — and this is where the two halves become the one object
+ * ONE `MapsProvider` from implementations that each own part of it: routes
+ * (OSRM, #134), geocoding (nobody yet — the stub throws, and OSRM cannot
+ * geocode) and address search (Places API New, #19, a different API with a
+ * different price list). This is where the parts become the one object
  * `MAPS_PROVIDER_SOURCE` binds.
  *
- * Explicit delegation, not a spread over `routes`: a method added to the seam
- * then fails to compile here instead of silently reaching the stub.
+ * Explicit delegation, not a spread: a method added to the seam then fails to
+ * compile here instead of silently reaching the stub.
  */
-function composePlaces(
-  routes: MapsProvider,
+function compose(
+  routes: RoutesProvider,
+  geocoder: Pick<MapsProvider, 'geocode' | 'reverseGeocode'>,
   places: PlacesProvider,
 ): MapsProvider {
   return {
-    geocode: (query, language) => routes.geocode(query, language),
+    geocode: (query, language) => geocoder.geocode(query, language),
     reverseGeocode: (location, language) =>
-      routes.reverseGeocode(location, language),
+      geocoder.reverseGeocode(location, language),
     route: (from, to, stops) => routes.route(from, to, stops),
     searchAddress: (query, language, options) =>
       places.searchAddress(query, language, options),
