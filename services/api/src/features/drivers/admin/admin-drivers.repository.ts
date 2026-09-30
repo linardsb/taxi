@@ -196,14 +196,32 @@ export class AdminDriversRepository {
     return row?.driverId;
   }
 
-  /** Unscoped by owner — the admin may edit any car, `category` included. */
+  /**
+   * Unscoped by owner — the admin may edit any car, `category` included.
+   *
+   * The `set` object is an explicit ALLOWLIST, as `VehiclesRepository.update`
+   * is: `id` and `driverId` are never in it, so no request shape can re-parent
+   * a car. Do not replace this with a spread of the patch.
+   */
   async updateVehicle(
     vehicleId: string,
     patch: AdminVehicleUpdate,
   ): Promise<Vehicle | undefined> {
     const [row] = await this.db
       .update(vehicles)
-      .set(patch)
+      .set({
+        ...(patch.plate === undefined ? {} : { plate: patch.plate }),
+        ...(patch.make === undefined ? {} : { make: patch.make }),
+        ...(patch.model === undefined ? {} : { model: patch.model }),
+        ...(patch.year === undefined ? {} : { year: patch.year }),
+        ...(patch.category === undefined ? {} : { category: patch.category }),
+        ...(patch.passengerSeats === undefined
+          ? {}
+          : { passengerSeats: patch.passengerSeats }),
+        ...(patch.hasChildSeat === undefined
+          ? {}
+          : { hasChildSeat: patch.hasChildSeat }),
+      })
       .where(eq(vehicles.id, vehicleId))
       .returning();
     return row && toVehicle(row);

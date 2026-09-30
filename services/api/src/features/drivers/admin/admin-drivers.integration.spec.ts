@@ -21,6 +21,7 @@ import {
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
 import { AuthTokenService } from '../../auth';
 import { DispatchSweeper } from '../../dispatch/dispatch.sweeper';
+import { AdminDriversRepository } from './admin-drivers.repository';
 
 /** `+371340` is this spec file's E.164 range — see phoneFor(). */
 const p = (n: number) => phoneFor('+371340', n);
@@ -193,6 +194,30 @@ describe('admin drivers (#20, integration)', () => {
     );
   });
 
+  it('a reject landing between go-online’s commit and its Redis write still ends offline (edge, PR #309 L1)', async () => {
+    const d = await pendingDriver(22);
+    await setApproval(d.id, 'approved').expect(200);
+
+    // Forces the interleaving: the go-online `UPDATE` has committed, and the
+    // admin's whole reject runs before the driver's `markOnline` lands.
+    const markOnline = ctx.locations.markOnline.bind(ctx.locations);
+    const spy = jest
+      .spyOn(ctx.locations, 'markOnline')
+      .mockImplementationOnce(async (...args) => {
+        await setApproval(d.id, 'rejected').expect(200);
+        return markOnline(...args);
+      });
+    try {
+      const res = await goOnline(d.auth).expect(409);
+      expect(messageOf(res)).toBe('driver_not_approved');
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+    expect((await row(d.id)).status).toBe('offline');
+  });
+
   it('refuses rejecting an on-ride driver and leaves approval unchanged (failure, AC A4)', async () => {
     const d = await onlineApprovedDriver(12);
     await ctx.db
@@ -299,6 +324,21 @@ describe('admin drivers (#20, integration)', () => {
       .set('authorization', d.auth)
       .send({ category: 'standard' })
       .expect(400);
+  });
+
+  it('an admin vehicle patch cannot re-parent the car, even past the schema (edge, PR #309 L2)', async () => {
+    const owner = await pendingDriver(20);
+    const other = await pendingDriver(21);
+    const repo = ctx.app.get(AdminDriversRepository);
+
+    // Simulates `adminVehicleUpdateSchema` losing its `.omit()`: the
+    // repository's allowlist is the guard that must still hold.
+    const smuggled = { make: 'Škoda', driverId: other.id, id: randomUUID() };
+    const car = await repo.updateVehicle(owner.car.id, smuggled);
+
+    expect(car?.make).toBe('Škoda');
+    expect(car?.id).toBe(owner.car.id);
+    expect(await repo.vehicleOwner(owner.car.id)).toBe(owner.id);
   });
 
   it('sets and clears the commission override, distinct from absent (edge, AC A5)', async () => {

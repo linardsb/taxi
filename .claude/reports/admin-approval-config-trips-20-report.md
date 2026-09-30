@@ -4,14 +4,14 @@
 
 ## Summary
 
-PR 1 scope only (A0.1–A0.5, A0.9, A.1–A.11, A.13). Drivers gain `approval_status` (`pending | approved | rejected`, migration 0016 backfills existing drivers to `approved`). Approval is enforced in the go-online UPDATE, the candidate filter, the offer-accept transaction and force-assign (early read plus an in-transaction `FOR UPDATE`), and the roster picker hides unapproved drivers. `@Roles('admin')` routes under `/admin/drivers` and `/admin/vehicles` review, approve, reject and edit drivers and vehicles. Vehicle `category` is admin-only. The driver app shows a `driver_not_approved` banner and no longer sends `category`.
+PR 1 scope only (A0.1–A0.5, A0.9, A.1–A.11, A.13). Drivers gain `approval_status` (`pending | approved | rejected`, migration 0016 backfills existing drivers to `approved`). Approval is enforced in the go-online UPDATE (plus a re-read after its Redis write, PR #309 L1), the candidate filter, the offer-accept transaction, force-assign (early read plus an in-transaction `FOR UPDATE`) and reassign's pre-flight (PR #309 M1), and the roster picker hides unapproved drivers. `@Roles('admin')` routes under `/admin/drivers` and `/admin/vehicles` review, approve, reject and edit drivers and vehicles. Vehicle `category` is admin-only. The driver app shows a `driver_not_approved` banner and no longer sends `category`.
 
 PR 2 (admin shell + drivers UI) depends on this merging; PR 3 and PR 4 depend on PR 2. None of them is started.
 
 ## For the PR body (A.14)
 
 - **Part of #20 (1 of 4).** No closing keyword: PR 3 or PR 4, whichever merges last, carries it.
-- **Revocation reaches the driver app**, `derived`: within ≤ 4 s (one fix interval, `MIN_FIX_INTERVAL_MS = 4_000`) plus the ack round trip plus one `PUT` round trip. The path: refused fix → `ack_not_online` → re-assert → 409 `driver_not_approved`. This holds while the app is producing fixes; a phone producing none is already undispatchable and finds out on its next go-online. If the app already re-asserted this session, it shows `marked_offline` first and the approval banner on the next toggle.
+- **Revocation reaches the driver app**, `derived`: up to ~4 s at nominal cadence (the reject lands at a random point in one `MIN_FIX_INTERVAL_MS = 4_000` gap); ~8 s when one OS delivery lands just under that floor and is dropped; 12 s = 3 × 4 s tolerating one dropped delivery (the allowance derived in `docs/runbooks/driver-device-day.md:271-275`); plus the ack round trip and one `PUT` round trip. Not a hard bound: `timeInterval: 4000` is an Android floor and real delivery jitter is unmeasured. Assumes the app is producing fixes and the Redis member was cleared (PR #309 L1 closed the go-online race that could leave it). The path: refused fix → `ack_not_online` → re-assert → 409 `driver_not_approved`. A phone producing none is already undispatchable and finds out on its next go-online. If the app already re-asserted this session, it shows `marked_offline` first and the approval banner on the next toggle.
 - **Driver app**: a JS-only change with no dependency change, so no EAS build is needed.
 
 ## Tasks completed

@@ -103,8 +103,8 @@ describe('toCandidates', () => {
   });
 
   it('excludes a pending or rejected driver even when online (edge, #20)', () => {
-    // `releaseFromRide` puts a driver revoked mid-ride back to `online`
-    // without the go-online gate, so the filter checks approval itself.
+    // Unreachable through the API today; the filter checks approval itself so
+    // a path that writes `online` without the go-online gate stays harmless.
     const found = toCandidates(
       [nearby(1, 100), nearby(2, 200), nearby(3, 300)],
       [

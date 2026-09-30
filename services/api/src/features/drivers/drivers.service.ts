@@ -216,6 +216,15 @@ export class DriversService {
       }
       updated = online;
       await this.locations.markOnline(cityId, userId, Date.now());
+      // An admin reject can commit between the UPDATE above and `markOnline`,
+      // and its own `markOffline` then runs before ours re-adds the member.
+      // Re-reading AFTER the Redis write closes that: a reject that commits
+      // later than this read also clears Redis later than our write (PR #309
+      // L1). Postgres already says offline, so the 200 would be the lie.
+      if ((await this.drivers.find(userId))?.approvalStatus !== 'approved') {
+        await this.locations.markOffline(cityId, userId);
+        throw new ConflictException('driver_not_approved');
+      }
     } else {
       await this.locations.markOffline(cityId, userId);
       updated = await this.drivers.setStatus(userId, 'offline');
