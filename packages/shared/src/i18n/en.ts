@@ -87,7 +87,6 @@ export const en = {
   'console.no_access': 'This account has no console access',
   'console.wrong_code': 'Wrong or expired code',
   'console.request_failed': 'Could not send the code. Try again.',
-  'console.admin_placeholder': 'The admin area arrives later',
   'console.assign': 'Assign',
   'console.reassign': 'Reassign',
   'console.assign_ride_at': 'Assign the ride at {address}',

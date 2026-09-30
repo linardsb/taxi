@@ -38,6 +38,7 @@ export const lvAdmin = {
   'admin.driver.is_female': 'Šofere (sieviete)',
   'admin.driver.commission_override': 'Komisija, %',
   'admin.driver.commission_platform_base': 'Platformas bāzes likme',
+  'admin.driver.profile': 'Profils',
   'admin.driver.approval': 'Apstiprinājums',
   'admin.driver.vehicles': 'Auto',
   'admin.vehicle.plate': 'Numura zīme',
@@ -60,5 +61,6 @@ export const lvAdmin = {
   'admin.error.driver_not_found': 'Šoferis nav atrasts',
   'admin.error.plate_taken': 'Šī numura zīme jau ir reģistrēta',
   'admin.error.vehicle_not_found': 'Auto nav atrasts',
+  'admin.error.invalid_input': 'Pārbaudiet ievadītos datus',
   'admin.error.generic': 'Kaut kas nogāja greizi. Mēģiniet vēlreiz.',
 } as const;
