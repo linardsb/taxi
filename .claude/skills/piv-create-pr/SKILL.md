@@ -63,7 +63,7 @@ did, so the #129 cleanup destroyed the files and left only the prose about them 
 ```bash
 .claude/skills/piv-create-pr/scripts/record-gate.sh --clean
 .claude/skills/piv-create-pr/scripts/inherited-figures.sh <draft-body.md> <report.md> [--pr {N}]
-.claude/skills/piv-create-pr/scripts/claim-check.mjs <draft-body.md>
+.claude/skills/piv-create-pr/scripts/claim-check.mjs <draft-body.md> --details-out <scratch>/claim-check-details.md
 ```
 
 **`record-gate.sh` runs the gate and prints the Validation block. Paste it; do not retype it.** It
@@ -81,11 +81,14 @@ head, or say why it is head-independent. Pass `--pr {N}` when updating an existi
 body is the most-read surface and the only one no working-tree grep can reach. No implementation report
 (a docs-only PR) is an ordinary case: it prints a note and exits 0, which is not a pass.
 
-**`claim-check.mjs` is log-only (#302): it never blocks and always exits 0, and a missing key or a failed
-call is a note.** It asks TypeSafe's Jev whether each figure labelled `observed` names its run, whether it
+**`claim-check.mjs` is log-only (#302): it never blocks and exits 0 on every path except usage (2), and a
+missing key or a failed call is a note.** It asks TypeSafe's Jev whether each figure labelled `observed` names its run, whether it
 could have been measured at all, whether a case-dependent figure names its case, and whether each cited
-`file:line` at `HEAD` says what the body claims. Paste its `<details>` block under `## Validation`; for the
-first 10 PRs that block is the log each review compares against. Re-derive every line in its
+`file:line` at `HEAD` says what the body claims. Paste the `--details-out` file, whole, under
+`## Validation`; for the first 10 PRs that block is the log each review compares against. **Never cut the
+block out of stdout**: the verdict list above it quotes sentences, and a quoted `<details>` is found first
+(PR #308 M2 hid half a PR body in a stray collapsed box that way). If the file was not written, stdout says
+so; paste from its `<details><summary>` line. Re-derive every line in its
 **extreme-case list** by hand before opening the PR — that list is where #87's shape lands, because no
 sentence-level judgement can see it.
 

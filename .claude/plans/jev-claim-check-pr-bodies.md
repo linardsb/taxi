@@ -646,12 +646,13 @@ body path, or a path that is not a regular file.
   - Rename the heading to
     `## Phase 2.5 — Generate the validation block, find the inherited figures (blocking), then the claim check (log-only)`.
   - Change "Two scripts" to "Three scripts".
-  - Add `.claude/skills/piv-create-pr/scripts/claim-check.mjs <draft-body.md>` to the command block.
+  - Add `.claude/skills/piv-create-pr/scripts/claim-check.mjs <draft-body.md>` to the command block
+    (`--details-out <scratch>/claim-check-details.md` added in the PR #308 fix pass, M2).
   - Add one paragraph:
-    - **`claim-check.mjs` is log-only (#302): it never blocks and always exits 0, and a missing key or a failed
-      call is a note.**
-    - Paste its `<details>` block under `## Validation`. For the first 10 PRs, that block is the log each review
-      compares against.
+    - **`claim-check.mjs` is log-only (#302): it never blocks and exits 0 on every path except usage (2), and a
+      missing key or a failed call is a note.** (PR #308 L4 corrected "always exits 0".)
+    - Paste the `--details-out` file under `## Validation`, never a cut from stdout (PR #308 M2). For the first 10
+      PRs, that block is the log each review compares against.
     - Re-derive every line in its **extreme-case list** by hand before opening the PR. That list is where #87's
       shape lands, because no sentence-level judgement can see it.
   - Change "neither script" to "none of the scripts". To the bullet "A right number under a wrong label", add:

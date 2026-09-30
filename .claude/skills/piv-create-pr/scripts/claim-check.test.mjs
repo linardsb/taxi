@@ -9,11 +9,11 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findClaims, resolveCitation, gitContext, questionsFor, checkBody } from './claim-check.mjs';
+import { findClaims, resolveCitation, gitContext, questionsFor, checkBody, formatReport } from './claim-check.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'claim-check.mjs');
 const baseEnv = { ...process.env };
@@ -54,6 +54,13 @@ const server = createServer((req, res) => {
   req.on('data', (c) => { b += c; });
   req.on('end', () => {
     if (stub.mode === 'hang') return;
+    // Headers sent, body never finished: the read, not the request, is what stalls.
+    if (stub.mode === 'stall') { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{"model":'); return; }
+    if (stub.mode === 'empty' || stub.mode === 'null') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(stub.mode === 'empty' ? '{}' : 'null');
+      return;
+    }
     if (stub.mode === '403') {
       res.writeHead(403, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ detail: { error_type: 'authentication_error', message: 'Must supply an API key!' } }));
@@ -132,6 +139,12 @@ test('2 parsing, edge: table rows, indented code, nested bullets, section intros
   assert.deepEqual(cites.map((c) => [c.path, c.from, c.to]), [['test/harness.ts', 454, 454], ['test/harness.ts', 541, 541]]);
 });
 
+test('2b parsing, edge (PR #308 L2): a longer fence is closed only by a bare run at least as long', () => {
+  assert.equal(findClaims('````\n```\nGate took 58 s.\n```\n````\n').length, 0, 'an inner ``` does not close ````');
+  assert.equal(findClaims('```\n```js\nGate took 58 s.\n```\n').length, 0, '```js does not close ```');
+  assert.equal(findClaims('~~~\n```\n~~~\nGate took 58 s.\n').length, 1, 'a closed fence ends the mask');
+});
+
 test('3 extreme list (#87): listed for a human, never asked worst_case, printed with no key', async () => {
   const [u] = findClaims(`## NOTES (open canvas)\n\n${S87}\n`);
   assert.equal(u.extreme, true);
@@ -150,6 +163,21 @@ test('4 citation, edge: exact path ok; ambiguous basename, past EOF and a wide r
   assert.match(cite('x.ts', 2).reason, /ambiguous/);
   assert.match(cite('a/x.ts', 999).reason, /past EOF/);
   assert.match(cite('a/x.ts', 1, 100).reason, /wider than 60/);
+});
+
+test('4b citation, edge (PR #308 L5): untracked and ../ paths are never read; a tracked file is read at HEAD, not from disk', () => {
+  writeFileSync(join(repo, 'untracked.ts'), 'secret\n');
+  writeFileSync(join(repo, 'b/x.ts'), 'dirty worktree edit\n');
+  const g = gitContext(repo);
+  const reads = [];
+  const spy = (p) => { reads.push(p); return g.readAtHead(p); };
+  const cite = (path) => resolveCitation({ raw: `${path}:1`, path, from: 1, to: 1 }, g.files, spy);
+  assert.match(cite('untracked.ts').reason, /no such file/);
+  assert.match(cite('../repo/a/x.ts').reason, /no such file/);
+  assert.deepEqual(reads, [], 'resolveCitation never calls the reader for a path outside git ls-files');
+  assert.throws(() => g.readAtHead('untracked.ts'), /not tracked/);
+  assert.equal(g.readAtHead('b/x.ts'), 'other\n', 'the committed content, not the worktree edit');
+  execFileSync('git', ['checkout', '--', 'b/x.ts'], { cwd: repo });
 });
 
 test('5 expected, stubbed: a 0.96 provenance is flagged and the details block is printed', async () => {
@@ -188,7 +216,7 @@ test('8 failure, API down: "Jev unavailable" and exit 0', async () => {
   assert.match(r.out, /Jev unavailable: 1 of 1 requests failed/);
 });
 
-test('9 failure, 403 on a missing key header: a note and exit 0', async () => {
+test('9 failure, the API answers 403: a note and exit 0', async () => {
   stub.mode = '403';
   const r = await run([bodyFile('b9.md', 'Gate took 58 s (observed).\n')], stubEnv());
   assert.equal(r.code, 0);
@@ -217,6 +245,70 @@ test('10b failure, per-request timeout (D1): a hanging API is cut off by the req
 test('11 usage: no argument and a directory both exit 2', async () => {
   assert.equal((await run([], {}, tmpdir())).code, 2);
   assert.equal((await run([tmp], {}, tmpdir())).code, 2);
+});
+
+const KEY_NL = 'SECRETKEY\nx';
+
+test('12 failure (PR #308 H1): a key with a newline is refused unprinted, and nothing is sent', async () => {
+  stub.mode = 'ok'; stub.hits = 0;
+  const r = await run([bodyFile('b12.md', 'Gate took 58 s (observed).\n')], { ...stubEnv(), TYPESAFE_API_KEY: KEY_NL });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: TYPESAFE_API_KEY holds whitespace or a control character \(value not printed\): no Jev call made/m);
+  assert.doesNotMatch(r.out, /SECRETKEY/);
+  assert.equal(stub.hits, 0);
+});
+
+test('13 failure (PR #308 H1, L3): past the CLI check, a reason quoting the key is redacted and one line', async () => {
+  const r = await checkBody('Gate took 58 s (observed).\n', { key: KEY_NL, git: gitContext(repo) });
+  const { text } = formatReport(r);
+  assert.doesNotMatch(text, /SECRETKEY/);
+  assert.match(text, /^note: L1 provenance,not_measured,worst_case: .*\[redacted\].*$/m);
+  assert.match(text, /Jev unavailable: 1 of 1 requests failed/);
+});
+
+test('14 failure (PR #308 M1): 200 with no answers is "Jev unavailable", never a clean zero-flag run', async () => {
+  stub.mode = 'empty';
+  const r = await run([bodyFile('b14.md', 'Gate took 58 s (observed).\n')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: L1 provenance,not_measured,worst_case: no answer for provenance,not_measured,worst_case$/m);
+  assert.match(r.out, /Jev unavailable: 1 of 1 requests failed, first: no answer for/);
+  assert.doesNotMatch(r.out, /No claim units to judge/);
+  assert.match(r.out, /flagged 0 .* failed 1 /);
+});
+
+test('15 failure (PR #308 M1): a body that stalls after its headers is a timeout, not "no answer"', async () => {
+  stub.mode = 'stall';
+  const r = await run([bodyFile('b15.md', 'Gate took 58 s (observed).\n')],
+    { ...stubEnv(), CLAIM_CHECK_TIMEOUT_MS: '300', CLAIM_CHECK_BUDGET_MS: '20000' });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: L1 provenance,not_measured,worst_case: timeout 0\.3 s$/m);
+});
+
+test('16 failure (PR #308 L1): a 200 null body is a note, not a crash', async () => {
+  stub.mode = 'null';
+  const r = await run([bodyFile('b16.md', 'Gate took 58 s (observed).\n')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, /crashed/);
+  assert.match(r.out, /Jev unavailable: 1 of 1 requests failed, first: response body is not a JSON object/);
+});
+
+test('17 expected (PR #308 M2): --details-out writes the block alone, even when a quoted sentence holds <details>', async () => {
+  stub.mode = 'ok'; stub.noul = 0.04;
+  const out = join(tmp, 'details.md');
+  const r = await run([bodyFile('b17.md', 'Its `<details>` block took 58 s (observed).\n'), '--details-out', out], stubEnv());
+  assert.equal(r.code, 0);
+  const block = readFileSync(out, 'utf8');
+  assert.match(block, /^<details><summary>Claim check \(log-only, #302\): 0 flagged, 0 to re-derive<\/summary>\n/);
+  assert.match(block, /\n<\/details>\n$/);
+  assert.ok(r.out.endsWith(block), 'stdout ends with the same block');
+});
+
+test('18 failure (PR #308 M2): an unwritable --details-out is a note and exit 0', async () => {
+  stub.mode = 'ok';
+  const r = await run([bodyFile('b18.md', 'Gate took 58 s (observed).\n'), '--details-out', join(tmp, 'no/such/dir.md')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: --details-out not written, paste from the <details><summary> line below: ENOENT$/m);
+  assert.match(r.out, /<details><summary>/);
 });
 
 test('L1 live, expected: #107 counterfactual flagged on both questions, its measured sibling not', liveOpt, async () => {

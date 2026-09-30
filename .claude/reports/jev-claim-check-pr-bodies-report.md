@@ -25,7 +25,9 @@ eval are committed.
 
 ## Tests added
 
-`claim-check.test.mjs`: 12 offline tests (1–11 as in the plan, plus 10b) and 3 live tests (L1–L3).
+`claim-check.test.mjs`: 12 offline tests (1–11 as in the plan, plus 10b) and 3 live tests (L1–L3) at `acb3f63`.
+The PR #308 fix pass adds 9 offline tests (2b, 4b, 12–18), so 21 offline: see
+`.claude/reports/pr-308-review-fixes.md`.
 
 - `pnpm --filter @taxi/pr-scripts test`: `# pass 11`, `# skipped 3`, `# fail 0` (observed, 2026-09-29, head `87987da`); `# pass 12` after 10b.
 - `pnpm turbo run test --filter @taxi/pr-scripts --force` (the gate's path, strict env): `# pass 11`, `# fail 0`, `# skipped 3`, `Tasks: 1 successful, 1 total` (observed at `2b04bf6`, before 10b).
@@ -112,6 +114,11 @@ eval are committed.
   dogfooding on this PR's own body: its continuation lines had become separate paragraphs, which split
   sentences mid-clause and set a bogus section intro. Test 2 pins it; the assertion goes red with the fix stashed
   (observed).
+- **D13: #302's acceptance edge case (a `derived` figure is not flagged) is pinned only by live test L2**, which
+  always skips under the gate because turbo's strict env strips the key. The offline half (`questionsFor` asks it
+  `worst_case` only) is not asserted offline either. Found by PR #308's review (L5). It ran green live on
+  2026-09-30 in the fix pass.
+- **D6 after the PR #308 fix pass**: `claim-check.mjs` is 513 lines (`wc -l`, observed on the fix-pass tree).
 - **D9: the eval baseline.** The eval ran at `b801c7b`, and the report is committed after it.
 
 ## Issues encountered

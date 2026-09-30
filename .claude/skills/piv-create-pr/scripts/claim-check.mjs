@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // claim-check.mjs — a second reader for the claims in a draft PR body (#302). LOG-ONLY: it never blocks.
 //
-//   claim-check.mjs <draft-body.md> [--threshold 0.5]
+//   claim-check.mjs <draft-body.md> [--threshold 0.5] [--details-out <file>]
 //   claim-check.mjs --eval <labelled.jsonl> [--threshold 0.5]
 //
 // Code finds the claim units in the body: a sentence, or a table row carrying its column header row, kept only
@@ -30,21 +30,26 @@
 //   - any unit the time budget cut off. Those are listed as not judged.
 //
 // Output: the verdicts with their probabilities, the extreme-case list, the unresolved citations, a totals line,
-// then a paste-ready <details> block for the PR body. Paste it; do not retype it. For the first 10 PRs that
-// block is the log each review compares its own findings against (piv-review-pr, "The numbers pass").
+// then a paste-ready <details> block for the PR body. --details-out also writes that block, alone, to a file:
+// paste the file, never a cut from stdout, whose quoted sentences can themselves contain `<details>` (PR #308
+// M2). For the first 10 PRs that block is the log each review compares its own findings against (piv-review-pr,
+// "The numbers pass").
 //
 // --eval sends each row of a labelled JSONL set with its frozen state and prints per-question counts at
 // thresholds 0.3/0.5/0.7/0.9, a 3x3 citation matrix, every miss, and a provenance line. Its budget is 120 s,
 // because a 50-row set is meant to finish.
 //
-// Environment: TYPESAFE_API_KEY (absent = no call, the would-send list is printed). Test seams:
+// Environment: TYPESAFE_API_KEY (absent, or holding whitespace or a control character = no call, the would-send
+// list is printed; a malformed key's value is never printed, and every failure reason is scrubbed of the key and
+// flattened to one line before it is printed). Test seams:
 // CLAIM_CHECK_BASE_URL (default https://api.typesafe.ai), CLAIM_CHECK_TIMEOUT_MS (per request, default 10000),
 // CLAIM_CHECK_BUDGET_MS (whole run, default 30000; 120000 for --eval).
 //
 // Exit codes: 0 on every path — a missing key, an HTTP error, a timeout, a network failure, the budget running
-// out and a crash each become a printed `note:`. 2 only for usage: no path, or a path that is not a regular file.
+// out, a failed --details-out write and a crash each become a printed `note:`. 2 only for usage: no path, or a
+// path that is not a regular file.
 
-import { readFileSync, statSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
@@ -79,7 +84,7 @@ export const QUESTIONS = {
 // ---------- finder ----------
 
 const LIST = /^\s*(?:[-*+]|\d+\.)\s+/;
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
 const HEADING = /^#{1,6}\s+/;
 const TABLE_SEP = /^\|[\s:|-]*-[\s:|-]*\|?$/;
 const CITE = /`?([\w./-]+\.[a-z]{1,5}):(\d+)(?:[-–](\d+))?((?:,\d+)*)`?/g;
@@ -94,7 +99,9 @@ function codeMask(lines) {
   let fence = null;
   lines.forEach((l, i) => {
     const m = l.match(FENCE);
-    if (fence) { code[i] = true; if (m && l.trim().startsWith(fence)) fence = null; }
+    // CommonMark: a fence closes only on a bare run of its own character at least as long as the opener.
+    const t = l.trim();
+    if (fence) { code[i] = true; if (/^(`+|~+)$/.test(t) && t[0] === fence[0] && t.length >= fence.length) fence = null; }
     else if (m) { fence = m[1]; code[i] = true; }
   });
   const indented = (l) => /^( {4}|\t)/.test(l) && l.trim() !== '';
@@ -285,11 +292,17 @@ async function askJev(req, key, signal) {
     body: JSON.stringify({ model: MODEL, state: req.state, questions: req.questions }),
     signal,
   });
-  const body = await res.json().catch(() => ({}));
+  // An aborted body read is a timeout or the budget, not an empty answer: rethrow it for runAll to name.
+  const body = await res.json().catch((e) => { if (signal.aborted) throw e; return {}; });
   // !res.ok, not a 401 check: a missing header gives 403 (observed), which the docs do not list.
   if (!res.ok) throw new Error(`HTTP ${res.status} ${body?.detail?.error_type ?? ''}`.trim());
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new Error('response body is not a JSON object');
   return body;
 }
+
+// Server and runtime strings reach the pasted block, and a runtime error can quote the Authorization header
+// (undici's invalid-header TypeError does, PR #308 H1). Scrub the key first, then flatten to one capped line.
+const oneLine = (s, key) => (key ? String(s).replaceAll(key, '[redacted]') : String(s)).replace(/\s+/g, ' ').trim().slice(0, 200);
 
 // A pool of CONCURRENCY workers, no retries. The budget aborts in-flight requests and stops queued ones; its
 // timer is unref'd and cleared so it never holds the process open.
@@ -309,7 +322,7 @@ async function runAll(requests, key, budgetMs) {
       try {
         out[i] = { ok: true, body: await askJev(requests[i], key, AbortSignal.any([perRequest.signal, budget.signal])) };
       } catch (e) {
-        out[i] = { ok: false, reason: budget.signal.aborted ? 'budget' : perRequest.signal.aborted ? `timeout ${TIMEOUT_MS / 1000} s` : (e.cause?.code ?? e.message) };
+        out[i] = { ok: false, reason: budget.signal.aborted ? 'budget' : perRequest.signal.aborted ? `timeout ${TIMEOUT_MS / 1000} s` : oneLine(e.cause?.code ?? e.message, key) };
       } finally { clearTimeout(t); }
     }
   };
@@ -318,14 +331,14 @@ async function runAll(requests, key, budgetMs) {
   return { out, budgetHit: budget.signal.aborted };
 }
 
-export async function checkBody(markdown, { key, git }) {
+export async function checkBody(markdown, { key, git, keyProblem = 'TYPESAFE_API_KEY is not set' }) {
   const units = findClaims(markdown);
   const { requests, unresolved } = buildRequests(units, git);
   const r = { units, requests, unresolved, extreme: units.filter((u) => u.extreme), verdicts: [], failed: [], unjudged: [],
     notes: git.note ? [git.note] : [], model: 'none', head: git.head, date: new Date().toISOString(), sent: false };
   if (!requests.length) return r;
   if (!key) {
-    r.notes.push(`TYPESAFE_API_KEY is not set: no Jev call made; the ${requests.length} requests below would have been sent.`);
+    r.notes.push(`${keyProblem}: no Jev call made; the ${requests.length} requests below would have been sent.`);
     return r;
   }
   r.sent = true;
@@ -334,19 +347,23 @@ export async function checkBody(markdown, { key, git }) {
     const o = out[i];
     if (!o || o.reason === 'budget') return void r.unjudged.push(req);
     if (!o.ok) return void r.failed.push({ req, reason: o.reason });
-    r.model = o.body.model ?? r.model;
+    if (o.body.model !== undefined) r.model = oneLine(o.body.model, key);
+    const missing = [];
     for (const id of Object.keys(req.questions)) {
       const a = o.body.answers?.[id];
       const v = { line: req.unit.line, sentence: req.unit.sentence };
-      if (a?.choice !== undefined) r.verdicts.push({ ...v, question: `citation ${req.cite}`, verdict: a.choice, p: a.probabilities?.[a.choice], flag: a.choice !== 'supports' });
+      if (a?.choice !== undefined) r.verdicts.push({ ...v, question: `citation ${req.cite}`, verdict: oneLine(a.choice, key), p: a.probabilities?.[a.choice], flag: a.choice !== 'supports' });
       else if (typeof a?.noul === 'number') r.verdicts.push({ ...v, question: id, p: a.noul });
-      else r.failed.push({ req, reason: `no answer for ${id}` });
+      else missing.push(id);
     }
+    // One entry per request, like every other failure, so `failed` in the totals counts one kind of thing.
+    if (missing.length) r.failed.push({ req, reason: `no answer for ${missing.join(',')}` });
   });
   for (const f of r.failed) r.notes.push(`L${f.req.unit.line} ${Object.keys(f.req.questions).join(',')}: ${f.reason}`);
   if (budgetHit) r.notes.push(`budget ${BUDGET_MS / 1000} s exhausted: ${r.unjudged.length} of ${requests.length} requests not judged.`);
   const lost = r.failed.length + r.unjudged.length;
-  if (!r.verdicts.length && lost === requests.length) {
+  // No verdict at all is an unavailable run, never a clean one: the block is a log entry (PR #308 M1).
+  if (!r.verdicts.length) {
     r.unavailable = `Jev unavailable: ${lost} of ${requests.length} requests failed, first: ${r.failed[0]?.reason ?? 'budget'}`;
   }
   return r;
@@ -370,7 +387,7 @@ export function formatReport(r, threshold = 0.5) {
     body.push(`Verdicts (FLAG = Noul p >= ${threshold}, or a citation that is not \`supports\`):`);
     rows.sort((a, b) => Number(b.flag) - Number(a.flag) || a.line - b.line);
     for (const v of rows) body.push(`  L${v.line}  ${v.question}  ${v.flag ? 'FLAG' : 'ok'}${v.verdict ? ` ${v.verdict}` : ''}  ${fmtP(v.p)}  ${quote(v.sentence)}`);
-  } else body.push('No claim units to judge.');
+  } else body.push(r.units.length ? `No questions to ask of the ${r.units.length} claim units.` : 'No claim units to judge.');
   if (r.unjudged.length) {
     body.push('', 'Not judged (budget):');
     for (const req of r.unjudged) body.push(`  L${req.unit.line}  ${Object.keys(req.questions).join(',')}  ${quote(req.unit.sentence)}`);
@@ -381,11 +398,11 @@ export function formatReport(r, threshold = 0.5) {
   body.push(...(r.unresolved.length ? r.unresolved.map((u) => `  L${u.line}  ${u.raw}  ${u.reason}`) : ['  (none)']));
   body.push('', `units ${r.units.length} · questions ${qCount} · flagged ${flagged} · extreme ${r.extreme.length} · unresolved ${r.unresolved.length} · failed ${r.failed.length + r.unjudged.length} · model ${r.model} · head ${r.head} · ${r.date}`);
   const notes = r.notes.map((n) => `note: ${n}`);
-  return [
-    ...notes, ...(notes.length ? [''] : []), ...body, '',
+  const block = [
     `<details><summary>Claim check (log-only, #302): ${flagged} flagged, ${r.extreme.length} to re-derive</summary>`,
     '', '```text', ...notes, ...body, '```', '', '</details>', '',
   ].join('\n');
+  return { text: [...notes, ...(notes.length ? [''] : []), ...body, '', block].join('\n'), block };
 }
 
 // ---------- eval ----------
@@ -435,13 +452,13 @@ function formatEval({ results, model }, threshold, meta) {
   return out.join('\n');
 }
 
-async function runEval(path, key, threshold) {
+async function runEval(path, key, threshold, keyProblem) {
   const rows = [];
   readFileSync(path, 'utf8').split('\n').forEach((l, i) => {
     if (!l.trim()) return;
     try { rows.push(JSON.parse(l)); } catch { process.stdout.write(`note: line ${i + 1} is not JSON; skipped\n`); }
   });
-  if (!key) return void process.stdout.write(`note: TYPESAFE_API_KEY is not set: no Jev call made; ${rows.length} rows not scored.\n`);
+  if (!key) return void process.stdout.write(`note: ${keyProblem}: no Jev call made; ${rows.length} rows not scored.\n`);
   const git = (args) => { try { return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return 'none'; } };
   const ev = await evalSet(rows, key);
   process.stdout.write(formatEval(ev, threshold, { blob: git(['hash-object', path]), head: git(['rev-parse', '--short', 'HEAD']) }));
@@ -451,29 +468,38 @@ async function runEval(path, key, threshold) {
 
 async function main(argv) {
   const usage = (code = 2) => {
-    process.stderr.write('usage: claim-check.mjs <draft-body.md> [--threshold 0.5]\n       claim-check.mjs --eval <labelled.jsonl> [--threshold 0.5]\n');
+    process.stderr.write('usage: claim-check.mjs <draft-body.md> [--threshold 0.5] [--details-out <file>]\n       claim-check.mjs --eval <labelled.jsonl> [--threshold 0.5]\n');
     return code;
   };
   let bodyPath;
   let evalPath;
+  let detailsOut;
   let threshold = 0.5;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--threshold') { threshold = Number(argv[++i]); if (!(threshold >= 0 && threshold <= 1)) return usage(); }
     else if (a === '--eval') { evalPath = argv[++i]; if (!evalPath) return usage(); }
+    else if (a === '--details-out') { detailsOut = argv[++i]; if (!detailsOut) return usage(); }
     else if (a === '-h' || a === '--help') return usage(0);
     else if (!bodyPath) bodyPath = a;
     else return usage();
   }
   const path = evalPath ?? bodyPath;
-  if (!path || (evalPath && bodyPath)) return usage();
+  if (!path || (evalPath && (bodyPath || detailsOut))) return usage();
   // statSync().isFile(), not "readable": a directory is readable and extracts nothing.
   let isFile = false;
   try { isFile = statSync(path).isFile(); } catch { /* reported below */ }
   if (!isFile) { process.stderr.write(`cannot read file ${path}\n`); return 2; }
-  const key = process.env.TYPESAFE_API_KEY || '';
-  if (evalPath) await runEval(evalPath, key, threshold);
-  else process.stdout.write(formatReport(await checkBody(readFileSync(path, 'utf8'), { key, git: gitContext() }), threshold));
+  let key = process.env.TYPESAFE_API_KEY || '';
+  let keyProblem = 'TYPESAFE_API_KEY is not set';
+  // A header value must be printable ASCII; anything else fails inside fetch with the key in the message (H1).
+  if (key && !/^[\x21-\x7e]+$/.test(key)) { key = ''; keyProblem = 'TYPESAFE_API_KEY holds whitespace or a control character (value not printed)'; }
+  if (evalPath) { await runEval(evalPath, key, threshold, keyProblem); return 0; }
+  const { text, block } = formatReport(await checkBody(readFileSync(path, 'utf8'), { key, keyProblem, git: gitContext() }), threshold);
+  if (detailsOut) {
+    try { writeFileSync(detailsOut, block); } catch (e) { process.stdout.write(`note: --details-out not written, paste from the <details><summary> line below: ${e.code ?? e.message}\n\n`); }
+  }
+  process.stdout.write(text);
   return 0;
 }
 
