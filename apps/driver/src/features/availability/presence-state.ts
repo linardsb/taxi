@@ -1,15 +1,9 @@
 import type { DriverStatus } from '@taxi/shared';
 import type { PermissionResult } from '@/features/location';
+import type { BannerKind } from './banner-kind';
 import type { Intent } from './intent-store';
 
-export type BannerKind =
-  | 'marked_offline'
-  | 'foreground_denied'
-  | 'background_denied'
-  | 'vehicle_required'
-  | 'driver_on_ride'
-  | 'battery'
-  | 'generic';
+export type { BannerKind } from './banner-kind';
 
 export interface PresenceState {
   /** What the driver wants. The app owns intent; the server owns fact. */
@@ -384,7 +378,9 @@ export function decide(state: PresenceState, event: PresenceEvent): Decision {
       }
       if (
         event.code === 'vehicle_required' ||
-        event.code === 'driver_on_ride'
+        event.code === 'driver_on_ride' ||
+        // #20: an admin has not approved (or has revoked) this driver.
+        event.code === 'driver_not_approved'
       ) {
         return flipOffline(state, { kind: event.code });
       }

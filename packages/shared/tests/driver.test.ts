@@ -23,9 +23,12 @@ const config15 = platformConfigSchema.parse({
   updatedAt: '2026-08-03T09:00:00.000Z',
 });
 
+/** The profile's one required non-id field since #20. */
+const profileBase = { userId: uuid, approvalStatus: 'approved' as const };
+
 describe('driverProfileSchema', () => {
   it('parses a minimal profile with its defaults (expected)', () => {
-    const parsed = driverProfileSchema.parse({ userId: uuid });
+    const parsed = driverProfileSchema.parse(profileBase);
     expect(parsed.status).toBe('offline');
     expect(parsed.spokenLanguages).toEqual(['lv']);
     expect(parsed.balanceCents).toBe(0);
@@ -39,7 +42,7 @@ describe('driverProfileSchema', () => {
     // documented "negative blocks new rides" behaviour, since the state could
     // never be reached. Same failure class as the `discountCents` sign guard.
     const parsed = driverProfileSchema.parse({
-      userId: uuid,
+      ...profileBase,
       balanceCents: -1250,
     });
     expect(parsed.balanceCents).toBe(-1250);
@@ -49,7 +52,7 @@ describe('driverProfileSchema', () => {
     // 0 must survive both the schema default (`.default(null)` must not swallow
     // it) and the resolver's `!= null` check.
     const parsed = driverProfileSchema.parse({
-      userId: uuid,
+      ...profileBase,
       commissionPctOverride: 0,
     });
     expect(parsed.commissionPctOverride).toBe(0);
@@ -61,7 +64,7 @@ describe('driverProfileSchema', () => {
 
   it('satisfies CommissionDriverInput structurally (edge — the #27 seam)', () => {
     const parsed = driverProfileSchema.parse({
-      userId: uuid,
+      ...profileBase,
       commissionPctOverride: 10,
     });
     expect(resolveCommissionPct(parsed, config15).source).toBe(
@@ -69,19 +72,23 @@ describe('driverProfileSchema', () => {
     );
   });
 
+  it('rejects a profile without an approval status (failure — #20, no default)', () => {
+    expect(driverProfileSchema.safeParse({ userId: uuid }).success).toBe(false);
+  });
+
   it('rejects a float balance and an out-of-range override (failure)', () => {
     expect(
-      driverProfileSchema.safeParse({ userId: uuid, balanceCents: 12.5 })
+      driverProfileSchema.safeParse({ ...profileBase, balanceCents: 12.5 })
         .success,
     ).toBe(false);
     expect(
       driverProfileSchema.safeParse({
-        userId: uuid,
+        ...profileBase,
         commissionPctOverride: 150,
       }).success,
     ).toBe(false);
     expect(
-      driverProfileSchema.safeParse({ userId: uuid, rating: 6 }).success,
+      driverProfileSchema.safeParse({ ...profileBase, rating: 6 }).success,
     ).toBe(false);
   });
 });
@@ -148,10 +155,15 @@ describe('vehicleCreateSchema', () => {
     passengerSeats: 4,
   };
 
-  it('parses a body without id/driverId and applies both defaults (expected)', () => {
+  it('parses a body without id/driverId and applies the child-seat default (expected)', () => {
     const parsed = vehicleCreateSchema.parse(body);
-    expect(parsed.category).toBe('standard');
+    expect(parsed).not.toHaveProperty('category');
     expect(parsed.hasChildSeat).toBe(false);
+  });
+
+  it('strips a client-supplied category (edge — category is admin-set, #20)', () => {
+    const parsed = vehicleCreateSchema.parse({ ...body, category: 'limo' });
+    expect(parsed).not.toHaveProperty('category');
   });
 
   it('drops a client-supplied driverId (edge — ownership comes from the JWT)', () => {
@@ -177,17 +189,23 @@ describe('vehicleCreateSchema', () => {
 describe('vehicleUpdateSchema', () => {
   it('leaves an absent defaulted key undefined rather than materializing the default (edge)', () => {
     // `.partial()` over `.default()` yields ZodOptional<ZodDefault<…>>. If this
-    // ever flipped, a PATCH of the plate alone would silently reset `category`
-    // to "standard" and `hasChildSeat` to false — a rider filter changing
-    // itself behind the driver's back.
+    // ever flipped, a PATCH of the plate alone would silently reset
+    // `hasChildSeat` to false — a rider filter changing itself behind the
+    // driver's back. (`category` is not a driver key at all since #20.)
     const parsed = vehicleUpdateSchema.parse({ plate: 'XY9999' });
-    expect(parsed.category).toBeUndefined();
+    expect(parsed).not.toHaveProperty('category');
     expect(parsed.hasChildSeat).toBeUndefined();
     expect(Object.keys(parsed)).toEqual(['plate']);
   });
 
   it('rejects an empty patch (failure)', () => {
     expect(vehicleUpdateSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects a category-only patch, which strips to empty (failure)', () => {
+    expect(vehicleUpdateSchema.safeParse({ category: 'limo' }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -206,7 +224,7 @@ describe('driverMeSchema', () => {
     });
 
     const parsed = driverMeSchema.parse({
-      profile: { userId: uuid },
+      profile: profileBase,
       vehicles: [
         vehicle('1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'standard'),
         vehicle('2a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'vip'),
@@ -222,7 +240,7 @@ describe('driverMeSchema', () => {
 
   it('carries the active ride id when the api sets one (#15, edge)', () => {
     const parsed = driverMeSchema.parse({
-      profile: { userId: uuid },
+      profile: profileBase,
       vehicles: [],
       activeRideId: '3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c',
     });
@@ -232,7 +250,7 @@ describe('driverMeSchema', () => {
   it('rejects a non-uuid active ride id (#15, failure)', () => {
     expect(
       driverMeSchema.safeParse({
-        profile: { userId: uuid },
+        profile: profileBase,
         vehicles: [],
         activeRideId: 'ride-1',
       }).success,

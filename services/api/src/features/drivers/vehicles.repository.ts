@@ -32,7 +32,7 @@ export function isPlateConflict(err: unknown): boolean {
   return false;
 }
 
-function toVehicle(row: VehicleRow): Vehicle {
+export function toVehicle(row: VehicleRow): Vehicle {
   return {
     id: row.id,
     driverId: row.driverId,
@@ -93,7 +93,6 @@ export class VehiclesRepository {
         ...(patch.make === undefined ? {} : { make: patch.make }),
         ...(patch.model === undefined ? {} : { model: patch.model }),
         ...(patch.year === undefined ? {} : { year: patch.year }),
-        ...(patch.category === undefined ? {} : { category: patch.category }),
         ...(patch.passengerSeats === undefined
           ? {}
           : { passengerSeats: patch.passengerSeats }),

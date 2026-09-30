@@ -98,10 +98,14 @@ export class ReassignService {
     // PRE-FLIGHT, because the two-transaction split makes a late 404 expensive:
     // `forceAssign` throws `driver_not_found` after the release has committed,
     // so a stale roster row would read to Dina as "nothing happened" while the
-    // ride had already lost its car (#120 review M2). `forceAssign` still makes
-    // its own check — this narrows the window, it does not own the guard.
+    // ride had already lost its car (#120 review M2). The same holds for an
+    // unapproved driver, which `forceAssign` refuses since #20. `forceAssign`
+    // still makes both checks — this narrows the window, it does not own the
+    // guard.
     const [incoming] = await this.drivers.findMatchAttributes([input.driverId]);
     if (!incoming) throw new NotFoundException('driver_not_found');
+    if (incoming.approvalStatus !== 'approved')
+      throw new ConflictException('driver_not_approved');
 
     let supersededOffer = false;
     const released = await this.db.transaction(async (tx) => {

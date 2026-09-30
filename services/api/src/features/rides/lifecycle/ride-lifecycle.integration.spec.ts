@@ -16,11 +16,12 @@ import type { AddressInfo } from 'node:net';
 import type { Socket } from 'socket.io-client';
 import request from 'supertest';
 import {
+  approveDriver,
   closeClients,
   connectClient,
   createTestApp,
-  insertUser,
   phoneFor,
+  insertUser,
   type TestApp,
 } from '../../../../test/harness';
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
@@ -158,6 +159,7 @@ describe('ride lifecycle (integration)', () => {
       })
       .expect(201);
 
+    await approveDriver(ctx.db, id);
     await http
       .put('/drivers/me/status')
       .set('authorization', auth)

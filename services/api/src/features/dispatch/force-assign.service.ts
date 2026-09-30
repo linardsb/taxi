@@ -65,10 +65,15 @@ export class ForceAssignService {
       input.driverId,
     ]);
     if (!driverAttrs) throw new NotFoundException('driver_not_found');
+    // The one rule an override does not bypass (#20): an unvetted driver is
+    // never put on a ride. This read gives Dina the clear message; the
+    // in-transaction lock below is what decides.
+    if (driverAttrs.approvalStatus !== 'approved')
+      throw new ConflictException('driver_not_approved');
 
-    // Deliberately NOT filtered through the eligibility rules: overriding the
-    // algorithm — including onto an offline or otherwise ineligible driver — is
-    // the feature, not a hole in it. The audit row is what makes that safe.
+    // Otherwise deliberately NOT filtered through the eligibility rules:
+    // overriding the algorithm — including onto an offline driver — is the
+    // feature, not a hole in it. The audit row is what makes that safe.
     const offer = buildOffer({
       rideId: input.rideId,
       request: found.ride.request,
@@ -123,6 +128,12 @@ export class ForceAssignService {
       // the ride while offline — the override is "deliberately NOT filtered
       // through the eligibility rules", so throwing would break S9-2. They stay
       // offline for the whole ride and the release correctly does nothing.
+      //
+      // The approval lock first (#20): a revocation committing after the read
+      // above would otherwise put an unapproved driver on the ride. Taken here,
+      // where the claim locks this row anyway, so the order stays rides → drivers.
+      if (!(await this.drivers.lockApprovedForAssignment(input.driverId, tx)))
+        throw new ConflictException('driver_not_approved');
       await this.lifecycle.claimDriver(tx, input.driverId);
 
       await this.offers.insertAudit(

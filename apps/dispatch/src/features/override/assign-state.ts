@@ -86,6 +86,7 @@ export const warningKey = (warning: DriverWarning): MessageKey =>
 const ERROR_KEYS: Record<string, MessageKey> = {
   ride_not_found: 'console.assign_error_ride_not_found',
   driver_not_found: 'console.assign_error_driver_not_found',
+  driver_not_approved: 'console.assign_error_driver_not_approved',
   ride_not_assignable: 'console.assign_error_ride_not_assignable',
   ride_already_assigned: 'console.assign_error_ride_already_assigned',
   ride_not_reassignable: 'console.assign_error_ride_not_reassignable',

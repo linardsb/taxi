@@ -35,6 +35,7 @@ const attrs = (
 ): DriverMatchAttributes => ({
   driverId: id(n),
   status: 'online',
+  approvalStatus: 'approved',
   isFemale: null,
   balanceCents: 0,
   commissionPctOverride: null,
@@ -99,6 +100,23 @@ describe('toCandidates', () => {
     );
 
     expect(found.map((c) => c.driverId)).toEqual([id(2)]);
+  });
+
+  it('excludes a pending or rejected driver even when online (edge, #20)', () => {
+    // Unreachable through the API today; the filter checks approval itself so
+    // a path that writes `online` without the go-online gate stays harmless.
+    const found = toCandidates(
+      [nearby(1, 100), nearby(2, 200), nearby(3, 300)],
+      [
+        attrs(1, { approvalStatus: 'pending' }),
+        attrs(2, { approvalStatus: 'rejected' }),
+        attrs(3),
+      ],
+      request(),
+      DEBT_LIMIT,
+    );
+
+    expect(found.map((c) => c.driverId)).toEqual([id(3)]);
   });
 
   it('yields nothing when childSeat is required and no vehicle has one (failure)', () => {

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import {
+  approveDriver,
   closeClients,
   connectClient,
   createTestApp,
@@ -90,6 +91,7 @@ describe('driver presence: dark detection + nudge (integration, #14)', () => {
         .expect(204);
     }
     const id = session.user.id;
+    await approveDriver(ctx.db, id);
     return {
       id,
       auth,

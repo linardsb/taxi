@@ -1,37 +1,43 @@
 /**
- * `provision:dispatcher` — upserts a `users` row with `role='dispatcher'` for
- * a phone number, so that phone can sign in to the console (#18).
+ * `provision:dispatcher` / `provision:admin` — upserts a `users` row with
+ * `role='dispatcher'` or `role='admin'` for a phone number, so that phone can
+ * sign in to the console (#18) or the admin panel (#20).
  *
- * This script is the ONLY dispatcher-creation path, deliberately:
- * `SIGNUP_ROLES` excludes `dispatcher` (a phone may not claim the role for
+ * This script is the ONLY staff-creation path, deliberately:
+ * `SIGNUP_ROLES` excludes both staff roles (a phone may not claim one for
  * itself), the seed creates no users, and `AuthRepository.findOrCreate` never
  * upgrades an existing row's role — the stored role always wins over the OTP
  * request's. So the role must be written explicitly, here, by the operator.
  * After provisioning, the phone logs in through the ordinary OTP flow (the
- * console sends `role:'rider'`; the stored `dispatcher` wins).
+ * console sends `role:'rider'`; the stored staff role wins). An existing row
+ * of ANY role is re-roled — the output names the role it replaced.
  *
  * NOT A TEST and not part of the app: a manual instrument, held to
  * `typecheck` and `lint` so it cannot rot, and kept out of `dist/` by
  * `tsconfig.build.json` — the same footing as mint-tracked-ride.ts.
  *
  * Run:  pnpm --filter @taxi/api provision:dispatcher +371XXXXXXXX [name]
+ *       pnpm --filter @taxi/api provision:admin +371XXXXXXXX [name]
+ *       (each package script passes the role as this file's first argument)
  *       (no `--` separator — pnpm 10 forwards it literally as an argument;
  *       DATABASE_URL from the environment, e.g. sourced from the root .env)
  */
 import { createDb, users } from '@taxi/db';
 import { phoneSchema } from '@taxi/shared';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { maskPhone } from '../src/features/auth';
 
 async function main(): Promise<void> {
-  const [phoneArg, nameArg] = process.argv.slice(2);
+  const [roleArg, phoneArg, nameArg] = process.argv.slice(2);
   if (!phoneArg) {
     console.error(
-      'usage: pnpm --filter @taxi/api provision:dispatcher +371XXXXXXXX [display name]',
+      'usage: pnpm --filter @taxi/api provision:<dispatcher|admin> +371XXXXXXXX [display name]',
     );
     process.exitCode = 1;
     return;
   }
+  const role = z.enum(['dispatcher', 'admin']).parse(roleArg);
   const phone = phoneSchema.parse(phoneArg);
 
   const url = process.env.DATABASE_URL;
@@ -57,7 +63,7 @@ async function main(): Promise<void> {
       .insert(users)
       .values({
         phone,
-        role: 'dispatcher',
+        role,
         ...(nameArg ? { displayName: nameArg } : {}),
       })
       .onConflictDoUpdate({
@@ -65,7 +71,7 @@ async function main(): Promise<void> {
         // The explicit role write is the whole script — findOrCreate's
         // conflict branch deliberately never touches `role`.
         set: {
-          role: 'dispatcher',
+          role,
           ...(nameArg ? { displayName: nameArg } : {}),
         },
       })
