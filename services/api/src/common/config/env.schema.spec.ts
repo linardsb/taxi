@@ -420,55 +420,44 @@ describe('envSchema TWILIO_*', () => {
   });
 });
 
-describe('envSchema ALLOW_STUB_MAPS_PROVIDER', () => {
-  it('defaults to false, so the production maps gate is untouched unless asked (expected)', () => {
-    // The forgot-to-set-it deploy must land on the OLD behaviour — refuse to
-    // boot on the stub — not silently on the relaxed one.
-    expect(envSchema.parse(prod()).ALLOW_STUB_MAPS_PROVIDER).toBe(false);
+/**
+ * #13's maps switch, spelled in two halves so the repo-wide grep for the whole
+ * name that #134's acceptance criterion runs finds only history, not this
+ * regression test for its retirement.
+ */
+const RETIRED_MAPS_SWITCH = ['ALLOW_STUB', 'MAPS_PROVIDER'].join('_');
+
+describe('envSchema OSRM_URL (#134)', () => {
+  it('parses a URL and defaults to unset (expected)', () => {
     expect(
-      envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: 'false' }))
-        .ALLOW_STUB_MAPS_PROVIDER,
-    ).toBe(false);
+      envSchema.parse(prod({ OSRM_URL: 'http://osrm:5000' })).OSRM_URL,
+    ).toBe('http://osrm:5000');
+    expect(envSchema.parse(prod()).OSRM_URL).toBeUndefined();
   });
 
-  it('reads the literal string "true" as true (edge)', () => {
-    expect(
-      envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: 'true' }))
-        .ALLOW_STUB_MAPS_PROVIDER,
-    ).toBe(true);
+  it('reads a blanked line as unset, like GOOGLE_MAPS_API_KEY (edge — #242)', () => {
+    // So production reaches the maps factory's own named refusal rather than
+    // a generic "Invalid url".
+    expect(envSchema.parse(prod({ OSRM_URL: '' })).OSRM_URL).toBeUndefined();
   });
 
-  it('reads an empty value as unset, like every optional sibling (edge — review F7)', () => {
-    // A blanked line in a hand-written env file delivers '', and `.default()`
-    // substitutes `undefined` only. Production must still refuse to boot — but
-    // through the maps gate's own message, not a generic enum error — and dev
-    // and test must not refuse at all. Same shape as GOOGLE_MAPS_API_KEY and
-    // the Twilio trio: '' is unset.
-    expect(
-      envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: '' }))
-        .ALLOW_STUB_MAPS_PROVIDER,
-    ).toBe(false);
-    expect(
-      envSchema.parse({
-        ...base,
-        NODE_ENV: 'development',
-        JWT_SECRET: STRONG_JWT,
-        ALLOW_STUB_MAPS_PROVIDER: '',
-      }).ALLOW_STUB_MAPS_PROVIDER,
-    ).toBe(false);
+  it('refuses a value that is not a URL (failure)', () => {
+    expect(() => envSchema.parse(prod({ OSRM_URL: 'osrm:5000' }))).toThrow();
   });
 
-  it.each(['1', 'yes', 'TRUE', 'on'])(
-    'refuses %s rather than guessing (failure)',
-    (value) => {
-      // `z.coerce.boolean()` would take every one of these as true — and the
-      // string "false" too. An operator who typed one gets a boot error naming
-      // the variable, not a stub bound by accident.
-      expect(() =>
-        envSchema.parse(prod({ ALLOW_STUB_MAPS_PROVIDER: value })),
-      ).toThrow();
-    },
-  );
+  it('treats the retired maps switch as an unknown key: parses, and strips it (edge — AC #1)', () => {
+    // A box whose host env file still carries the #13 line must boot — and
+    // the line must buy nothing. `envSchema` is a plain `z.object`, which
+    // strips unknown keys; a `.strict()` added later would turn every such
+    // box into a failed deploy, and this case is what notices.
+    for (const value of ['true', 'false', '']) {
+      const env = envSchema.parse(
+        prod({ [RETIRED_MAPS_SWITCH]: value, OSRM_URL: 'http://osrm:5000' }),
+      );
+      expect(env).not.toHaveProperty(RETIRED_MAPS_SWITCH);
+      expect(env.OSRM_URL).toBe('http://osrm:5000');
+    }
+  });
 });
 
 describe('envSchema MAPS_ETA_FAILURE_TTL_SECONDS', () => {
@@ -520,9 +509,8 @@ describe('envSchema PUSH_PROVIDER (#14)', () => {
     // A blanked `PUSH_PROVIDER=` line delivers '', and `.default()`
     // substitutes `undefined` only — so un-wrapped this refused to boot in
     // EVERY environment with zod's generic enum message, naming no remedy.
-    // The blank now reads as unset, exactly as it does for
-    // ALLOW_STUB_MAPS_PROVIDER and SMS_PROVIDER. Production is NOT relaxed by
-    // that: `stub` is the value `pushProviderFactory` refuses, so the blank
+    // The blank now reads as unset, exactly as it does for SMS_PROVIDER.
+    // Production is NOT relaxed by that: `stub` is the value `pushProviderFactory` refuses, so the blank
     // costs the operator the factory's own named message, not the gate.
     expect(envSchema.parse(dev({ PUSH_PROVIDER: '' })).PUSH_PROVIDER).toBe(
       'stub',

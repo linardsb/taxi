@@ -11,7 +11,7 @@ import { z } from 'zod';
 /**
  * The two methods this provider owns. It is NOT a `MapsProvider`: routes and
  * geocoding still belong to whatever `MAPS_PROVIDER_SOURCE` composes it with
- * (`StubMapsProvider` today, `OsrmMapsProvider` at #134). Declaring
+ * (`OsrmMapsProvider` for routes since #134, the stub for geocoding). Declaring
  * the narrow shape is what makes that composition checkable.
  */
 export type PlacesProvider = Pick<
