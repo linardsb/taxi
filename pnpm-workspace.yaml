@@ -3,3 +3,4 @@ packages:
   - "services/*"
   - "packages/*"
   - "db"
+  - ".claude/skills/piv-create-pr/scripts"

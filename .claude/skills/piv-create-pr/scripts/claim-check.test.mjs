@@ -1,0 +1,392 @@
+// Offline tests run under the gate (`node --test` in @taxi/pr-scripts). Live tests are opt-in:
+// CLAIM_CHECK_LIVE=1 with TYPESAFE_API_KEY. Turbo's strict env strips both, so the gate always skips them.
+//
+// The script is spawned ASYNCHRONOUSLY. spawnSync blocks this process's event loop, so the in-process stub
+// below could never answer (observed during planning: 3050 ms TimeoutError under spawnSync, 148 ms ok async).
+
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn, execFileSync } from 'node:child_process';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { findClaims, resolveCitation, gitContext, questionsFor, checkBody, formatReport } from './claim-check.mjs';
+
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'claim-check.mjs');
+const baseEnv = { ...process.env };
+for (const k of Object.keys(baseEnv)) if (k === 'TYPESAFE_API_KEY' || k.startsWith('CLAIM_CHECK_')) delete baseEnv[k];
+const live = Boolean(process.env.TYPESAFE_API_KEY) && process.env.CLAIM_CHECK_LIVE === '1';
+const liveOpt = { skip: live ? false : 'set CLAIM_CHECK_LIVE=1 with TYPESAFE_API_KEY' };
+
+// The #107 table, recovered from git (13cf8b0): `Observed` appears only in the column header.
+const H107 = '### Level 4 — manual validation (the point of the ticket)';
+const INTRO107 = '**Step 3 — observed, `CELLS=6`, `POLLS_PER_CELL=5`:**';
+const HEADER107 = '| Quantity | Expected | **Observed** |';
+const ROW107 = '| unquantized counterfactual | 30 | **30** |';
+const ROW107_ETA = "| `geo.maps.route_fetched` `caller:'eta'` | 6 | **6** |";
+const BODY107 = [H107, '', INTRO107, '', HEADER107, '|---|---|---|', ROW107_ETA, ROW107, ''].join('\n');
+// #87's plan:336, recovered from git: a best-case interval labelled worst-case.
+const S87 = "**Spend arithmetic (why this satisfies the guardrail):** page polls every 5 s; at the policy's own 25 km/h city average a driver crosses a ~100 m cell every ~15 s → worst-case ~1 paid call per 15 s per active ride *with a real provider*, vs 1 per 5 s without quantization";
+
+const tmp = mkdtempSync(join(tmpdir(), 'claim-check-'));
+const repo = join(tmp, 'repo');
+const bodyFile = (name, text) => { const p = join(tmp, name); writeFileSync(p, text); return p; };
+
+function run(args, env = {}, cwd = repo) {
+  return new Promise((resolve) => {
+    const t = Date.now();
+    const c = spawn(process.execPath, [SCRIPT, ...args], { cwd, env: { ...baseEnv, ...env } });
+    let out = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.stderr.on('data', (d) => { out += d; });
+    once(c, 'close').then(([code]) => resolve({ code, out, ms: Date.now() - t }));
+  });
+}
+
+// Stub of POST /v1/systemone. Its answers copy the shape of a real jev-1.13.0 response (observed 2026-09-29).
+const stub = { mode: 'ok', noul: 0.96, hits: 0, auth: '', sockets: new Set(), url: '' };
+const server = createServer((req, res) => {
+  stub.hits++;
+  stub.auth = req.headers.authorization;
+  let b = '';
+  req.on('data', (c) => { b += c; });
+  req.on('end', () => {
+    if (stub.mode === 'hang') return;
+    // Headers sent, body never finished: the read, not the request, is what stalls.
+    if (stub.mode === 'stall') { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{"model":'); return; }
+    if (stub.mode === 'empty' || stub.mode === 'null') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(stub.mode === 'empty' ? '{}' : 'null');
+      return;
+    }
+    if (stub.mode === '403') {
+      res.writeHead(403, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ detail: { error_type: 'authentication_error', message: 'Must supply an API key!' } }));
+      return;
+    }
+    const answers = Object.fromEntries(Object.entries(JSON.parse(b).questions).map(([id, q]) => [id, q.type === 'choice'
+      ? { type: 'choice', choice: 'supports', confidence: 1, probabilities: { supports: 1, contradicts: 0, not_established: 0 } }
+      : { type: 'noul', noul: stub.noul }]));
+    const choice = stub.mode === 'nl' ? 'supports\ninjected' : 'supports';
+    for (const a of Object.values(answers)) if (a.type === 'choice') a.choice = choice;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ model: stub.mode === 'nl' ? 'jev-1.13.0\ninjected' : 'jev-1.13.0', answers, usage: { input_tokens: 1, output_tokens: 1 } }));
+  });
+});
+server.on('connection', (s) => { stub.sockets.add(s); s.on('close', () => stub.sockets.delete(s)); });
+
+before(async () => {
+  mkdirSync(join(repo, 'a'), { recursive: true });
+  mkdirSync(join(repo, 'b'));
+  writeFileSync(join(repo, 'a/x.ts'), 'line1\nline2\nline3\n');
+  writeFileSync(join(repo, 'b/x.ts'), 'other\n');
+  const git = (...a) => execFileSync('git', a, { cwd: repo, stdio: 'ignore' });
+  git('init', '-q');
+  git('add', '.');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  stub.url = `http://127.0.0.1:${server.address().port}`;
+});
+
+after(() => {
+  for (const s of stub.sockets) s.destroy();
+  server.close();
+});
+
+const unitWith = (units, text) => units.find((u) => u.sentence.includes(text));
+const stubEnv = () => ({ CLAIM_CHECK_BASE_URL: stub.url, TYPESAFE_API_KEY: 'dummy' });
+
+test('1 parsing, expected: a figure is kept, an issue ref and a sha-and-date sentence are dropped', () => {
+  const units = findClaims('Gate took 58 s (observed). See #302. Merged in da9c933 on 2026-09-29.\n');
+  assert.equal(units.length, 1);
+  assert.equal(units[0].sentence, 'Gate took 58 s (observed).');
+  const qs = questionsFor(units[0]);
+  assert.ok(qs.includes('provenance') && qs.includes('worst_case'), qs.join());
+});
+
+test('2 parsing, edge: table rows, indented code, nested bullets, section intros, fences, headings, comma lists', () => {
+  const t = findClaims(BODY107);
+  const row = unitWith(t, 'unquantized counterfactual');
+  assert.equal(row.tableHeader, HEADER107);
+  assert.equal(row.sectionIntro, INTRO107);
+  assert.equal(row.heading, H107);
+  assert.deepEqual(questionsFor({ ...row, sectionIntro: undefined }).slice(0, 2), ['provenance', 'not_measured'], 'header alone carries observed');
+  assert.equal(t.filter((u) => u.tableHeader).length, 2, 'header and separator rows are not units');
+
+  const gate = findClaims('Gate:\n\n```\nTasks: 23 successful, 23 total\n```\n    @taxi/api: Tests 694 passed\n    @taxi/db: Tests 12 passed\n');
+  assert.equal(gate.length, 0, JSON.stringify(gate));
+
+  const nested = findClaims('- Two runs\n  - First run\n    - At abc1234: 3 of 4 red\n');
+  assert.ok(unitWith(nested, 'At abc1234: 3 of 4 red'), 'a 4-space nested bullet is kept');
+
+  const MUT = '**Mutation checks** (`observed`; each change was reverted):';
+  const mut = findClaims(`## Validation\n\n${MUT}\n\n- At \`36df1f2\`: 1 of 4 red.\n`);
+  const bullet = unitWith(mut, '1 of 4 red');
+  assert.equal(bullet.sectionIntro, MUT);
+  assert.ok(questionsFor(bullet).includes('provenance'));
+
+  assert.equal(findClaims('```\nlatency 99 ms\n```\n').length, 0, 'fenced code is ignored');
+  const wrapped = findClaims(`${MUT}\n\n- The four flags, 0.50–0.86, fall on its\n  mutation bullets and their intro.\n`);
+  const item = wrapped.filter((u) => u.sectionIntro);
+  assert.equal(item.length, 1, 'a wrapped list item is one unit');
+  assert.equal(item[0].sentence, 'The four flags, 0.50–0.86, fall on its mutation bullets and their intro.');
+  assert.equal(item[0].sectionIntro, MUT);
+  assert.equal(findClaims('It took 12 s. **L3** — `a/x.ts:2` names it.\n').length, 2, 'a bold lead-in starts a sentence');
+  assert.equal(findClaims('## Validation — observed\n\nGate took 58 s.\n')[0].heading, '## Validation — observed');
+
+  const cites = findClaims('The override lives at `test/harness.ts:454,541` today.\n')[0].citations;
+  assert.deepEqual(cites.map((c) => [c.path, c.from, c.to]), [['test/harness.ts', 454, 454], ['test/harness.ts', 541, 541]]);
+});
+
+test('2b parsing, edge (PR #308 L2): a longer fence is closed only by a bare run at least as long', () => {
+  assert.equal(findClaims('````\n```\nGate took 58 s.\n```\n````\n').length, 0, 'an inner ``` does not close ````');
+  assert.equal(findClaims('```\n```js\nGate took 58 s.\n```\n').length, 0, '```js does not close ```');
+  assert.equal(findClaims('~~~\n```\n~~~\nGate took 58 s.\n').length, 1, 'a closed fence ends the mask');
+});
+
+test('3 extreme list (#87): listed for a human, never asked worst_case, printed with no key', async () => {
+  const [u] = findClaims(`## NOTES (open canvas)\n\n${S87}\n`);
+  assert.equal(u.extreme, true);
+  assert.ok(!questionsFor(u).includes('worst_case'));
+  const r = await run([bodyFile('b3.md', `## NOTES (open canvas)\n\n${S87}\n`)]);
+  assert.equal(r.code, 0);
+  assert.match(r.out, /Extreme-case claims: re-derive by hand:\n {2}L3 {2}"\*\*Spend arithmetic/);
+});
+
+test('4 citation, edge: exact path ok; ambiguous basename, past EOF and a wide range are unresolved', () => {
+  const g = gitContext(repo);
+  const cite = (path, from, to = from) => resolveCitation({ raw: `${path}:${from}`, path, from, to }, g.files, g.readAtHead);
+  const ok = cite('a/x.ts', 2);
+  assert.equal(ok.status, 'ok');
+  assert.equal(ok.text, 'line2');
+  assert.match(cite('x.ts', 2).reason, /ambiguous/);
+  assert.match(cite('a/x.ts', 999).reason, /past EOF/);
+  assert.match(cite('a/x.ts', 1, 100).reason, /wider than 60/);
+});
+
+test('4b citation, edge (PR #308 L5): untracked and ../ paths are never read; a tracked file is read at HEAD, not from disk', () => {
+  writeFileSync(join(repo, 'untracked.ts'), 'secret\n');
+  writeFileSync(join(repo, 'b/x.ts'), 'dirty worktree edit\n');
+  const g = gitContext(repo);
+  const reads = [];
+  const spy = (p) => { reads.push(p); return g.readAtHead(p); };
+  const cite = (path) => resolveCitation({ raw: `${path}:1`, path, from: 1, to: 1 }, g.files, spy);
+  assert.match(cite('untracked.ts').reason, /no such file/);
+  assert.match(cite('../repo/a/x.ts').reason, /no such file/);
+  assert.deepEqual(reads, [], 'resolveCitation never calls the reader for a path outside git ls-files');
+  assert.throws(() => g.readAtHead('untracked.ts'), /not tracked/);
+  assert.equal(g.readAtHead('b/x.ts'), 'other\n', 'the committed content, not the worktree edit');
+  execFileSync('git', ['checkout', '--', 'b/x.ts'], { cwd: repo });
+});
+
+test('5 expected, stubbed: a 0.96 provenance is flagged and the details block is printed', async () => {
+  stub.mode = 'ok'; stub.noul = 0.96;
+  const r = await run([bodyFile('b5.md', 'Gate took 58 s (observed).\n')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.match(r.out, /L1 {2}provenance {2}FLAG {2}0\.96/);
+  assert.match(r.out, /<details><summary>Claim check \(log-only, #302\): 3 flagged/);
+});
+
+test('6 edge, stubbed: a 0.04 provenance is logged with its p, not flagged', async () => {
+  stub.mode = 'ok'; stub.noul = 0.04;
+  const r = await run([bodyFile('b6.md', 'Gate took 58 s (observed).\n')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.match(r.out, /L1 {2}provenance {2}ok {2}0\.04/);
+  assert.doesNotMatch(r.out, /FLAG {2}/);
+});
+
+test('7 failure, key missing: a note, exit 0, and zero requests reach the API', async () => {
+  stub.mode = 'ok'; stub.hits = 0;
+  const r = await run([bodyFile('b7.md', 'Gate took 58 s (observed).\n')], { CLAIM_CHECK_BASE_URL: stub.url });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: TYPESAFE_API_KEY is not set/m);
+  assert.equal(stub.hits, 0);
+});
+
+test('8 failure, API down: "Jev unavailable" and exit 0', async () => {
+  const closed = createServer();
+  closed.listen(0, '127.0.0.1');
+  await once(closed, 'listening');
+  const port = closed.address().port;
+  closed.close();
+  await once(closed, 'close');
+  const r = await run([bodyFile('b8.md', 'Gate took 58 s (observed).\n')], { CLAIM_CHECK_BASE_URL: `http://127.0.0.1:${port}`, TYPESAFE_API_KEY: 'dummy' });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /Jev unavailable: 1 of 1 requests failed/);
+});
+
+test('9 failure, the API answers 403: a note and exit 0', async () => {
+  stub.mode = '403';
+  const r = await run([bodyFile('b9.md', 'Gate took 58 s (observed).\n')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: L1 provenance,not_measured,worst_case: HTTP 403 authentication_error/m);
+});
+
+test('10 failure, budget (R3): a hanging API is cut off by the budget, not the per-request timeout', async () => {
+  stub.mode = 'hang';
+  const r = await run([bodyFile('b10.md', 'Gate took 58 s (observed).\n\nThe build took 12 s.\n')],
+    { ...stubEnv(), CLAIM_CHECK_TIMEOUT_MS: '20000', CLAIM_CHECK_BUDGET_MS: '300' });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /budget 0\.3 s exhausted: 2 of 2 requests not judged/);
+  assert.match(r.out, /Not judged \(budget\):\n {2}L1 .*\n {2}L3 /);
+  assert.ok(r.ms < 10_000, `took ${r.ms} ms`);
+});
+
+test('10b failure, per-request timeout (D1): a hanging API is cut off by the request timeout under a long budget', async () => {
+  stub.mode = 'hang';
+  const r = await run([bodyFile('b10b.md', 'Gate took 58 s (observed).\n')],
+    { ...stubEnv(), CLAIM_CHECK_TIMEOUT_MS: '300', CLAIM_CHECK_BUDGET_MS: '20000' });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: L1 provenance,not_measured,worst_case: timeout 0\.3 s/m);
+  assert.ok(r.ms < 10_000, `took ${r.ms} ms`);
+});
+
+test('11 usage: no argument and a directory both exit 2', async () => {
+  assert.equal((await run([], {}, tmpdir())).code, 2);
+  assert.equal((await run([tmp], {}, tmpdir())).code, 2);
+});
+
+const KEY_NL = 'SECRETKEY\nx';
+
+test('12 failure (PR #308 H1): a key with a newline is refused unprinted, and nothing is sent', async () => {
+  stub.mode = 'ok'; stub.hits = 0;
+  const r = await run([bodyFile('b12.md', 'Gate took 58 s (observed).\n')], { ...stubEnv(), TYPESAFE_API_KEY: KEY_NL });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: TYPESAFE_API_KEY holds whitespace or a control character \(value not printed\): no Jev call made/m);
+  assert.doesNotMatch(r.out, /SECRETKEY/);
+  assert.equal(stub.hits, 0);
+});
+
+test('13 failure (PR #308 H1, L3): past the CLI check, a reason quoting the key is redacted and one line', async () => {
+  const r = await checkBody('Gate took 58 s (observed).\n', { key: KEY_NL, git: gitContext(repo) });
+  const { text } = formatReport(r);
+  assert.doesNotMatch(text, /SECRETKEY/);
+  assert.match(text, /^note: L1 provenance,not_measured,worst_case: .*\[redacted\].*$/m);
+  assert.match(text, /Jev unavailable: 1 of 1 requests failed/);
+});
+
+test('14 failure (PR #308 M1): 200 with no answers is "Jev unavailable", never a clean zero-flag run', async () => {
+  stub.mode = 'empty';
+  const r = await run([bodyFile('b14.md', 'Gate took 58 s (observed).\n')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: L1 provenance,not_measured,worst_case: no answer for provenance,not_measured,worst_case$/m);
+  assert.match(r.out, /Jev unavailable: 1 of 1 requests failed, first: no answer for/);
+  assert.doesNotMatch(r.out, /No claim units to judge/);
+  assert.match(r.out, /flagged 0 .* failed 1 /);
+});
+
+test('15 failure (PR #308 M1): a body that stalls after its headers is a timeout, not "no answer"', async () => {
+  stub.mode = 'stall';
+  const r = await run([bodyFile('b15.md', 'Gate took 58 s (observed).\n')],
+    { ...stubEnv(), CLAIM_CHECK_TIMEOUT_MS: '300', CLAIM_CHECK_BUDGET_MS: '20000' });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: L1 provenance,not_measured,worst_case: timeout 0\.3 s$/m);
+});
+
+test('16 failure (PR #308 L1): a 200 null body is a note, not a crash', async () => {
+  stub.mode = 'null';
+  const r = await run([bodyFile('b16.md', 'Gate took 58 s (observed).\n')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, /crashed/);
+  assert.match(r.out, /Jev unavailable: 1 of 1 requests failed, first: response body is not a JSON object/);
+});
+
+test('16b failure (PR #308 L1, eval half): a null or state-less JSONL row is skipped with a note, not a crash', async () => {
+  stub.mode = 'ok'; stub.noul = 0.9;
+  const row = JSON.stringify({ id: 'r1', question: 'worst_case', label: true, state: { sentence: 'It took 5 s.', heading: '' } });
+  const r = await run(['--eval', bodyFile('e16b.jsonl', `null\n{"id":"x"}\n${row}\n`)], stubEnv());
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, /crashed/);
+  assert.match(r.out, /^note: line 1 has no `state` object; skipped$/m);
+  assert.match(r.out, /^note: line 2 has no `state` object; skipped$/m);
+  assert.match(r.out, /· 1 rows ·/);
+});
+
+test('17 expected (PR #308 M2): --details-out writes the block alone, even when a quoted sentence holds <details>', async () => {
+  stub.mode = 'ok'; stub.noul = 0.04;
+  const out = join(tmp, 'details.md');
+  const r = await run([bodyFile('b17.md', 'Its `<details>` block took 58 s (observed).\n'), '--details-out', out], stubEnv());
+  assert.equal(r.code, 0);
+  const block = readFileSync(out, 'utf8');
+  assert.match(block, /^<details><summary>Claim check \(log-only, #302\): 0 flagged, 0 to re-derive<\/summary>\n/);
+  assert.match(block, /\n<\/details>\n$/);
+  assert.ok(r.out.endsWith(block), 'stdout ends with the same block');
+});
+
+test('18 failure (PR #308 M2): an unwritable --details-out is a note and exit 0', async () => {
+  stub.mode = 'ok';
+  const r = await run([bodyFile('b18.md', 'Gate took 58 s (observed).\n'), '--details-out', join(tmp, 'no/such/dir.md')], stubEnv());
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^note: --details-out not written, paste from the <details><summary> line below: ENOENT$/m);
+  assert.match(r.out, /<details><summary>/);
+});
+
+test('19 edge (PR #308 round 2 N1): a key with a trailing CRLF is trimmed and sent, as fetch did before the H1 check', async () => {
+  stub.mode = 'ok'; stub.hits = 0; stub.auth = '';
+  const r = await run([bodyFile('b19.md', 'Gate took 58 s (observed).\n')], { ...stubEnv(), TYPESAFE_API_KEY: ' dummy\r\n' });
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, /holds whitespace/);
+  assert.equal(stub.hits, 1);
+  assert.equal(stub.auth, 'Bearer dummy');
+});
+
+test('20 failure (PR #308 round 2 N2): a crash leaves no --details-out file behind, not the previous run\'s', async () => {
+  stub.mode = 'ok';
+  const out = join(tmp, 'details20.md');
+  writeFileSync(out, '<details><summary>Claim check (log-only, #302): stale</summary>\n');
+  const body = bodyFile('b20.md', 'Gate took 58 s (observed).\n');
+  chmodSync(body, 0o000);
+  try {
+    const r = await run([body, '--details-out', out], stubEnv());
+    assert.equal(r.code, 0);
+    assert.match(r.out, /^note: claim-check crashed, nothing judged: /m);
+    assert.equal(existsSync(out), false);
+  } finally { chmodSync(body, 0o644); }
+});
+
+test('21 failure (PR #308 round 2 N3): the collapsed summary line says when Jev never judged anything', async () => {
+  stub.mode = 'empty';
+  const out = join(tmp, 'details21.md');
+  const body = bodyFile('b21.md', 'Gate took 58 s (observed).\n');
+  await run([body, '--details-out', out], stubEnv());
+  assert.match(readFileSync(out, 'utf8'), /^<details><summary>Claim check \(log-only, #302\): 0 flagged, 0 to re-derive · Jev unavailable<\/summary>\n/);
+  await run([body, '--details-out', out], { CLAIM_CHECK_BASE_URL: stub.url });
+  assert.match(readFileSync(out, 'utf8'), /^<details><summary>Claim check \(log-only, #302\): 0 flagged, 0 to re-derive · Jev not called<\/summary>\n/);
+});
+
+test('22 edge (PR #308 round 2 N5): --eval flattens a multi-line model and choice to one line', async () => {
+  stub.mode = 'nl';
+  const row = JSON.stringify({ id: 'c1', question: 'citation', label: 'supports', state: { sentence: 'It took 5 s.', heading: '' } });
+  const r = await run(['--eval', bodyFile('e22.jsonl', `${row}\n`)], stubEnv());
+  assert.equal(r.code, 0);
+  assert.doesNotMatch(r.out, /\ninjected/);
+  assert.match(r.out, /· model jev-1\.13\.0 injected ·/);
+  assert.match(r.out, /c1 {2}citation {2}label supports {2}got supports injected /);
+});
+
+test('L1 live, expected: #107 counterfactual flagged on both questions, its measured sibling not', liveOpt, async () => {
+  const r = await checkBody(BODY107, { key: process.env.TYPESAFE_API_KEY, git: gitContext(repo) });
+  const p = (text, q) => r.verdicts.find((v) => v.sentence.includes(text) && v.question === q)?.p;
+  assert.ok(p('counterfactual', 'provenance') >= 0.5, `provenance ${p('counterfactual', 'provenance')}`);
+  assert.ok(p('counterfactual', 'not_measured') >= 0.5, `not_measured ${p('counterfactual', 'not_measured')}`);
+  assert.ok(p("caller:'eta'", 'not_measured') < 0.5, `eta not_measured ${p("caller:'eta'", 'not_measured')}`);
+});
+
+test('L2 live, edge: a derived figure that shows its arithmetic is asked worst_case only, and not flagged', liveOpt, async () => {
+  const row = '| `726 = 724 + 2`, `derived` | #203\'s review stamp at `cedc2a0` = api `77 / 724`; `git diff --stat cedc2a0..32fb6f7` = four `.claude/` docs + `harness.ts` +4 | condition stated and true; the arithmetic and the inheritance both hold |';
+  const body = `### Figures audit\n\n| Figure | Source | Verdict |\n|---|---|---|\n${row}\n`;
+  const [u] = findClaims(body);
+  assert.deepEqual(questionsFor(u), ['worst_case']);
+  const r = await checkBody(body, { key: process.env.TYPESAFE_API_KEY, git: gitContext(repo) });
+  assert.ok(r.verdicts[0].p < 0.5, `worst_case ${r.verdicts[0].p}`);
+});
+
+test('L3 live, failure: a real key against a closed port is a note and exit 0', liveOpt, async () => {
+  const r = await run([bodyFile('l3.md', 'Gate took 58 s (observed).\n')], { TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY, CLAIM_CHECK_BASE_URL: 'http://127.0.0.1:9' });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /Jev unavailable/);
+});
