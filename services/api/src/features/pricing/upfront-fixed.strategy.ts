@@ -30,7 +30,10 @@ export class UpfrontFixedPricingStrategy implements PricingStrategy {
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
-  async quote(request: RideRequest, route: RouteResult): Promise<FareQuote> {
+  async quote(
+    request: Omit<RideRequest, 'riderId'>,
+    route: RouteResult,
+  ): Promise<FareQuote> {
     const tariff = await this.tariffs.forCategory(
       this.env.DEFAULT_CITY_ID,
       request.category,

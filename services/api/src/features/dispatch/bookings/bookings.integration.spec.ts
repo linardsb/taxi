@@ -1,5 +1,5 @@
 import { customers, dispatchAuditLog, rides, users } from '@taxi/db';
-import { IDEMPOTENCY_KEY_HEADER } from '@taxi/shared';
+import { authSessionSchema, IDEMPOTENCY_KEY_HEADER } from '@taxi/shared';
 import { Logger } from '@nestjs/common';
 import { eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -11,7 +11,13 @@ import {
   type TestApp,
 } from '../../../../test/harness';
 import { AuthTokenService } from '../../auth';
+import { PricingService } from '../../pricing';
 import { RidesRepository } from '../../rides';
+import {
+  RIDE_IDEMPOTENCY_PENDING,
+  callerIdempotencyKey,
+  dispatcherBookingRateKey,
+} from '../../rides/rides.policy';
 
 /** `+371253` is this spec file's E.164 range — see phoneFor(). */
 const p = (n: number) => phoneFor('+371253', n);
@@ -38,6 +44,7 @@ describe('POST /dispatch/bookings (#19)', () => {
   let http: request.Agent;
   let tokens: AuthTokenService;
   let dispatcherAuth: string;
+  let dispatcherId: string;
 
   const createdRides: string[] = [];
 
@@ -50,6 +57,7 @@ describe('POST /dispatch/bookings (#19)', () => {
       phone: p(1),
       role: 'dispatcher',
     });
+    dispatcherId = dispatcher.id;
     dispatcherAuth = `Bearer ${
       (await tokens.issue({ id: dispatcher.id, role: 'dispatcher' }))
         .accessToken
@@ -109,6 +117,9 @@ describe('POST /dispatch/bookings (#19)', () => {
       .limit(1);
     expect(user?.role).toBe('rider');
     expect(user?.displayName).toBe('Anna');
+    // Minted on the caller's behalf, so marked provisional — by this
+    // dispatcher, the answer a support call needs (#123).
+    expect(user?.provisionedBy).toBe(dispatcherId);
     const [customer] = await ctx.db
       .select()
       .from(customers)
@@ -188,6 +199,13 @@ describe('POST /dispatch/bookings (#19)', () => {
 
     // `callerName` never overwrites a set name (#269 D2).
     expect(await storedName(existing.id)).toBe('Rider-set');
+    // A row its owner created is never made provisional by a booking: the
+    // marker is in the insert's values, never its conflict clause (#123).
+    const [after] = await ctx.db
+      .select({ provisionedBy: users.provisionedBy })
+      .from(users)
+      .where(eq(users.id, existing.id));
+    expect(after?.provisionedBy).toBeNull();
   });
 
   it("fills an existing rider's EMPTY name with Dina's, trimmed (edge — #269)", async () => {
@@ -328,5 +346,125 @@ describe('POST /dispatch/bookings (#19)', () => {
       clash.mockRestore();
       spies.forEach((spy) => spy.mockRestore());
     }
+  });
+  describe('provisional callers (#123)', () => {
+    const identityFor = async (phone: string) => {
+      const found = await ctx.db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.phone, phone));
+      const filed =
+        found[0] === undefined
+          ? []
+          : await ctx.db
+              .select({ id: customers.id })
+              .from(customers)
+              .where(eq(customers.userId, found[0].id));
+      return { users: found.length, customers: filed.length };
+    };
+
+    it('lets a phone-booked number sign up as a DRIVER and get the driver role (expected)', async () => {
+      const caller = p(30);
+      const booked = await book(caller, randomUUID());
+      expect(booked.status).toBe(201);
+      createdRides.push((booked.body as { ride: { id: string } }).ride.id);
+
+      await http
+        .post('/auth/otp/request')
+        .send({ phone: caller, role: 'driver' })
+        .expect(200);
+      const verified = await http
+        .post('/auth/otp/verify')
+        .send({ phone: caller, code: ctx.sms.lastCodeFor(caller)! })
+        .expect(200);
+
+      const session = authSessionSchema.parse(verified.body);
+      expect(session.user.role).toBe('driver');
+      // The SAME identity, adopted — not a second one — and no longer
+      // provisional, so a later OTP cannot move the role again.
+      const [row] = await ctx.db
+        .select()
+        .from(users)
+        .where(eq(users.phone, caller));
+      expect(session.user.id).toBe(row?.id);
+      expect(row?.role).toBe('driver');
+      expect(row?.provisionedBy).toBeNull();
+
+      // And the reverse direction still holds: the number is now staff.
+      const again = await book(caller, randomUUID());
+      expect(again.status).toBe(400);
+    });
+
+    it('leaves no users or customers row when the rate limit refuses (failure)', async () => {
+      const caller = p(31);
+      const kv = ctx.kv;
+      const rateKey = dispatcherBookingRateKey(dispatcherId);
+      // At the cap: the next INCR is 61 > 60.
+      await kv.setWithTtl(rateKey, '60', 600);
+      try {
+        const res = await book(caller, randomUUID());
+        expect(res.status).toBe(429);
+      } finally {
+        await kv.del(rateKey);
+      }
+      expect(await identityFor(caller)).toEqual({ users: 0, customers: 0 });
+    });
+
+    it('leaves no users or customers row when the idempotency guard refuses (failure)', async () => {
+      const caller = p(32);
+      const key = randomUUID();
+      // The first attempt is still in flight: the retry must 409, not mint.
+      await ctx.kv.setWithTtl(
+        callerIdempotencyKey(caller, key),
+        RIDE_IDEMPOTENCY_PENDING,
+        120,
+      );
+
+      const res = await book(caller, key);
+
+      expect(res.status).toBe(409);
+      expect(await identityFor(caller)).toEqual({ users: 0, customers: 0 });
+    });
+
+    it('leaves no users or customers row when the quote fails (failure)', async () => {
+      const caller = p(33);
+      const quote = jest
+        .spyOn(ctx.app.get(PricingService), 'quote')
+        .mockRejectedValue(new Error('maps provider is down'));
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        const res = await book(caller, randomUUID());
+        expect(res.status).toBe(500);
+      } finally {
+        quote.mockRestore();
+        error.mockRestore();
+      }
+      expect(await identityFor(caller)).toEqual({ users: 0, customers: 0 });
+    });
+
+    it('books two concurrent orders for one new number onto ONE identity (edge)', async () => {
+      const caller = p(34);
+
+      const [a, b] = await Promise.all([
+        book(caller, randomUUID()),
+        book(caller, randomUUID()),
+      ]);
+
+      expect([a.status, b.status]).toEqual([201, 201]);
+      const ids = [a, b].map(
+        (r) => (r.body as { ride: { id: string } }).ride.id,
+      );
+      createdRides.push(...ids);
+      const riders = await ctx.db
+        .select({ riderId: rides.riderId })
+        .from(rides)
+        .where(inArray(rides.id, ids));
+      expect(new Set(riders.map((r) => r.riderId)).size).toBe(1);
+      // Nothing is ever deleted on this path, so neither booking can strand
+      // the other's rider — the race a catch-block rollback would open.
+      expect(await identityFor(caller)).toEqual({ users: 1, customers: 1 });
+    });
   });
 });

@@ -68,49 +68,76 @@ describe('mapsProviderSourceFactory', () => {
     );
   });
 
-  it('refuses to boot in production with the switch off (failure)', () => {
-    // The stub prices rides off straight-line distance and returns no polyline,
-    // so an internet-facing deploy before #134 quotes real money off geometry.
-    // Failing at boot is the point: a silent stub is worse than no boot. The
-    // refusal names the switch, so the operator learns the escape hatch AND
-    // what it costs from the same line.
-    expect(() =>
-      mapsProviderSourceFactory({
-        NODE_ENV: 'production',
-        ALLOW_STUB_MAPS_PROVIDER: false,
-        GOOGLE_MAPS_API_KEY: 'k',
-      } as Env),
-    ).toThrow(/No production MapsProvider is bound.*ALLOW_STUB_MAPS_PROVIDER/);
+  const PROD_BOUND = {
+    NODE_ENV: 'production',
+    OSRM_URL: 'http://osrm:5000',
+    GOOGLE_MAPS_API_KEY: 'k',
+    MAPS_ROUTE_TIMEOUT_MS: 3_000,
+  } as Env;
+
+  it('binds OSRM for routes in production and reaches it through the seam (expected — #134)', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          code: 'Ok',
+          routes: [{ distance: 5486.2, duration: 591.1, geometry: 'abc' }],
+          waypoints: [{ distance: 3 }, { distance: 4 }],
+        }),
+    });
+    const originalFetch = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      const source = mapsProviderSourceFactory(PROD_BOUND);
+
+      expect(source).not.toBeInstanceOf(StubMapsProvider);
+      await expect(source.route(CENTRE, RIX)).resolves.toEqual({
+        distanceMeters: 5486,
+        durationSeconds: 591,
+        polyline: 'abc',
+      });
+      expect((fetchMock.mock.calls as [[string]])[0][0]).toMatch(
+        /^http:\/\/osrm:5000\/route\/v1\/driving\//,
+      );
+      // OSRM does not geocode: that half still reaches the stub, which throws.
+      expect(() => source.geocode('Brīvības iela 1', 'lv')).toThrow(
+        /no geocoder/,
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 
-  it('binds the stub for routes in production when the switch is on (edge — #13)', async () => {
-    // The one sanctioned relaxation, and only of the ROUTES clause: the
-    // composed source routes through `StubMapsProvider` (a geometry quote, no
-    // polyline) while address search still reaches Google.
-    const source = mapsProviderSourceFactory({
-      NODE_ENV: 'production',
-      ALLOW_STUB_MAPS_PROVIDER: true,
-      GOOGLE_MAPS_API_KEY: 'k',
-      MAPS_ROUTE_TIMEOUT_MS: 3_000,
-    } as Env);
-
-    const route = await source.route(CENTRE, RIX);
-    expect(route.distanceMeters).toBeGreaterThan(0);
-    expect(route.polyline).toBe('');
+  it('refuses to boot in production without OSRM_URL, with no switch to relax it (failure — #134)', () => {
+    // The stub prices rides off straight-line distance and returns no
+    // polyline. A silent stub is worse than no boot, and since #134 nothing
+    // accepts it — the message names OSRM_URL and nothing else to set.
+    const noOsrm = { ...PROD_BOUND, OSRM_URL: undefined } as Env;
+    expect(() => mapsProviderSourceFactory(noOsrm)).toThrow(
+      /No production MapsProvider is bound.*OSRM_URL/,
+    );
+    expect(() => mapsProviderSourceFactory(noOsrm)).not.toThrow(
+      /GOOGLE_MAPS_API_KEY/,
+    );
   });
 
-  it('the switch does not cover the missing Places key (failure)', () => {
-    // Accepting straight-line quotes is not accepting a typeahead that throws
-    // on Dina's first keystroke. With the switch on and no key, the refusal
-    // is the Places gap ALONE — the routes clause is gone from the message.
-    const noKey = {
-      NODE_ENV: 'production',
-      ALLOW_STUB_MAPS_PROVIDER: true,
-    } as Env;
+  it('a host env still carrying the retired maps switch refuses all the same (failure — AC #1)', () => {
+    // Belt to `env.schema.spec.ts`'s braces: the schema strips the key, but
+    // were it ever to reach the factory, the factory must not read it.
+    const stale = {
+      ...PROD_BOUND,
+      OSRM_URL: undefined,
+      [['ALLOW_STUB', 'MAPS_PROVIDER'].join('_')]: true,
+    } as unknown as Env;
+    expect(() => mapsProviderSourceFactory(stale)).toThrow(/OSRM_URL/);
+  });
+
+  it('the Places gap is reported on its own when routes are bound (failure)', () => {
+    const noKey = { ...PROD_BOUND, GOOGLE_MAPS_API_KEY: undefined } as Env;
     expect(() => mapsProviderSourceFactory(noKey)).toThrow(
       /GOOGLE_MAPS_API_KEY/,
     );
-    expect(() => mapsProviderSourceFactory(noKey)).not.toThrow(/straight-line/);
+    expect(() => mapsProviderSourceFactory(noKey)).not.toThrow(/OSRM_URL/);
   });
 
   it('names both gaps in one refusal when both are open (failure)', () => {
@@ -118,19 +145,25 @@ describe('mapsProviderSourceFactory', () => {
     // after it: a deploy that fixes routes must not then discover the typeahead
     // 500s from Dina's first keystroke.
     expect(() => mapsProviderSourceFactory(env('production'))).toThrow(
-      /straight-line[\s\S]*GOOGLE_MAPS_API_KEY/,
+      /OSRM_URL[\s\S]*GOOGLE_MAPS_API_KEY/,
     );
   });
 
-  it('the switch changes nothing outside production (edge)', () => {
-    for (const NODE_ENV of ['development', 'test'] as const) {
-      expect(
-        mapsProviderSourceFactory({
-          NODE_ENV,
-          ALLOW_STUB_MAPS_PROVIDER: true,
-        } as Env),
-      ).toBeInstanceOf(StubMapsProvider);
-    }
+  it('binds OSRM outside production when a URL is given, with no Places key (edge)', () => {
+    const source = mapsProviderSourceFactory({
+      NODE_ENV: 'development',
+      OSRM_URL: 'http://localhost:5000',
+      MAPS_ROUTE_TIMEOUT_MS: 3_000,
+    } as Env);
+
+    expect(source).not.toBeInstanceOf(StubMapsProvider);
+    // Address search still reaches the stub's named throw, not OSRM.
+    expect(() =>
+      source.searchAddress('bri', 'lv', {
+        bias: { center: CENTRE, radiusMeters: 1 },
+        sessionToken: 's',
+      }),
+    ).toThrow(/GOOGLE_MAPS_API_KEY/);
   });
 
   it('binds the Places provider when a key is present (edge)', () => {
@@ -142,8 +175,8 @@ describe('mapsProviderSourceFactory', () => {
 
     const source = mapsProviderSourceFactory(withKey);
 
-    // Composed, not the stub: routes still come from `StubMapsProvider` while
-    // address search reaches Google, which is exactly the pilot's shape.
+    // Composed, not the stub: with no OSRM_URL, routes still come from
+    // `StubMapsProvider` while address search reaches Google.
     expect(source).not.toBeInstanceOf(StubMapsProvider);
     expect(typeof source.searchAddress).toBe('function');
   });

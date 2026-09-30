@@ -3,16 +3,23 @@ import {
   displayNameSchema,
   type DispatcherBookingBody,
   type RideCreated,
+  type UserRole,
 } from '@taxi/shared';
 import { CustomersRepository } from '../../customers';
 import { RidesService } from '../../rides';
 import { DispatchRepository } from '../dispatch.repository';
 
+function assertRiderPhone(user: { role: UserRole } | undefined): void {
+  if (user !== undefined && user.role !== 'rider') {
+    throw new BadRequestException('phone_belongs_to_staff');
+  }
+}
+
 /**
  * The phone channel's booking path (#19).
  *
- * Its whole job is to put an IDENTITY RESOLUTION step in front of
- * `RidesService.request()` and change nothing else. The quote, the idempotency
+ * Its whole job is to put an IDENTITY RESOLUTION step into
+ * `RidesService.requestForCaller()` and change nothing else. The quote, the idempotency
  * reservation, the rate limit, the tracking token, the SMS and the cascade all
  * come from that one call — a phone order is a normal ride whose
  * `bookingChannel` is `'phone'`, and the AC that says it "flows through normal
@@ -42,34 +49,24 @@ export class BookingsService {
     // A driver's or a dispatcher's own number must not become a rider identity:
     // the booking would turn a working driver into their own passenger, and
     // every eligibility read on that user would then answer for the wrong role.
+    // A pure read, so a 400 here reserves nothing and charges no quota.
     const existing = await this.customers.findUserByPhone(callerPhone);
-    if (existing !== undefined && existing.role !== 'rider') {
-      throw new BadRequestException('phone_belongs_to_staff');
-    }
+    assertRiderPhone(existing);
 
-    const user =
-      existing ?? (await this.customers.findOrCreateUser(callerPhone));
-    // Dina's name for the caller fills an EMPTY name only (#269 D2), and an
-    // unusable one (blank, control characters) is "no name", never a 400 — a
-    // failed submit mid-call costs the caller (D4). Before `rides.request`, so
-    // the name is stored before any driver can accept.
-    const name = displayNameSchema.safeParse(callerName);
-    if (name.success) {
-      await this.customers.fillEmptyDisplayName(user.id, name.data);
-    }
-    // Filed at booking time so the NEXT call from this number pops a record.
-    // Never overwrites a label Dina already typed — `findOrCreateCustomer`'s
-    // conflict clause is a no-op update.
-    await this.customers.findOrCreateCustomer(user.id);
-
-    const created = await this.rides.request(
-      user.id,
+    // Identity is resolved INSIDE the booking, after the reservation, the cap
+    // and the quote (#123): a booking any of them refuses mints no `users` or
+    // `customers` row. The reservation is keyed on the phone for that reason.
+    const created = await this.rides.requestForCaller(
+      {
+        phone: callerPhone,
+        resolveRiderId: () =>
+          this.resolveCaller(dispatcherId, callerPhone, callerName),
+      },
       idempotencyKey,
       rideBody,
-      'phone',
-      // The cap counts against the DISPATCHER on this path — see the parameter's
-      // docblock in `RidesService.request` for why the rider key is the wrong
-      // one here.
+      // The cap counts against the DISPATCHER on this path — see the
+      // `rateLimitSubject` docblock in `RidesService.request` for why the rider
+      // key is the wrong one here.
       dispatcherId,
       // In the ride's own insert (#303), so it survives the audit failure below.
       note,
@@ -95,12 +92,46 @@ export class BookingsService {
       event: 'dispatch.booking.created',
       rideId: created.ride.id,
       dispatcherId,
-      riderId: user.id,
+      riderId: created.ride.riderId,
       newCaller: existing === undefined,
       at: new Date().toISOString(),
     });
 
     return created;
+  }
+
+  /**
+   * Find or mint the caller's `users` row — minted as PROVISIONAL, filed by
+   * this dispatcher (#123), so the person's own OTP signup adopts it — then
+   * their name and customer record. Runs only once the booking has cleared
+   * every refusal (see `RidesService.requestForCaller`).
+   */
+  private async resolveCaller(
+    dispatcherId: string,
+    callerPhone: string,
+    callerName: string | undefined,
+  ): Promise<string> {
+    const user = await this.customers.findOrCreateUser(
+      callerPhone,
+      dispatcherId,
+    );
+    // Again, on the row actually resolved: the read above ran before the
+    // reservation and the quote, and the number may have become a driver's in
+    // between (an OTP signup adopting a provisional row, #123).
+    assertRiderPhone(user);
+    // Dina's name for the caller fills an EMPTY name only (#269 D2), and an
+    // unusable one (blank, control characters) is "no name", never a 400 — a
+    // failed submit mid-call costs the caller (D4). Before the ride insert, so
+    // the name is stored before any driver can accept.
+    const name = displayNameSchema.safeParse(callerName);
+    if (name.success) {
+      await this.customers.fillEmptyDisplayName(user.id, name.data);
+    }
+    // Filed at booking time so the NEXT call from this number pops a record.
+    // Never overwrites a label Dina already typed — `findOrCreateCustomer`'s
+    // conflict clause is a no-op update.
+    await this.customers.findOrCreateCustomer(user.id);
+    return user.id;
   }
 
   /**

@@ -14,25 +14,25 @@
  *
  * KNOWN GAPS — seen and accepted for the pilot, not overlooked:
  *
- * - No real maps provider is bound. Every quote in dev and test is
- *   straight-line distance × 1.35 at a flat 40 km/h, so the numbers are
- *   plausible and deterministic but not real. Production refuses to boot on
- *   it — the factory throws — unless `ALLOW_STUB_MAPS_PROVIDER=true`, #13's
- *   documented switch; #134 binds `OsrmMapsProvider` and deletes the switch.
+ * - Routes are real only where `OSRM_URL` is set: production (always — the
+ *   factory refuses to boot without it, #134) and any dev checkout running
+ *   the container. Everywhere else, tests included, a quote is straight-line
+ *   distance × 1.35 at a flat 40 km/h — plausible and deterministic, not real.
  * - `geocode`/`reverseGeocode` throw. A `RideRequest` already carries resolved
- *   `AddressPoint`s, so nothing needs them yet. Address SEARCH no longer waits
- *   on them: #19 binds `GooglePlacesProvider` (Places API New) for
- *   `searchAddress`/`resolvePlace` while routes stay on the stub — two APIs,
- *   two price lists, composed into one seam by `mapsProviderSourceFactory`.
+ *   `AddressPoint`s, so nothing needs them yet, and OSRM cannot geocode.
+ *   Address SEARCH does not wait on them: #19 binds `GooglePlacesProvider`
+ *   (Places API New) for `searchAddress`/`resolvePlace` — three owners
+ *   (OSRM, the stub, Places) composed into one seam by
+ *   `mapsProviderSourceFactory`.
  * - Predictions are never cached, by policy rather than by omission. Only a
  *   RESOLVED place id is (`place-cache.ts`), under a TTL.
  * - IN-FLIGHT COALESCING IS STILL ABSENT, and it is the remaining spend gap.
  *   #94 gave the seam a timeout, a negative cache (`eta` only) and a miss-path
  *   counter, but requests arriving before the first `setWithTtl` lands still
  *   all miss and all reach the source. The tracking page's throttle BOUNDS
- *   that path; nothing here closes it. Deferred to #134, alongside the first
- *   real bill — against `StubMapsProvider` the true concurrency shape is
- *   unmeasurable.
+ *   that path; nothing here closes it. #134 bound self-hosted OSRM, which has
+ *   no per-call price, so for routes this is now load on our own box rather
+ *   than spend — still open, and no longer #134's.
  */
 export { GeoModule } from './geo.module';
 // A contract of the slice rather than a private detail: the tracking grid's

@@ -46,10 +46,19 @@ services:
       # `@` and `:` happen to survive the parse; do not rely on it.
       DATABASE_URL: postgres://taxi:${POSTGRES_PASSWORD}@db:5432/taxi
       REDIS_URL: redis://redis:6379
+      # Routes (#134). Set here, like the two above, so the host .env never
+      # needs it; production refuses to boot without it.
+      OSRM_URL: http://osrm:5000
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      # Healthy means the graph is LOADED and answering a real route, so an
+      # api never starts quoting against a routing server that is not there.
+      # It also means `run --rm api …` builds the graph on a box that has
+      # none — see osrm-prep.
+      osrm:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -66,6 +75,69 @@ services:
       timeout: 3s
       retries: 5
       start_period: 20s
+
+  # Builds the OSRM routing graph for the Latvia OSM extract (#134), ONCE: a
+  # one-shot that exits 0 at once when the graph is already in the volume (a
+  # whole second `up` took 2 s, observed on a laptop, runbook §5.5). On a box with none it downloads the extract from Geofabrik and
+  # runs extract -> partition -> customize (MLD); runbook §5.5 has the
+  # observed times and memory. It builds into /data/next and swaps it in only
+  # after every step succeeded, so a failed download or build leaves the old
+  # graph serving and no READY marker; `set -e` then fails the container,
+  # `osrm` never starts, and neither does a new api.
+  # `run --rm -e OSRM_REBUILD=1 osrm-prep` forces a fresh extract — the
+  # refresh procedure, runbook §5.5.
+  osrm-prep:
+    image: &osrm-image ghcr.io/project-osrm/osrm-backend:v26.4.0
+    volumes:
+      - osrm-data:/data
+    environment:
+      OSRM_PBF_URL: https://download.geofabrik.de/europe/latvia-latest.osm.pbf
+    entrypoint: ["/bin/sh", "-euc"]
+    command:
+      - |
+        if [ -f /data/graph/READY ] && [ "$${OSRM_REBUILD:-0}" != 1 ]; then
+          echo "osrm-prep: graph present, nothing to do"; exit 0
+        fi
+        rm -rf /data/next && mkdir -p /data/next && cd /data/next
+        echo "osrm-prep: downloading $$OSRM_PBF_URL"
+        wget -q -O latvia.osm.pbf "$$OSRM_PBF_URL"
+        osrm-extract -p /opt/car.lua latvia.osm.pbf
+        osrm-partition latvia.osrm
+        osrm-customize latvia.osrm
+        rm latvia.osm.pbf
+        date -u +%Y-%m-%dT%H:%M:%SZ > READY
+        rm -rf /data/graph && mv /data/next /data/graph
+        echo "osrm-prep: graph built"
+    restart: "no"
+
+  # The routing server. Compose-network only, like db and redis: nothing but
+  # the api reaches it. It loads the whole graph into memory at start, so a
+  # rebuilt graph in the volume is served only after `restart osrm`.
+  osrm:
+    image: *osrm-image
+    command: ["osrm-routed", "--algorithm", "mld", "/data/graph/latvia.osrm"]
+    volumes:
+      - osrm-data:/data:ro
+    depends_on:
+      osrm-prep:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      # A real Rīga route (centre -> station), not a port probe: healthy means
+      # the graph is loaded and routable. busybox wget exits 1 on a non-2xx.
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:5000/route/v1/driving/24.1052,56.9496;24.1206,56.9236?overview=false",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
 
   caddy:
     image: caddy:2-alpine
@@ -92,3 +164,6 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  # The routing graph. Rebuilt from the internet by osrm-prep (runbook §5.5),
+  # so NOT backed up — nothing precious.
+  osrm-data:

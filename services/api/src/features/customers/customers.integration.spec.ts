@@ -29,6 +29,7 @@ describe('customers (#19)', () => {
   let http: request.Agent;
   let tokens: AuthTokenService;
   let dispatcherAuth: string;
+  let dispatcherId: string;
 
   const createdRides: string[] = [];
 
@@ -41,6 +42,7 @@ describe('customers (#19)', () => {
       phone: p(1),
       role: 'dispatcher',
     });
+    dispatcherId = dispatcher.id;
     dispatcherAuth = `Bearer ${
       (await tokens.issue({ id: dispatcher.id, role: 'dispatcher' }))
         .accessToken
@@ -145,6 +147,13 @@ describe('customers (#19)', () => {
 
     expect(created.status).toBe(201);
     const customerId = (created.body as { id: string }).id;
+    // Filed with no booking and no participation: provisional, by this
+    // dispatcher, so the venue's own OTP signup adopts the row (#123).
+    const [minted] = await ctx.db
+      .select({ provisionedBy: users.provisionedBy })
+      .from(users)
+      .where(eq(users.phone, venuePhone));
+    expect(minted?.provisionedBy).toBe(dispatcherId);
     await ctx.db.insert(savedPlaces).values({
       customerId,
       kind: 'pickup',

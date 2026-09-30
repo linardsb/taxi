@@ -135,6 +135,25 @@ describe('CachingMapsProvider', () => {
     );
   });
 
+  it('never serves a stub-era v1 entry — the key moved to v2 with OSRM (edge — #134)', async () => {
+    // Before #134 every cached route was the stub's straight line x 1.35, and
+    // a quote entry lives 24 h. Observed against a dev Redis: an OSRM-bound
+    // api still quoted a corridor at the stub's price off a `v1` key.
+    const { kv, source, maps } = build();
+    const v1 = routeCacheKey('quote', CENTRE, RIX).replace(':v2:', ':v1:');
+    await kv.setWithTtl(
+      v1,
+      JSON.stringify({ distanceMeters: 1, durationSeconds: 1, polyline: '' }),
+      CACHE_TTL,
+    );
+
+    const route = await maps.route(CENTRE, RIX);
+
+    expect(routeCacheKey('quote', CENTRE, RIX)).toMatch(/^maps:route:v2:/);
+    expect(source.routeCalls).toBe(1);
+    expect(route.distanceMeters).not.toBe(1);
+  });
+
   it('serves a repeated route from cache and still delegates a different one (edge)', async () => {
     // This is the <€100/mo guardrail: an uncached Routes call per request is
     // how the budget becomes a €400 bill. The different-route leg matters —
@@ -486,7 +505,7 @@ describe('CachingMapsProvider', () => {
     jest
       .spyOn(kv, 'setWithTtl')
       .mockImplementation((key: string) =>
-        key.startsWith('maps:route:v1:')
+        key.startsWith('maps:route:v2:')
           ? Promise.reject(new Error('OOM command not allowed'))
           : Promise.resolve(),
       );

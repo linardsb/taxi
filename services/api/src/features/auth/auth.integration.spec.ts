@@ -224,4 +224,78 @@ describe('auth (integration)', () => {
       .set('authorization', `Bearer ${session.accessToken}`)
       .expect(403);
   });
+  describe('provisional rows (#123)', () => {
+    /** A row the phone path minted on `p(n)`, filed by the dispatcher on `p(n + 50)`. */
+    async function provisional(n: number, role: 'rider' | 'dispatcher') {
+      const phone = p(n);
+      const dispatcher = await insertUser(ctx.db, {
+        phone: p(n + 50),
+        role: 'dispatcher',
+      });
+      const [row] = await ctx.db
+        .insert(users)
+        .values({ phone, role, provisionedBy: dispatcher.id })
+        .returning();
+      return row!;
+    }
+
+    const stored = async (phone: string) =>
+      (await ctx.db.select().from(users).where(eq(users.phone, phone)))[0]!;
+
+    it('adopts a provisional rider row at the signup role, once (expected)', async () => {
+      const phone = p(20);
+      const row = await provisional(20, 'rider');
+
+      const session = await signIn(phone, 'driver');
+
+      expect(session.user.id).toBe(row.id);
+      expect(session.user.role).toBe('driver');
+      const claims = jwtClaimsSchema.parse(
+        await ctx.app.get(AuthTokenService).verify(session.accessToken),
+      );
+      expect(claims.role).toBe('driver');
+      expect((await stored(phone)).provisionedBy).toBeNull();
+
+      // One-shot: the marker is gone, so a later 'rider' claim changes nothing.
+      ctx.kv.advance(400);
+      const again = await signIn(phone, 'rider');
+      expect(again.user.role).toBe('driver');
+    });
+
+    it('never changes the role of a row its owner created (failure — escalation defence)', async () => {
+      const phone = p(21);
+      await insertUser(ctx.db, { phone, role: 'rider' });
+
+      const session = await signIn(phone, 'driver');
+
+      expect(session.user.role).toBe('rider');
+      const row = await stored(phone);
+      expect(row.role).toBe('rider');
+      expect(row.provisionedBy).toBeNull();
+    });
+
+    it('never demotes a staff row that carries the marker (failure)', async () => {
+      const phone = p(22);
+      await provisional(22, 'dispatcher');
+
+      const session = await signIn(phone, 'driver');
+
+      expect(session.user.role).toBe('dispatcher');
+      expect((await stored(phone)).role).toBe('dispatcher');
+    });
+
+    it('cannot adopt INTO a staff role: the contract refuses the claim (failure)', async () => {
+      const phone = p(23);
+      await provisional(23, 'rider');
+
+      await http
+        .post('/auth/otp/request')
+        .send({ phone, role: 'dispatcher' })
+        .expect(400);
+
+      const row = await stored(phone);
+      expect(row.role).toBe('rider');
+      expect(row.provisionedBy).not.toBeNull();
+    });
+  });
 });
