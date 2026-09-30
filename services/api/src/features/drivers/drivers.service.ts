@@ -202,13 +202,16 @@ export class DriversService {
       // between them, which is how a driver ended up online with no car.
       const online = await this.drivers.setOnlineIfEligible(userId);
       if (!online) {
-        // The UPDATE said no; this read only picks the message. #61 chain A: an
-        // active ride outranks a missing vehicle — that driver is mid-ride, and
-        // `vehicle_required` would send them to the garage instead of the ride.
+        // The UPDATE said no; these reads only pick the message. #61 chain A: an
+        // active ride outranks the rest — `vehicle_required` would send a
+        // mid-ride driver to the garage. Unapproved (#20) outranks a missing car,
+        // because adding one will not help.
         throw new ConflictException(
           (await this.drivers.hasActiveRide(userId))
             ? 'driver_on_ride'
-            : 'vehicle_required',
+            : profile.approvalStatus !== 'approved'
+              ? 'driver_not_approved'
+              : 'vehicle_required',
         );
       }
       updated = online;
@@ -463,8 +466,13 @@ export class DriversService {
     return this.drivers.findBoardContacts(driverIds);
   }
 
-  /** #19's entry point: EVERY driver, offline ones included — the override picker. */
+  /** #19's entry point: every APPROVED driver, offline ones included — the override picker. */
   findRosterContacts(limit: number): Promise<DriverRosterContact[]> {
     return this.drivers.findRosterContacts(limit);
+  }
+
+  /** Accept/force-assign's in-transaction approval check (#20); see the repository. */
+  lockApprovedForAssignment(driverId: string, tx: DbTx): Promise<boolean> {
+    return this.drivers.lockApprovedForAssignment(driverId, tx);
   }
 }

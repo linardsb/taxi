@@ -8,7 +8,12 @@ import {
 } from '@taxi/shared';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
-import { createTestApp, phoneFor, type TestApp } from '../../../test/harness';
+import {
+  approveDriver,
+  createTestApp,
+  phoneFor,
+  type TestApp,
+} from '../../../test/harness';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { DriversRepository } from './drivers.repository';
 import { DriversService } from './drivers.service';
@@ -51,10 +56,14 @@ describe('drivers (integration)', () => {
     return authSessionSchema.parse(res.body);
   }
 
-  /** Signs a driver in and returns the pieces every case needs. */
-  async function driver(n: number) {
+  /**
+   * Signs a driver in and returns the pieces every case needs. Approved (#20)
+   * unless asked otherwise, so the go-online cases keep testing what they name.
+   */
+  async function driver(n: number, { approved = true } = {}) {
     const session = await signIn(p(n));
     const auth = `Bearer ${session.accessToken}`;
+    if (approved) await approveDriver(ctx.db, session.user.id);
     return {
       id: session.user.id,
       auth,
@@ -86,7 +95,7 @@ describe('drivers (integration)', () => {
   };
 
   it('provisions the drivers row on first read and returns schema defaults (expected)', async () => {
-    const d = await driver(1);
+    const d = await driver(1, { approved: false });
     expect(await d.row()).toBeUndefined();
 
     const res = await http
@@ -97,6 +106,7 @@ describe('drivers (integration)', () => {
     const me = driverMeSchema.parse(res.body);
     expect(me.profile.userId).toBe(d.id);
     expect(me.profile.status).toBe('offline');
+    expect(me.profile.approvalStatus).toBe('pending'); // #20: a new driver awaits review
     expect(me.profile.spokenLanguages).toEqual(['lv']);
     expect(me.profile.balanceCents).toBe(0);
     expect(me.profile.commissionPctOverride).toBeNull();
@@ -173,7 +183,7 @@ describe('drivers (integration)', () => {
     const created = await addCar(d.auth);
     expect(created.driverId).toBe(d.id);
     expect(created.hasChildSeat).toBe(true);
-    expect(created.category).toBe('standard'); // the schema default applied
+    expect(created.category).toBe('standard'); // the column default (#20: admin-set)
 
     const listed = await http
       .get('/drivers/me/vehicles')
@@ -321,7 +331,24 @@ describe('drivers (integration)', () => {
     expect(row!.status).toBe('offline');
   });
 
-  it('refuses to put a driver with no vehicle online (edge)', async () => {
+  it('refuses an unapproved driver as not approved, even with no car (edge, #20)', async () => {
+    // Priority: adding a car would not help a pending driver, so they hear
+    // "not approved" first.
+    const d = await driver(37, { approved: false });
+
+    const res = await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(409);
+    expect((res.body as { message: string }).message).toBe(
+      'driver_not_approved',
+    );
+    expect((await d.row())!.status).toBe('offline');
+    expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+  });
+
+  it('refuses to put an approved driver with no vehicle online (edge)', async () => {
     const d = await driver(4);
 
     const res = await http
@@ -615,17 +642,21 @@ describe('drivers (integration)', () => {
     it("aggregates across a driver's vehicles (expected)", async () => {
       const d = await driver(13);
       await addCar(d.auth); // standard · 4 seats · child seat
-      await http
+      const vip = await http
         .post('/drivers/me/vehicles')
         .set('authorization', d.auth)
         .send({
           ...CAR,
           plate: 'VIP001',
-          category: 'vip',
           passengerSeats: 7,
           hasChildSeat: false,
         })
         .expect(201);
+      // Category is admin-set since #20; a driver body cannot carry it.
+      await ctx.db
+        .update(vehicles)
+        .set({ category: 'vip' })
+        .where(eq(vehicles.id, vehicleSchema.parse(vip.body).id));
       await http
         .post('/drivers/me/vehicles')
         .set('authorization', d.auth)

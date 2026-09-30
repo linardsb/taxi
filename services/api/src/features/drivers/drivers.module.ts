@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { PushModule } from '../push';
 import { RealtimeModule } from '../realtime';
+import { AdminDriversController } from './admin/admin-drivers.controller';
+import { AdminDriversRepository } from './admin/admin-drivers.repository';
+import { AdminDriversService } from './admin/admin-drivers.service';
+import { AdminVehiclesController } from './admin/admin-vehicles.controller';
 import { DriversController } from './drivers.controller';
 import { DriversRepository } from './drivers.repository';
 import { DriversService } from './drivers.service';
@@ -31,7 +35,12 @@ import { VehiclesService } from './vehicles.service';
  */
 @Module({
   imports: [RealtimeModule, PushModule], // RealtimeService for the fan-out; PUSH_PROVIDER for the nudge
-  controllers: [DriversController, VehiclesController],
+  controllers: [
+    DriversController,
+    VehiclesController,
+    AdminDriversController,
+    AdminVehiclesController,
+  ],
   providers: [
     DriversService,
     DriversRepository,
@@ -39,6 +48,8 @@ import { VehiclesService } from './vehicles.service';
     DriverPresenceSweeper,
     VehiclesService,
     VehiclesRepository,
+    AdminDriversService,
+    AdminDriversRepository,
     DriverLocationService,
     DriverLocationGateway,
     {

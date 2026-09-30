@@ -86,6 +86,10 @@ describe('assignErrorKey', () => {
     expect(assignErrorKey('ride_not_reassignable')).toBe(
       'console.assign_error_ride_not_reassignable',
     );
+    // #20: force-assign refuses a driver the admin has not approved.
+    expect(assignErrorKey('driver_not_approved')).toBe(
+      'console.assign_error_driver_not_approved',
+    );
   });
 
   it('maps the CANCEL route’s codes too (expected)', () => {

@@ -167,6 +167,18 @@ describe('HomeScreen', () => {
     ).toBeChecked();
   });
 
+  it('renders the awaiting-approval banner in LV (#20, expected)', async () => {
+    mockPresence = {
+      ...initialPresence,
+      banner: { kind: 'driver_not_approved' },
+    };
+    await render(<HomeScreen />);
+
+    expect(screen.getByTestId('banner')).toHaveTextContent(
+      'Jūsu profils vēl gaida apstiprinājumu. Mēs sazināsimies.',
+    );
+  });
+
   it('renders a dash when earnings fail, with the toggle unaffected, and the pill while online (failure)', async () => {
     mockEarningsStatus = 'error';
     mockPresence = {

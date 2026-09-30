@@ -1,4 +1,5 @@
 import type { MessageKey } from './lv';
+import { enAdmin } from './en-admin';
 
 /**
  * The ENGLISH catalog. Keys are pinned to `lv` by the `satisfies` clause below,
@@ -119,6 +120,8 @@ export const en = {
   'console.assign_failed': 'Could not assign. Try again.',
   'console.assign_error_ride_not_found': 'That ride no longer exists',
   'console.assign_error_driver_not_found': 'Driver not found',
+  'console.assign_error_driver_not_approved':
+    'The driver is not approved — cannot assign',
   'console.assign_error_ride_not_assignable':
     'The ride is already assigned or cancelled — the board will catch up',
   'console.assign_error_ride_already_assigned':
@@ -216,6 +219,8 @@ export const en = {
   'driver.error.session_expired': 'Your session has expired. Sign in again.',
   'driver.error.vehicle_required': 'Add a vehicle before going online.',
   'driver.error.driver_on_ride': 'You are on a ride right now.',
+  'driver.error.driver_not_approved':
+    'Your profile is still awaiting approval. We will be in touch.',
   'driver.error.plate_taken': 'This plate is already registered.',
   'driver.error.offline': 'No connection to the server.',
   'driver.error.generic': 'Something went wrong. Try again.',
@@ -425,4 +430,5 @@ export const en = {
   'rider.error.invalid_field': 'Check this field',
   'rider.error.offline': 'No connection to the server.',
   'rider.error.generic': 'Something went wrong. Please try again.',
+  ...enAdmin,
 } as const satisfies Record<MessageKey, string>;

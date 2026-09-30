@@ -45,6 +45,19 @@ export const DRIVER_STATUSES = ['offline', 'online', 'on_ride'] as const;
 export type DriverStatus = (typeof DRIVER_STATUSES)[number];
 
 /**
+ * Vetting state of a driver (#20), orthogonal to presence (`DRIVER_STATUSES`).
+ * A self-registered driver starts `pending`; only `approved` may go online, be
+ * offered a ride or be force-assigned one. `rejected` stays out of the review
+ * queue without deleting the row (rides hold FKs to it).
+ */
+export const DRIVER_APPROVAL_STATUSES = [
+  'pending',
+  'approved',
+  'rejected',
+] as const;
+export type DriverApprovalStatus = (typeof DRIVER_APPROVAL_STATUSES)[number];
+
+/**
  * What a driver may set for THEMSELVES. `on_ride` is deliberately absent: it is
  * written only by the ride lifecycle (#11) when a ride is accepted, and a driver
  * who could set it by hand could hide from dispatch while idle — or clear it

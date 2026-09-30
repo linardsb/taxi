@@ -87,6 +87,33 @@ describe('decide — going online', () => {
 });
 
 describe('decide — the server disagrees', () => {
+  it('a driver_not_approved 409 flips offline with its own banner (failure, #20)', () => {
+    const d = decide(online({ busy: true }), {
+      type: 'error',
+      code: 'driver_not_approved',
+    });
+
+    expect(d.state.intent).toBe('offline');
+    expect(d.state.banner?.kind).toBe('driver_not_approved');
+    expect(types(d.effects)).toContain('stop_stream');
+  });
+
+  it('a revocation reaches the driver through the refused fix and the re-assert (edge, #20)', () => {
+    // The admin rejected an online driver: the next fix is acked `not_online`,
+    // the app re-asserts, and the PUT answers `driver_not_approved`.
+    const reassert = decide(online(), { type: 'ack_not_online', at: AT });
+    expect(reassert.effects).toEqual([
+      { type: 'put_status', status: 'online' },
+    ]);
+
+    const refused = decide(reassert.state, {
+      type: 'error',
+      code: 'driver_not_approved',
+    });
+    expect(refused.state.intent).toBe('offline');
+    expect(refused.state.banner?.kind).toBe('driver_not_approved');
+  });
+
   it('ack_not_online re-asserts exactly once; a second one flips with the marked_offline banner (edge)', () => {
     const first = decide(online(), { type: 'ack_not_online', at: AT });
     expect(first.state.reasserted).toBe(true);

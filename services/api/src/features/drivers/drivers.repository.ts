@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { drivers, rides, users, vehicles, type Db } from '@taxi/db';
 import {
   ACTIVE_DRIVER_RIDE_STATUSES,
+  type DriverApprovalStatus,
   type DriverProfile,
   type DriverProfileUpdate,
   type DriverStatus,
@@ -21,6 +22,8 @@ type DriverRow = typeof drivers.$inferSelect;
 export interface DriverMatchAttributes {
   driverId: string;
   status: DriverStatus;
+  /** Only `approved` is a candidate (#20) — see `candidate-filter.ts`. */
+  approvalStatus: DriverApprovalStatus;
   isFemale: boolean | null;
   balanceCents: number;
   /**
@@ -83,6 +86,7 @@ function toProfile(row: DriverRow): DriverProfile {
   return {
     userId: row.userId,
     status: row.status,
+    approvalStatus: row.approvalStatus,
     // `text[]` is `string[]` to Drizzle and there is no CHECK constraint behind
     // it, so this is a genuine narrowing. The update path is the only writer
     // and it validates through zod first.
@@ -162,9 +166,12 @@ export class DriversRepository {
   }
 
   /**
-   * Goes online ONLY if the driver still has a vehicle AND no live
-   * post-acceptance ride, as one statement. `undefined` means a precondition
-   * failed — a 409, not a 500; `hasActiveRide` picks which one.
+   * Goes online ONLY if the driver is approved (#20), still has a vehicle AND
+   * no live post-acceptance ride, as one statement. `undefined` means a
+   * precondition failed — a 409, not a 500; `hasActiveRide` and the profile's
+   * `approvalStatus` pick which one. Approval is inside the WHERE for the same
+   * L8 reason as the vehicle: a revocation landing between a read and this
+   * write must not let the driver through.
    *
    * The checks have to live inside the UPDATE (L8). Counting vehicles and then
    * setting the status leaves a window: a concurrent DELETE of the last vehicle
@@ -184,6 +191,7 @@ export class DriversRepository {
       .where(
         and(
           eq(drivers.userId, userId),
+          eq(drivers.approvalStatus, 'approved'),
           exists(
             this.db
               .select({ one: sql`1` })
@@ -228,6 +236,22 @@ export class DriversRepository {
       )
       .limit(1);
     return row?.id ?? null;
+  }
+
+  /**
+   * Row-locks the driver inside the caller's accept or force-assign
+   * transaction and answers "still approved?" (#20). Callers take it just
+   * before `claimForRide`, where they already lock this row, so it adds no new
+   * lock order (rides → drivers everywhere). A revocation holding the lock
+   * makes this wait, then read the committed `rejected`.
+   */
+  async lockApprovedForAssignment(userId: string, tx: DbTx): Promise<boolean> {
+    const [row] = await tx
+      .select({ approvalStatus: drivers.approvalStatus })
+      .from(drivers)
+      .where(eq(drivers.userId, userId))
+      .for('update');
+    return row?.approvalStatus === 'approved';
   }
 
   /** Follow-up read for the error message ONLY — the WHERE above decides. */
@@ -332,13 +356,14 @@ export class DriversRepository {
   }
 
   /**
-   * EVERY driver, for #19's override picker — deliberately unfiltered.
+   * Every APPROVED driver, for #19's override picker — otherwise unfiltered.
    *
    * `findBoardContacts` above answers "who is in the online set"; this answers
-   * "who exists at all", because force-assign is documented as NOT filtered
-   * through the eligibility rules and a picker that hid offline drivers could
-   * not express S9-2. There is no approval flag to filter on yet either —
-   * driver onboarding review is #20's.
+   * "who may be assigned at all", because force-assign is documented as NOT
+   * filtered through the eligibility rules and a picker that hid offline
+   * drivers could not express S9-2. Approval (#20) is the one rule it does
+   * apply: force-assign refuses an unapproved driver, so offering one in the
+   * picker would only produce a 409.
    *
    * `min(plate)` rather than a row per vehicle: a driver may own several cars
    * and the picker shows one identifying plate, so aggregating here keeps the
@@ -364,6 +389,7 @@ export class DriversRepository {
       .from(drivers)
       .innerJoin(users, eq(users.id, drivers.userId))
       .leftJoin(vehicles, eq(vehicles.driverId, drivers.userId))
+      .where(eq(drivers.approvalStatus, 'approved'))
       .groupBy(drivers.userId, users.displayName, users.phone, drivers.status)
       .orderBy(users.displayName)
       .limit(limit);
@@ -394,6 +420,7 @@ export class DriversRepository {
         attrs = {
           driverId: driver.userId,
           status: driver.status,
+          approvalStatus: driver.approvalStatus,
           isFemale: driver.isFemale,
           balanceCents: driver.balanceCents,
           commissionPctOverride: driver.commissionPctOverride,

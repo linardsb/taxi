@@ -18,7 +18,7 @@ const LANG: Language = 'lv';
  * interactions, no captcha, no extra steps.
  *
  * The request carries `role:'rider'` because `otpRequestSchema` accepts only
- * signup roles — dispatchers are provisioned (provision-dispatcher.ts), and
+ * signup roles — dispatchers are provisioned (provision-staff.ts), and
  * the stored role always wins on an existing row. An UNprovisioned phone
  * therefore silently becomes a rider account; the role check on verify is the
  * gate that keeps it out, and the token is discarded, never stored.

@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { DRIVER_PRESENCE_STATUSES, DRIVER_STATUSES, LANGUAGES } from '../enums';
+import {
+  DRIVER_APPROVAL_STATUSES,
+  DRIVER_PRESENCE_STATUSES,
+  DRIVER_STATUSES,
+  LANGUAGES,
+} from '../enums';
 import {
   centsSchema,
   commissionPctSchema,
@@ -10,6 +15,11 @@ import { vehicleSchema } from './vehicle';
 export const driverProfileSchema = z.object({
   userId: z.string().uuid(),
   status: z.enum(DRIVER_STATUSES).default('offline'),
+  /**
+   * Admin vetting (#20). Required with no default: every producer reads the
+   * column, so a profile can never claim `approved` by omission.
+   */
+  approvalStatus: z.enum(DRIVER_APPROVAL_STATUSES),
   /** Languages the driver speaks — shown as badges to riders (outline: RU/LV/EN/IT…). */
   spokenLanguages: z.array(z.enum(LANGUAGES)).default(['lv']),
   /** Used only for the rider's female-driver preference filter. */
@@ -37,15 +47,19 @@ export type DriverProfile = z.infer<typeof driverProfileSchema>;
  * `rating`, `fleetId` and `status` all live on the profile and none of them are
  * the driver's to write. Unknown keys are stripped by zod; the repository's
  * explicit column list is the second half of the same defence (see the api's
- * auth.repository.ts). Safe as a `ZodEffects` — a leaf request schema nothing
- * derives from, same reasoning as `rideAssignedEventSchema`.
+ * auth.repository.ts). The unrefined fields are exported separately because
+ * the admin update (#20, `adminDriverUpdateSchema`) extends them: a refined
+ * schema is a `ZodEffects`, which has no `.extend`.
  */
-export const driverProfileUpdateSchema = z
-  .object({
-    spokenLanguages: z.array(z.enum(LANGUAGES)).min(1).optional(),
-    isFemale: z.boolean().optional(),
-  })
-  .refine((p) => Object.keys(p).length > 0, { message: 'empty update' });
+export const driverProfileUpdateFieldsSchema = z.object({
+  spokenLanguages: z.array(z.enum(LANGUAGES)).min(1).optional(),
+  isFemale: z.boolean().optional(),
+});
+
+export const driverProfileUpdateSchema = driverProfileUpdateFieldsSchema.refine(
+  (p) => Object.keys(p).length > 0,
+  { message: 'empty update' },
+);
 export type DriverProfileUpdate = z.infer<typeof driverProfileUpdateSchema>;
 
 /** Presence toggle. `on_ride` is not a value a driver may send — see DRIVER_PRESENCE_STATUSES. */

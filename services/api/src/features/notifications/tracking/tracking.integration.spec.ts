@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { drivers, rideOffers, rides, users } from '@taxi/db';
+import { drivers, rideOffers, rides, users, vehicles } from '@taxi/db';
 import {
   authSessionSchema,
   IDEMPOTENCY_KEY_HEADER,
@@ -13,10 +13,11 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
+  approveDriver,
   createTestApp,
   haversineMeters,
-  insertUser,
   phoneFor,
+  insertUser,
   type TestApp,
 } from '../../../../test/harness';
 import { APP_ENV, type Env } from '../../../common/config/env.schema';
@@ -131,6 +132,7 @@ describe('tracking + ride SMS (integration)', () => {
         hasChildSeat: false,
       })
       .expect(201);
+    await approveDriver(ctx.db, id);
     await http
       .put('/drivers/me/status')
       .set('authorization', auth)
@@ -517,12 +519,16 @@ describe('tracking + ride SMS (integration)', () => {
         make: 'Mercedes',
         model: 'S-Class',
         year: 2021,
-        category: 'limo',
         passengerSeats: 4,
         hasChildSeat: false,
       })
       .expect(201);
     const limo = limoRes.body as { id: string; plate: string };
+    // Category is admin-set since #20 — a driver's body cannot carry it.
+    await ctx.db
+      .update(vehicles)
+      .set({ category: 'limo' })
+      .where(eq(vehicles.id, limo.id));
 
     const r = await rider(55);
     const ride = await bookByPhone(r.id, {
@@ -562,12 +568,16 @@ describe('tracking + ride SMS (integration)', () => {
         make: 'Mercedes',
         model: 'S-Class',
         year: 2021,
-        category: 'limo',
         passengerSeats: 4,
         hasChildSeat: false,
       })
       .expect(201);
     const limo = limoRes.body as { id: string; plate: string };
+    // Category is admin-set since #20 — a driver's body cannot carry it.
+    await ctx.db
+      .update(vehicles)
+      .set({ category: 'limo' })
+      .where(eq(vehicles.id, limo.id));
 
     const r = await rider(61);
     const ride = await bookByPhone(r.id, {
@@ -579,15 +589,15 @@ describe('tracking + ride SMS (integration)', () => {
     await acceptBy(ride.id, d.auth);
 
     // The fleet changes UNDER the live ride — a legitimate edit, not a
-    // contrived one: `update` carries no `on_ride` guard (only `remove` does).
-    // The limo becomes a standard car, so the driver now owns TWO standard
-    // cars and no limo: the read-time heuristic this test guards against would
-    // find the ride's `limo` category unmatched and answer the Skoda instead.
-    await http
-      .patch(`/drivers/me/vehicles/${limo.id}`)
-      .set('authorization', d.auth)
-      .send({ category: 'standard' })
-      .expect(200);
+    // contrived one: an admin's category change (#20, `PATCH
+    // /admin/vehicles/:id`) carries no `on_ride` guard. The limo becomes a
+    // standard car, so the driver now owns TWO standard cars and no limo: the
+    // read-time heuristic this test guards against would find the ride's
+    // `limo` category unmatched and answer the Skoda instead.
+    await ctx.db
+      .update(vehicles)
+      .set({ category: 'standard' })
+      .where(eq(vehicles.id, limo.id));
 
     // The stamp is a snapshot, not a pointer into a query — the row still
     // names the car the rider was promised.
@@ -610,6 +620,7 @@ describe('tracking + ride SMS (integration)', () => {
     const auth = `Bearer ${session.accessToken}`;
     const driverId = session.user.id;
     await http.get('/drivers/me').set('authorization', auth).expect(200);
+    await approveDriver(ctx.db, driverId); // force-assign refuses the unvetted (#20)
     await ctx.db
       .update(users)
       .set({ displayName: 'Jānis Bērziņš' })

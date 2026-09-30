@@ -29,6 +29,11 @@ export function toCandidates(
     // drivers: these are two stores, and `drivers.status` is the durable truth.
     if (a.status !== 'online') continue;
 
+    // Defence in depth (#20): the go-online gate should make this unreachable,
+    // but `releaseFromRide` puts a driver revoked mid-ride back to `online`
+    // without passing that gate.
+    if (a.approvalStatus !== 'approved') continue;
+
     if (!a.categories.includes(request.category)) continue;
     if (request.options.childSeat && !a.hasChildSeat) continue;
 

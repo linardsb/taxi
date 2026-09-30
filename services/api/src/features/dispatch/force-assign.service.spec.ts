@@ -58,6 +58,7 @@ const quote: FareQuote = {
 const attrs = (): DriverMatchAttributes => ({
   driverId: DRIVER_ID,
   status: 'offline',
+  approvalStatus: 'approved',
   isFemale: null,
   balanceCents: 0,
   commissionPctOverride: null,
@@ -101,6 +102,8 @@ function build(
     assignDriver?: boolean;
     /** `false` models the force-assigned OFFLINE driver: ordinary, never a throw. */
     claimDriver?: boolean;
+    /** `false` models a revocation (#20) committing after the early read. */
+    approvedAtLock?: boolean;
     revoked?: RevokedRef[];
   } = {},
 ) {
@@ -193,6 +196,10 @@ function build(
       findMatchAttributes: jest.fn(() =>
         Promise.resolve(over.driverAttrs ?? [attrs()]),
       ),
+      lockApprovedForAssignment: jest.fn(() => {
+        events.push('lock:approval');
+        return Promise.resolve(over.approvedAtLock ?? true);
+      }),
     } as unknown as DriversService,
     new DispatchNotifier(realtime, transitions, {
       sendPush: jest.fn(() => Promise.resolve()),
@@ -292,7 +299,14 @@ describe('ForceAssignService', () => {
     );
 
     // Claim inside the transaction, every emit strictly post-commit.
-    expect(events).toEqual(['tx:begin', 'claim', 'tx:commit', 'emit:assigned']);
+    // The approval lock sits just before the claim (#20), keeping rides → drivers.
+    expect(events).toEqual([
+      'tx:begin',
+      'lock:approval',
+      'claim',
+      'tx:commit',
+      'emit:assigned',
+    ]);
   });
 
   it('books from=offered mid-cascade and clears the overridden card (edge)', async () => {
@@ -324,7 +338,13 @@ describe('ForceAssignService', () => {
     await expect(service.forceAssign(input())).resolves.toEqual({
       rideId: RIDE_ID,
     });
-    expect(events).toEqual(['tx:begin', 'claim', 'tx:commit', 'emit:assigned']);
+    expect(events).toEqual([
+      'tx:begin',
+      'lock:approval',
+      'claim',
+      'tx:commit',
+      'emit:assigned',
+    ]);
   });
 
   it('409s ride_not_assignable when the guard hop matches nothing (failure)', async () => {
@@ -352,6 +372,30 @@ describe('ForceAssignService', () => {
 
     expect(emitToRide).not.toHaveBeenCalled();
     expect(emitStatus).not.toHaveBeenCalled();
+  });
+
+  it('409s driver_not_approved before the transaction for a pending driver (failure, #20)', async () => {
+    const { service, events, emitToRide } = build({
+      driverAttrs: [{ ...attrs(), approvalStatus: 'pending' }],
+    });
+
+    const attempt = service.forceAssign(input());
+    await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+    await expect(attempt).rejects.toThrow('driver_not_approved');
+    expect(events).toEqual([]);
+    expect(emitToRide).not.toHaveBeenCalled();
+  });
+
+  it('409s driver_not_approved when a revocation lands between the read and the lock (failure, #20)', async () => {
+    // The early read said approved; the in-transaction lock is what decides.
+    const { service, events, emitToRide } = build({ approvedAtLock: false });
+
+    await expect(service.forceAssign(input())).rejects.toThrow(
+      'driver_not_approved',
+    );
+    // Rolled back before the claim: no `claim`, no commit, nothing emitted.
+    expect(events).toEqual(['tx:begin', 'lock:approval']);
+    expect(emitToRide).not.toHaveBeenCalled();
   });
 
   it('404s before the transaction for an unknown ride or driver (failure)', async () => {

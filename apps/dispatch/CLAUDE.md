@@ -8,7 +8,7 @@
 
 - OTP login at `/login`; the session (`{accessToken, expiresAt, user}`) lives in **localStorage** (`taxi.console.session`) because the socket handshake needs the raw token client-side. XSS exposure accepted for an internal operator console.
 - **The client guard (`RequireRole`) is UX only** — there is deliberately no `middleware.ts` (localStorage is invisible to edge middleware). Enforcement is the API's `@Roles('dispatcher','admin')` guard on every read plus the gateway's handshake + token sweep.
-- Dispatchers are **provisioned**, never signed up: `pnpm --filter @taxi/api provision:dispatcher +371… [name]` (no `--` — pnpm 10 forwards it literally). The login form sends `role:'rider'` (the only role `otpRequestSchema` accepts) and the stored role wins; the form's role check discards non-console tokens.
+- Dispatchers are **provisioned**, never signed up: `pnpm --filter @taxi/api provision:dispatcher +371… [name]` (no `--` — pnpm 10 forwards it literally). Admins likewise: `provision:admin +371… [name]` (#20). The login form sends `role:'rider'` (the only role `otpRequestSchema` accepts) and the stored role wins; the form's role check discards non-console tokens.
 
 ## Console surfaces
 
