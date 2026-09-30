@@ -86,7 +86,8 @@ export function LoginForm() {
         return;
       }
       saveSession(session);
-      router.push('/dispatch');
+      // An admin lands on the admin panel; /dispatch still admits them.
+      router.push(session.user.role === 'admin' ? '/admin' : '/dispatch');
     } catch {
       setError('console.wrong_code');
     } finally {

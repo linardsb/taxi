@@ -35,6 +35,7 @@ export const enAdmin = {
   'admin.driver.is_female': 'Female driver',
   'admin.driver.commission_override': 'Commission, %',
   'admin.driver.commission_platform_base': 'Platform base rate',
+  'admin.driver.profile': 'Profile',
   'admin.driver.approval': 'Approval',
   'admin.driver.vehicles': 'Vehicles',
   'admin.vehicle.plate': 'Plate',
@@ -57,5 +58,6 @@ export const enAdmin = {
   'admin.error.driver_not_found': 'Driver not found',
   'admin.error.plate_taken': 'This plate is already registered',
   'admin.error.vehicle_not_found': 'Vehicle not found',
+  'admin.error.invalid_input': 'Check the values you entered',
   'admin.error.generic': 'Something went wrong. Please try again.',
 } as const satisfies Record<keyof typeof lvAdmin, string>;
