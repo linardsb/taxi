@@ -120,6 +120,11 @@ test('2 parsing, edge: table rows, indented code, nested bullets, section intros
   assert.ok(questionsFor(bullet).includes('provenance'));
 
   assert.equal(findClaims('```\nlatency 99 ms\n```\n').length, 0, 'fenced code is ignored');
+  const wrapped = findClaims(`${MUT}\n\n- The four flags, 0.50–0.86, fall on its\n  mutation bullets and their intro.\n`);
+  const item = wrapped.filter((u) => u.sectionIntro);
+  assert.equal(item.length, 1, 'a wrapped list item is one unit');
+  assert.equal(item[0].sentence, 'The four flags, 0.50–0.86, fall on its mutation bullets and their intro.');
+  assert.equal(item[0].sectionIntro, MUT);
   assert.equal(findClaims('It took 12 s. **L3** — `a/x.ts:2` names it.\n').length, 2, 'a bold lead-in starts a sentence');
   assert.equal(findClaims('## Validation — observed\n\nGate took 58 s.\n')[0].heading, '## Validation — observed');
 

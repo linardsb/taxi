@@ -887,3 +887,5 @@ and missed counts per question. The blocking decision and threshold come from th
     sentence from code docblocks that a review cited.
   - Task 7: the eval report adds an in-path recount. `--eval` asks every row's question unconditionally, while
     the body check does not; 10 negative rows fall outside the check's path.
+  - Task 2: a plain line directly after a list item continues that item, so a wrapped bullet stays one unit.
+    Found by the dogfood run in `piv-create-pr`.

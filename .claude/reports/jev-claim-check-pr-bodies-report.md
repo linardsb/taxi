@@ -108,6 +108,10 @@ eval are committed.
 - **D8: exports.** `gitContext` and `questionsFor` are exported beyond the plan's list, for tests 2–4 and L1–L2.
 - **D10: test 10b added** (see Tests). It does not pin D1.
 - **D11: the eval report gained an in-path recount**, because `--eval` asks every row's question unconditionally and the body check does not. No labels or questions changed.
+- **D12: a wrapped list item is one unit.** A plain line right after a list item continues that item. Found by
+  dogfooding on this PR's own body: its continuation lines had become separate paragraphs, which split
+  sentences mid-clause and set a bogus section intro. Test 2 pins it; the assertion goes red with the fix stashed
+  (observed).
 - **D9: the eval baseline.** The eval ran at `b801c7b`, and the report is committed after it.
 
 ## Issues encountered

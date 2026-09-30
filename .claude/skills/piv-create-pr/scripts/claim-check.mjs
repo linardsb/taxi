@@ -175,10 +175,12 @@ export function findClaims(markdown) {
     });
   };
   const emit = (line, text, ctx) => { for (const s of splitSentences(text)) addUnit(line, s, ctx); };
+  // `para` is the open block: a plain paragraph, which becomes the intro for what follows it, or a list item,
+  // which carries the current intro.
   const flushPara = () => {
     if (!para) return;
-    emit(para.line, para.text, {});
-    intro = para.text;
+    if (para.item) emit(para.line, para.text, { sectionIntro: intro });
+    else { emit(para.line, para.text, {}); intro = para.text; }
     para = null;
   };
 
@@ -194,8 +196,9 @@ export function findClaims(markdown) {
       return;
     }
     if (/^<\/?[a-z]/i.test(t)) return flushPara();
-    if (LIST.test(raw)) { flushPara(); emit(i + 1, t.replace(LIST, ''), { sectionIntro: intro }); return; }
+    if (LIST.test(raw)) { flushPara(); para = { line: i + 1, text: t.replace(LIST, ''), item: true }; return; }
     const text = t.replace(/^>\s?/, '');
+    // A plain line right after a paragraph or a list item continues it: a wrapped item stays one block.
     if (para) para.text += ` ${text}`;
     else para = { line: i + 1, text };
   });
