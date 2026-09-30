@@ -29,9 +29,9 @@ const FIELDS: readonly Field[] = [
  * The body is validated through `vehicleCreateSchema` BEFORE the request,
  * so a bad year never leaves the phone. Inner whitespace is stripped from
  * the plate — `AB 1234` and `AB1234` are one car against the `upper(plate)`
- * unique index. `category` has no picker for the pilot (logged in
- * ui-decisions.md): `standard` on create, and on edit the STORED value, so
- * an admin-set tier (#20) survives a driver correcting their plate.
+ * unique index. `category` is not sent at all: it is admin-set (#20,
+ * `PATCH /admin/vehicles/:id`), a new car starts `standard`, and an edit
+ * leaves the stored tier alone.
  */
 export function VehicleScreen() {
   const t = useT();
@@ -70,7 +70,6 @@ export function VehicleScreen() {
       year: Number(year),
       passengerSeats: Number(seats),
       hasChildSeat: childSeat,
-      category: editing?.category ?? 'standard',
     });
     if (parsed.success) {
       setErrors({});

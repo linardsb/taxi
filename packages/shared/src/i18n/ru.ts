@@ -1,4 +1,5 @@
 import type { MessageKey } from './lv';
+import { ruAdmin } from './ru-admin';
 
 /**
  * The RUSSIAN catalog. Keys are pinned to `lv` by the `satisfies` clause below,
@@ -123,6 +124,8 @@ export const ru = {
   'console.assign_failed': 'Не удалось назначить. Попробуйте ещё раз.',
   'console.assign_error_ride_not_found': 'Поездки больше не существует',
   'console.assign_error_driver_not_found': 'Водитель не найден',
+  'console.assign_error_driver_not_approved':
+    'Водитель не одобрен — назначить нельзя',
   'console.assign_error_ride_not_assignable':
     'Поездка уже назначена или отменена — список обновится сам',
   'console.assign_error_ride_already_assigned':
@@ -222,6 +225,8 @@ export const ru = {
   'driver.error.session_expired': 'Сессия истекла. Войдите заново.',
   'driver.error.vehicle_required': 'Чтобы выйти онлайн, добавьте автомобиль.',
   'driver.error.driver_on_ride': 'Вы сейчас выполняете поездку.',
+  'driver.error.driver_not_approved':
+    'Ваш профиль ещё ждёт одобрения. Мы с вами свяжемся.',
   'driver.error.plate_taken': 'Этот номер уже зарегистрирован.',
   'driver.error.offline': 'Нет связи с сервером.',
   'driver.error.generic': 'Что-то пошло не так. Попробуйте ещё раз.',
@@ -433,4 +438,5 @@ export const ru = {
   'rider.error.invalid_field': 'Проверьте это поле',
   'rider.error.offline': 'Нет связи с сервером.',
   'rider.error.generic': 'Что-то пошло не так. Попробуйте снова.',
+  ...ruAdmin,
 } as const satisfies Record<MessageKey, string>;

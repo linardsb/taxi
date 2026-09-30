@@ -8,9 +8,9 @@
  *
  * KNOWN GAPS — seen and accepted for the pilot, not overlooked:
  *
- * - No verification of a vehicle's `category` (#20). A driver self-declares
- *   `vip`/`limo`, which is what puts their car in a higher pricing tier.
- *   Driver approval is #20's, and this is the hook it will need.
+ * - Vehicle `category` is admin-set (`PATCH /admin/vehicles/:id`, #20); a
+ *   driver-created vehicle starts `standard`. Only an `approved` driver may go
+ *   online, be offered a ride or be force-assigned one (`admin/`, #20).
  * - DARK DETECTION (#14) CLOSES REVIEW FINDING L7 — a driver whose socket
  *   stays up but whose GPS goes silent is offline within
  *   `PRESENCE_DARK_AFTER_SECONDS + PRESENCE_SWEEP_INTERVAL_MS` = 75 s of the

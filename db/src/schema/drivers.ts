@@ -7,7 +7,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { driverStatusEnum } from './enums';
+import { driverApprovalStatusEnum, driverStatusEnum } from './enums';
 import { users } from './users';
 
 /** Mirrors `driverProfileSchema` (@taxi/shared). PK = user_id: a driver IS a user. */
@@ -16,6 +16,14 @@ export const drivers = pgTable('drivers', {
     .primaryKey()
     .references(() => users.id),
   status: driverStatusEnum('status').notNull().default('offline'),
+  /**
+   * Admin vetting (#20). Only `approved` may go online, be offered or be
+   * force-assigned. New rows start `pending`; migration 0016 backfilled every
+   * pre-#20 driver to `approved`.
+   */
+  approvalStatus: driverApprovalStatusEnum('approval_status')
+    .notNull()
+    .default('pending'),
   spokenLanguages: text('spoken_languages').array().notNull().default(['lv']),
   /** Used only for the rider's female-driver preference filter. */
   isFemale: boolean('is_female'),
@@ -26,7 +34,7 @@ export const drivers = pgTable('drivers', {
   balanceCents: integer('balance_cents').notNull().default(0),
   /** Per-driver override, e.g. the S6-7 0%-pilot; null = platform base (`resolveCommissionPct`). */
   commissionPctOverride: doublePrecision('commission_pct_override'),
-  /** Shown on the tracking page (#63); upload pipeline is #20's — null renders a placeholder. */
+  /** Shown on the tracking page (#63); upload pipeline deferred (#64) — null renders a placeholder. */
   photoUrl: text('photo_url'),
   /**
    * Expo push token of the driver's current phone (#14). Null = no push; a

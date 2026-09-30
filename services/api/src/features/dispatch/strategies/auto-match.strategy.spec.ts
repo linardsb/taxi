@@ -41,6 +41,7 @@ const attrs = (
 ): DriverMatchAttributes => ({
   driverId: id(n),
   status: 'online',
+  approvalStatus: 'approved',
   isFemale: null,
   balanceCents: 0,
   commissionPctOverride: null,

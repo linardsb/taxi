@@ -14,18 +14,27 @@ export const vehicleSchema = z.object({
 });
 export type Vehicle = z.infer<typeof vehicleSchema>;
 
-/** POST body — the server owns `id`, and `driverId` comes from the JWT, never the body. */
+/**
+ * POST body — the server owns `id`, `driverId` comes from the JWT, and
+ * `category` is admin-set (#20: it picks the pricing tier, so a driver must not
+ * self-promote to `limo`). A driver-created vehicle starts at the column
+ * default, `standard`. Not `.strict()`: an installed app that still sends
+ * `category` has it stripped, not refused.
+ */
 export const vehicleCreateSchema = vehicleSchema.omit({
   id: true,
   driverId: true,
+  category: true,
 });
 export type VehicleCreate = z.infer<typeof vehicleCreateSchema>;
 
 /**
  * PATCH body. The refine keeps an empty patch from reaching Drizzle, whose
- * `.set({})` throws. `.partial()` over the defaulted fields (`category`,
- * `hasChildSeat`) leaves an absent key `undefined` rather than materializing
- * the default — which is exactly what a PATCH must do.
+ * `.set({})` throws. `.partial()` over the defaulted `hasChildSeat` leaves an
+ * absent key `undefined` rather than materializing the default — which is
+ * exactly what a PATCH must do. `category` is not here at all (admin-only,
+ * `adminVehicleUpdateSchema`), so a body of only `category` strips to `{}` and
+ * is refused as empty.
  */
 export const vehicleUpdateSchema = vehicleCreateSchema
   .partial()

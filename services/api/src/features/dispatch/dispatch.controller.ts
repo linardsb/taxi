@@ -54,7 +54,7 @@ export class DispatchController {
   }
 
   /**
-   * The override picker's roster (#19) — EVERY driver, offline ones included,
+   * The override picker's roster (#19) — every APPROVED driver (#20), offline ones included,
    * which is precisely what the board frame is not. Request-scoped: fetched
    * when the picker opens, never pushed on the 2 s cadence. Same single-city
    * rule as the board above.

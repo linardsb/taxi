@@ -91,11 +91,10 @@ describe('VehicleScreen', () => {
       year: 2019,
       passengerSeats: 4,
       hasChildSeat: false,
-      category: 'standard',
     });
   });
 
-  it('editing keeps the stored category and strips plate whitespace — an admin-set tier survives a plate correction (edge)', async () => {
+  it('editing sends no category and strips plate whitespace — the admin-set tier stays server-side (edge, #20)', async () => {
     mockVehicles = [
       {
         id: 'v9',
@@ -125,9 +124,10 @@ describe('VehicleScreen', () => {
     await waitFor(() =>
       expect(mockUpdateVehicle).toHaveBeenCalledWith(
         'v9',
-        expect.objectContaining({ plate: 'AB1234', category: 'limo' }),
+        expect.objectContaining({ plate: 'AB1234' }),
       ),
     );
+    expect(mockUpdateVehicle.mock.calls[0]![1]).not.toHaveProperty('category');
     expect(mockCreateVehicle).not.toHaveBeenCalled();
   });
 

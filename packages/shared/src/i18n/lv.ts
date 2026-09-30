@@ -1,3 +1,4 @@
+import { lvAdmin } from './lv-admin';
 import { lvRider } from './lv-rider';
 
 /**
@@ -158,6 +159,8 @@ export const lv = {
   'console.assign_failed': 'Neizdevās piešķirt. Mēģiniet vēlreiz.',
   'console.assign_error_ride_not_found': 'Brauciens vairs neeksistē',
   'console.assign_error_driver_not_found': 'Šoferis nav atrasts',
+  'console.assign_error_driver_not_approved':
+    'Šoferis nav apstiprināts — piešķirt nevar',
   'console.assign_error_ride_not_assignable':
     'Brauciens jau ir piešķirts vai atcelts — saraksts atjaunosies pats',
   'console.assign_error_ride_already_assigned':
@@ -273,6 +276,8 @@ export const lv = {
     'Sesija ir beigusies. Pieslēdzieties vēlreiz.',
   'driver.error.vehicle_required': 'Lai ietu tiešsaistē, pievienojiet auto.',
   'driver.error.driver_on_ride': 'Jūs pašlaik izpildāt braucienu.',
+  'driver.error.driver_not_approved':
+    'Jūsu profils vēl gaida apstiprinājumu. Mēs sazināsimies.',
   'driver.error.plate_taken': 'Šī numura zīme jau ir reģistrēta.',
   'driver.error.offline': 'Nav savienojuma ar serveri.',
   'driver.error.generic': 'Kaut kas nogāja greizi. Mēģiniet vēlreiz.',
@@ -411,6 +416,7 @@ export const lv = {
   'driver.error.pickup_pin_incorrect': 'Nepareizs PIN kods.',
   'driver.error.pickup_pin_locked': 'PIN bloķēts. Zvaniet dispečerim.',
   ...lvRider,
+  ...lvAdmin,
 } as const;
 
 /**

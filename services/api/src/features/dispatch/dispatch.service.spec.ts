@@ -74,6 +74,8 @@ function build(
     lastReleasedAt?: Date | null;
     /** `false` models a force-assigned OFFLINE driver: ordinary, never a throw. */
     claimDriver?: boolean;
+    /** `false` models a driver revoked (#20) after the offer was sent. */
+    approvedAtLock?: boolean;
     /** What the drivers slice reports for the accepted driver at warn time. */
     driverStatus?: 'offline' | 'on_ride';
     /** The zone a declined ride was dispatched from — `null` = no zone (#15). */
@@ -185,6 +187,10 @@ function build(
             ? [{ driverId: DRIVER_ID, status: over.driverStatus }]
             : [],
         ),
+      lockApprovedForAssignment: () => {
+        events.push('lock:approval');
+        return Promise.resolve(over.approvedAtLock ?? true);
+      },
     } as unknown as DriversService,
     realtime,
     new DispatchNotifier(realtime, transitions, {
@@ -277,10 +283,27 @@ describe('DispatchService', () => {
       // happily with the claim moved out of the transaction entirely.
       expect(events).toEqual([
         'tx:begin',
+        'lock:approval',
         'claim',
         'tx:commit',
         'emit:assigned',
       ]);
+    });
+
+    it('409s driver_not_approved and rolls back when the driver was revoked after the offer (failure, #20)', async () => {
+      const { service, claimDriver, insertAudit, emitToRide, events } = build({
+        approvedAtLock: false,
+      });
+
+      const attempt = service.accept(DRIVER_ID, OFFER_ID);
+      await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+      await expect(attempt).rejects.toThrow('driver_not_approved');
+      // Thrown inside the transaction, before the claim: nothing commits and
+      // nothing reaches a phone.
+      expect(claimDriver).not.toHaveBeenCalled();
+      expect(insertAudit).not.toHaveBeenCalled();
+      expect(emitToRide).not.toHaveBeenCalled();
+      expect(events).toEqual(['tx:begin', 'lock:approval']);
     });
 
     it('still assigns when the claim matches no online driver (edge)', async () => {
@@ -295,6 +318,7 @@ describe('DispatchService', () => {
       // Still committed, still emitted — a missed claim is logged, not fatal.
       expect(events).toEqual([
         'tx:begin',
+        'lock:approval',
         'claim',
         'tx:commit',
         'emit:assigned',

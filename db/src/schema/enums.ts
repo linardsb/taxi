@@ -4,6 +4,7 @@ import {
   BOOKING_CHANNELS,
   COMMISSION_SOURCES,
   DISPATCH_MODES,
+  DRIVER_APPROVAL_STATUSES,
   DRIVER_STATUSES,
   OFFER_STATUSES,
   PAYMENT_METHOD_TYPES,
@@ -20,6 +21,10 @@ import {
 
 export const userRoleEnum = pgEnum('user_role', USER_ROLES);
 export const driverStatusEnum = pgEnum('driver_status', DRIVER_STATUSES);
+export const driverApprovalStatusEnum = pgEnum(
+  'driver_approval_status',
+  DRIVER_APPROVAL_STATUSES,
+);
 export const rideStatusEnum = pgEnum('ride_status', RIDE_STATUSES);
 export const rideCategoryEnum = pgEnum('ride_category', RIDE_CATEGORIES);
 export const paymentMethodTypeEnum = pgEnum(

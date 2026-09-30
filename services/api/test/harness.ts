@@ -1,6 +1,6 @@
 import { INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { users, type Db } from '@taxi/db';
+import { drivers, users, type Db } from '@taxi/db';
 import type {
   AddressPoint,
   AddressSearchOptions,
@@ -700,6 +700,21 @@ export async function insertUser(
     .values({ phone: input.phone, role: input.role })
     .returning();
   return { id: row!.id };
+}
+
+/**
+ * Marks a driver approved (#20) so they may go online. An UPSERT, so it works
+ * whether or not the lazily-created `drivers` row exists yet — call it any time
+ * after sign-in, before the status PUT.
+ */
+export async function approveDriver(db: Db, userId: string): Promise<void> {
+  await db
+    .insert(drivers)
+    .values({ userId, approvalStatus: 'approved' })
+    .onConflictDoUpdate({
+      target: drivers.userId,
+      set: { approvalStatus: 'approved' },
+    });
 }
 
 const openClients: Socket[] = [];

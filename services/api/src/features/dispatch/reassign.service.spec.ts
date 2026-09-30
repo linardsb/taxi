@@ -94,7 +94,9 @@ function build(
   );
   const findMatchAttributes = jest.fn(() =>
     Promise.resolve(
-      over.matchAttributes ?? [{ driverId: NEW_DRIVER, status: 'online' }],
+      over.matchAttributes ?? [
+        { driverId: NEW_DRIVER, status: 'online', approvalStatus: 'approved' },
+      ],
     ),
   );
   const drivers = {
@@ -339,6 +341,23 @@ describe('ReassignService', () => {
     // happened" while the ride has already lost its car.
     await expect(t.service.reassign(input())).rejects.toBeInstanceOf(
       NotFoundException,
+    );
+    expect(t.events).toEqual([]);
+    expect(t.unassignDriver).not.toHaveBeenCalled();
+  });
+
+  it('409s an unapproved INCOMING driver before the release commits (failure)', async () => {
+    const t = build({
+      matchAttributes: [
+        { driverId: NEW_DRIVER, status: 'online', approvalStatus: 'pending' },
+      ],
+      forceAssignError: new ConflictException('driver_not_approved'),
+    });
+
+    // #20 made `forceAssign` refuse an unapproved driver — the same late throw
+    // as the 404 above, so the pre-flight has to refuse it first (PR #309 M1).
+    await expect(t.service.reassign(input())).rejects.toThrow(
+      'driver_not_approved',
     );
     expect(t.events).toEqual([]);
     expect(t.unassignDriver).not.toHaveBeenCalled();

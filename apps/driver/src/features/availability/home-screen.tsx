@@ -204,6 +204,8 @@ function bannerFor(
       };
     case 'driver_on_ride':
       return { tone: 'info', text: t('driver.error.driver_on_ride') };
+    case 'driver_not_approved':
+      return { tone: 'warning', text: t('driver.error.driver_not_approved') };
     case 'battery':
       return {
         tone: 'info',
@@ -223,6 +225,10 @@ function bannerFor(
         text: t('driver.error.generic'),
         action: { label: t('driver.action.retry'), onPress: act.dismiss },
       };
+    default: {
+      const exhaustive: never = b.kind;
+      return exhaustive;
+    }
   }
 }
 

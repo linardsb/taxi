@@ -50,6 +50,7 @@
  */
 import { ConsoleLogger, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { drivers, type Db } from '@taxi/db';
 import {
   authSessionSchema,
   IDEMPOTENCY_KEY_HEADER,
@@ -65,6 +66,7 @@ import type { AddressInfo } from 'node:net';
 import { io, type Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
 import { APP_ENV, type Env } from '../src/common/config/env.schema';
+import { DRIZZLE } from '../src/common/db/db.module';
 import { KV_STORE, type KeyValueStore } from '../src/common/kv/kv.store';
 import { maskPhone } from '../src/features/auth';
 import {
@@ -563,6 +565,16 @@ async function main(): Promise<void> {
 
     // ── driver setup ──────────────────────────────────────────────────────
     await ensureVehicle(driver.accessToken);
+    // #20: only an approved driver may go online. This stands in for the
+    // admin's click at /admin/drivers — the same upsert as the test harness.
+    await app
+      .get<Db>(DRIZZLE)
+      .insert(drivers)
+      .values({ userId: driver.id, approvalStatus: 'approved' })
+      .onConflictDoUpdate({
+        target: drivers.userId,
+        set: { approvalStatus: 'approved' },
+      });
     expectStatus(
       await api('PUT', '/drivers/me/status', {
         auth: driver.accessToken,

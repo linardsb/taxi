@@ -10,9 +10,10 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
+  approveDriver,
   createTestApp,
-  insertUser,
   phoneFor,
+  insertUser,
   type TestApp,
 } from '../../../test/harness';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
@@ -147,6 +148,7 @@ describe('payments + ledger (integration)', () => {
         hasChildSeat: false,
       })
       .expect(201);
+    await approveDriver(ctx.db, id);
     await http
       .put('/drivers/me/status')
       .set('authorization', auth)

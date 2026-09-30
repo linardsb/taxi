@@ -212,6 +212,13 @@ export class DispatchService {
         // pool and the next tick offers them a SECOND car. `false` is still not
         // an error — see `RideLifecycleService.claimDriver` — but unlike
         // force-assign, nobody chose it here, so it is worth a line in the log.
+        //
+        // An offline driver can still accept the offer on their screen, so a
+        // driver revoked (#20) since it was sent is refused here, rolling the
+        // whole accept back. Just before the claim, where this row is locked
+        // anyway: locking it first would invert the rides → drivers order.
+        if (!(await this.drivers.lockApprovedForAssignment(driverId, tx)))
+          throw new ConflictException('driver_not_approved');
         const claimed = await this.lifecycle.claimDriver(tx, driverId);
 
         await this.offers.insertAudit(

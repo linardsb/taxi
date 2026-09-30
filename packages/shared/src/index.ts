@@ -16,6 +16,7 @@ export * from './schemas/user';
 export * from './schemas/auth';
 export * from './schemas/driver';
 export * from './schemas/vehicle';
+export * from './schemas/admin-drivers';
 export * from './schemas/ride';
 export * from './schemas/customer';
 export * from './schemas/dispatch';

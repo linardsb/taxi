@@ -31,3 +31,6 @@ Format: one line per question — `YYYY-MM-DD · surface · question`.
 2026-09-28 · dispatch · «Rādīt PIN»'s accessible name is «Rādīt PIN — {address}», the em dash matching the other `_at` row-action keys, not the plan's colon (#275).
 2026-09-28 · dispatch · the PIN dialog shows the digits bold at `font-size-xl` with `0.3em` letter spacing, above the hint «Nosauciet to zvanītājam. Šoferim to nesakiet.»; one «Aizvērt» button (#275).
 2026-09-29 · driver · Dina's booking note is a bordered block (`colors.border`, `spacing.md` padding) under the arrival prompt and above the pickup line, a muted «Dispečera piezīme» label over the note text; one screen-reader stop (#303).
+2026-09-30 · admin · the drivers nav item and list heading read «Šoferi», not the plan's «Vadītāji», to match the catalog's existing «šoferis» everywhere else (console, driver app); the brand copy pass decides (#20).
+2026-09-30 · driver · the awaiting-approval banner reads «Jūsu profils vēl gaida apstiprinājumu. Mēs sazināsimies.» in the `warning` tone with no action (no button would help); the same copy covers `pending` and `rejected` by design (#20).
+2026-09-30 · driver · the vehicle `category` question from 2026-08-31 is settled by #20: category is admin-set at `/admin/drivers`, so the driver app never shows or sends it.
