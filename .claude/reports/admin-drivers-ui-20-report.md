@@ -6,7 +6,7 @@ PR 1's report is `.claude/reports/admin-approval-config-trips-20-report.md`, tra
 
 ## Summary
 
-`/admin` stops being a placeholder. Admins land on it after login (dispatchers still land on `/dispatch`). The route group gains a nav bar with logout, and `/admin` redirects to `/admin/drivers`. That page lists drivers by approval status with one-tap Approve / Reject per row, and opens one driver (`?id=`) to change approval, edit the profile (name, languages, female-driver flag, commission override including "platform base"), and edit or delete each car, including its category. Web code only: no api, db or driver-app change.
+`/admin` stops being a placeholder. Admins land on it after login (dispatchers still land on `/dispatch`). The route group gains a nav bar with logout, and `/admin` redirects to `/admin/drivers`. That page lists drivers by approval status with one-tap Approve / Reject per row, and opens one driver (`?id=`) to change approval, edit the profile (name, languages, female-driver flag, commission override including "platform base"), and edit or delete each car, including its category. No api or db change. The review's M2 fix added one shared helper, `normalizePlate`, and the driver app's vehicle screen now calls it instead of its inline copy (same behaviour).
 
 ## For the PR body (A.15)
 
@@ -25,7 +25,7 @@ PR 1's report is `.claude/reports/admin-approval-config-trips-20-report.md`, tra
 
 ## Tests added
 
-All in `apps/dispatch` (vitest + RTL). 34 new cases, counted per file below.
+42 new cases: 39 in `apps/dispatch` (vitest + RTL) and 3 in `packages/shared`, counted per file below. Review round 1 added 5 dispatch cases and the 3 shared ones (marked R1).
 
 | File | Cases |
 |---|---|
@@ -33,14 +33,16 @@ All in `apps/dispatch` (vitest + RTL). 34 new cases, counted per file below.
 | `admin-shell/admin-nav.test.tsx` (new, 3) | `aria-current` on the active surface (expected); none off-surface (edge); logout clears the session and goes to `/login` (expected) |
 | `auth/login-form.test.tsx` (+1) | admin session lands on `/admin` (expected). The dispatcher → `/dispatch` case is unchanged and green |
 | `admin-drivers/driver-list.test.tsx` (new, 8) | pending rows with plate + category (expected); empty pending state (edge); repeated buttons described by the row's name (edge); approve by keyboard activation: row leaves, PUT body, focus to the H1, refetch (expected); reject 409 `driver_on_ride` → alert, row kept (failure); load error → alert + retry reloads (failure); 403 → session dropped, `/login` (failure); filter change handed to the caller (expected) |
-| `admin-drivers/driver-detail.test.tsx` (new, 9) | "platform base" sends `commissionPctOverride: null` (edge); 0 % override and a changed, trimmed name, LV comma accepted (expected); override 101 refused with no api call (failure); last language cannot be unticked (edge); approve in one tap updates the heading (expected); vehicle category `limo` saved (expected); delete asks first, then reloads and focuses the H1 (expected); delete 409 `driver_on_ride` → alert, car kept (failure); 404 load → `driver_not_found` (failure) |
+| `admin-drivers/driver-detail.test.tsx` (new, 14) | R1 (5): a name-only save leaves a never-answered `isFemale` unsent (edge); nothing changed → no PATCH, «Saglabāts» (edge); a typed `ab 1234` is sent and shown as `AB1234` (edge); focus moves to the approval heading after Approve (expected); a non-uuid id → `driver_not_found` with no fetch (failure). R1 also tightened three body assertions to `toEqual` on only the changed fields. Original 9: "platform base" sends `commissionPctOverride: null` (edge); 0 % override and a changed, trimmed name, LV comma accepted (expected); override 101 refused with no api call (failure); last language cannot be unticked (edge); approve in one tap updates the heading (expected); vehicle category `limo` saved (expected); delete asks first, then reloads and focuses the H1 (expected); delete 409 `driver_on_ride` → alert, car kept (failure); 404 load → `driver_not_found` (failure) |
+| `shared/tests/driver.test.ts` (+3, R1) | `normalizePlate`: strips spaces and upper-cases (expected); keeps hyphens (edge); a spaced plate normalizes to its unspaced twin (failure) |
 | `admin-drivers/drivers-screen.test.tsx` (new, 3) | `?id=` opens the detail (expected); `?approval=` read from the URL, a bad value falls back to pending (edge); every label map resolves to catalog text (edge) |
 
 `APPROVAL_LABEL`, `APPROVAL_ACTION`, `EMPTY_LIST`, `CATEGORY_LABEL` and `LANGUAGE_LABEL` are `Record<Enum, MessageKey>`, so a missing entry fails typecheck.
 
 ## Validation results
 
-- **Gate**, `observed` at `de85235` (the squashed commit; later commits touch only `.claude/`, check with `git diff --stat de85235 HEAD`), run from cleared `dist` (shared, db, api, config) and cleared `apps/dispatch/.next`: `REDIS_TEST_URL=redis://localhost:6381 COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force` → exit 0, `Tasks: 23 successful, 23 total`, `Cached: 0 cached, 23 total`, 1m53.9s. An earlier gate at a pre-squash commit, before the filter-in-Back fix, was also green with the same counts.
+- **Gate after review round 1**, `observed` at `d54476e` (later commits touch only `.claude/`), run from cleared `dist` and `.next` in every package: `REDIS_TEST_URL=redis://localhost:6381 COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force` → exit 0, `Tasks: 23 successful, 23 total`, `Cached: 0 cached, 23 total`, 2m7.0s. dispatch `342 passed` = 337 + 5 R1 cases; shared `320 passed` = 317 + 3 R1 cases; api 999, db 17, driver 364, rider 231 unchanged.
+- **Gate before review**, `observed` at `63b89bd` (the pre-review head; the reviewer re-ran it there with the same counts), originally at `de85235`, which differs from `63b89bd` only in `.claude/` and is no longer in the branch history; run from cleared `dist` (shared, db, api, config) and cleared `apps/dispatch/.next`: `REDIS_TEST_URL=redis://localhost:6381 COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force` → exit 0, `Tasks: 23 successful, 23 total`, `Cached: 0 cached, 23 total`, 1m53.9s. An earlier gate at a pre-squash commit, before the filter-in-Back fix, was also green with the same counts.
   - api `999 passed, 999 total`, 95 suites. Equal to the baseline below, as it should be: this PR changes no api code.
   - dispatch `337 passed`, 37 files. That is 303 + 34 new (`derived`: 303 is PR 1's observed dispatch count at `4d4eb5d`, and `git diff --name-only 4d4eb5d 658d052 -- apps/dispatch` is empty; 34 = 10 + 3 + 1 + 8 + 9 + 3 from the table above).
   - shared 317, db 17, driver 364, rider 231; every package 0 failed.
@@ -71,6 +73,7 @@ All in `apps/dispatch` (vitest + RTL). 34 new cases, counted per file below.
 12. **Detail load error shows the api's reason**: a 404 reads «Šoferis nav atrasts», anything else the generic message, each with Retry.
 13. **Fixed punctuation between catalog strings** (`·`, `, `, `: `) is logged in `ui-decisions.md` rather than given separator keys.
 14. **`apps/dispatch/CLAUDE.md`**: the `/admin` scope line said "placeholder today"; it now says driver review is live.
+15. **Review round 1 (`.claude/reports/pr-312-review-fixes.md`)**: the profile form and vehicle editor send only the fields the admin changed, measured against a snapshot of the form; `normalizePlate` moved into `@taxi/shared` with both apps calling it; focus moves to the approval heading after a decision (`h2:focus-visible` added to the admin layout's focus CSS); a non-uuid `?id=` reads as not found without calling the api.
 
 UX states, per surface:
 - `/admin/drivers` list: loading ✓ (`role="status"`), empty per filter ✓, error ✓ (`role="alert"` + Retry), offline ✓ (a fetch that throws takes the error + Retry path; no offline cache, as the plan says).

@@ -938,3 +938,4 @@ States per screen: loading (`role="status"`), empty (per filter/range), error (`
   - A.12's failure case ran on Reject: approve never returns `driver_on_ride`.
   - A.12 shipped more files than listed: `drivers-screen.tsx` (the `useSearchParams` client component), `profile-form.tsx`, `form-styles.ts`, `test/fixtures.ts`; `use-drivers.ts` holds both the list and detail hooks. The list filter is in the URL (`?approval=`), and detail approval is one-tap buttons rather than the breadboard's radio + Save.
   - Two catalog keys were added: `admin.driver.profile` and `admin.error.invalid_input`. `console.admin_placeholder` is gone.
+  - PR 2 review round 1: a PATCH form sends only the fields the admin changed, measured against a snapshot of the form as filled, not against the prop (`profile-form.tsx`, `vehicle-editor.tsx`). A form whose api is a full-replacement PUT (B's config) is exempt by design. A plate is written through `normalizePlate` from `@taxi/shared`.
