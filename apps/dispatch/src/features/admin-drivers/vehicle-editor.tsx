@@ -85,10 +85,11 @@ export function VehicleEditor({
     }
     const outcome = await onSave(parsed.data);
     if (outcome.ok) {
-      // The field shows the plate as stored, and is measured against that.
-      const stored = parsed.data.plate ?? plate;
-      setPlate(stored);
-      saved.current = { ...form, plate: stored };
+      // The field shows the plate as stored, and is measured against that. A
+      // save that sent no plate leaves the field alone: the inputs stay
+      // editable in flight, and the admin may be retyping it (#312 L5).
+      if (parsed.data.plate !== undefined) setPlate(parsed.data.plate);
+      saved.current = { ...form, plate: parsed.data.plate ?? plate };
     }
     setFeedback(outcome);
   }

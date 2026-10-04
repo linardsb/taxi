@@ -151,6 +151,62 @@ describe('DriverDetail — profile', () => {
     expect(calls().filter(([m]) => m === 'PATCH')).toHaveLength(0);
   });
 
+  it('a second save sends only what changed since the first (edge)', async () => {
+    // The first save is the new baseline: the name must not go out again
+    // with a later commission change (#312 L6).
+    routeFetch([
+      { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      { method: 'PATCH', path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      { method: 'PATCH', path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+    ]);
+    await loaded();
+    const save = within(
+      screen.getByRole('form', { name: lv('admin.driver.profile') }),
+    ).getByRole('button', { name: lv('admin.action.save') });
+
+    fireEvent.change(screen.getByLabelText(lv('admin.driver.display_name')), {
+      target: { value: 'Jānis Bērziņš' },
+    });
+    fireEvent.click(save);
+    await screen.findByText(lv('admin.saved'));
+    fireEvent.change(
+      screen.getByRole('textbox', { name: lv('admin.driver.commission_override') }),
+      { target: { value: '10' } },
+    );
+    fireEvent.click(save);
+
+    await vi.waitFor(() =>
+      expect(calls().filter(([m]) => m === 'PATCH')).toHaveLength(2),
+    );
+    expect(lastBody('PATCH')).toEqual({ commissionPctOverride: 10 });
+  });
+
+  it('a failed save leaves the change to send again on retry (failure)', async () => {
+    // The form is measured against what was last stored: a refused save
+    // stored nothing, so the retry must still carry the name (#312 L6).
+    routeFetch([
+      { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      { method: 'PATCH', path: `/admin/drivers/${DRIVER_A}`, status: 500 },
+      { method: 'PATCH', path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+    ]);
+    await loaded();
+    const save = within(
+      screen.getByRole('form', { name: lv('admin.driver.profile') }),
+    ).getByRole('button', { name: lv('admin.action.save') });
+
+    fireEvent.change(screen.getByLabelText(lv('admin.driver.display_name')), {
+      target: { value: 'Jānis Bērziņš' },
+    });
+    fireEvent.click(save);
+    await screen.findByRole('alert');
+    fireEvent.click(save);
+
+    await screen.findByText(lv('admin.saved'));
+    const patches = calls().filter(([m]) => m === 'PATCH');
+    expect(patches).toHaveLength(2);
+    expect(patches[1]?.[2]).toEqual({ displayName: 'Jānis Bērziņš' });
+  });
+
   it('keeps the last spoken language ticked (edge)', async () => {
     routeFetch([{ path: `/admin/drivers/${DRIVER_A}`, body: detail() }]);
     await loaded();
@@ -254,6 +310,107 @@ describe('DriverDetail — vehicles', () => {
     await within(car).findByText(lv('admin.saved'));
     expect(lastBody('PATCH')).toEqual({ plate: 'AB1234' });
     expect(plate).toHaveValue('AB1234');
+  });
+
+  it('a category save after a plate save sends the category alone (edge)', async () => {
+    // After a save the stored plate is the new baseline; measuring against
+    // the page-load plate would write it back on every later save (#312 L6).
+    routeFetch([
+      { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      {
+        method: 'PATCH',
+        path: `/admin/vehicles/${VEHICLE_A}`,
+        body: { ...vehicle, plate: 'XY9999' },
+      },
+      {
+        method: 'PATCH',
+        path: `/admin/vehicles/${VEHICLE_A}`,
+        body: { ...vehicle, plate: 'XY9999', category: 'limo' },
+      },
+    ]);
+    await loaded();
+    const car = screen.getByRole('form', { name: 'AB-1234' });
+    const save = within(car).getByRole('button', { name: lv('admin.action.save') });
+
+    fireEvent.change(within(car).getByLabelText(lv('admin.vehicle.plate')), {
+      target: { value: 'XY9999' },
+    });
+    fireEvent.click(save);
+    await within(car).findByText(lv('admin.saved'));
+    fireEvent.change(within(car).getByLabelText(lv('admin.vehicle.category')), {
+      target: { value: 'limo' },
+    });
+    fireEvent.click(save);
+
+    await vi.waitFor(() =>
+      expect(calls().filter(([m]) => m === 'PATCH')).toHaveLength(2),
+    );
+    expect(lastBody('PATCH')).toEqual({ category: 'limo' });
+  });
+
+  it('a failed car save leaves the change to send again on retry (failure)', async () => {
+    routeFetch([
+      { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      { method: 'PATCH', path: `/admin/vehicles/${VEHICLE_A}`, status: 500 },
+      {
+        method: 'PATCH',
+        path: `/admin/vehicles/${VEHICLE_A}`,
+        body: { ...vehicle, category: 'limo' },
+      },
+    ]);
+    await loaded();
+    const car = screen.getByRole('form', { name: 'AB-1234' });
+    const save = within(car).getByRole('button', { name: lv('admin.action.save') });
+
+    fireEvent.change(within(car).getByLabelText(lv('admin.vehicle.category')), {
+      target: { value: 'limo' },
+    });
+    fireEvent.click(save);
+    await within(car).findByRole('alert');
+    fireEvent.click(save);
+
+    await within(car).findByText(lv('admin.saved'));
+    const patches = calls().filter(([m]) => m === 'PATCH');
+    expect(patches).toHaveLength(2);
+    expect(patches[1]?.[2]).toEqual({ category: 'limo' });
+  });
+
+  it('keeps a plate typed while a category save is in flight (edge)', async () => {
+    // The inputs stay editable during a save; a save that sent no plate has
+    // no stored plate to put back in the field (#312 L5).
+    routeFetch([
+      { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      {
+        method: 'PATCH',
+        path: `/admin/vehicles/${VEHICLE_A}`,
+        body: { ...vehicle, category: 'limo' },
+      },
+    ]);
+    const routed = vi.mocked(fetch).getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (init?.method === 'PATCH') await held;
+      return routed(input, init);
+    });
+    await loaded();
+    const car = screen.getByRole('form', { name: 'AB-1234' });
+    const plate = within(car).getByLabelText(lv('admin.vehicle.plate'));
+
+    fireEvent.change(within(car).getByLabelText(lv('admin.vehicle.category')), {
+      target: { value: 'limo' },
+    });
+    fireEvent.click(within(car).getByRole('button', { name: lv('admin.action.save') }));
+    await vi.waitFor(() =>
+      expect(calls().filter(([m]) => m === 'PATCH')).toHaveLength(1),
+    );
+    fireEvent.change(plate, { target: { value: 'XY9999' } });
+    release();
+
+    await within(car).findByText(lv('admin.saved'));
+    expect(plate).toHaveValue('XY9999');
   });
 
   it('deletes after confirming, then reloads the driver (expected)', async () => {
