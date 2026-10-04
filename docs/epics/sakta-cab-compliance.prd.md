@@ -20,6 +20,12 @@ Sakta Cab cannot lawfully take a single paid ride in Latvia today. Three groups 
 
 ## 2. Evidence
 
+**Decided:** Sakta Cab operates under the *vieglais automobilis* regime: app-booked rides in passenger cars, licensed under MK 389 (Linards, 2026-10-04). Every 40. (13) rule therefore applies in full:
+- the driver calculates the fare in the app;
+- no ride may run while the app is offline;
+- no cash;
+- no passenger may be taken through any other way of ordering.
+
 **Evidenced** (primary text, verified against likumi.lv on 2026-10-04):
 - **Registration.** It requires an EU-registered *komersants* and costs €2 800 (35.² (1) 1); MK 848 p. 33). A UK company does not qualify.
 - **Reporting.** Offered, carrier-refused and provided trips, drivers and vehicles must be reported to VID (35.² (6)). Nine fields go "immediately" after each completed trip (MK 541 p. 11).
@@ -36,7 +42,6 @@ Sakta Cab cannot lawfully take a single paid ride in Latvia today. Three groups 
 - **Where the code falls short:** a driver can delete a car and erase its link to past rides (G1, G2); there is no ride history (G4); no carrier record and no licence fields (G5); cancel and refusal reasons are not stored (G3); backups are deleted after 30 days (G7); there is no staff access log (G10). Full list: `compliance-code-gaps.md`.
 
 **Assumed (validate as stated):**
-- That Sakta Cab's rides fall under the *vieglais automobilis* regime. Validate with Atis and the lawyer.
 - That phone bookings entered by a dispatcher are lawful under 40. (13) 4). Lawyer.
 - That a rider's identity is not among the records protected from deletion, so an erasure request can pseudonymise it. Lawyer.
 
@@ -108,7 +113,7 @@ The thinnest line that proves the hypothesis end to end is **one pilot rehearsal
 ## 8. Non-goals
 
 - Cash, in any form.
-- The taxi regime (meters, taxi plates, taximeter cheques), unless Atis's drivers turn out to be taxis.
+- The taxi regime (meters, taxi plates, taximeter cheques). Sakta Cab is vieglais-auto only.
 - A full fleet-management product for carriers. Their view covers registering drivers and cars and seeing trips, nothing more.
 - Automated deactivation of drivers. Under the Platform Work Directive, a human takes those decisions, and that is already the case today.
 - The legal documents themselves (privacy policy text, DPAs, DPIA). The code only provides the hooks for them.
@@ -117,7 +122,7 @@ The thinnest line that proves the hypothesis end to end is **one pilot rehearsal
 
 ## 9. Open questions
 
-- [ ] **Regime.** Are Atis's drivers vieglais-auto or taxi? Taxi would change cash, the meter and the scope. (Atis)
+- [x] **Regime.** Vieglais automobilis (Linards, 2026-10-04).
 - [ ] **Carrier licences.** Do the pilot drivers already work under ATD-licensed carriers with licence cards? (Atis)
 - [ ] **Company.** IK or SIA, whose, and when? This gates ATD registration and live card payments. (Linards, Atis)
 - [ ] **Phone bookings.** Lawful under 40. (13) 4) when a dispatcher enters the order? (lawyer)
