@@ -145,7 +145,7 @@ saving. Revisit once the box is boring.
 
 **What it means:**
 - **Card is the pilot's only payment rail, so it is gated on the company.** `StripePaymentsProvider` needs a live key, which needs an EU-registered *komersants*: a Latvian IK or SIA. A UK Ltd does not qualify (35.² (1) 1)). The same entity registers the platform with ATD (€2 800, MK 848 p. 33).
-- **Cash cannot be removed before card is live.** With `CardPaymentsDisabledProvider` bound and `cash` removed from `BOOKABLE_PAYMENT_METHODS`, no booking could be paid. The two switch together.
+- **Cash can be removed now.** Nothing is in production, and development runs against Stripe test mode (a test key binds `StripePaymentsProvider`). The only real coupling is at launch: the live key and ATD registration both wait on the company. One thing does block removal: the dispatch phone-order form has no card path without the phone-booking decision below.
 - **Cash runs through 29 shipped source files** (`observed` 2026-10-04: `grep -rlE '\bcash\b'` over shared, api, the three apps and db, specs excluded). That spans the enum, quote, settlement, ledger, dispatch candidate filter, rider payment chips, the driver receipt and the dispatch phone-order form. The removal is a ticket in the compliance epic, not a config flip.
 - **Phone bookings need a card path.** A rider who calls Dina has no card in the app. Options for the epic: a card saved on the rider's account, or a payment link sent by SMS before dispatch. Whether phone bookings are lawful for this regime at all (40. (13) 4)) is an open lawyer question.
 - **Commission collection simplifies.** The PRD's open question on settling cash-ride commission is closed: the 15% is taken at card settlement.
