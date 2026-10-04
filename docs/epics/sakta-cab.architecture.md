@@ -148,6 +148,7 @@ saving. Revisit once the box is boring.
 - **Cash can be removed now.** Nothing is in production, and development runs against Stripe test mode (a test key binds `StripePaymentsProvider`). The only real coupling is at launch: the live key and ATD registration both wait on the company. One thing does block removal: the dispatch phone-order form has no card path without the phone-booking decision below.
 - **Cash runs through 29 shipped source files** (`observed` 2026-10-04: `grep -rlE '\bcash\b'` over shared, api, the three apps and db, specs excluded). That spans the enum, quote, settlement, ledger, dispatch candidate filter, rider payment chips, the driver receipt and the dispatch phone-order form. The removal is a ticket in the compliance epic, not a config flip.
 - **Phone bookings need a card path.** A rider who calls Dina has no card in the app. Options for the epic: a card saved on the rider's account, or a payment link sent by SMS before dispatch. Whether phone bookings are lawful for this regime at all (40. (13) 4)) is an open lawyer question.
+- **Decided in the compliance epic (2026-10-04):** phone riders pay through an SMS payment link and the car is dispatched only after card authorisation; app rides take the same hold at booking. Design: `docs/epics/sakta-cab-compliance.architecture.md` (K5, K6).
 - **Commission collection simplifies.** The PRD's open question on settling cash-ride commission is closed: the 15% is taken at card settlement.
 
 ## Missing pieces

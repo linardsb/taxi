@@ -6,6 +6,8 @@
 - `docs/research/compliance-code-gaps.md`;
 - `docs/research/append-only-enforcement-options.md` (engineering input, for `plan-architecture`).
 
+**Architecture:** [sakta-cab-compliance.architecture.md](./sakta-cab-compliance.architecture.md) (decided 2026-10-04). Lawyer question IDs below are those in `docs/research/jautajumi-juristam.md`.
+
 **Trigger:** Atis's message of 30.09.2026, which relayed VID's confirmation that online data submission is in force.
 
 ## 1. Problem statement
@@ -123,12 +125,12 @@ The thinnest line that proves the hypothesis end to end is **one pilot rehearsal
 ## 9. Open questions
 
 - [x] **Regime.** Vieglais automobilis (Linards, 2026-10-04).
-- [ ] **Carrier licences.** Do the pilot drivers already work under ATD-licensed carriers with licence cards? (Atis)
-- [ ] **Company.** IK or SIA, whose, and when? This gates ATD registration and live card payments. (Linards, Atis)
-- [ ] **Phone bookings.** Lawful under 40. (13) 4) when a dispatcher enters the order? (lawyer)
-- [ ] **Offered and refused trips.** Only completed trips are pushed to VID. Are the rest only kept and handed over on request? (lawyer; VID question Q3)
-- [ ] **Rider erasure.** Do the protected records include the rider's identity and addresses, or only the MK 541 p. 11 fields? (lawyer; question D3)
-- [ ] **Invoice issuer.** Platform or carrier? And does the carrier need a cash register for card payments taken in the app (MK 96)? (accountant)
-- [ ] **Data protection officer.** Is one required? (lawyer)
-- [ ] **Platform Work Directive.** Latvia's transposition is due December 2026. What does it add for drivers? (lawyer)
-- [ ] **ATD decision time and the supervision fee's first year.** (ATD)
+- [ ] **Carrier licences.** Do the pilot drivers already work under ATD-licensed carriers with licence cards? (Atis; lawyer B2)
+- [ ] **Company.** IK or SIA, whose, and when? This gates ATD registration and live card payments. (Linards, Atis; lawyer A1)
+- [ ] **Phone bookings.** Lawful under 40. (13) 4) when a dispatcher enters the order? (lawyer C1)
+- [ ] **Offered and refused trips.** Only completed trips are pushed to VID. Are the rest only kept and handed over on request? (lawyer D1)
+- [ ] **Rider erasure.** Do the protected records include the rider's identity and addresses, or only the MK 541 p. 11 fields? (lawyer E1)
+- [ ] **Invoice issuer.** Platform or carrier? And does the carrier need a cash register for card payments taken in the app (MK 96)? (lawyer C3, C4, C5; accountant)
+- [ ] **Data protection officer.** Is one required? (lawyer E5)
+- [ ] **Platform Work Directive.** Latvia's transposition is due December 2026. What does it add for drivers? (lawyer B4, F1)
+- [ ] **ATD decision time and the supervision fee's first year.** (ATD; lawyer A2, A3)
