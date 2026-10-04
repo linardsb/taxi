@@ -32,15 +32,18 @@ export function DriverDetail({
     useDriverDetail(id);
   const [approvalFeedback, setApprovalFeedback] = useState<Outcome | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  // Set by a successful delete. The deleted car's editor — and the button that
-  // had focus — is gone only once the refetch renders, so focus moves then.
-  const focusHeadingOnRender = useRef(false);
+  const approvalHeading = useRef<HTMLHeadingElement>(null);
+  // Set by a successful delete or approval change: the button that had focus
+  // (the deleted car's, or the status just chosen, which is no longer offered)
+  // is gone only once the new detail renders, so focus moves then.
+  const focusOnRender = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
-    if (!focusHeadingOnRender.current) return;
-    focusHeadingOnRender.current = false;
-    heading.current?.focus();
-  }, [detail]);
+    const target = focusOnRender.current;
+    if (target === null) return;
+    focusOnRender.current = null;
+    target.focus();
+  }, [detail, approvalFeedback]);
 
   const back = (
     <Link
@@ -88,7 +91,9 @@ export function DriverDetail({
 
   async function decide(to: DriverApprovalStatus) {
     setApprovalFeedback(null);
-    setApprovalFeedback(await moveTo(to));
+    const outcome = await moveTo(to);
+    if (outcome.ok) focusOnRender.current = approvalHeading.current;
+    setApprovalFeedback(outcome);
   }
 
   return (
@@ -106,7 +111,7 @@ export function DriverDetail({
       </div>
 
       <section aria-labelledby="approval-heading" style={fieldsetStyle}>
-        <h2 id="approval-heading" style={sectionHeading}>
+        <h2 id="approval-heading" ref={approvalHeading} tabIndex={-1} style={sectionHeading}>
           {t('admin.driver.approval')}: {t(APPROVAL_LABEL[detail.approvalStatus])}
         </h2>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
@@ -156,7 +161,7 @@ export function DriverDetail({
             onSave={(patch) => saveVehicle(vehicle.id, patch)}
             onDelete={async () => {
               const outcome = await removeVehicle(vehicle.id);
-              if (outcome.ok) focusHeadingOnRender.current = true;
+              if (outcome.ok) focusOnRender.current = heading.current;
               return outcome;
             }}
           />

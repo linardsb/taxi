@@ -12,7 +12,7 @@ import {
   type Vehicle,
 } from '@taxi/shared';
 import { z } from 'zod';
-import { adminFetch } from '@/features/admin-shell';
+import { AdminApiError, adminFetch } from '@/features/admin-shell';
 
 /** The six `/admin/drivers` + `/admin/vehicles` calls (#20), each parsed. */
 
@@ -27,6 +27,12 @@ export function listDrivers(
 }
 
 export function getDriver(id: string): Promise<AdminDriverDetail> {
+  // The id comes from the URL. One that is not a uuid names no driver: sent,
+  // the api's pipe answers 400 `validation_failed`, which would read as a
+  // generic error beside a Retry that can never work.
+  if (!z.string().uuid().safeParse(id).success) {
+    return Promise.reject(new AdminApiError('driver_not_found'));
+  }
   return adminFetch(
     `/admin/drivers/${encodeURIComponent(id)}`,
     adminDriverDetailSchema,

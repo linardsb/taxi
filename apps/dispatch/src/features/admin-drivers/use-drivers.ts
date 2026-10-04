@@ -206,7 +206,7 @@ export function useDriverDetail(id: string): {
           ),
       ),
     // Refetched, not patched locally: deleting an online driver's last car
-    // takes them offline server-side, and the detail shows that status.
+    // also takes them offline server-side, so the server's copy is the truth.
     removeVehicle: (vehicleId) =>
       run(
         () => api.deleteVehicle(vehicleId),

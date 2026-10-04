@@ -3,13 +3,14 @@
 import {
   adminVehicleUpdateSchema,
   formatMessage,
+  normalizePlate,
   RIDE_CATEGORIES,
   type AdminVehicleUpdate,
   type Language,
   type RideCategory,
   type Vehicle,
 } from '@taxi/shared';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { DialogShell, dialogButtonStyle } from '@/features/override';
 import { CATEGORY_LABEL } from './approval-labels';
 import {
@@ -29,7 +30,9 @@ const t = (key: Parameters<typeof formatMessage>[1]) => formatMessage(LANG, key)
  * One car, every field editable — `category` included, because the pricing
  * tier is the admin's to set (#20) and this is the only place it is set.
  * Fields are held as strings and validated against the shared admin schema on
- * save, so the form cannot accept what the api would refuse.
+ * save, so the form cannot accept what the api would refuse. A save sends only
+ * the fields the admin changed: the editor is filled once, so a full body would
+ * write back a plate the driver has since changed in the app.
  */
 export function VehicleEditor({
   vehicle,
@@ -51,25 +54,43 @@ export function VehicleEditor({
   const [childSeat, setChildSeat] = useState(vehicle.hasChildSeat);
   const [feedback, setFeedback] = useState<Outcome | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // The form as filled, then as last saved: what "changed" is measured against.
+  // Not the `vehicle` prop, which a reload can move under an unchanged field.
+  const form = { plate, make, model, year, category, seats, childSeat };
+  const saved = useRef(form);
 
   const idOf = (field: string) => `vehicle-${vehicle.id}-${field}`;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    const parsed = adminVehicleUpdateSchema.safeParse({
-      plate: plate.trim(),
-      make: make.trim(),
-      model: model.trim(),
-      year: Number(year),
-      category,
-      passengerSeats: Number(seats),
-      hasChildSeat: childSeat,
-    });
-    setFeedback(
-      parsed.success
-        ? await onSave(parsed.data)
-        : { ok: false, key: 'admin.error.invalid_input' },
-    );
+    const was = saved.current;
+    const patch = {
+      ...(plate !== was.plate ? { plate: normalizePlate(plate) } : {}),
+      ...(make !== was.make ? { make: make.trim() } : {}),
+      ...(model !== was.model ? { model: model.trim() } : {}),
+      ...(year !== was.year ? { year: Number(year) } : {}),
+      ...(category !== was.category ? { category } : {}),
+      ...(seats !== was.seats ? { passengerSeats: Number(seats) } : {}),
+      ...(childSeat !== was.childSeat ? { hasChildSeat: childSeat } : {}),
+    };
+    // Nothing changed: nothing to send (the schema refuses an empty patch).
+    if (Object.keys(patch).length === 0) {
+      setFeedback({ ok: true });
+      return;
+    }
+    const parsed = adminVehicleUpdateSchema.safeParse(patch);
+    if (!parsed.success) {
+      setFeedback({ ok: false, key: 'admin.error.invalid_input' });
+      return;
+    }
+    const outcome = await onSave(parsed.data);
+    if (outcome.ok) {
+      // The field shows the plate as stored, and is measured against that.
+      const stored = parsed.data.plate ?? plate;
+      setPlate(stored);
+      saved.current = { ...form, plate: stored };
+    }
+    setFeedback(outcome);
   }
 
   async function confirmDelete() {

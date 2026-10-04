@@ -1,6 +1,7 @@
 import {
   colors,
   fontSize,
+  normalizePlate,
   spacing,
   vehicleCreateSchema,
   type VehicleCreate,
@@ -64,7 +65,7 @@ export function VehicleScreen() {
 
   function validate(): VehicleCreate | null {
     const parsed = vehicleCreateSchema.safeParse({
-      plate: plate.replace(/\s+/g, '').toUpperCase(),
+      plate: normalizePlate(plate),
       make: make.trim(),
       model: model.trim(),
       year: Number(year),

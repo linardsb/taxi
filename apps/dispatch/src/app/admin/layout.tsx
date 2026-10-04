@@ -16,11 +16,13 @@ export default function AdminLayout({
     <>
       <style>{themeCssVars()}</style>
       {/* Visible focus on every interactive element — the admin forms add
-          `select` (vehicle category) and `textarea` to the console's set. */}
+          `select` (vehicle category) and `textarea` to the console's set, and
+          the headings focus moves to (h1, the detail's approval h2). */}
       <style>{`
         .console a:focus-visible, .console button:focus-visible,
         .console input:focus-visible, .console select:focus-visible,
-        .console textarea:focus-visible, .console h1:focus-visible {
+        .console textarea:focus-visible, .console h1:focus-visible,
+        .console h2:focus-visible {
           outline: 3px solid var(--color-accent);
           outline-offset: 2px;
         }

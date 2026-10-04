@@ -15,6 +15,15 @@ export const vehicleSchema = z.object({
 export type Vehicle = z.infer<typeof vehicleSchema>;
 
 /**
+ * A plate as every surface stores it: no whitespace, upper case. The unique
+ * index is on `upper(plate)` (`vehicles_plate_uix`), so case is already
+ * covered there, but a space is not: `AB 1234` beside `AB1234` would pass it.
+ * Every form that writes a plate calls this before sending (#20).
+ */
+export const normalizePlate = (plate: string): string =>
+  plate.replace(/\s+/g, '').toUpperCase();
+
+/**
  * POST body — the server owns `id`, `driverId` comes from the JWT, and
  * `category` is admin-set (#20: it picks the pricing tier, so a driver must not
  * self-promote to `limo`). A driver-created vehicle starts at the column

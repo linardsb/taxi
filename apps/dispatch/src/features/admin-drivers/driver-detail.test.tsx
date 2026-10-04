@@ -60,11 +60,46 @@ describe('DriverDetail — profile', () => {
 
     expect(await screen.findByText(lv('admin.saved'))).toBeInTheDocument();
     // null, not absent: "use the platform base" is a decision the api stores.
-    expect(lastBody('PATCH')).toEqual({
-      spokenLanguages: ['lv'],
-      isFemale: false,
-      commissionPctOverride: null,
+    // Nothing else: only what the admin changed is sent (#312 M1).
+    expect(lastBody('PATCH')).toEqual({ commissionPctOverride: null });
+  });
+
+  it('a name-only save leaves a never-answered female flag unsent (edge)', async () => {
+    // The fixture's profile has no `isFemale`: the driver never answered, and
+    // an unticked box on the admin's screen is not an answer (#312 M1).
+    routeFetch([
+      { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      { method: 'PATCH', path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+    ]);
+    await loaded();
+
+    fireEvent.change(screen.getByLabelText(lv('admin.driver.display_name')), {
+      target: { value: 'Jānis Bērziņš' },
     });
+    fireEvent.click(
+      within(screen.getByRole('form', { name: lv('admin.driver.profile') })).getByRole(
+        'button',
+        { name: lv('admin.action.save') },
+      ),
+    );
+
+    await screen.findByText(lv('admin.saved'));
+    expect(lastBody('PATCH')).toEqual({ displayName: 'Jānis Bērziņš' });
+  });
+
+  it('a save with nothing changed calls no api and says saved (edge)', async () => {
+    routeFetch([{ path: `/admin/drivers/${DRIVER_A}`, body: detail() }]);
+    await loaded();
+
+    fireEvent.click(
+      within(screen.getByRole('form', { name: lv('admin.driver.profile') })).getByRole(
+        'button',
+        { name: lv('admin.action.save') },
+      ),
+    );
+
+    expect(await screen.findByText(lv('admin.saved'))).toBeInTheDocument();
+    expect(calls().filter(([m]) => m === 'PATCH')).toHaveLength(0);
   });
 
   it('sends a 0 % override and a changed name, LV comma accepted (expected)', async () => {
@@ -89,7 +124,7 @@ describe('DriverDetail — profile', () => {
     );
 
     await screen.findByText(lv('admin.saved'));
-    expect(lastBody('PATCH')).toMatchObject({
+    expect(lastBody('PATCH')).toEqual({
       displayName: 'Jānis O.',
       commissionPctOverride: 0,
     });
@@ -147,6 +182,31 @@ describe('DriverDetail — approval', () => {
     ).toBeInTheDocument();
     expect(lastBody('PUT')).toEqual({ status: 'approved' });
   });
+
+  it('moves focus to the approval heading when the chosen button goes (expected)', async () => {
+    // «Apstiprināt» is not offered to an approved driver, so the button that
+    // had focus leaves the page; focus must not fall to <body> (#312 M3).
+    routeFetch([
+      { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      {
+        method: 'PUT',
+        path: '/approval',
+        body: detail({ approvalStatus: 'approved' }),
+      },
+    ]);
+    await loaded();
+    const approve = screen.getByRole('button', { name: lv('admin.action.approve') });
+    approve.focus();
+
+    fireEvent.click(approve);
+
+    const heading = await screen.findByRole('heading', {
+      level: 2,
+      name: `${lv('admin.driver.approval')}: ${lv('admin.approval.approved')}`,
+    });
+    await vi.waitFor(() => expect(document.activeElement).toBe(heading));
+    expect(approve.isConnected).toBe(false);
+  });
 });
 
 describe('DriverDetail — vehicles', () => {
@@ -168,7 +228,32 @@ describe('DriverDetail — vehicles', () => {
     fireEvent.click(within(car).getByRole('button', { name: lv('admin.action.save') }));
 
     await within(car).findByText(lv('admin.saved'));
-    expect(lastBody('PATCH')).toMatchObject({ category: 'limo', plate: 'AB-1234' });
+    // The category alone: an unchanged plate is not written back over one the
+    // driver may have changed since this page loaded (#312 M1).
+    expect(lastBody('PATCH')).toEqual({ category: 'limo' });
+  });
+
+  it('stores a typed plate as the driver app does: no spaces, upper case (edge)', async () => {
+    // `ab 1234` would otherwise slip past the `upper(plate)` unique index
+    // beside an `AB1234` (#312 M2).
+    routeFetch([
+      { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
+      {
+        method: 'PATCH',
+        path: `/admin/vehicles/${VEHICLE_A}`,
+        body: { ...vehicle, plate: 'AB1234' },
+      },
+    ]);
+    await loaded();
+    const car = screen.getByRole('form', { name: 'AB-1234' });
+    const plate = within(car).getByLabelText(lv('admin.vehicle.plate'));
+
+    fireEvent.change(plate, { target: { value: 'ab 1234' } });
+    fireEvent.click(within(car).getByRole('button', { name: lv('admin.action.save') }));
+
+    await within(car).findByText(lv('admin.saved'));
+    expect(lastBody('PATCH')).toEqual({ plate: 'AB1234' });
+    expect(plate).toHaveValue('AB1234');
   });
 
   it('deletes after confirming, then reloads the driver (expected)', async () => {
@@ -238,5 +323,17 @@ describe('DriverDetail — load', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       lv('admin.error.driver_not_found'),
     );
+  });
+
+  it('says not found for an id that is not a uuid, without calling the api (failure)', async () => {
+    // A truncated `?id=` link: the api would answer 400 `validation_failed`,
+    // a generic error with a Retry that can never work (#312 L1).
+    routeFetch([]);
+    render(<DriverDetail id="d0000000-0000" backHref="/admin/drivers?approval=pending" />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      lv('admin.error.driver_not_found'),
+    );
+    expect(calls()).toHaveLength(0);
   });
 });

@@ -9,7 +9,7 @@ import {
   type AdminDriverUpdate,
   type Language,
 } from '@taxi/shared';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { dialogButtonStyle } from '@/features/override';
 import { LANGUAGE_LABEL } from './approval-labels';
 import {
@@ -29,6 +29,9 @@ const t = (key: Parameters<typeof formatMessage>[1]) => formatMessage(LANG, key)
  * The driver's profile as the admin edits it (#20). The commission override has
  * an explicit «platform base» box because `null` (use the base) and `0` (Atis's
  * 0 % pilot deal) are different decisions and must not share an empty field.
+ * A save sends only what the admin changed, as the driver app's profile screen
+ * does: an unticked female-driver box over a never-answered (`null`) flag is
+ * not an answer, and the api writes only the keys it is sent.
  */
 export function ProfileForm({
   detail,
@@ -50,25 +53,46 @@ export function ProfileForm({
     profile.commissionPctOverride === null ? '' : String(profile.commissionPctOverride),
   );
   const [feedback, setFeedback] = useState<Outcome | null>(null);
+  // The form as filled, then as last saved: what "changed" is measured against.
+  // Not the `detail` prop, which a reload can move under an unchanged field.
+  const form = { name, languages, isFemale, useBase, pct };
+  const saved = useRef(form);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    const was = saved.current;
     const trimmed = name.trim();
-    const parsed = adminDriverUpdateSchema.safeParse({
+    const languagesChanged =
+      languages.length !== was.languages.length ||
+      languages.some((l) => !was.languages.includes(l));
+    const commissionChanged = useBase !== was.useBase || (!useBase && pct !== was.pct);
+    if (commissionChanged && !useBase && pct.trim() === '') {
+      setFeedback({ ok: false, key: 'admin.error.invalid_input' });
+      return;
+    }
+    const patch = {
       // A name can be set or changed but not cleared (the api has no null
       // for it), so a blank field leaves the stored name alone.
-      ...(trimmed !== '' && trimmed !== detail.displayName
-        ? { displayName: trimmed }
+      ...(trimmed !== '' && trimmed !== was.name.trim() ? { displayName: trimmed } : {}),
+      ...(languagesChanged ? { spokenLanguages: languages } : {}),
+      ...(isFemale !== was.isFemale ? { isFemale } : {}),
+      ...(commissionChanged
+        ? { commissionPctOverride: useBase ? null : Number(pct.replace(',', '.')) }
         : {}),
-      spokenLanguages: languages,
-      isFemale,
-      commissionPctOverride: useBase ? null : Number(pct.replace(',', '.')),
-    });
-    setFeedback(
-      parsed.success && (useBase || pct.trim() !== '')
-        ? await onSave(parsed.data)
-        : { ok: false, key: 'admin.error.invalid_input' },
-    );
+    };
+    // Nothing changed: nothing to send (the schema refuses an empty patch).
+    if (Object.keys(patch).length === 0) {
+      setFeedback({ ok: true });
+      return;
+    }
+    const parsed = adminDriverUpdateSchema.safeParse(patch);
+    if (!parsed.success) {
+      setFeedback({ ok: false, key: 'admin.error.invalid_input' });
+      return;
+    }
+    const outcome = await onSave(parsed.data);
+    if (outcome.ok) saved.current = form;
+    setFeedback(outcome);
   }
 
   const toggleLanguage = (lang: Language, on: boolean) =>

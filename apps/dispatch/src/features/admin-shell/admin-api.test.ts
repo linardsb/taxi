@@ -153,5 +153,8 @@ describe('adminErrorKey', () => {
     expect(adminErrorKey(new AdminApiError(undefined))).toBe(
       'admin.error.generic',
     );
+    expect(adminErrorKey(new AdminApiError('__proto__'))).toBe(
+      'admin.error.generic',
+    );
   });
 });
