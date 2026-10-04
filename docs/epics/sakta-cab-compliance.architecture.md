@@ -41,7 +41,7 @@ flowchart LR
     vehicle_versions
     approval_decisions
   end
-  rides -->|every assertTransition writes| ride_events
+  rides -->|every status write emits| ride_events
   rides -->|complete txn freezes| ride_snapshots
   ride_snapshots --> vid_deliveries[vid_deliveries: outbox state, mutable]
   vid_deliveries -->|VidReportingProvider| VID[(VID EDS test/prod)]
@@ -49,7 +49,7 @@ flowchart LR
   carriers & drivers & vehicles -->|AFTER UPDATE copies| protected
 ```
 
-Brownfield fit: it reuses `assertTransition()` (one write point for events), the seam pattern in `packages/shared/src/seams/`, the 0003 hand-written-trigger migration pattern, the #309 approval gate's four enforcement points (they start checking licence validity instead of nothing), the sweeper (expiry of unpaid rides), the SMS seam and LV/RU/EN catalogs, and the merged web app (a `/carrier` area next to `/dispatch` and `/admin`).
+Brownfield fit: it reuses the single ride-status write point (`ride-transition.service.ts:86`, which calls `assertTransition()`; the guard itself lives in `packages/shared` and cannot write rows), the seam pattern in `packages/shared/src/seams/`, the 0003 hand-written-trigger migration pattern, the #309 approval gate's four enforcement points (they start checking licence validity instead of nothing), the sweeper (expiry of unpaid rides), the SMS seam and LV/RU/EN catalogs, and the merged web app (a `/carrier` area next to `/dispatch` and `/admin`).
 
 ## Key decisions
 
@@ -57,16 +57,16 @@ Brownfield fit: it reuses `assertTransition()` (one write point for events), the
 
 **Decided (Linards): AP1, enforced by option E1 (raising triggers) + option E4 (version copies), with option E3 as a complement.**
 
-- **Protected set:** `ride_events`, `ride_offers`, `ride_snapshots`, `carrier_versions`, `driver_licence_versions`, `vehicle_versions`, `approval_decisions`. `BEFORE UPDATE OR DELETE` raises on all of them, except `ride_offers`, whose trigger allows exactly one forward move (`pending` → a terminal status, writing `responded_at` and `decline_reason` once) and raises on anything else.
+- **Protected set:** `ride_events`, `ride_offers`, `ride_snapshots`, `carrier_versions`, `driver_licence_versions`, `vehicle_versions`, `approval_decisions`. `BEFORE UPDATE OR DELETE` raises on all of them, except `ride_offers`, whose trigger allows only the moves the code makes today (`observed` in `dispatch.repository.ts:263,283,298,320,358` and `ride-lifecycle.repository.ts:259`): `pending` → `accepted` | `declined` | `expired` | `revoked`, and `accepted` → `revoked` (a release after acceptance). `responded_at` and `decline_reason` are written once; anything else raises.
 - **DELETE is blocked** on `rides`, `carriers`, `drivers`, `vehicles`. Removing a car becomes deactivation (`retired_at`); `DELETE /vehicles/:id` goes (G1). `rides.vehicle_id ON DELETE SET NULL` becomes `NO ACTION` (G2). `unassignDriver` stops being a correction because the assignment and the release are both events.
 - **Corrections are appends** (lawyer E2 asks to confirm this reading): editing a carrier, licence or vehicle field updates the operational row and the trigger copies the prior state into `*_versions`.
 - **Option E3 complement:** an eslint `no-restricted-syntax` rule bans `.delete(` against the protected tables in `services/api/src`.
-- **What the success test proves, stated plainly:** an integration test in the gate attempts UPDATE and DELETE on every protected table and on every DELETE-blocked table, through the repositories and as raw SQL, and expects each to raise. It runs as the `taxi` superuser, so it proves **no application code path can delete or overwrite**. It does not prove a superuser cannot (a superuser can disable triggers). Only **option E2** (a least-privilege api role) would prove that; it is **deferred**, recorded here, and is a single later ticket (second `DATABASE_URL`, grants migration, CI init, its own test) if the lawyer or ATD asks for it.
-- **Lawyer E1 (bloķē) lands later without rework:** the snapshot and events carry no rider identity and no addresses. If the lawyer says identity and addresses are protected, we add the relevant table (`users` subset, `rides.request` addresses) to the trigger set; no data moves.
+- **What the success test proves, stated plainly:** an integration test in the gate attempts UPDATE and DELETE on every protected table and on every DELETE-blocked table, through the repositories and as raw SQL, and expects each to raise. It runs as the `taxi` superuser (the one role dev, test and prod use today), so it proves **no application code path can delete or overwrite**. It does not prove a superuser cannot (a superuser can disable triggers). Only **option E2** (a least-privilege api role) would prove that; it is **deferred**, recorded here, and is a single later ticket (second `DATABASE_URL`, grants migration, CI init, its own test) if the lawyer or ATD asks for it.
+- **Lawyer E1 (bloķē):** the snapshot and events carry no rider identity and no addresses, so a "not protected" answer needs nothing. A "protected" answer adds a column trigger for addresses and a per-ride identity record (K10), which must land before the first real ride.
 
 ### K2 Ride history, per-status timestamps and reasons
 
-- **`ride_events`**: one row per transition, written inside `assertTransition()`'s transaction: `ride_id`, `from_status`, `to_status`, `actor_kind` (rider/driver/dispatcher/admin/system), `actor_id`, `reason_code`, `reason_text`, `occurred_at`, plus the driver/vehicle ids for assignment and release events. Per-status timestamps (G4), cancel reasons and who cancelled (G3) and reassignment history come from here. `updated_at` stays a cache.
+- **`ride_events`**: one row per transition, written in the same transaction as the status change. `observed` 2026-10-04 on `658d052`: there are exactly four writers to hook. The only status UPDATE is `ride-transition.service.ts:86`; the initial status is the insert at `rides.repository.ts:86`; assignment (`rides.repository.ts:328`) and release (`:379`) change driver/vehicle without a status write and emit their own events. **Completeness rule:** a test walks every `ALLOWED_TRANSITIONS` edge and asserts one event per edge, because VID's start and end times are read from these rows. Columns: `ride_id`, `from_status`, `to_status`, `actor_kind` (rider/driver/dispatcher/admin/system), `actor_id`, `reason_code`, `reason_text`, `occurred_at`, plus the driver/vehicle ids for assignment and release events. Per-status timestamps (G4), cancel reasons and who cancelled (G3) and reassignment history come from here. `updated_at` stays a cache.
 - **Reason enums live in `packages/shared`**: `CANCEL_REASONS` (per actor) and `DECLINE_REASONS`, each with LV/RU/EN strings. Decline and cancel calls get a required body.
 - **Refusal reason to the passenger (MK 541 p. 7.3, R3):** an offer decline is stored with its reason but is not pushed to the rider (the next driver gets the offer; per-decline pushes would be noise). The rider is told the reason when the ride itself is refused: a driver cancels after acceptance, or no driver is found. *Assumption, flagged for the lawyer under document G6 (terms of use, which must state refusal reasons); say if this reading is wrong.*
 - **Offered/refused trips (D1, bloķē):** kept in `ride_offers` + `ride_events` and handed over on request; not pushed. If D1 says they must be pushed, a second snapshot kind feeds the same outbox. "Offered" is recorded at the finest grain (each offer to each driver), which satisfies either reading of D1.
@@ -119,7 +119,7 @@ app booking ──┐                      dispatcher phone booking
 - **Seam:** `PaymentsProvider` gains `authorise` (returns a client secret or a pay URL), `capture` (with `amount_to_capture`), `release`, and webhook event parsing; `charge()` goes. A signed, idempotent (by provider event id) webhook endpoint is new.
 - **Unpaid expiry:** the sweeper cancels `awaiting_payment` rides past a timeout to `cancelled_by_system`; the timeout value is set in the ticket plan (`expected`).
 - **Scheduled rides:** the hold is placed at booking, so the scheduling horizon is capped at **6 days** (`derived`: Stripe's reported 7-day hold for customer-present online cards minus a 1-day margin; the 7 days is research-agent reported in `card-only-payments.md`, not hand-verified). Today there is no horizon cap.
-- **Cash removal** across **29 shipped source files** (`observed` 2026-10-04, `grep -rlE '\bcash\b'` over shared, api, the three apps and db, specs excluded): `BOOKABLE_PAYMENT_METHODS` becomes `['card']`, the cash branches in quote, settlement, ledger, candidate filter, rider chips, driver receipt and phone form go. The `cash` pgEnum value stays as a dead value (dropping an enum value in Postgres means rebuilding the type) and a CHECK forbids new cash rows. The phone form comment "card is unsettleable at the kerb" goes.
+- **Cash removal** across **29 shipped source files** (`observed` 2026-10-04, re-run in this session: `grep -rlE '\bcash\b'` over `packages/shared/src`, `services/api/src`, `apps/*/src`, `apps/dispatch/app`, `db/src`, `.spec`/`.test` excluded → 29): `BOOKABLE_PAYMENT_METHODS` becomes `['card']`, the cash branches in quote, settlement, ledger, candidate filter, rider chips, driver receipt and phone form go. The `cash` pgEnum value stays as a dead value (dropping an enum value in Postgres means rebuilding the type) and a CHECK forbids new cash rows. The phone form comment "card is unsettleable at the kerb" goes.
 - **Phone orders and C1 (bloķē):** if the lawyer says dispatcher-entered phone orders breach 40. (13) 4), the phone channel is switched off by config; the app flow does not depend on it.
 
 ### K6 Money flow and merchant of record
@@ -129,7 +129,7 @@ app booking ──┐                      dispatcher phone booking
 - Stripe Connect **destination charge `on_behalf_of` the carrier**: hold at booking, capture at settle, **15% `application_fee_amount`** resolved by `resolveCommissionPct()` at offer build, as today. The carrier's connected account is paid out by Stripe, which retires the pilot SEPA batch from spike #5.
 - **Ledger:** gains `carrier` as an owner; the six-line platform-as-merchant entries are rewritten to carrier-as-seller + platform-commission. Integer cents throughout; euros only inside adapters.
 - **Every carrier passes Stripe KYC before its first ride**: carrier approval (K3) requires an active connected account. Disputes and failed captures sit with the platform under destination charges (Stripe), and contractually per **C6**.
-- **Invoice:** an `InvoiceIssuer` boundary with two implementations possible: Stripe Invoicing in the carrier's name (P1) or a platform-generated PVN 125/126 invoice (P3). **C3/C4 (bloķē)** picks one; the ride data either needs is already in the snapshot.
+- **Invoice:** an `InvoiceIssuer` boundary with two implementations possible: Stripe Invoicing in the carrier's name (P1) or a platform-generated PVN 125/126 invoice (P3). **C3 (bloķē)** with C4 picks one; the ride data either needs is already in the snapshot.
 - **Gated on the company (A1, bloķē):** live keys, Connect platform account and ATD registration all wait on the IK/SIA. Everything is built and rehearsed in Stripe test mode.
 
 ### K7 Email, e-invoice and rider email (R7, 35.² (1) 5) c), 37. (5))
@@ -146,9 +146,10 @@ One read model serves the rider status screen and the public tracking page: carr
 
 **Decided (Linards): the frozen snapshot is the outbox body.**
 
-- **`ride_snapshots`** (protected): written in `complete()`'s transaction. Holds the p. 11 fields only: carrier register number, driver person code (encrypted), plate, start/end time, distance, fare, commission, payment type, plus the **exact serialized VID body** and `distance_source`. Unique on `ride_id`. No rider identity, no addresses.
-- **`vid_deliveries`** (outbox state, mutable, not protected): status `pending` → `delivered` | `duplicate` | `rejected` | `blocked`, attempts, last response, receipt. Retries resend the stored body byte for byte, so a lost response comes back 409, never a second record that cannot be withdrawn (no correction call exists, D4).
-- **`VidReportingProvider`** seam: input `{ rideId, credentialRef, body }`, output `delivered | duplicate | rejected | retryable | blocked`. Response handling as in `vid-eds-api-integration.md` (201/409 delivered; 400 dead-letter and alert, never edit-and-resend; 401 refresh once; 403 pause queue; 429 and network errors backoff). Field lengths are validated before enqueue.
+- **`ride_snapshots`** (protected): written in `complete()`'s transaction. Holds the p. 11 fields only: carrier register number, plate, start/end time, distance, fare, commission, payment type, `distance_source`, plus the **exact serialized VID body**. The body contains the driver's person code in clear, so the body column itself is encrypted at rest (the same key as the driver's person code, D5); there is no separate plain person-code column. No rider identity, no addresses.
+- **Identity: unique on `(ride_id, revision)`**, with a `supersedes` link. Revision 1 is written at completion. A new revision is allowed **only after VID answered 400** (VID stored nothing, so a corrected body creates no second record); lost-response retries always resend the same revision byte for byte. Without this, a ride VID rejects could never be reported, which would break the rehearsal's 100% target.
+- **`vid_deliveries`** (outbox state per snapshot revision, mutable, not protected): status `pending` → `delivered` | `duplicate` | `rejected` | `blocked`, attempts, last response, receipt. Retries resend the stored body byte for byte, so a lost response comes back 409, never a second record that cannot be withdrawn (no correction call exists, D4).
+- **`VidReportingProvider`** seam: input `{ rideId, credentialRef, body }`, output `delivered | duplicate | rejected | retryable | blocked`. Response handling as in `vid-eds-api-integration.md` (201/409 delivered; 400 dead-letter and alert, never edit-and-resend the same revision (a fix is a new revision, above); 401 refresh once; 403 pause queue; 429 and network errors backoff). Field lengths are validated before enqueue.
 - **Distance has no driven source today.** `rides.trip_distance_meters` is the routed estimate written at creation; GPS is Redis-only with a 60 s TTL (gap G6). **Decided: report the routed distance** with `distance_source = 'routed'`, consistent with the fixed fare it priced. If the lawyer's **C9** answer requires driven distance, server-side distance accumulation from the location stream is added and the source flips to `driven`; snapshots already written stay as they are and say which source they used. Persisting GPS also raises **C10**.
 - **Timestamps** are formatted in Europe/Riga local time in the adapter (assumption until **D3**); the snapshot stores UTC plus the formatted string, so D3 changes only the formatter for future rides.
 - **Credentials:** `credentialRef` resolves per carrier, falling back to a platform credential. **D2 (bloķē)** decides which exists; both fit the seam. Getting EDS credentials needs a registered taxpayer, so the live rehearsal waits on A1.
@@ -156,17 +157,19 @@ One read model serves the rider status screen and the public tracking page: carr
 ### K10 Rider erasure vs no-delete
 
 - Boundary: protected tables hold no rider identity. Erasure **pseudonymises** `users`/`customers` (name, phone, email → null or a random token), deletes saved places and push tokens, and nulls rider identity inside `rides.request`. Pickup/drop-off addresses on `rides.request` are nulled too **unless lawyer E1 says they are protected**; that is one flag in the erasure job.
+- **Deliberate exception:** nulling fields inside `rides.request` breaks the codebase's rule that the request is an immutable snapshot. Erasure is the only writer allowed to do it, and it records the act in `erasure_requests`.
+- **If lawyer E1 says identity is protected,** "no data moves" holds for addresses only (a column trigger on `rides.request`). Rider identity lives on the mutable `users` row, and nothing records it as it was at ride time. That answer therefore adds a small per-ride rider-identity record captured at booking and put under the trigger set, and it **must land before the first real ride**. The ticket plan checks E1's status before the first rehearsal.
 - An `erasure_requests` log (pseudonymous id + time) lets erasures be re-applied after a backup restore (K12).
 - Correction under GDPR Art. 16 for protected data is an append (lawyer E2).
 
 ### K11 Staff access log (C5, G10)
 
-`staff_access_log` table, persisted, written from the read paths that show personal data to staff: admin driver list/detail, dispatch board, roster, customer lookup/venues/create, pickup PIN. It is **not** in the protected set: FPDAL 37 caps such logs at about **1 year** (`statute`, P30 in `gdpr-platform-obligations.md`), so it has a purge job. Admin/dispatcher *actions* on drivers are covered by `approval_decisions` and the version tables; the phone-booking audit insert becomes part of the ride's transaction instead of log-only.
+`staff_access_log` table, persisted, written from the read paths that show personal data to staff: admin driver list/detail, dispatch board, roster, customer lookup/venues/create, pickup PIN. It is **not** in the protected set: FPDAL 37 says such logs are kept **at most 1 year unless law or the nature of the processing says otherwise** (`statute`, P30 in `gdpr-platform-obligations.md`), so it has a purge job. Admin/dispatcher *actions* on drivers are covered by `approval_decisions` and the version tables; the phone-booking audit insert becomes part of the ride's transaction instead of log-only.
 
 ### K12 Retention and backups
 
 - **The primary database is the 5-year store** (35.² (6), at least 5 years in the EU/NATO). No purge code for protected data is written until **lawyer E3** sets the end point.
-- **Backups stay a rolling disaster-recovery window** (today 30 days remote, 7 local, `observed` in `scripts/backup-db.sh:25-26`); the runbook says plainly they are not the retention mechanism. The restore procedure gains "re-apply erasures". The R2 bucket gets an EU jurisdiction lock rather than the WEUR location hint (P4). The VID key hand-over procedure (MK 541 p. 10, **D5**) is a runbook document, not code.
+- **Backups stay a rolling disaster-recovery window** (today 30 days remote, 7 local: `KEEP_REMOTE_DAYS=30`, `KEEP_LOCAL_DAYS=7`, `observed` in `scripts/backup-db.sh:25-26` on 2026-10-04); the runbook says plainly they are not the retention mechanism. The restore procedure gains "re-apply erasures". The R2 bucket gets an EU jurisdiction lock rather than the WEUR location hint (P4). The VID key hand-over procedure (MK 541 p. 10, **D5**) is a runbook document, not code.
 - **VID access within 10 working days (p. 10):** served by the carrier/admin export over the protected tables; no extra endpoint.
 
 ### Other calls, skipped or unchanged
@@ -200,7 +203,7 @@ One read model serves the rider status screen and the public tracking page: carr
 | VID snapshot, outbox, adapter, test-env rehearsal | K9 | protected layer, carrier model | L |
 | Staff access log, rider erasure, retention/backup runbook | K10–K12, C5, G7, G8 | protected layer | M |
 
-Roughly 10–11 tickets. Whether that fits Q4 2026 (about 12 weeks from 2026-10-04, `derived`: Oct 4 → Dec 31) is the PRD's guardrail; the slicing pass should check it against real velocity.
+Roughly 10–11 tickets. Whether that fits Q4 2026 is the PRD's guardrail. The calendar is 88 days, 2026-10-04 → 2026-12-31, so 88 ÷ 7 ≈ 12.6 weeks (`derived`, best case). ATD's decision time (lawyer A3, unknown) and the rehearsal itself come out of that, and the code cannot reach the live VID or Stripe until the company exists (A1). The slicing pass should check the ticket count against real velocity.
 
 ## Spikes & experiments
 
@@ -223,7 +226,7 @@ Deferred deliberately, each with what settles it:
 | A1 (bloķē) | live payments, EDS, ATD | test mode only | create company, live keys |
 | B1 (bloķē) | licence verification | admin document check | add `atd_lookup` writer |
 | C1 (bloķē) | phone channel | built, config-gated | turn phone channel off |
-| C3 / C4 (bloķē) | invoice issuer | `InvoiceIssuer` seam, no live issuer | pick P1 or P3 implementation |
+| C3 (bloķē), C4 | invoice issuer | `InvoiceIssuer` seam, no live issuer | pick P1 or P3 implementation |
 | C9 | VID distance | `routed` | add driven-distance accumulation |
 | D1 (bloķē) | offered/refused push | kept, not pushed | second snapshot kind into the same outbox |
 | D2 (bloķē) | VID credentials | per-carrier with platform fallback | configure the one that exists |
