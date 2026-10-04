@@ -65,7 +65,7 @@ Decisions locked 2026-08-03 (Linards): **commission 15% flat from day one, for e
 
 The thinnest line that proves the hypothesis is a driver-visible, rider-usable ride loop with the differentiators the pitch depends on:
 
-**Core loop:** rider requests (app **or** phone via Dina's console) → auto-match with dispatcher override → ride → payment (**card and cash**) → driver sees the full fare and the 15% split.
+**Core loop:** rider requests (app **or** phone via Dina's console) → auto-match with dispatcher override → ride → payment (**card only** — cash dropped 2026-10-04, see the architecture doc's *Payments: card-only*) → driver sees the full fare and the 15% split.
 
 **Differentiators in MVP** (each traces to evidence):
 1. **Scheduled rides** — book a future pickup (hotels, airport).
@@ -113,9 +113,9 @@ The thinnest line that proves the hypothesis is a driver-visible, rider-usable r
 - [ ] **Driver payout rails** — Stripe Connect for LV drivers vs SEPA batch; the anketa's instant-payout contradiction (1/10 importance vs #2 switch rank, S2-8 vs S6-4) is still unresolved.
 - [ ] **Atis's legal/tax status** (S1-4 "Other", never clarified) — affects onboarding and payout design.
 - [ ] **Precizējumi evidence** — Bolt weekly screenshot, Dina's console drawing, all screenshots still outstanding; continuing without them, but any public/pitch number waits for verification.
-- [ ] **Cash-ride commission settlement** — how the 15% on cash rides is collected from drivers (product-level policy; mechanics go to the spec).
+- [x] **Cash-ride commission settlement** — closed 2026-10-04: no cash rides (Autopārvadājumu likums 40. (13) 3)); commission is taken at card settlement.
 - [ ] **Equity split** — Atis & Dina are on equity/partnership; the actual split and vesting are undocumented.
-- [ ] **ATD registration detail** — in progress; exact obligations for a dispatch platform still to be confirmed.
+- [ ] **ATD registration detail** — obligations researched 2026-10-04 in `docs/research/vid-platform-reporting.md`. It needs an EU *komersants* (Latvian IK or SIA, not a UK Ltd) and costs €2 800. Drivers' carrier licences and the legality of phone bookings are still open.
 
 ---
 
