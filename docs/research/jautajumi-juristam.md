@@ -77,6 +77,10 @@ C7. Kāds ir sūdzību vai prasījuma termiņš strīdam par braukšanas maksu (
 
 C8. Vai braucienu drīkst pasūtīt nepilngadīgais (13–17 gadi)? Vai lietotnē jāprasa apliecinājums, ka lietotājam ir 18 vai vairāk gadu?
 
+C9. APL 40. panta 13. daļas 1. punkts nosaka, ka „autovadītājs braukšanas maksas aprēķinam lieto tīmekļvietni vai mobilo lietotni”. Mūsu sistēmā braukšanas maksu aprēķina platforma pirms brauciena kā fiksētu cenu: nolīgšanas maksa + km tarifs + minūtes tarifs pēc maršruta, ar minimālo maksu. Braucēji un vadītāji to redz lietotnē. Pēc brauciena maksu nepārrēķina. Vai fiksēta, lietotnē aprēķināta cena atbilst šai prasībai, vai jāaprēķina pēc faktiski nobrauktā attāluma un laika?
+
+C10. Vadītāja lietotne bez interneta neļauj uzsākt vai pabeigt braucienu. Tomēr GPS atrašanās vietas punktus tā saglabā ierīcē un nosūta, kad savienojums atjaunojas. Vai šāda GPS punktu uzkrāšana bezsaistē ir pieļaujama (APL 40. panta 13. daļas 2. punkts, VDAR datu minimizēšana)?
+
 ## D. Datu nodošana VID
 
 D1. **(bloķē)** APL 35.² panta 6. daļa prasa sniegt VID informāciju par piedāvātajiem, pārvadātāja atteiktajiem un sniegtajiem pārvadājumiem. MK 541 11. punkts nosaka tūlītēju nosūtīšanu tikai par pabeigtiem braucieniem.
