@@ -191,28 +191,30 @@ One read model serves the rider status screen and the public tracking page: carr
 - Lawyer answers to A1, B1, C1, C3, D1, D2, E1. Each has a named switch above.
 - Ordering for slicing (sizes `expected`, not measured):
 
-| Part | Covers | Depends on | Size |
-|---|---|---|---|
-| Protected record layer: `ride_events`, reasons, triggers, no-delete test, vehicle delete removal | K1, K2, G1–G4, G9 | — | L |
-| Carrier + licence model, approval decisions, suspension, expiry gates | K3, C2, C3, G5, G10 | protected layer | L |
-| Carrier login + scoped registration + 5-year trips; driver 90-day history + decline reason picker | K4, R3, R4, C1 | carrier model | L |
-| Cash removal | K5 | — | M |
-| Payments: seam authorise/capture/release, webhook, `awaiting_payment`, app hold, phone SMS link, expiry | K5, C4 | cash removal | XL (likely two tickets: app path, then phone path) |
-| Connect destination charge + ledger rewrite + email seam + invoice | K6, K7, R7 | payments, carrier model | L |
-| Rider trip card, receipt, tracking page, static texts, wheelchair | K8, R5 | carrier model | M |
-| VID snapshot, outbox, adapter, test-env rehearsal | K9 | protected layer, carrier model | L |
-| Staff access log, rider erasure, retention/backup runbook | K10–K12, C5, G7, G8 | protected layer | M |
+| Part | Covers | Depends on | Size | Issues |
+|---|---|---|---|---|
+| Protected record layer: `ride_events`, reasons, triggers, no-delete test, vehicle delete removal | K1, K2, G1–G4, G9 | — | L | #316 |
+| Carrier + licence model, approval decisions, suspension, expiry gates | K3, C2, C3, G5, G10 | protected layer | L | #319 |
+| Carrier login + scoped registration + 5-year trips; driver 90-day history + decline reason picker | K4, R3, R4, C1 | carrier model | L | #323 (carrier portal), #322 (driver app) |
+| Cash removal | K5 | — | M | #317 |
+| Payments: seam authorise/capture/release, webhook, `awaiting_payment`, app hold, phone SMS link, expiry | K5, C4 | cash removal | XL (likely two tickets: app path, then phone path) | #321 (app path), #324 (phone path) |
+| Connect destination charge + ledger rewrite + email seam + invoice | K6, K7, R7 | payments, carrier model | L | #325 (Connect + ledger), #329 (email + invoice) |
+| Rider trip card, receipt, tracking page, static texts, wheelchair | K8, R5 | carrier model | M | #326 |
+| VID snapshot, outbox, adapter, test-env rehearsal | K9 | protected layer, carrier model | L | #327 (outbox, fake VID), #330 (rehearsal) |
+| Staff access log, rider erasure, retention/backup runbook | K10–K12, C5, G7, G8 | protected layer | M | #320 |
 
-Roughly 10–11 tickets. Whether that fits Q4 2026 is the PRD's guardrail. The calendar is 88 days, 2026-10-04 → 2026-12-31, so 88 ÷ 7 ≈ 12.6 weeks (`derived`, best case). ATD's decision time (lawyer A3, unknown) and the rehearsal itself come out of that, and the code cannot reach the live VID or Stripe until the company exists (A1). The slicing pass should check the ticket count against real velocity.
+**Sliced 2026-10-04** into epic **#315**, whose task list carries the dependency graph, the execution waves and the guardrail arithmetic. Spikes: S1 #318, S2 #328 (blocked on A1). Three rows were split beyond the payments split: carrier portal and driver app are separate surfaces; Connect and email/invoice are separate concerns; the rehearsal is its own ticket so the VID outbox ticket does not wait on the company.
+
+Roughly 10–11 tickets (as estimated before slicing; the slice came to 13 tickets + 2 spikes). Whether that fits Q4 2026 is the PRD's guardrail. The calendar is 88 days, 2026-10-04 → 2026-12-31, so 88 ÷ 7 ≈ 12.6 weeks (`derived`, best case). ATD's decision time (lawyer A3, unknown) and the rehearsal itself come out of that, and the code cannot reach the live VID or Stripe until the company exists (A1). The slicing pass should check the ticket count against real velocity.
 
 ## Spikes & experiments
 
-**S1 — Stripe Connect for LV carriers** (1 day, before the payments tickets)
+**S1 — Stripe Connect for LV carriers** (1 day, before the payments tickets) — #318
 - Question: does an Express connected account for a Latvian IK and SIA support destination charges with `on_behalf_of`, a manual-capture PaymentIntent confirmed through both PaymentSheet and a Checkout Session, and `amount_to_capture` + `application_fee_amount` at capture?
 - Spike: test-mode platform, two connected accounts (individual, company), one ride through each surface.
 - Decision rule: all work → K6 as written; IK cannot onboard → carriers must be companies or we fall back to P2 for IKs (raise with the lawyer under B2).
 
-**S2 — VID test environment** (½ day once EDS access exists; blocked on A1)
+**S2 — VID test environment** (½ day once EDS access exists; blocked on A1) — #328
 - Question: which fields drive the 409, what timezone is expected, does one platform `client_id` work (D2)?
 - Spike: retrieve developer guide media/1285 first (not yet read), then post two identical and one differing body.
 - Decision rule: 409 on identical body → K9's byte-for-byte resend stands; no 409 → add a client-side "delivered" check from the EDS report before any retry.
