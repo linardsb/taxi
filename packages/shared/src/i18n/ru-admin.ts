@@ -35,6 +35,7 @@ export const ruAdmin = {
   'admin.driver.is_female': 'Водитель — женщина',
   'admin.driver.commission_override': 'Комиссия, %',
   'admin.driver.commission_platform_base': 'Базовая ставка платформы',
+  'admin.driver.profile': 'Профиль',
   'admin.driver.approval': 'Одобрение',
   'admin.driver.vehicles': 'Авто',
   'admin.vehicle.plate': 'Номер',
@@ -57,5 +58,6 @@ export const ruAdmin = {
   'admin.error.driver_not_found': 'Водитель не найден',
   'admin.error.plate_taken': 'Этот номер уже зарегистрирован',
   'admin.error.vehicle_not_found': 'Авто не найдено',
+  'admin.error.invalid_input': 'Проверьте введённые данные',
   'admin.error.generic': 'Что-то пошло не так. Попробуйте ещё раз.',
 } as const satisfies Record<keyof typeof lvAdmin, string>;

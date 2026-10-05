@@ -930,3 +930,12 @@ States per screen: loading (`role="status"`), empty (per filter/range), error (`
   - M1: reassign's pre-flight (`reassign.service.ts`) now refuses an unapproved incoming driver with 409 `driver_not_approved` before the release commits. A.4b's table already listed reassign; this is the check it implied.
   - L1: `setPresence`'s go-online branch re-reads approval after `markOnline` and, if it is no longer `approved`, calls `markOffline` and answers 409 `driver_not_approved`. This closes a reject committing between the UPDATE and the Redis write.
   - L2: `AdminDriversRepository.updateVehicle` sets an explicit column allowlist, as `VehiclesRepository.update` does, instead of spreading the patch.
+- 2026-09-30 — Superseded by PR 2's implementation (`.claude/reports/admin-drivers-ui-20-report.md` §Deviations). Read before PR 3 or PR 4:
+  - A0.7: "PR 2/3 append Config/Trips" means PRs 3 and 4. PR 2's nav has the Drivers link only; B.5 and C.7 each add theirs to `LINKS` in `admin-nav.tsx`.
+  - Reuse from `@/features/admin-shell`: `adminFetch`, `adminFetchBlob`, and `adminErrorKey` (api code → `admin.error.<code>` if the catalog has it, else `admin.error.generic`). Its `schema` parameter is `z.ZodType<T, z.ZodTypeDef, unknown>`, so schemas with defaults or transforms fit.
+  - The `/admin` layout owns the one `<main className="console">` and the nav; pages render into it and add no `<main>`.
+  - Tests: a `next/navigation` mock must return ONE router object (`vi.hoisted`). The load effects depend on `router`, so a mock that builds a new router per call refetches on every render. Shared fakes go under `src/features/<slice>/test/`, which is outside `max-lines`.
+  - A.12's failure case ran on Reject: approve never returns `driver_on_ride`.
+  - A.12 shipped more files than listed: `drivers-screen.tsx` (the `useSearchParams` client component), `profile-form.tsx`, `form-styles.ts`, `test/fixtures.ts`; `use-drivers.ts` holds both the list and detail hooks. The list filter is in the URL (`?approval=`), and detail approval is one-tap buttons rather than the breadboard's radio + Save.
+  - Two catalog keys were added: `admin.driver.profile` and `admin.error.invalid_input`. `console.admin_placeholder` is gone.
+  - PR 2 review round 1: a PATCH form sends only the fields the admin changed, measured against a snapshot of the form as filled, not against the prop (`profile-form.tsx`, `vehicle-editor.tsx`). A form whose api is a full-replacement PUT (B's config) is exempt by design. A plate is written through `normalizePlate` from `@taxi/shared`.

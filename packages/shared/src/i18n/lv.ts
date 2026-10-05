@@ -116,7 +116,6 @@ export const lv = {
   'console.no_access': 'Šim kontam nav piekļuves konsolei',
   'console.wrong_code': 'Nepareizs vai novecojis kods',
   'console.request_failed': 'Neizdevās nosūtīt kodu. Mēģiniet vēlreiz.',
-  'console.admin_placeholder': 'Administrēšanas sadaļa tiks pievienota vēlāk',
   // Force-assign / override (#19, S9-2). Two verbs: «Piešķirt» puts a car on a
   // ride with none, «Piešķirt atkārtoti» swaps the car already on it.
   'console.assign': 'Piešķirt',

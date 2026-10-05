@@ -85,6 +85,17 @@ describe('LoginForm', () => {
     expect(vi.mocked(fetch).mock.calls[0]![1]?.body).toContain('"role":"rider"');
   });
 
+  it('lands a provisioned admin on /admin (expected)', async () => {
+    render(<LoginForm />);
+    await reachCodeStep();
+
+    vi.mocked(fetch).mockResolvedValueOnce(okJson(session('admin')) as Response);
+    await submitCode();
+
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/admin'));
+    expect(push).not.toHaveBeenCalledWith('/dispatch');
+  });
+
   it('moves focus to the code field on step 2 (edge)', async () => {
     // Step 2 swaps the input IN PLACE with focus parked on the submit button,
     // whose accessible name silently changes «Sūtīt kodu» → «Pieslēgties».
