@@ -120,7 +120,7 @@ epic carries the posture, not just the ticket.
    `osrm-backend:v26.4.0` publishes both `linux/amd64` and `linux/arm64` (`observed`, the image
    index's manifest list read 2026-09-29), so OSRM no longer blocks the ARM CAX line — moving still
    needs its own reason, and the api image is built for amd64 only (`deploy.yml`).
-3. **Payments posture — DECIDED: refuse, never pretend.** Production with no `STRIPE_SECRET_KEY` binds
+3. **Payments posture — DECIDED: refuse, never pretend.** *(The cash-only pilot this assumed is superseded by **Payments: card-only (2026-10-04)** below; the refuse-never-pretend posture stands.)* Production with no `STRIPE_SECRET_KEY` binds
    `CardPaymentsDisabledProvider`, which answers every card charge `ok: false` (`provider_error`,
    `card_payments_disabled`) and moves nothing — a card settlement is a 502, never a silent 201. The
    stub (which reports success) still never binds in production; what changed is that "no card rail"
@@ -136,6 +136,20 @@ epic carries the posture, not just the ticket.
 Also taken in #13 (runbook §1.1): **IPv4 for the first deploy** (+~€0.60/mo `observed` 2026-08-14),
 so the €5.49 above becomes ≈ €6.09 `derived` — a lockout on day one costs more than a year of the
 saving. Revisit once the box is boring.
+
+## Payments: card-only (2026-10-04)
+
+**Decided by Linards, 2026-10-04: no cash.** Every ride is paid by card in the app. This supersedes the PRD's "card and cash" core loop and the cash-only pilot in decision 3 above.
+
+**Why:** the rides Sakta Cab offers fall under the law's *vieglais automobilis* regime (booked only through the app). For that regime Autopārvadājumu likums 40. (13) 3) reads „autovadītājam aizliegts maksu par pasažieru komercpārvadājumu pakalpojumu saņemt skaidrā naudā” (the driver may not take cash), and 35.² (1) 5) c) requires the app to take payment online, cashless, and to email the passenger an e-invoice at the end of the ride. Sources and quotes: `docs/research/vid-platform-reporting.md`.
+
+**What it means:**
+- **Card is the pilot's only payment rail, so it is gated on the company.** `StripePaymentsProvider` needs a live key, which needs an EU-registered *komersants*: a Latvian IK or SIA. A UK Ltd does not qualify (35.² (1) 1)). The same entity registers the platform with ATD (€2 800, MK 848 p. 33).
+- **Cash can be removed now.** Nothing is in production, and development runs against Stripe test mode (a test key binds `StripePaymentsProvider`). The only real coupling is at launch: the live key and ATD registration both wait on the company. One thing does block removal: the dispatch phone-order form has no card path without the phone-booking decision below.
+- **Cash runs through 29 shipped source files** (`observed` 2026-10-04: `grep -rlE '\bcash\b'` over shared, api, the three apps and db, specs excluded). That spans the enum, quote, settlement, ledger, dispatch candidate filter, rider payment chips, the driver receipt and the dispatch phone-order form. The removal is a ticket in the compliance epic, not a config flip.
+- **Phone bookings need a card path.** A rider who calls Dina has no card in the app. Options for the epic: a card saved on the rider's account, or a payment link sent by SMS before dispatch. Whether phone bookings are lawful for this regime at all (40. (13) 4)) is an open lawyer question.
+- **Decided in the compliance epic (2026-10-04):** phone riders pay through an SMS payment link and the car is dispatched only after card authorisation; app rides take the same hold at booking. Design: `docs/epics/sakta-cab-compliance.architecture.md` (K5, K6).
+- **Commission collection simplifies.** The PRD's open question on settling cash-ride commission is closed: the 15% is taken at card settlement.
 
 ## Missing pieces
 
