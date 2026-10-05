@@ -1,25 +1,16 @@
 'use client';
 
 import { formatMessage } from '@taxi/shared';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-/** Placeholder — the admin surfaces (stats, config, onboarding) are #20. */
+/** `/admin` has no surface of its own: driver review is the landing page. */
 export default function AdminPage() {
-  return (
-    <main
-      className="console"
-      style={{
-        minHeight: '100dvh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--spacing-lg)',
-        background: 'var(--color-bg)',
-        color: 'var(--color-fg)',
-      }}
-    >
-      <p style={{ margin: 0, fontSize: 'var(--font-size-lg)' }}>
-        {formatMessage('lv', 'console.admin_placeholder')}
-      </p>
-    </main>
-  );
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/admin/drivers');
+  }, [router]);
+
+  return <p role="status">{formatMessage('lv', 'console.loading')}</p>;
 }
