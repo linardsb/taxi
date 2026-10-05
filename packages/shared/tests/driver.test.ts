@@ -7,6 +7,7 @@ import {
   driverStatusUpdateSchema,
 } from '../src/schemas/driver';
 import {
+  normalizePlate,
   vehicleCreateSchema,
   vehicleUpdateSchema,
 } from '../src/schemas/vehicle';
@@ -143,6 +144,21 @@ describe('driverStatusUpdateSchema', () => {
     expect(
       driverStatusUpdateSchema.safeParse({ status: 'on_ride' }).success,
     ).toBe(false);
+  });
+});
+
+describe('normalizePlate (#20)', () => {
+  it('strips every space and upper-cases (expected)', () => {
+    expect(normalizePlate(' ab 12 34 ')).toBe('AB1234');
+  });
+
+  it('leaves a normalized plate unchanged and keeps hyphens (edge)', () => {
+    expect(normalizePlate('AB-1234')).toBe('AB-1234');
+  });
+
+  it('cannot make a spaced plate dodge the unique index (failure)', () => {
+    // The index compares upper(plate): these two must reach it identical.
+    expect(normalizePlate('ab 1234')).toBe(normalizePlate('AB1234'));
   });
 });
 

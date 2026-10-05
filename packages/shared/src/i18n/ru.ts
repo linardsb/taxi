@@ -91,7 +91,6 @@ export const ru = {
   'console.no_access': 'У этого аккаунта нет доступа к консоли',
   'console.wrong_code': 'Неверный или устаревший код',
   'console.request_failed': 'Не удалось отправить код. Попробуйте ещё раз.',
-  'console.admin_placeholder': 'Раздел администрирования появится позже',
   'console.assign': 'Назначить',
   'console.reassign': 'Переназначить',
   'console.assign_ride_at': 'Назначить поездку — {address}',
