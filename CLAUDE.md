@@ -29,6 +29,8 @@ Contracts flow one way: apps and `services/api` import from `packages/shared`; *
 
 ## Commands
 
+Use Node 20 (`nvm use` reads `.nvmrc`), the version CI runs; newer Node's built-in `localStorage` replaces jsdom's and turns the dispatch tests red (#333).
+
 ```bash
 cp .env.example .env          # first — compose reads REDIS_PORT from it (set 6381 if 6379 is taken)
 docker compose up -d --wait   # postgres+postgis, redis — blocks until both are healthy
