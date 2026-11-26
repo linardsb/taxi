@@ -27,4 +27,4 @@ From the issue, not the amended plan: `engines.node` is `>=20.19.4 <21` instead 
 ## Issues encountered
 - A fresh worktree has no built `@taxi/shared`. A bare `pnpm --filter @taxi/dispatch test` fails all 37 files with `Failed to resolve entry for package "@taxi/shared"` until `pnpm turbo run build --filter=@taxi/shared --filter=@taxi/db` has run. The gate builds dependencies itself.
 - The hook refuses to copy the main checkout's `.env`, so the worktree uses `.env.example`. Its `REDIS_PORT=6379` matches the running `taxi-redis-1`.
-- Owner action: this change does not make local `pnpm check` or the stop hook green on this machine. Both still resolve `/opt/homebrew/bin/node` (v26) until Node 20 is installed and on `PATH` (for example nvm, then `nvm use`).
+- Owner action: this change does not make local `pnpm check` or the stop hook green on this machine. Both still resolve `/opt/homebrew/bin/node` (v26) until Node 20 is installed and on `PATH` (for example nvm, then `nvm install`, which reads `.nvmrc` and installs the newest 20.x; `nvm use` only picks an installed 20.x, which can be below the 20.19.4 floor).

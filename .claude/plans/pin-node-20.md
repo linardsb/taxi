@@ -2,7 +2,7 @@
 
 ## Feature Description
 
-Pin the local Node major to the one CI runs (20) so `@taxi/dispatch` tests stop going red on newer Node, where built-in Web Storage replaces jsdom's `localStorage` in the Vitest workers.
+Pin the local Node major to the one CI runs (20) so `@taxi/dispatch` tests stop going red on Node 25+, where built-in Web Storage (on by default from Node 25, per the [v25.0.0 release notes](https://nodejs.org/blog/release/v25.0.0); observed on 26) replaces jsdom's `localStorage` in the Vitest workers.
 
 ## User Story
 
@@ -48,7 +48,7 @@ Type: Bug fix (toolchain). Complexity: Low. Affected: repo root only.
 ### Facts verified during planning (`observed`, this session, worktree at `b890929`)
 
 - No Node 20 on this machine: no nvm/fnm/volta/asdf; `/opt/homebrew/bin/node` is v26.13.1. Node 20 for validation is the npm `node@20` package (v20.20.2) fetched with `npx`, symlinked into the scratchpad and put first on `PATH`.
-- With the `engines` field and Node 26, `pnpm install --frozen-lockfile --offline` exits 0 and prints ` WARN  Unsupported engine: wanted: {"node":">=20 <21"} (current: {"node":"v26.13.1","pnpm":"10.33.2"})`; `pnpm exec` prints the same warning.
+- With the `engines` field and Node 26, `pnpm install --frozen-lockfile --offline` exits 0 and prints ` WARN  Unsupported engine: wanted: {"node":">=20 <21"} (current: {"node":"v26.13.1","pnpm":"10.33.2"})`; `pnpm exec` prints the same warning. (Pre-amendment range; behaviour unchanged. Under the shipped field the warning reads `wanted: {"node":">=20.19.4 <21"}`, observed in the PR #335 review at `57ccd0d`.)
 - With `--config.engine-strict=true`, both `pnpm install` and `pnpm --filter @taxi/shared exec node -v` exit 1 with `ERR_PNPM_UNSUPPORTED_ENGINE`.
 - Dependency floors: `react-native@0.86.3` and `metro@0.84.5` declare `^20.19.4 || ^22.13.0 || ^24.3.0 || >= 25.0.0`; `next@16.3.4` `>=20.9.0`; all others checked admit 20.
 - `apps/*/eas.json` has no `node` key, so EAS builds on the image default. Expo's docs say the default tracks the current LTS; no source found states the SDK 57 image's Node.
@@ -64,7 +64,7 @@ Type: Bug fix (toolchain). Complexity: Low. Affected: repo root only.
 - VALIDATE: `node -p "require('./package.json').engines.node"` prints `>=20.19.4 <21`.
 
 ### UPDATE `CLAUDE.md`
-- One line under `## Commands`, before the code block: use Node 20 (`nvm use` reads `.nvmrc`), the version CI runs; newer Node's built-in `localStorage` breaks the dispatch tests (#333).
+- One line under `## Commands`, before the code block: use Node 20 (≥20.19.4), the version CI runs; `nvm install` reads `.nvmrc` and installs the newest 20.x; Node 25+'s built-in `localStorage` breaks the dispatch tests (#333). (Amended by PR #335 review L1, L2.)
 - VALIDATE: `git diff CLAUDE.md` is one added line.
 
 ## TESTING STRATEGY
@@ -91,7 +91,7 @@ Run in the worktree with `PATH=<scratchpad>/node20/bin:$PATH`, `COMPOSE_PROJECT_
 
 ## OPEN QUESTIONS / ASSUMPTIONS
 
-- Q1: `>=20 <21` admits 20.0–20.19.3, below React Native/metro's `^20.19.4` floor. Shipped as the issue specifies; `.nvmrc` `20` resolves to the newest 20.x, which is above the floor. Tighten to `>=20.19.4 <21` if wanted.
+- Q1: `>=20 <21` admits 20.0–20.19.3, below React Native/metro's `^20.19.4` floor. Shipped as the issue specifies; `.nvmrc` `20` resolves to the newest 20.x, which is above the floor. (Holds for `nvm install` and CI's `setup-node` only: `nvm use` picks the newest 20.x already installed, which can be below the floor; PR #335 review L2.) Tighten to `>=20.19.4 <21` if wanted.
 - Q2: pin `"node"` in `apps/*/eas.json` build profiles to match? Out of scope here; a candidate follow-up.
 - This change does not by itself make the stop hook or local `pnpm check` green on this machine: both use `/opt/homebrew/bin/node` (v26) until Node 20 is installed and on `PATH` (owner action).
 
