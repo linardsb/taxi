@@ -365,7 +365,8 @@ describe('StatusScreen', () => {
     expect(mockRequest).toHaveBeenCalledWith(
       'POST',
       `/rides/${RIDE_ID}/cancel`,
-      expect.objectContaining({ body: { reason: null } }),
+      // #316: the reshaped `rideCancelSchema` — a rider still need not give a reason.
+      expect.objectContaining({ body: { reasonCode: null, reasonText: null } }),
     );
   });
 

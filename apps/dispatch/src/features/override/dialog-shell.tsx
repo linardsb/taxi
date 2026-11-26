@@ -66,7 +66,7 @@ export function DialogShell({
   // Tab goes backwards.
   useEffect(() => {
     const first = ref.current?.querySelector<HTMLElement>(
-      'input, button, textarea, [tabindex]:not([tabindex="-1"])',
+      'input, select, button, textarea, [tabindex]:not([tabindex="-1"])',
     );
     // The container itself is the fallback: a step with nothing focusable in it
     // must still keep focus inside the dialog, or the handler goes deaf.
@@ -87,7 +87,7 @@ export function DialogShell({
     // so the tabbable set — changes as Dina filters.
     const focusable = [
       ...(ref.current?.querySelectorAll<HTMLElement>(
-        'input:not([disabled]), button:not([disabled]), textarea:not([disabled])',
+        'input:not([disabled]), select:not([disabled]), button:not([disabled]), textarea:not([disabled])',
       ) ?? []),
     ];
     if (focusable.length === 0) return;

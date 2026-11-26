@@ -1,4 +1,6 @@
+import { sql } from 'drizzle-orm';
 import {
+  check,
   doublePrecision,
   index,
   integer,
@@ -18,6 +20,7 @@ import {
   paymentMethodTypeEnum,
   pricingModelEnum,
   rideCategoryEnum,
+  rideReasonCodeEnum,
   rideStatusEnum,
 } from './enums';
 import { drivers } from './drivers';
@@ -45,13 +48,11 @@ export const rides = pgTable(
     /**
      * The car serving this ride (#86), stamped by `assignDriver` in the same
      * UPDATE as `driver_id` — category match, else first by plate, else NULL
-     * (a force-assigned driver may own no vehicle). SET NULL on vehicle delete:
-     * vehicles are deletable (`VehiclesService.remove`), ride history must not
-     * pin them forever. Null also = pre-#86 rows and unassigned rides.
+     * (a force-assigned driver may own no vehicle). Null also = pre-#86 rows
+     * and unassigned rides. NO ACTION on delete: vehicles are retired, never
+     * deleted (#316, 35.² (5)), so a past ride keeps its car.
      */
-    vehicleId: uuid('vehicle_id').references(() => vehicles.id, {
-      onDelete: 'set null',
-    }),
+    vehicleId: uuid('vehicle_id').references(() => vehicles.id),
     /** Pickup zone — drives queue mode and Dina's district stats (S7-2). */
     geozoneId: uuid('geozone_id').references(() => geozones.id),
     /** Full `RideRequest` snapshot — audit "what was asked". */
@@ -151,7 +152,9 @@ export const rideFareLines = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     rideId: uuid('ride_id')
       .notNull()
-      .references(() => rides.id, { onDelete: 'cascade' }),
+      // NO ACTION (#316, G9): rides are never deleted; a cascade would only ever
+      // take the fare along with a ride someone deleted around the trigger.
+      .references(() => rides.id),
     lineType: fareLineTypeEnum('line_type').notNull(),
     /** Signed — discount lines are negative. */
     amountCents: integer('amount_cents').notNull(),
@@ -184,8 +187,16 @@ export const rideOffers = pgTable(
     split: jsonb('split').notNull(),
     /** 1-based position when the offer came from a geozone queue (S7-2). */
     queuePosition: integer('queue_position'),
+    /** When the DRIVER answered (accept/decline) — never set on expiry or revoke. Written once (#316 trigger). */
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+    /** Only on a declined offer; written once (#316 trigger). */
+    declineReason: rideReasonCodeEnum('decline_reason'),
   },
   (t) => [
+    check(
+      'ride_offers_decline_reason_ck',
+      sql`${t.declineReason} IS NULL OR ${t.declineReason}::text LIKE 'decline\\_%'`,
+    ),
     index('ride_offers_ride_idx').on(t.rideId),
     // Dispatch's driver-side hot read is always status-filtered ("pending offer for driver X?").
     index('ride_offers_driver_idx').on(t.driverId, t.status),

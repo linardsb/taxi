@@ -286,7 +286,7 @@ describe('admin drivers (#20, integration)', () => {
           .send({ status: 'approved' }),
       () =>
         http.patch(`/admin/vehicles/${UNKNOWN_ID}`).send({ category: 'limo' }),
-      () => http.delete(`/admin/vehicles/${UNKNOWN_ID}`),
+      () => http.post(`/admin/vehicles/${UNKNOWN_ID}/retire`),
     ];
     for (const route of routes) {
       // The message, not the status: `insufficient_role` is only the guard's.
@@ -363,16 +363,38 @@ describe('admin drivers (#20, integration)', () => {
     expect((await row(d.id)).commissionPctOverride).toBeNull();
   });
 
-  it("deleting an online driver's only car takes them offline (expected, AC A5)", async () => {
+  it("retiring an online driver's only car takes them offline and hides it from the detail (expected, AC A5, #316)", async () => {
     const d = await onlineApprovedDriver(15);
 
+    // The DELETE route is gone (#316).
     await http
       .delete(`/admin/vehicles/${d.car.id}`)
+      .set('authorization', adminAuth)
+      .expect(404);
+
+    await http
+      .post(`/admin/vehicles/${d.car.id}/retire`)
       .set('authorization', adminAuth)
       .expect(204);
 
     expect((await row(d.id)).status).toBe('offline');
     expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+    const detail = await http
+      .get(`/admin/drivers/${d.id}`)
+      .set('authorization', adminAuth)
+      .expect(200);
+    expect((detail.body as { vehicles: unknown[] }).vehicles).toEqual([]);
+
+    // A retired car is a record, not editable: it reads as not found.
+    expect(
+      messageOf(
+        await http
+          .patch(`/admin/vehicles/${d.car.id}`)
+          .set('authorization', adminAuth)
+          .send({ category: 'vip' })
+          .expect(404),
+      ),
+    ).toBe('vehicle_not_found');
   });
 
   it('answers 404 with a code for an unknown driver or vehicle (failure)', async () => {
@@ -406,7 +428,7 @@ describe('admin drivers (#20, integration)', () => {
       ),
     ).toBe('vehicle_not_found');
     expect(
-      messageOf(await as(http.delete(`/admin/vehicles/${UNKNOWN_ID}`))),
+      messageOf(await as(http.post(`/admin/vehicles/${UNKNOWN_ID}/retire`))),
     ).toBe('vehicle_not_found');
   });
 

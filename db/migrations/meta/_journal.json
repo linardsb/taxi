@@ -120,6 +120,20 @@
       "when": 1790771053058,
       "tag": "0016_shocking_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795702553580,
+      "tag": "0017_nasty_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795702558159,
+      "tag": "0018_protected_records",
+      "breakpoints": true
     }
   ]
 }

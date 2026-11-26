@@ -121,10 +121,10 @@ export class AdminDriversService {
     return updated;
   }
 
-  /** Delegates to the driver's own delete, so its on-ride refusal and last-car-goes-offline rule are reused. */
-  async removeVehicle(vehicleId: string): Promise<void> {
+  /** Delegates to the driver's own retire, so its on-ride refusal and last-car-goes-offline rule are reused. */
+  async retireVehicle(vehicleId: string): Promise<void> {
     const ownerId = await this.admin.vehicleOwner(vehicleId);
     if (!ownerId) throw new NotFoundException('vehicle_not_found');
-    await this.vehiclesService.remove(ownerId, vehicleId);
+    await this.vehiclesService.retire(ownerId, vehicleId);
   }
 }

@@ -51,6 +51,8 @@ export class ForceAssignService {
    */
   async forceAssign(input: {
     dispatcherId: string;
+    /** The JWT role — admin stays admin on the ride's events (#316). */
+    actorKind: 'dispatcher' | 'admin';
     rideId: string;
     driverId: string;
     reason?: string | null;
@@ -93,6 +95,7 @@ export class ForceAssignService {
       status: 'accepted',
     });
 
+    const actor = { kind: input.actorKind, id: input.dispatcherId };
     const { ride, revoked, from } = await this.db.transaction(async (tx) => {
       // `requested → accepted` is not a legal transition, so a ride still in
       // the pool has to be walked through `offered` first. MID-CASCADE it is
@@ -104,6 +107,7 @@ export class ForceAssignService {
         input.rideId,
         'requested',
         'offered',
+        actor,
       );
       const from: RideStatus = hopped ? 'requested' : 'offered';
 
@@ -115,12 +119,20 @@ export class ForceAssignService {
         input.rideId,
         'offered',
         'accepted',
+        actor,
       );
       if (!accepted) throw new ConflictException('ride_not_assignable');
 
       await this.offers.insertOffer(offer, tx);
 
-      if (!(await this.rides.assignDriver(input.rideId, input.driverId, tx))) {
+      if (
+        !(await this.rides.assignDriver(
+          input.rideId,
+          input.driverId,
+          tx,
+          actor,
+        ))
+      ) {
         throw new ConflictException('ride_already_assigned');
       }
 

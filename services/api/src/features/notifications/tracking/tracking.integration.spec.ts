@@ -654,7 +654,7 @@ describe('tracking + ride SMS (integration)', () => {
     expect(assigned.vehiclePlate).toBeNull();
   });
 
-  it('vehicle deleted after the ride: SET NULL, the page never 500s and never resurrects a plate (failure — #86 AC #3)', async () => {
+  it('vehicle retired after the ride: the ride keeps its car and the receipt keeps the plate (#86 AC #3, inverted by #316 — G2)', async () => {
     const d = await onlineDriver(5, {
       lat: CENTRE_PICKUP.location.lat + 0.001,
       lng: CENTRE_PICKUP.location.lng,
@@ -677,24 +677,29 @@ describe('tracking + ride SMS (integration)', () => {
         .expect(201);
     }
 
-    // `complete` released the driver, so the `on_ride` guard passes — and the
-    // FK must not turn a legitimate delete into a 500.
+    // `complete` released the driver, so the `on_ride` guard passes.
     await http
-      .delete(`/drivers/me/vehicles/${stamped!.vehicleId}`)
+      .post(`/drivers/me/vehicles/${stamped!.vehicleId}/retire`)
       .set('authorization', d.auth)
       .expect(204);
 
+    // Vehicles are never deleted (35.² (5)): the past ride still points at
+    // the car it was served by.
     const [after] = await ctx.db
       .select()
       .from(rides)
       .where(eq(rides.id, ride.id));
-    expect(after!.vehicleId).toBeNull(); // ON DELETE SET NULL fired
+    expect(after!.vehicleId).toBe(stamped!.vehicleId);
+    const [car] = await ctx.db
+      .select()
+      .from(vehicles)
+      .where(eq(vehicles.id, stamped!.vehicleId!));
+    expect(car!.retiredAt).not.toBeNull();
 
-    // Within the terminal grace the receipt still renders — plate null, not
-    // re-derived from the (now empty) fleet as the old heuristic would try.
+    // Within the terminal grace the receipt still shows the car's plate.
     const receipt = await view(token);
     expect(receipt.state).toBe('completed');
-    expect(receipt.vehiclePlate).toBeNull();
+    expect(receipt.vehiclePlate).toBe(car!.plate);
   });
 
   // #87 — the ETA below the map. One InMemoryKeyValueStore serves this whole

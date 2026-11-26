@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Db } from '@taxi/db';
-import { RT, type RideStatus } from '@taxi/shared';
+import { RT, type OfferDecline, type RideStatus } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { DRIZZLE } from '../../common/db/db.module';
 import { KV_STORE, type KeyValueStore } from '../../common/kv/kv.store';
@@ -9,9 +9,11 @@ import { GeozonesService } from '../geozones';
 import { PlatformConfigService } from '../platform-config';
 import { RealtimeService } from '../realtime';
 import {
+  driverActor,
   RideLifecycleService,
   RidesRepository,
   RideTransitionService,
+  SYSTEM_ACTOR,
   type AwaitingRide,
   type TransitionedRide,
 } from '../rides';
@@ -145,7 +147,13 @@ export class DispatchService {
       let from: RideStatus = 'requested';
       let moved: TransitionedRide | undefined;
       for (const to of steps) {
-        moved = await this.transitions.transitionInTx(tx, ride.id, from, to);
+        moved = await this.transitions.transitionInTx(
+          tx,
+          ride.id,
+          from,
+          to,
+          SYSTEM_ACTOR,
+        );
         if (!moved) return undefined; // someone else moved this ride
         from = to;
       }
@@ -201,10 +209,18 @@ export class DispatchService {
           rideId,
           'offered',
           'accepted',
+          driverActor(driverId),
         );
         if (!moved) throw new ConflictException('ride_not_offered');
 
-        if (!(await this.rides.assignDriver(rideId, driverId, tx))) {
+        if (
+          !(await this.rides.assignDriver(
+            rideId,
+            driverId,
+            tx,
+            driverActor(driverId),
+          ))
+        ) {
           throw new ConflictException('ride_already_assigned');
         }
 
@@ -277,8 +293,16 @@ export class DispatchService {
    * cancelling. The event exists to clear a card the driver did not act on; a
    * decliner's card clears from their own HTTP response.
    */
-  async decline(driverId: string, offerId: string): Promise<void> {
-    const offer = await this.offers.declineOffer(offerId, driverId);
+  async decline(
+    driverId: string,
+    offerId: string,
+    reason: OfferDecline,
+  ): Promise<void> {
+    const offer = await this.offers.declineOffer(
+      offerId,
+      driverId,
+      reason.reasonCode,
+    );
     if (!offer) throw new ConflictException('offer_not_pending');
 
     // RETURN THE RIDE TO THE POOL FIRST. Everything after this is bookkeeping,
@@ -287,7 +311,11 @@ export class DispatchService {
     // `dispatchAwaitingRides`, which filters on `requested`, so the cascade
     // would die silently and the rider would wait forever.
     // Single statement, nothing else in flight — the convenience form is safe.
-    await this.transitions.transition(offer.rideId, 'offered', 'requested');
+    // The code is on the offer row too; the text lands only on the ride event.
+    await this.transitions.transition(offer.rideId, 'offered', 'requested', {
+      ...driverActor(driverId),
+      ...reason,
+    });
 
     // A decline costs the driver their place in the rank — but only in the zone
     // this ride was actually dispatched from. Guarded: losing a queue demotion
@@ -420,7 +448,12 @@ export class DispatchService {
       });
     }
 
-    await this.transitions.transition(offer.rideId, 'offered', 'requested');
+    await this.transitions.transition(
+      offer.rideId,
+      'offered',
+      'requested',
+      SYSTEM_ACTOR,
+    );
 
     this.logger.log({
       event: 'dispatch.offer.expired',

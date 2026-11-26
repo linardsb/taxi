@@ -248,6 +248,7 @@ describe('DispatchService', () => {
         RIDE_ID,
         DRIVER_ID,
         expect.anything(),
+        { kind: 'driver', id: DRIVER_ID },
       );
 
       expect(emitToRide).toHaveBeenCalledWith(
@@ -400,24 +401,30 @@ describe('DispatchService', () => {
   });
 
   describe('decline', () => {
+    const NO_REASON = { reasonCode: null, reasonText: null };
     it('sends no ride:offer_revoked to the decliner (expected)', async () => {
       const { service, emitToDriver, transition } = build();
 
-      await service.decline(DRIVER_ID, OFFER_ID);
+      await service.decline(DRIVER_ID, OFFER_ID, NO_REASON);
 
       // None of `expired | taken | cancelled` describes "you declined this
       // yourself"; `cancelled` would read as the RIDER cancelling.
       expect(emitToDriver).not.toHaveBeenCalled();
-      expect(transition).toHaveBeenCalledWith(RIDE_ID, 'offered', 'requested');
+      expect(transition).toHaveBeenCalledWith(RIDE_ID, 'offered', 'requested', {
+        kind: 'driver',
+        id: DRIVER_ID,
+        reasonCode: null,
+        reasonText: null,
+      });
     });
 
     it('409s on a double-tapped decline (failure)', async () => {
       const { service, offers } = build();
       (offers.declineOffer as jest.Mock).mockResolvedValue(undefined);
 
-      await expect(service.decline(DRIVER_ID, OFFER_ID)).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(
+        service.decline(DRIVER_ID, OFFER_ID, NO_REASON),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('broadcasts the zone ranks after a geozone-queue demotion (#15, expected)', async () => {
@@ -426,7 +433,7 @@ describe('DispatchService', () => {
         offerRef({ status: 'declined', source: 'geozone_queue' }),
       );
 
-      await service.decline(DRIVER_ID, OFFER_ID);
+      await service.decline(DRIVER_ID, OFFER_ID, NO_REASON);
 
       // Everyone behind the demoted driver moved up one; the whole zone hears
       // its new ranks, not only the driver who declined.
@@ -436,7 +443,7 @@ describe('DispatchService', () => {
     it('does not broadcast for an auto-match decline — no queue moved (#15, edge)', async () => {
       const { service, broadcast } = build({ geozoneId: CITY });
 
-      await service.decline(DRIVER_ID, OFFER_ID); // offerRef() is auto_match
+      await service.decline(DRIVER_ID, OFFER_ID, NO_REASON); // offerRef() is auto_match
 
       expect(broadcast).not.toHaveBeenCalled();
     });

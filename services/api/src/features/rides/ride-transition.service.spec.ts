@@ -28,6 +28,8 @@ const rideRow = (status: RideStatus) => ({
  */
 function build(rows: unknown[] = [rideRow('offered')]) {
   const touched = jest.fn();
+  // `insertRideEvent` (#316) reaches `tx.insert(rideEvents).values(…)`.
+  const insertValues = jest.fn(() => Promise.resolve());
 
   const chain = {
     update: (...args: unknown[]) => {
@@ -37,6 +39,7 @@ function build(rows: unknown[] = [rideRow('offered')]) {
     set: () => chain,
     where: () => chain,
     returning: () => Promise.resolve(rows),
+    insert: () => ({ values: insertValues }),
     transaction: (fn: (tx: DbTx) => Promise<unknown>) =>
       fn(chain as unknown as DbTx),
   };
@@ -58,15 +61,49 @@ function build(rows: unknown[] = [rideRow('offered')]) {
     emitToRide,
     touched,
     onStatus,
+    insertValues,
     tx: chain as unknown as DbTx,
   };
 }
 
+const ACTOR = { kind: 'driver', id: RIDER_ID } as const;
+
 describe('RideTransitionService', () => {
+  it('appends one status event with the actor on a matched UPDATE (expected, #316)', async () => {
+    const { service, insertValues, tx } = build([rideRow('accepted')]);
+
+    await service.transitionInTx(tx, RIDE_ID, 'offered', 'accepted', ACTOR);
+
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rideId: RIDE_ID,
+        kind: 'status',
+        fromStatus: 'offered',
+        toStatus: 'accepted',
+        actorKind: 'driver',
+        actorId: RIDER_ID,
+      }),
+    );
+  });
+
+  it('writes no event when the UPDATE matched no row — a lost race (edge, #316)', async () => {
+    const { service, insertValues, tx } = build([]);
+
+    await service.transitionInTx(tx, RIDE_ID, 'offered', 'accepted', ACTOR);
+
+    expect(insertValues).not.toHaveBeenCalled();
+  });
+
   it('updates and emits ride:status with the previous status (expected)', async () => {
     const { service, emitToRide } = build([rideRow('accepted')]);
 
-    const ride = await service.transition(RIDE_ID, 'offered', 'accepted');
+    const ride = await service.transition(
+      RIDE_ID,
+      'offered',
+      'accepted',
+      ACTOR,
+    );
 
     expect(ride?.status).toBe('accepted');
     expect(emitToRide).toHaveBeenCalledTimes(1);
@@ -88,7 +125,7 @@ describe('RideTransitionService', () => {
 
     // The caller lost the race: someone else already moved this ride.
     await expect(
-      service.transition(RIDE_ID, 'offered', 'accepted'),
+      service.transition(RIDE_ID, 'offered', 'accepted', ACTOR),
     ).resolves.toBeUndefined();
     expect(emitToRide).not.toHaveBeenCalled();
   });
@@ -99,7 +136,7 @@ describe('RideTransitionService', () => {
     // `requested → accepted` is absent from ALLOWED_TRANSITIONS; force-assign
     // exists in the shape it does precisely because of this.
     await expect(
-      service.transitionInTx(tx, RIDE_ID, 'requested', 'accepted'),
+      service.transitionInTx(tx, RIDE_ID, 'requested', 'accepted', ACTOR),
     ).rejects.toBeInstanceOf(InvalidRideTransitionError);
     expect(touched).not.toHaveBeenCalled();
     expect(emitToRide).not.toHaveBeenCalled();
@@ -119,6 +156,7 @@ describe('RideTransitionService', () => {
       RIDE_ID,
       'requested',
       'offered',
+      ACTOR,
     );
 
     expect(ride?.status).toBe('offered');

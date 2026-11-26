@@ -1,5 +1,6 @@
 import type { MessageKey } from './lv';
 import { enAdmin } from './en-admin';
+import { enReasons } from './en-reasons';
 
 /**
  * The ENGLISH catalog. Keys are pinned to `lv` by the `satisfies` clause below,
@@ -133,7 +134,7 @@ export const en = {
     'The ride changed status — the board will catch up',
   'console.cancel_ride': 'Cancel ride',
   'console.cancel_title': 'Cancel ride',
-  'console.cancel_reason': 'Cancellation reason (optional)',
+  'console.cancel_reason': 'Note (optional)',
   'console.cancel_confirm': 'Cancel the ride',
   'console.cancel_keep': 'No, keep it',
   'console.cancel_failed': 'Could not cancel. Try again.',
@@ -430,4 +431,5 @@ export const en = {
   'rider.error.offline': 'No connection to the server.',
   'rider.error.generic': 'Something went wrong. Please try again.',
   ...enAdmin,
+  ...enReasons,
 } as const satisfies Record<MessageKey, string>;
