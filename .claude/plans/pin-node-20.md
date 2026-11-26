@@ -60,8 +60,8 @@ Type: Bug fix (toolchain). Complexity: Low. Affected: repo root only.
 - VALIDATE: `cat .nvmrc` prints `20`.
 
 ### UPDATE `package.json`
-- Add `"engines": { "node": ">=20 <21" }` after `packageManager`, 2-space JSON.
-- VALIDATE: `node -p "require('./package.json').engines.node"` prints `>=20 <21`.
+- Add `"engines": { "node": ">=20.19.4 <21" }` after `packageManager`, 2-space JSON (Q1, amended 2026-11-26).
+- VALIDATE: `node -p "require('./package.json').engines.node"` prints `>=20.19.4 <21`.
 
 ### UPDATE `CLAUDE.md`
 - One line under `## Commands`, before the code block: use Node 20 (`nvm use` reads `.nvmrc`), the version CI runs; newer Node's built-in `localStorage` breaks the dispatch tests (#333).
@@ -96,3 +96,5 @@ Run in the worktree with `PATH=<scratchpad>/node20/bin:$PATH`, `COMPOSE_PROJECT_
 - This change does not by itself make the stop hook or local `pnpm check` green on this machine: both use `/opt/homebrew/bin/node` (v26) until Node 20 is installed and on `PATH` (owner action).
 
 ## AMENDMENTS
+
+- 2026-11-26: Q1 resolved by the owner. `engines.node` tightened from the issue's `>=20 <21` to `>=20.19.4 <21`, the floor `react-native@0.86.3` and `metro@0.84.5` declare. Supersedes Solution Statement item 2 and the Q1 bullet.

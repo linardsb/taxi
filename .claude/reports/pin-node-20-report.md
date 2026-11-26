@@ -3,7 +3,7 @@
 **Plan**: `.claude/plans/pin-node-20.md`   **Branch**: `fix/pin-node-20-333` (worktree `../taxi-node20-333`, base `origin/main` `b890929`)   **Status**: COMPLETE (AC3 pending CI)
 
 ## Summary
-Pinned local Node to CI's major: `.nvmrc` = `20`, root `engines.node` = `>=20 <21`, and one line under `## Commands` in `CLAUDE.md`. `engine-strict` is not enabled (AC4).
+Pinned local Node to CI's major: `.nvmrc` = `20`, root `engines.node` = `>=20.19.4 <21`, and one line under `## Commands` in `CLAUDE.md`. `engine-strict` is not enabled (AC4).
 
 ## Tasks completed
 - `.nvmrc` (CREATE)
@@ -22,7 +22,7 @@ Node 20 here is the npm `node@20` package (v20.20.2), fetched with `npx` and put
 - AC3: pending. CI runs on the PR. `ci.yml` is untouched (`git diff --stat` lists no workflow file).
 
 ## Deviations from the plan
-None.
+From the issue, not the amended plan: `engines.node` is `>=20.19.4 <21` instead of the issue's `>=20 <21`, because React Native 0.86 and metro need 20.19.4 or later (plan Q1, owner-approved). AC1/AC2 ran before this change, under v20.20.2, which both ranges admit.
 
 ## Issues encountered
 - A fresh worktree has no built `@taxi/shared`. A bare `pnpm --filter @taxi/dispatch test` fails all 37 files with `Failed to resolve entry for package "@taxi/shared"` until `pnpm turbo run build --filter=@taxi/shared --filter=@taxi/db` has run. The gate builds dependencies itself.
