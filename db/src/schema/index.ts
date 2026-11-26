@@ -6,6 +6,7 @@ export * from './geo';
 export * from './platform-config';
 export * from './ride-tariffs';
 export * from './rides';
+export * from './ride-events';
 export * from './ledger';
 export * from './dispatch-audit';
 export * from './customers';

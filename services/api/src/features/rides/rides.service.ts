@@ -23,6 +23,7 @@ import { PricingService } from '../pricing';
 import { RealtimeService } from '../realtime';
 import { mintPickupPin } from './pickup-pin';
 import { entryStatusFor } from './ride-entry';
+import type { RideEventActor } from './ride-events.repository';
 import { rideFailureReason, rideFailureToThrow } from './ride-failure-reason';
 import {
   assertWithinRideRateLimit,
@@ -46,7 +47,10 @@ import { RidesRepository } from './rides.repository';
 const rideDraftSchema = rideRequestSchema.omit({ riderId: true });
 type RideDraft = Omit<RideRequest, 'riderId'>;
 /** The app path knows its rider; the phone path resolves one late (#123). */
-type RideRider = { id: string } | { resolve: () => Promise<string> };
+/** `createdBy`: the dispatcher or admin booking a phone ride — the `created` event's actor (#316). */
+type RideRider =
+  | { id: string }
+  | { resolve: () => Promise<string>; createdBy: RideEventActor };
 
 /**
  * Orchestrates a ride request: validate → quote → persist → notify.
@@ -128,7 +132,11 @@ export class RidesService {
    * burn quota).
    */
   async requestForCaller(
-    caller: { phone: string; resolveRiderId: () => Promise<string> },
+    caller: {
+      phone: string;
+      resolveRiderId: () => Promise<string>;
+      createdBy: RideEventActor;
+    },
     idempotencyKey: string,
     body: RideRequestBody,
     dispatcherId: string,
@@ -136,7 +144,7 @@ export class RidesService {
   ): Promise<RideCreated> {
     return this.book(
       callerIdempotencyKey(caller.phone, idempotencyKey),
-      { resolve: caller.resolveRiderId },
+      { resolve: caller.resolveRiderId, createdBy: caller.createdBy },
       body,
       'phone',
       dispatcherId,
@@ -345,6 +353,8 @@ export class RidesService {
         pickupPin: request.options.pickupPin ? mintPickupPin() : null,
         trip,
         dispatcherNote,
+        createdBy:
+          'id' in rider ? { kind: 'rider', id: resolved } : rider.createdBy,
       });
 
       // ---- POST-COMMIT: nothing below may throw out of this method ----

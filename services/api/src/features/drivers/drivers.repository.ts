@@ -9,7 +9,7 @@ import {
   type Language,
   type RideCategory,
 } from '@taxi/shared';
-import { and, eq, exists, inArray, notExists, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNull, notExists, sql } from 'drizzle-orm';
 import { DRIZZLE, type DbTx } from '../../common/db/db.module';
 
 type DriverRow = typeof drivers.$inferSelect;
@@ -196,7 +196,9 @@ export class DriversRepository {
             this.db
               .select({ one: sql`1` })
               .from(vehicles)
-              .where(eq(vehicles.driverId, userId)),
+              .where(
+                and(eq(vehicles.driverId, userId), isNull(vehicles.retiredAt)),
+              ),
           ),
           // #61 chain A: the rides table decides, not `drivers.status` — an
           // offline driver who accepted mid-disconnect has a live ride and no
@@ -378,21 +380,30 @@ export class DriversRepository {
    * has to build paging anyway. Ordered so the truncation is at least stable.
    */
   async findRosterContacts(limit: number): Promise<DriverRosterContact[]> {
-    return this.db
-      .select({
-        driverId: drivers.userId,
-        name: users.displayName,
-        phone: users.phone,
-        status: drivers.status,
-        vehiclePlate: sql<string | null>`min(${vehicles.plate})`,
-      })
-      .from(drivers)
-      .innerJoin(users, eq(users.id, drivers.userId))
-      .leftJoin(vehicles, eq(vehicles.driverId, drivers.userId))
-      .where(eq(drivers.approvalStatus, 'approved'))
-      .groupBy(drivers.userId, users.displayName, users.phone, drivers.status)
-      .orderBy(users.displayName)
-      .limit(limit);
+    return (
+      this.db
+        .select({
+          driverId: drivers.userId,
+          name: users.displayName,
+          phone: users.phone,
+          status: drivers.status,
+          vehiclePlate: sql<string | null>`min(${vehicles.plate})`,
+        })
+        .from(drivers)
+        .innerJoin(users, eq(users.id, drivers.userId))
+        // Active cars only: a retired car is history, not a match (#316).
+        .leftJoin(
+          vehicles,
+          and(
+            eq(vehicles.driverId, drivers.userId),
+            isNull(vehicles.retiredAt),
+          ),
+        )
+        .where(eq(drivers.approvalStatus, 'approved'))
+        .groupBy(drivers.userId, users.displayName, users.phone, drivers.status)
+        .orderBy(users.displayName)
+        .limit(limit)
+    );
   }
 
   /**
@@ -410,7 +421,11 @@ export class DriversRepository {
     const rows = await this.db
       .select()
       .from(drivers)
-      .leftJoin(vehicles, eq(vehicles.driverId, drivers.userId))
+      // Active cars only: a retired car is history, not a match (#316).
+      .leftJoin(
+        vehicles,
+        and(eq(vehicles.driverId, drivers.userId), isNull(vehicles.retiredAt)),
+      )
       .where(inArray(drivers.userId, driverIds));
 
     const byDriver = new Map<string, DriverMatchAttributes>();

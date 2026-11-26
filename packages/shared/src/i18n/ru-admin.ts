@@ -45,8 +45,9 @@ export const ruAdmin = {
   'admin.vehicle.category': 'Категория',
   'admin.vehicle.seats': 'Мест для пассажиров',
   'admin.vehicle.child_seat': 'Детское кресло',
-  'admin.vehicle.delete': 'Удалить авто',
-  'admin.vehicle.delete_confirm': 'Удалить авто {plate}? Это необратимо.',
+  'admin.vehicle.delete': 'Вывести из эксплуатации',
+  'admin.vehicle.delete_confirm':
+    'Вывести авто {plate} из эксплуатации? Оно останется в истории прошлых поездок.',
   'admin.vehicle.delete_cancel': 'Отмена',
   'admin.category.standard': 'Стандарт',
   'admin.category.fastest': 'Быстрейший',

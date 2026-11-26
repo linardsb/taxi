@@ -21,6 +21,7 @@ import {
 } from '@taxi/shared';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../../auth';
+import { actorKindFromRole } from '../ride-events.repository';
 import { ArrivalAnnounceService } from './arrival-announce.service';
 import { PickupPinReadService } from './pickup-pin-read.service';
 import type { LifecycleActor } from './ride-lifecycle.policy';
@@ -104,8 +105,10 @@ export class RideLifecycleController {
     await this.lifecycle.cancel({
       rideId,
       actor,
+      eventActor: actorKindFromRole(user.role),
       actorId: user.sub,
-      reason: body.reason,
+      reasonCode: body.reasonCode,
+      reasonText: body.reasonText,
     });
     return { ok: true };
   }

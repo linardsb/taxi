@@ -9,11 +9,13 @@ import {
 } from '@nestjs/common';
 import {
   forceAssignBodySchema,
+  offerDeclineSchema,
   reassignBodySchema,
   type DispatchBoardEvent,
   type DispatchRoster,
   type ForceAssignBody,
   type JwtClaims,
+  type OfferDecline,
   type ReassignBody,
 } from '@taxi/shared';
 import { APP_ENV, type Env } from '../../common/config/env.schema';
@@ -24,6 +26,11 @@ import { DispatchService } from './dispatch.service';
 import { ForceAssignService } from './force-assign.service';
 import { ReassignService } from './reassign.service';
 import { RosterService } from './roster.service';
+
+/** Console routes are `@Roles('dispatcher', 'admin')`; the event records which (#316). */
+function consoleActor(user: JwtClaims): 'dispatcher' | 'admin' {
+  return user.role === 'admin' ? 'admin' : 'dispatcher';
+}
 
 /**
  * `@Roles` is per-ROUTE here, not per-controller: drivers and dispatchers share
@@ -81,8 +88,10 @@ export class DispatchController {
   async decline(
     @CurrentUser() user: JwtClaims,
     @Param('offerId', ParseUUIDPipe) offerId: string,
+    // A bodiless POST (the driver app today) parses to null code and text — S8.
+    @Body(new ZodValidationPipe(offerDeclineSchema)) body: OfferDecline,
   ): Promise<{ ok: true }> {
-    await this.dispatch.decline(user.sub, offerId);
+    await this.dispatch.decline(user.sub, offerId, body);
     return { ok: true };
   }
 
@@ -101,6 +110,7 @@ export class DispatchController {
   ): Promise<{ rideId: string }> {
     return this.forceAssignService.forceAssign({
       dispatcherId: user.sub,
+      actorKind: consoleActor(user),
       rideId,
       driverId: body.driverId,
       reason: body.reason,
@@ -122,6 +132,7 @@ export class DispatchController {
   ): Promise<{ rideId: string }> {
     return this.reassignService.reassign({
       dispatcherId: user.sub,
+      actorKind: consoleActor(user),
       rideId,
       driverId: body.driverId,
       reason: body.reason,

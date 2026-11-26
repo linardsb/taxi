@@ -1,7 +1,11 @@
+import { UnprocessableEntityException } from '@nestjs/common';
 import {
+  isCancelReasonFor,
   isPaymentMethodLocked,
   isTerminal,
   RIDE_STATUSES,
+  type CancelReasonCode,
+  type RideEventActorKind,
   type RideStatus,
 } from '@taxi/shared';
 
@@ -37,6 +41,37 @@ const CANCELLED_STATUS_BY_ACTOR = {
 /** actor → terminal cancellation status. Exhaustive over `LifecycleActor`. */
 export function cancelledStatusFor(actor: LifecycleActor): RideStatus {
   return CANCELLED_STATUS_BY_ACTOR[actor];
+}
+
+/** `RideLifecycleService.cancel`'s input. Kept here so the service stays under the 500-line cap. */
+export interface CancelInput {
+  rideId: string;
+  /** Decides the terminal status (admin collapsed to dispatcher). */
+  actor: LifecycleActor;
+  /** Recorded on the event — admin stays admin (#316, Q6). */
+  eventActor: RideEventActorKind;
+  actorId: string;
+  reasonCode: CancelReasonCode | null;
+  /** Free text — never logged. */
+  reasonText: string | null;
+}
+
+/**
+ * #316 (K2): a console cancel (dispatcher or admin) must say why; rider and
+ * driver may still send no code until their pickers land (#326, #322). A code
+ * must belong to the cancelling actor's list — admin uses the dispatcher list.
+ * Runs before any transaction, so a 422 writes nothing.
+ */
+export function assertCancelReason(input: CancelInput): void {
+  if (input.reasonCode === null) {
+    if (input.eventActor === 'dispatcher' || input.eventActor === 'admin') {
+      throw new UnprocessableEntityException('cancel_reason_required');
+    }
+    return;
+  }
+  if (!isCancelReasonFor(input.actor, input.reasonCode)) {
+    throw new UnprocessableEntityException('cancel_reason_not_allowed');
+  }
 }
 
 /**

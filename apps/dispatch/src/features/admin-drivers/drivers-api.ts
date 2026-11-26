@@ -71,8 +71,9 @@ export function updateVehicle(
   });
 }
 
-export function deleteVehicle(id: string): Promise<null> {
-  return adminFetch(`/admin/vehicles/${encodeURIComponent(id)}`, z.null(), {
-    method: 'DELETE',
+/** Retire, never delete (#316): the api keeps the car on every past ride. */
+export function retireVehicle(id: string): Promise<null> {
+  return adminFetch(`/admin/vehicles/${encodeURIComponent(id)}/retire`, z.null(), {
+    method: 'POST',
   });
 }

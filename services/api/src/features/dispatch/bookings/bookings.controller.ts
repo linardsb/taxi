@@ -9,6 +9,7 @@ import {
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../../auth';
 import { IdempotencyKeyHeader } from '../../rides';
+import { actorKindFromRole } from '../../rides';
 import { BookingsService } from './bookings.service';
 
 /**
@@ -36,6 +37,11 @@ export class BookingsController {
     @Body(new ZodValidationPipe(dispatcherBookingBodySchema))
     body: DispatcherBookingBody,
   ): Promise<RideCreated> {
-    return this.bookings.book(user.sub, idempotencyKey, body);
+    return this.bookings.book(
+      user.sub,
+      idempotencyKey,
+      body,
+      actorKindFromRole(user.role),
+    );
   }
 }

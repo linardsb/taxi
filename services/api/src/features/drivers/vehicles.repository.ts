@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { vehicles, type Db } from '@taxi/db';
 import type { Vehicle, VehicleCreate, VehicleUpdate } from '@taxi/shared';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../common/db/db.module';
 
 type VehicleRow = typeof vehicles.$inferSelect;
@@ -60,7 +60,7 @@ export class VehiclesRepository {
     const rows = await this.db
       .select()
       .from(vehicles)
-      .where(eq(vehicles.driverId, driverId));
+      .where(and(eq(vehicles.driverId, driverId), isNull(vehicles.retiredAt)));
     return rows.map(toVehicle);
   }
 
@@ -100,15 +100,33 @@ export class VehiclesRepository {
           ? {}
           : { hasChildSeat: patch.hasChildSeat }),
       })
-      .where(and(eq(vehicles.id, vehicleId), eq(vehicles.driverId, driverId)))
+      .where(
+        and(
+          eq(vehicles.id, vehicleId),
+          eq(vehicles.driverId, driverId),
+          isNull(vehicles.retiredAt), // a retired car is a record, not editable
+        ),
+      )
       .returning();
     return row ? toVehicle(row) : undefined;
   }
 
-  async remove(driverId: string, vehicleId: string): Promise<boolean> {
+  /**
+   * Takes a car out of service. Never a DELETE: 35.² (5) protects vehicle
+   * records, and a past ride must keep pointing at its car (#316). `false`
+   * means not yours, not there, or already retired.
+   */
+  async retire(driverId: string, vehicleId: string): Promise<boolean> {
     const rows = await this.db
-      .delete(vehicles)
-      .where(and(eq(vehicles.id, vehicleId), eq(vehicles.driverId, driverId)))
+      .update(vehicles)
+      .set({ retiredAt: sql`now()` })
+      .where(
+        and(
+          eq(vehicles.id, vehicleId),
+          eq(vehicles.driverId, driverId),
+          isNull(vehicles.retiredAt),
+        ),
+      )
       .returning({ id: vehicles.id });
     return rows.length > 0;
   }
@@ -117,7 +135,7 @@ export class VehiclesRepository {
     const [row] = await this.db
       .select({ n: count() })
       .from(vehicles)
-      .where(eq(vehicles.driverId, driverId));
+      .where(and(eq(vehicles.driverId, driverId), isNull(vehicles.retiredAt)));
     return row?.n ?? 0;
   }
 }

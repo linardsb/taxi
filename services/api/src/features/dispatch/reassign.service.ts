@@ -67,6 +67,8 @@ export class ReassignService {
 
   async reassign(input: {
     dispatcherId: string;
+    /** The JWT role — admin stays admin on the ride's events (#316). */
+    actorKind: 'dispatcher' | 'admin';
     rideId: string;
     driverId: string;
     reason?: string | null;
@@ -108,19 +110,26 @@ export class ReassignService {
       throw new ConflictException('driver_not_approved');
 
     let supersededOffer = false;
+    const actor = { kind: input.actorKind, id: input.dispatcherId };
     const released = await this.db.transaction(async (tx) => {
       const ride = await this.transitions.transitionInTx(
         tx,
         input.rideId,
         from,
         'requested',
+        actor,
       );
       // The ride moved under us between the read and the UPDATE — the driver
       // completed it, or another dispatcher got there first.
       if (!ride) throw new ConflictException('ride_not_reassignable');
 
       if (
-        !(await this.rides.unassignDriver(input.rideId, previousDriverId, tx))
+        !(await this.rides.unassignDriver(
+          input.rideId,
+          previousDriverId,
+          tx,
+          actor,
+        ))
       ) {
         throw new ConflictException('ride_already_assigned');
       }
@@ -202,6 +211,7 @@ export class ReassignService {
 
     return this.forceAssignService.forceAssign({
       dispatcherId: input.dispatcherId,
+      actorKind: input.actorKind,
       rideId: input.rideId,
       driverId: input.driverId,
       reason: input.reason,

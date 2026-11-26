@@ -77,11 +77,11 @@ export class VehiclesService {
 
   /**
    * The symmetric half of `setPresence`'s `vehicle_required` rule. Without it a
-   * driver deletes their only car and stays online — offered rides they cannot
-   * take, and unfilterable by #10.
+   * driver retires their only car and stays online — offered rides they cannot
+   * take, and unfilterable by #10. Retire, never delete (#316).
    */
-  async remove(userId: string, vehicleId: string): Promise<void> {
-    // Read BEFORE the delete: forcing offline only covers `online`, so an
+  async retire(userId: string, vehicleId: string): Promise<void> {
+    // Read BEFORE the retire: forcing offline only covers `online`, so an
     // `on_ride` driver deleting their last car would slip through untouched and
     // break the online ⟹ has-a-vehicle invariant the moment #11 restores them.
     // Refusing is also the better product answer — that is the car they are in.
@@ -89,7 +89,7 @@ export class VehiclesService {
     if (profile.status === 'on_ride')
       throw new ConflictException('driver_on_ride');
 
-    if (!(await this.vehicles.remove(userId, vehicleId)))
+    if (!(await this.vehicles.retire(userId, vehicleId)))
       throw new NotFoundException('vehicle_not_found');
 
     if ((await this.vehicles.countForDriver(userId)) > 0) return;

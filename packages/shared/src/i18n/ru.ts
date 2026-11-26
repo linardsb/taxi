@@ -1,5 +1,6 @@
 import type { MessageKey } from './lv';
 import { ruAdmin } from './ru-admin';
+import { ruReasons } from './ru-reasons';
 
 /**
  * The RUSSIAN catalog. Keys are pinned to `lv` by the `satisfies` clause below,
@@ -137,7 +138,7 @@ export const ru = {
     'Статус поездки изменился — список обновится сам',
   'console.cancel_ride': 'Отменить поездку',
   'console.cancel_title': 'Отменить поездку',
-  'console.cancel_reason': 'Причина отмены (необязательно)',
+  'console.cancel_reason': 'Примечание (необязательно)',
   'console.cancel_confirm': 'Отменить поездку',
   'console.cancel_keep': 'Нет, оставить',
   'console.cancel_failed': 'Не удалось отменить. Попробуйте ещё раз.',
@@ -438,4 +439,5 @@ export const ru = {
   'rider.error.offline': 'Нет связи с сервером.',
   'rider.error.generic': 'Что-то пошло не так. Попробуйте снова.',
   ...ruAdmin,
+  ...ruReasons,
 } as const satisfies Record<MessageKey, string>;

@@ -10,6 +10,9 @@ import {
   PAYMENT_METHOD_TYPES,
   PRICING_MODELS,
   RIDE_CATEGORIES,
+  RIDE_EVENT_ACTORS,
+  RIDE_EVENT_KINDS,
+  RIDE_REASON_CODES,
   RIDE_STATUSES,
   SAVED_PLACE_KINDS,
   USER_ROLES,
@@ -44,6 +47,11 @@ export const commissionSourceEnum = pgEnum(
 );
 export const bookingChannelEnum = pgEnum('booking_channel', BOOKING_CHANNELS);
 export const savedPlaceKindEnum = pgEnum('saved_place_kind', SAVED_PLACE_KINDS);
+/** #316 compliance record layer — see `ride-events.ts`. */
+export const rideEventKindEnum = pgEnum('ride_event_kind', RIDE_EVENT_KINDS);
+export const rideEventActorEnum = pgEnum('ride_event_actor', RIDE_EVENT_ACTORS);
+/** Cancel and decline codes share one enum; stored codes can never be removed (protected rows). */
+export const rideReasonCodeEnum = pgEnum('ride_reason_code', RIDE_REASON_CODES);
 
 /** Mirrors `fareQuoteSchema.breakdown` keys — the normalized fare-lines table (#11/#12 consume). */
 export const fareLineTypeEnum = pgEnum('fare_line_type', [

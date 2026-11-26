@@ -22,7 +22,7 @@ import {
   type RideOfferRevokedEvent,
   type DispatchUnclaimedEvent,
 } from '@taxi/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { Socket } from 'socket.io-client';
@@ -66,10 +66,46 @@ const near = (base: LatLng, dLat: number, dLng: number): LatLng => ({
   lng: base.lng + dLng,
 });
 
+/** Every Jest fake-timer target except `Date` (spike S9). */
+const ALL_TIMERS_BUT_DATE = [
+  'hrtime',
+  'nextTick',
+  'performance',
+  'queueMicrotask',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+  'requestIdleCallback',
+  'cancelIdleCallback',
+  'setImmediate',
+  'clearImmediate',
+  'setInterval',
+  'clearInterval',
+  'setTimeout',
+  'clearTimeout',
+] as const;
+
 describe('dispatch (integration)', () => {
   let ctx: TestApp;
   let http: ReturnType<typeof request>;
   let sweeper: DispatchSweeper;
+
+  /**
+   * Runs one sweeper pass as if it were `ageMs` ago, so the offers it writes
+   * carry that `sent_at`/`expires_at` — #316's offer guard forbids editing
+   * them afterwards. Fakes ONLY `Date` (spike S9): real timers, sockets and pg
+   * keep running.
+   */
+  async function tickAsOf(ageMs: number): Promise<void> {
+    jest.useFakeTimers({
+      doNotFake: [...ALL_TIMERS_BUT_DATE],
+      now: Date.now() - ageMs,
+    });
+    try {
+      await sweeper.tick();
+    } finally {
+      jest.useRealTimers();
+    }
+  }
   let cityId: string;
   let port: number;
   let tokens: AuthTokenService;
@@ -389,7 +425,9 @@ describe('dispatch (integration)', () => {
     );
 
     const ride = await bookRide(13, CENTRE_PICKUP);
-    await sweeper.tick();
+    // Born overdue: 30 s ago with the 20 s default timeout → expires_at is
+    // now − 10 s by the DB clock. #316's offer guard forbids editing it after.
+    await tickAsOf(30_000);
 
     const live = await pendingOffer(ride.id);
     expect(live?.driverId).toBe(only.id);
@@ -405,13 +443,8 @@ describe('dispatch (integration)', () => {
       ride.id,
     );
 
-    // Time is driven by the DATABASE's clock, not by sleeping: an offer seeded
+    // Time is driven by the DATABASE's clock, not by sleeping: an offer born
     // with a past deadline is overdue to Postgres's own now().
-    await ctx.db
-      .update(rideOffers)
-      .set({ expiresAt: sql`now() - interval '1 minute'` })
-      .where(eq(rideOffers.id, live!.id));
-
     await sweeper.tick();
 
     expect((await revoked).reason).toBe('expired');
@@ -782,19 +815,18 @@ describe('dispatch (integration)', () => {
     const dispatcherAuth = `Bearer ${(await tokens.issue({ id: dispatcher.id, role: 'dispatcher' })).accessToken}`;
 
     const ride = await bookRide(65, CENTRE_PICKUP);
-    await sweeper.tick();
+    // 10 s back, BELOW the 20 s timeout so the accept still lands: the cascade
+    // row is born 10 s before the release instead of being backdated after —
+    // #316's offer guard freezes `sent_at`.
+    await tickAsOf(10_000);
     const live = await pendingOffer(ride.id);
     await http
       .post(`/dispatch/offers/${live!.id}/accept`)
       .set('authorization', first.auth)
       .expect(201);
 
-    // Backdate the cascade's rows and pad them to the cap — what a ride that
-    // was offered around before somebody took it looks like.
-    await ctx.db
-      .update(rideOffers)
-      .set({ sentAt: new Date(Date.now() - 600_000) })
-      .where(eq(rideOffers.rideId, ride.id));
+    // Pad the cascade to the cap with older rows — what a ride that was offered
+    // around before somebody took it looks like. Inserts are allowed (#316).
     const existing = await offersFor(ride.id);
     for (let i = existing.length; i < MAX_OFFER_ATTEMPTS; i++) {
       await ctx.db.insert(rideOffers).values({
@@ -1222,13 +1254,9 @@ describe('dispatch (integration)', () => {
   it('409s an accept on an already-expired offer (failure)', async () => {
     const d = await onlineDriver(21, near(CENTRE_PICKUP.location, 0.001, 0));
     const ride = await bookRide(22, CENTRE_PICKUP);
-    await sweeper.tick();
+    await tickAsOf(30_000); // born overdue — see the AC #3 expiry case
 
     const live = await pendingOffer(ride.id);
-    await ctx.db
-      .update(rideOffers)
-      .set({ expiresAt: sql`now() - interval '1 minute'` })
-      .where(eq(rideOffers.id, live!.id));
 
     // The `expires_at > now()` predicate decides, and it is conditional — so
     // this is a 409, never a 500.

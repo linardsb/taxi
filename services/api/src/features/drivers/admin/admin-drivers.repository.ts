@@ -10,7 +10,7 @@ import {
   type DriverStatus,
   type Vehicle,
 } from '@taxi/shared';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../../../common/db/db.module';
 import { toVehicle } from '../vehicles.repository';
 
@@ -73,9 +73,12 @@ export class AdminDriversRepository {
       })
       .from(vehicles)
       .where(
-        inArray(
-          vehicles.driverId,
-          rows.map((r) => r.userId),
+        and(
+          inArray(
+            vehicles.driverId,
+            rows.map((r) => r.userId),
+          ),
+          isNull(vehicles.retiredAt),
         ),
       )
       .orderBy(vehicles.plate);
@@ -187,11 +190,12 @@ export class AdminDriversRepository {
     });
   }
 
+  /** Owner of an ACTIVE car — a retired one reads as not found (#316). */
   async vehicleOwner(vehicleId: string): Promise<string | undefined> {
     const [row] = await this.db
       .select({ driverId: vehicles.driverId })
       .from(vehicles)
-      .where(eq(vehicles.id, vehicleId))
+      .where(and(eq(vehicles.id, vehicleId), isNull(vehicles.retiredAt)))
       .limit(1);
     return row?.driverId;
   }
@@ -222,7 +226,7 @@ export class AdminDriversRepository {
           ? {}
           : { hasChildSeat: patch.hasChildSeat }),
       })
-      .where(eq(vehicles.id, vehicleId))
+      .where(and(eq(vehicles.id, vehicleId), isNull(vehicles.retiredAt)))
       .returning();
     return row && toVehicle(row);
   }
