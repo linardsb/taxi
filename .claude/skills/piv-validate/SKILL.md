@@ -8,7 +8,8 @@ description: Runs this project's full validation suite — tests, type checks, a
 Run every check this project has and report a single PASS/FAIL verdict.
 
 This is a pnpm/turbo monorepo. **One command is the gate** — `pnpm turbo run typecheck lint test build
---force` at the repo root, which is what `.github/workflows/ci.yml` runs and what CLAUDE.md calls the
+--force --concurrency=4` at the repo root: the same tasks `.github/workflows/ci.yml` runs (CI omits the
+local-only `--concurrency=4`, which only limits how many run at once), and what CLAUDE.md calls the
 validation gate. Run it from the repo root.
 
 **`pnpm check` is NOT the gate, and this skill said it was until #229.** `pnpm check` is
@@ -29,7 +30,7 @@ output of any command that fails.
 ## 1. The gate — full monorepo check
 
 ```bash
-pnpm turbo run typecheck lint test build --force   # CI parity — all packages, cold
+pnpm turbo run typecheck lint test build --force --concurrency=4   # CI parity — all packages, cold
 ```
 
 **Expected:** every task green. Turbo's summary names any failing package/task, and the task count is

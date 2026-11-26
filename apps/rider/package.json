@@ -53,6 +53,7 @@
   },
   "jest": {
     "preset": "jest-expo",
+    "maxWorkers": 4,
     "testTimeout": 20000,
     "setupFilesAfterEnv": [
       "<rootDir>/jest.setup.ts"

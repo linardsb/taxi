@@ -47,7 +47,7 @@
 
 set -uo pipefail
 
-GATE_DEFAULT=(pnpm turbo run typecheck lint test build --force)
+GATE_DEFAULT=(pnpm turbo run typecheck lint test build --force --concurrency=4)
 
 clean=0
 while [ $# -gt 0 ]; do
@@ -79,7 +79,7 @@ fi
 case " ${gate[*]} " in
   *" build "*) ;;
   *) echo "WARNING: the gate command has no 'build' task. CLAUDE.md's CI-parity gate is" >&2
-     echo "         'pnpm turbo run typecheck lint test build --force'; 'pnpm check' omits" >&2
+     echo "         'pnpm turbo run typecheck lint test build --force --concurrency=4'; 'pnpm check' omits" >&2
      echo "         build and is NOT parity. The record will say what actually ran." >&2 ;;
 esac
 
