@@ -64,4 +64,19 @@ api lint: 0 errors, 18 warnings (unchanged count).
 
 - The raw gate command above ran in place of the `piv-validate` skill; same command, same CI parity.
 - Level 4 manual check (still pending from the review) should now include a VoiceOver pass on the cancel dialog with `dispatcher_other` selected: the jsdom test checks the attribute and the label text, not what a screen reader announces.
+
+## L2 in a real browser (2026-11-26)
+
+`observed` — headless WebKit 2370 (Playwright `playwright-core@1.64`, Safari's engine) against the live dev console (`pnpm --filter @taxi/api dev`, `pnpm --filter @taxi/dispatch dev`, dev DB migrated and seeded) at `f863942`. A test dispatcher was provisioned (`+371*****316`) and logged in through the stub OTP, and one ride was booked through `POST /dispatch/bookings`. The dialog was driven by keyboard (Option+Tab, Space, Escape). 16 of 16 checks passed:
+- Option+Tab reaches "Atcelt braucienu — Brīvības iela 1"; Space opens the dialog.
+- The reason picker is named "Iemesls" and is `aria-required="true"`. The note field starts as "Piezīme (nav obligāta)" without `aria-required`.
+- With "Cits iemesls" the note field is "Piezīme (obligāta)" and `aria-required="true"`.
+- Confirming with an empty note raises the alert "Iemeslam 'cits' vajag piezīmi" and moves focus to `textarea#cancel-reason-note`.
+- With "Pasažiera lūgums" the field is optional again, without `aria-required`.
+- Escape closes the dialog, and focus returns to the row's cancel button.
+- Focus rings: `outline: solid 3px` on the cancel button and on the note field.
+
+Cleanup through the API: cancelling with no code → 422 `cancel_reason_required`; with `dispatcher_other` and a note → 201.
+
+The accessible names come from Playwright's role and name queries, not from VoiceOver. Nobody has listened with VoiceOver, because this session has no desktop control. What VoiceOver actually says is still open for Level 4.
 - `grep -n "1022\|365\|496\|cancel-dialog.test.tsx" .claude/reports/protected-record-layer-316-report.md` → 50, 56–61, 79: annotated with the post-fix figures; the `a9d59e5` figures kept, as they are true for that commit.
