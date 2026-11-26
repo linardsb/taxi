@@ -107,7 +107,7 @@ All `observed` on 2026-11-26 against the compose Postgres 16 + Redis.
 12. **A system cancel records `actor_id` null** (`ride-lifecycle.service.ts`). This was not in the plan. `CancelInput` carries an `actorId` even for `system`, and `ride_events_actor_id_ck` would reject that pair, so the first real system-cancel caller would have hit a check violation. The unit spec now expects `id: null`.
 13. **`scripts/mint-tracked-ride.ts` comment.** "Plate globally unique" now reads "unique among active cars". The script's behaviour is unchanged, and the GET-then-POST stays idempotent. A `grep -rn onConflict` confirmed that no `ON CONFLICT` targets `vehicles` (a partial unique index cannot be inferred from a conflict target without its predicate). Observed.
 14. **`apps/rider/.../status-screen.test.tsx`** asserted the old `{ reason: null }` cancel body. The plan's Task 3 gotcha checked the rider app with typecheck only, and this runtime assertion was not on its list. It is updated to `{ reasonCode: null, reasonText: null }` in `02f43cc`.
-15. **The `#320` issue note (plan Q4/D4)** has not been posted. It is outward-facing and belongs with `piv-create-pr`.
+15. **The `#320` issue note (plan Q4/D4)** was posted after review, 2026-11-26: https://github.com/linardsb/taxi/issues/320#issuecomment-7201754740.
 
 UX states (console cancel picker, `/dispatch`):
 - loading ✅
