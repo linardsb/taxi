@@ -56,4 +56,12 @@ api lint: 0 errors, 18 warnings (unchanged count).
 
 - `wc -l`: `ride-lifecycle.service.ts` 496 → 492, derived from `git diff`: +2 (the `lifecycleActorFor` import, `const actor`) − 6 (prettier joined the 7-line `logRejected(…)` call onto 1 line once `input.actor` became `actor`); `rides.repository.ts` 460 → 461; `rides.service.ts` 497 unchanged.
 - `grep -n "1022\|365\|496\|497" <PR body>` → lines 28, 38, 77, 100 (77 is the frozen claim-check log, left as a log). 28, 38, 100 updated in the PR body.
+- PR body line 19 (the gate header) rewritten to name this run: full command, "the working tree committed as `00fbbb6`", and this run's `Tasks`/`Cached`/`Time` lines (`1m16.998s`), replacing the `a9d59e5` run's block.
+- `grep -n "still hold\|2 files\|e14418a\.\." <PR body> .claude/reports/protected-record-layer-316-report.md` → body:47 (and its copy in the frozen claim-check log, :68); report 0 hits. Body:47 said the mutation checks "still hold at `HEAD`" because `e14418a..HEAD` touched 2 files; at `00fbbb6` that range is 25 files. Reworded: `observed` at `a9d59e5`, `expected` at `00fbbb6` because `git diff --name-only e14418a..00fbbb6 | grep -E "^db/|ride-transition|ride-events"` → 0 hits. Not re-run: another session is live in this checkout (an untracked `pr-332-review.md` appeared mid-run) and an integration run drops the shared test DB.
+- Plan: dated `## AMENDMENTS` entry for `CancelInput` (Task 12), `creatorKind`/`console-actor.ts` (Task 12/13) and the new label key (Task 22).
+
+## Process notes
+
+- The raw gate command above ran in place of the `piv-validate` skill; same command, same CI parity.
+- Level 4 manual check (still pending from the review) should now include a VoiceOver pass on the cancel dialog with `dispatcher_other` selected: the jsdom test checks the attribute and the label text, not what a screen reader announces.
 - `grep -n "1022\|365\|496\|cancel-dialog.test.tsx" .claude/reports/protected-record-layer-316-report.md` → 50, 56–61, 79: annotated with the post-fix figures; the `a9d59e5` figures kept, as they are true for that commit.

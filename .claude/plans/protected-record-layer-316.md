@@ -886,3 +886,7 @@ States: loading (confirm disabled, `aria-busy`), empty (no reason chosen → inl
   - Task 24: admin label VALUES reworded to retire; keys keep `admin.vehicle.delete*`.
   - Validation: no DB-backed check has run yet (no Docker on the implementing machine) — see the report's run order.
 
+- 2026-11-26 — PR #331 review fixes (`.claude/reports/pr-331-review-fixes.md`), superseding the task text where they differ:
+  - Task 12 (controller line 512): the controller no longer computes `actor = role === 'admin' ? 'dispatcher' : role`. `CancelInput` has no `actor`; `lifecycleActorFor(eventActor)` in `ride-lifecycle.policy.ts` derives it (L4).
+  - Task 12/13: `BookingsService.book`'s `creatorKind` is `ConsoleActorKind` (`'dispatcher' | 'admin'`), from `consoleActor` in the new `features/dispatch/console-actor.ts`, shared with `dispatch.controller.ts` (L3).
+  - Task 22: the cancel dialog's note label uses the new key `console.cancel_note_required_label` and sets `aria-required` when a `*_other` code is picked (L2).
