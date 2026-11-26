@@ -1,6 +1,6 @@
 # Implementation Report — Protected record layer (#316)
 
-**Plan**: `.claude/plans/protected-record-layer-316.md`   **Branch**: `feature/protected-record-layer-316`   **Status**: PARTIAL — all code and tests written; every DB-backed check (db tests, every api jest run, mutation checks, the full gate) is **not yet run**: this machine has no Docker/Postgres.
+**Plan**: `.claude/plans/protected-record-layer-316.md`   **Branch**: `feature/protected-record-layer-316`   **Status**: COMPLETE — gate green with Redis-gated suites included (see Validation). Level 4 manual check not run.
 
 ## Summary
 Adds the K1/K2 compliance record layer. `ride_events` is an append-only history that `RideTransitionService` writes in the change's own transaction (actor required), plus `created`/`assigned`/`released` events from `RidesRepository`. Migration 0018 adds triggers that block DELETE/TRUNCATE on `rides`/`drivers`/`vehicles`, block UPDATE/DELETE on `ride_events`, and guard `ride_offers` moves. Vehicles are retired instead of deleted. Cancel and decline reasons are stored as shared enums, and console cancels must carry one: the dispatch dialog has a required picker and the API answers 422 without one. An eslint rule bans `.delete(<protected table>)`, and a table-driven K1 test in `db/tests` covers the same tables.
@@ -36,7 +36,7 @@ Adds the K1/K2 compliance record layer. `ride_events` is an append-only history 
 
 ## Tests added
 - `packages/shared/tests/reasons.test.ts` — 17 cases (schemas, `undefined` body, `*_other`, 281 chars, tuple equalities, labels in all catalogs). **Run: green.**
-- `db/tests/protected-tables.test.ts` — table-driven over both lists (drizzle + raw UPDATE/DELETE, TRUNCATE CASCADE, mutable UPDATE), drift check (`pg_trigger`, `confdeltype`), offer-guard matrix (5 allowed, 7 refused), vehicle-referenced-by-ride delete. **Not run.**
+- `db/tests/protected-tables.test.ts` — table-driven over both lists (drizzle + raw UPDATE/DELETE, TRUNCATE CASCADE, mutable UPDATE), drift check (`pg_trigger`, `confdeltype`), offer-guard matrix (5 allowed, 7 refused), vehicle-referenced-by-ride delete. **Run: green** (gate).
 - `services/api/src/features/rides/ride-events.integration.spec.ts` — 19 cases (`grep -c` observed). Coverage:
   - edge walk over `ALLOWED_TRANSITIONS`; each edge runs in a rolled-back transaction, so a parallel worker's sweeper cannot add events mid-walk
   - lost race, rollback, per-caller actors
@@ -45,29 +45,42 @@ Adds the K1/K2 compliance record layer. `ride_events` is an append-only history 
   - retired car never stamped: two same-category cars, and the retired one is `AA9001`, which `order by plate asc` would otherwise pick
   - console cancel 201/422/422/400
 
-  **Not run.**
-- Unit: `ride-transition.service.spec.ts` (+2: event on match, none on miss), `ride-lifecycle.service.spec.ts` (+2: 422 required for dispatcher and admin, 422 not-allowed), `bookings.service.spec.ts` (+1 assertion: `createdBy`). **Not run** (jest `globalSetup` needs Postgres).
+  **Run: green** (gate).
+- Unit: `ride-transition.service.spec.ts` (+2: event on match, none on miss), `ride-lifecycle.service.spec.ts` (+2: 422 required for dispatcher and admin, 422 not-allowed), `bookings.service.spec.ts` (+1 assertion: `createdBy`). **Run: green** (gate).
 - Dispatch app: `cancel-dialog.test.tsx` (16), `use-assign.test.tsx` (+4), `dialog-shell.test.tsx` (5, new). **Run: green.**
 
 ## Validation results
-All `observed` on this machine unless marked.
-- `pnpm turbo run typecheck lint build --force`: **16/16 tasks successful**.
-- api eslint, re-run after the last edits: **0 errors, 18 warnings**. That is the 17-warning baseline plus 1 `no-unsafe-argument` in the new ride-events spec, the same `request(ctx.app.getHttpServer())` pattern every integration spec has.
-- `@taxi/shared` vitest: **32 files, 336 passed**.
-- `@taxi/dispatch` vitest: **38 files, 365 passed**. This needed `NODE_OPTIONS=--no-experimental-webstorage`: Node v26.12.1's built-in `localStorage` clashes with jsdom and fails the localStorage suites (session, RequireRole, useBoard, useAssign…) whether or not this ticket's changes are present. The flag is a local workaround and the repo does not set it.
-- Lint probe (Task 19): `db.delete(rideEvents)` → 1 `no-restricted-syntax` hit; `Map.delete` → 0.
-- `drizzle-kit generate` after 0018: "No schema changes".
-- **Not run**:
-  - `@taxi/db` tests
-  - every `@taxi/api` jest run, unit and integration
-  - Task 9 and Task 20 mutation checks
-  - Task 18 step (1), the before-edit red run
-  - Level 3 gate with `REDIS_TEST_URL`
-  - Level 4 manual
-- File budgets (`wc -l`, all under 500): `ride-lifecycle.service.ts` 495, `rides.service.ts` 497, `rides.repository.ts` 460, `dispatch.service.ts` 466, `dispatch.repository.ts` 435.
+All `observed` on 2026-11-26 against the compose Postgres 16 + Redis.
+- **Gate:** `REDIS_TEST_URL=redis://localhost:6379 COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force`, via `record-gate.sh --clean`.
+  - 23/23 tasks green. Per package:
+    - api: 96 suites, 1022 tests
+    - db: 48
+    - shared: 336
+    - dispatch: 365
+    - driver: 364
+    - rider: 231
+  - The first gate run was red: 1 rider test still expected the old `{ reason: null }` cancel body. Fixed in `02f43cc`; see deviation 15.
+  - The gate ran with `NODE_OPTIONS=--no-experimental-webstorage`, a local workaround for Node 26's built-in `localStorage` clashing with jsdom. CI does not need it.
+- **db mutation (Task 9):** with `CREATE TRIGGER rides_no_delete` replaced, 3 tests went red: the 2 rides delete cases and the drift check. 45 stayed green: drivers and vehicles, plus the other 3 db files, which shows the rollback wrapping holds. Restored.
+- **Task 18 before the edit:** the base `b890929` dispatch spec against 0018 had 4 failures of 29, against the 3 predicted.
+  - 3 were the predicted `protected_record:` refusals, at `:410`, `:794` and `:1228`.
+  - The 4th, "force-assigns mid-cascade (AC #4)", timed out on socket events. It passes on its own in that same base spec (`-t`: 1 passed, 28 skipped), so it is a knock-on from AC #3 failing mid-test.
+  - After the edit: 29/29.
+- **Task 20 mutation:** with `transitionInTx`'s `insertRideEvent` disabled, the edge walk and the 9 caller cases that assert `status` rows went red (10). 9 stayed green:
+  - `created` from a rider booking and from a phone booking
+  - retired-car `assigned`
+  - unstamped `released`
+  - lost race and rollback
+  - the three 422/400 cancel refusals
+
+  The `assigned`/`released` writers are unaffected. Restored.
+- **Task 19 lint probe:** 1 hit on `db.delete(rideEvents)`, 0 on `Map.delete`.
+- **Static:** api eslint 0 errors, 18 warnings: the 17-warning baseline plus 1 in the new spec. `drizzle-kit generate` → "No schema changes".
+- **File budgets** (`wc -l`): `ride-lifecycle.service.ts` 496, `rides.service.ts` 497, `rides.repository.ts` 460, `dispatch.service.ts` 466, `dispatch.repository.ts` 435.
+- **Not run:** Level 4 manual.
 
 ## Deviations from the plan
-1. **DB-backed validation not run** (no Docker). Every "VALIDATE" line that needs Postgres is outstanding, including Task 18's recorded "exactly 3 red before the edit": the trigger SQL was never exercised against the fixtures here. R1 in the plan's risk register stays fully open.
+1. **Task 18's prediction was 3 red; the observed count was 4.** The 4th is a knock-on, not a fixture the plan missed (see Validation).
 2. **`driverActor(id)` helper** (`ride-events.repository.ts`). It was added to keep `ride-lifecycle.service.ts` under the cap: three object literals took it to 498 before the helper and 495 after. The plan's fallback was to move the `cancel` input type into the policy file. I did that as well (`CancelInput`), as the plan describes.
 3. **Creator actor plumbing.** The plan said to "carry the role the same way as Task 12". I did it like this:
    - `BookingsService.book` gains a required 4th argument, `creatorKind`.
@@ -92,7 +105,8 @@ All `observed` on this machine unless marked.
 11. **Admin label values** changed to retire wording; the keys keep `admin.vehicle.delete*` (logged in ui-decisions).
 12. **A system cancel records `actor_id` null** (`ride-lifecycle.service.ts`). This was not in the plan. `CancelInput` carries an `actorId` even for `system`, and `ride_events_actor_id_ck` would reject that pair, so the first real system-cancel caller would have hit a check violation. The unit spec now expects `id: null`.
 13. **`scripts/mint-tracked-ride.ts` comment.** "Plate globally unique" now reads "unique among active cars". The script's behaviour is unchanged, and the GET-then-POST stays idempotent. A `grep -rn onConflict` confirmed that no `ON CONFLICT` targets `vehicles` (a partial unique index cannot be inferred from a conflict target without its predicate). Observed.
-14. **The `#320` issue note (plan Q4/D4)** has not been posted. It is outward-facing and belongs with `piv-create-pr`.
+14. **`apps/rider/.../status-screen.test.tsx`** asserted the old `{ reason: null }` cancel body. The plan's Task 3 gotcha checked the rider app with typecheck only, and this runtime assertion was not on its list. It is updated to `{ reasonCode: null, reasonText: null }` in `02f43cc`.
+15. **The `#320` issue note (plan Q4/D4)** has not been posted. It is outward-facing and belongs with `piv-create-pr`.
 
 UX states (console cancel picker, `/dispatch`):
 - loading ✅
@@ -102,16 +116,9 @@ UX states (console cancel picker, `/dispatch`):
 
 All four are built and tested in `cancel-dialog.test.tsx`. The plan said the 422 maps by code; `assign-state.ts` maps on the message code and ignores the status, so the 422 status itself is not asserted in the dispatch tests.
 
-## Outstanding run order (needs Docker)
-1. `cp -n .env.example .env; docker compose up -d --wait`
-2. `pnpm --filter @taxi/db test`, the K1 test, then its mutation check: comment out `CREATE TRIGGER rides_no_delete` in 0018. Expected: the rides cases and the drift check go red, and drivers, vehicles and the other files stay green. Then restore.
-3. Task 18 pre-edit red: `git show b890929:services/api/src/features/dispatch/dispatch.integration.spec.ts > services/api/src/features/dispatch/dispatch.integration.spec.ts`. Run it and record exactly 3 red, each `protected_record:`. Then `git checkout` the file back and confirm it is green with the same test count.
-4. Task 20 mutation: remove the `insertRideEvent` call from `transitionInTx`. Expected: the edge walk goes red and the created, assigned and released cases stay green. Then restore.
-5. Gate: `REDIS_TEST_URL=redis://localhost:${REDIS_PORT:-6379} COMPOSE_PROJECT_NAME=taxi pnpm turbo run typecheck lint test build --force`. Record the api `Tests:` line.
-6. Level 4 manual (plan § Level 4).
-
 ## Issues encountered
-- **No Docker, Postgres or pnpm on PATH.** pnpm ran as `npx pnpm@10.33.2`. The user chose to start Docker later, after which the DB checks and the gate run.
+- No Docker or pnpm at first. pnpm ran through an `npx pnpm@10.33.2` shim until Docker arrived.
+- Mid-run, Homebrew upgraded `simdjson` and Node stopped starting with a `dyld` error. `brew reinstall node` (user-approved) fixed it; Node is now v26.13.1.
 - Running prettier over the dispatch app reformatted files it doesn't use prettier for. I reverted those and re-applied my edits by hand; this app is not prettier-formatted.
 - Latest migration on this branch: `db/migrations/0018_protected_records.sql`. Base `main` was at 0016, and `origin/main` was still `b890929` at branch time.
 - Subagent notes to check on the first DB run:
