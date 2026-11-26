@@ -134,11 +134,94 @@ describe('useAssign — writes', () => {
     const { result } = renderHook(() => useAssign());
 
     await act(async () => {
-      await result.current.cancel(RIDE_ID, 'caller changed their mind');
+      await result.current.cancel(RIDE_ID, {
+        reasonCode: 'dispatcher_rider_request',
+        reasonText: 'caller changed their mind',
+      });
     });
 
     expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain(
       `/rides/${RIDE_ID}/cancel`,
+    );
+  });
+
+  it('sends the reason code and note as the cancel request body (expected)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(okJson({ ok: true }) as never);
+    const { result } = renderHook(() => useAssign());
+
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.cancel(RIDE_ID, {
+        reasonCode: 'dispatcher_other',
+        reasonText: 'caller changed their mind',
+      });
+    });
+
+    expect(outcome).toEqual({ ok: true });
+    const [, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      reasonCode: 'dispatcher_other',
+      reasonText: 'caller changed their mind',
+    });
+  });
+
+  it('sends a null note as null, not omitted or empty (edge)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(okJson({ ok: true }) as never);
+    const { result } = renderHook(() => useAssign());
+
+    await act(async () => {
+      await result.current.cancel(RIDE_ID, {
+        reasonCode: 'dispatcher_rider_request',
+        reasonText: null,
+      });
+    });
+
+    const [, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      reasonCode: 'dispatcher_rider_request',
+      reasonText: null,
+    });
+  });
+
+  it('maps a 422 cancel_reason_required to its console key (failure)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      errJson(422, 'cancel_reason_required') as never,
+    );
+    const { result } = renderHook(() => useAssign());
+
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.cancel(RIDE_ID, {
+        reasonCode: 'dispatcher_rider_request',
+        reasonText: null,
+      });
+    });
+
+    expect(outcome).toEqual({
+      ok: false,
+      key: 'console.assign_error_cancel_reason_required',
+    });
+    expect(result.current.errorKey).toBe(
+      'console.assign_error_cancel_reason_required',
+    );
+  });
+
+  it('maps a 422 cancel_reason_not_allowed to its console key (failure)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      errJson(422, 'cancel_reason_not_allowed') as never,
+    );
+    const { result } = renderHook(() => useAssign());
+
+    await act(async () => {
+      await result.current.cancel(RIDE_ID, {
+        reasonCode: 'dispatcher_rider_request',
+        reasonText: null,
+      });
+    });
+
+    expect(result.current.errorKey).toBe(
+      'console.assign_error_cancel_reason_not_allowed',
     );
   });
 
@@ -149,7 +232,10 @@ describe('useAssign — writes', () => {
     const { result } = renderHook(() => useAssign());
 
     await act(async () => {
-      await result.current.cancel(RIDE_ID, null);
+      await result.current.cancel(RIDE_ID, {
+        reasonCode: 'dispatcher_rider_request',
+        reasonText: null,
+      });
     });
 
     // `errorKey` is what the screen renders — the returned Outcome is
@@ -165,7 +251,10 @@ describe('useAssign — writes', () => {
     const { result } = renderHook(() => useAssign());
 
     await act(async () => {
-      await result.current.cancel(RIDE_ID, null);
+      await result.current.cancel(RIDE_ID, {
+        reasonCode: 'dispatcher_rider_request',
+        reasonText: null,
+      });
     });
 
     expect(result.current.errorKey).toBe(

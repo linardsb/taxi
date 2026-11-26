@@ -21,9 +21,9 @@ import {
 } from '@taxi/shared';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../../auth';
+import { actorKindFromRole } from '../ride-events.repository';
 import { ArrivalAnnounceService } from './arrival-announce.service';
 import { PickupPinReadService } from './pickup-pin-read.service';
-import type { LifecycleActor } from './ride-lifecycle.policy';
 import { RideLifecycleService } from './ride-lifecycle.service';
 
 /**
@@ -86,12 +86,7 @@ export class RideLifecycleController {
     return this.lifecycle.complete(user.sub, rideId);
   }
 
-  /**
-   * `admin → dispatcher`: an admin cancelling is doing a dispatcher's job, and
-   * the machine has no `cancelled_by_admin`. Adding a fifth status for it would
-   * be a shared-contract plus database-enum change; the audit answer is #20's
-   * admin view.
-   */
+  /** The terminal status is derived from the role (admin → dispatcher) by `lifecycleActorFor`. */
   @Post(':rideId/cancel')
   @Roles('rider', 'driver', 'dispatcher', 'admin')
   async cancel(
@@ -99,13 +94,12 @@ export class RideLifecycleController {
     @Param('rideId', ParseUUIDPipe) rideId: string,
     @Body(new ZodValidationPipe(rideCancelSchema)) body: RideCancel,
   ): Promise<{ ok: true }> {
-    const actor: LifecycleActor =
-      user.role === 'admin' ? 'dispatcher' : user.role;
     await this.lifecycle.cancel({
       rideId,
-      actor,
+      eventActor: actorKindFromRole(user.role),
       actorId: user.sub,
-      reason: body.reason,
+      reasonCode: body.reasonCode,
+      reasonText: body.reasonText,
     });
     return { ok: true };
   }

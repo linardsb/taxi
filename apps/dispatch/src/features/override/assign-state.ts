@@ -95,6 +95,11 @@ const ERROR_KEYS: Record<string, MessageKey> = {
   // cancel dialog, on the destructive action, for a ride that already ended.
   ride_not_cancellable: 'console.assign_error_ride_not_cancellable',
   ride_transition_conflict: 'console.assign_error_ride_moved_on',
+  // #316: the api requires a console cancel to carry a dispatcher reason code.
+  // The dialog's own checks make both unreachable; mapped so a client/api skew
+  // still reads as a cancel problem, not a generic one.
+  cancel_reason_required: 'console.assign_error_cancel_reason_required',
+  cancel_reason_not_allowed: 'console.assign_error_cancel_reason_not_allowed',
 };
 
 /**

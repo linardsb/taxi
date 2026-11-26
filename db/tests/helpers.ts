@@ -17,6 +17,12 @@ export function getTestDb(): Db {
   return handle.db;
 }
 
+/** The pool behind `getTestDb()`, for raw SQL on a single client (BEGIN … ROLLBACK). */
+export function getTestPool(): Pool {
+  getTestDb();
+  return handle!.pool;
+}
+
 export async function closeTestDb(): Promise<void> {
   await handle?.pool.end();
   handle = null;

@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   Param,
@@ -53,12 +52,13 @@ export class VehiclesController {
     return this.vehicles.update(user.sub, id, body);
   }
 
-  @Delete(':id')
+  /** Retire, never delete (#316): the car stays on every past ride. */
+  @Post(':id/retire')
   @HttpCode(204)
-  remove(
+  retire(
     @CurrentUser() user: JwtClaims,
     @Param('id', new ZodValidationPipe(vehicleIdSchema)) id: string,
   ): Promise<void> {
-    return this.vehicles.remove(user.sub, id);
+    return this.vehicles.retire(user.sub, id);
   }
 }

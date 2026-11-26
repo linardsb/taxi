@@ -1,4 +1,5 @@
 import { lvAdmin } from './lv-admin';
+import { lvReasons } from './lv-reasons';
 import { lvRider } from './lv-rider';
 
 /**
@@ -172,7 +173,7 @@ export const lv = {
     'Brauciena statuss mainījās — saraksts atjaunosies pats',
   'console.cancel_ride': 'Atcelt braucienu',
   'console.cancel_title': 'Atcelt braucienu',
-  'console.cancel_reason': 'Atcelšanas iemesls (nav obligāts)',
+  'console.cancel_reason': 'Piezīme (nav obligāta)',
   'console.cancel_confirm': 'Atcelt braucienu',
   'console.cancel_keep': 'Nē, atstāt',
   'console.cancel_failed': 'Neizdevās atcelt. Mēģiniet vēlreiz.',
@@ -416,6 +417,7 @@ export const lv = {
   'driver.error.pickup_pin_locked': 'PIN bloķēts. Zvaniet dispečerim.',
   ...lvRider,
   ...lvAdmin,
+  ...lvReasons,
 } as const;
 
 /**

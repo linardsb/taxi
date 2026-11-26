@@ -413,10 +413,10 @@ describe('DriverDetail — vehicles', () => {
     expect(plate).toHaveValue('XY9999');
   });
 
-  it('deletes after confirming, then reloads the driver (expected)', async () => {
+  it('retires after confirming, then reloads the driver (expected, #316)', async () => {
     routeFetch([
       { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
-      { method: 'DELETE', path: `/admin/vehicles/${VEHICLE_A}`, status: 204 },
+      { method: 'POST', path: `/admin/vehicles/${VEHICLE_A}/retire`, status: 204 },
       { path: `/admin/drivers/${DRIVER_A}`, body: detail({ vehicles: [] }) },
     ]);
     await loaded();
@@ -425,8 +425,8 @@ describe('DriverDetail — vehicles', () => {
     const dialog = screen.getByRole('dialog', {
       name: formatMessage('lv', 'admin.vehicle.delete_confirm', { plate: 'AB-1234' }),
     });
-    // Nothing is deleted until the confirm.
-    expect(calls().filter(([m]) => m === 'DELETE')).toHaveLength(0);
+    // Nothing is retired until the confirm.
+    expect(calls().filter(([m]) => m === 'POST')).toHaveLength(0);
     fireEvent.click(
       within(dialog).getByRole('button', { name: lv('admin.vehicle.delete') }),
     );
@@ -443,8 +443,8 @@ describe('DriverDetail — vehicles', () => {
     routeFetch([
       { path: `/admin/drivers/${DRIVER_A}`, body: detail() },
       {
-        method: 'DELETE',
-        path: `/admin/vehicles/${VEHICLE_A}`,
+        method: 'POST',
+        path: `/admin/vehicles/${VEHICLE_A}/retire`,
         status: 409,
         body: { message: 'driver_on_ride', statusCode: 409 },
       },

@@ -28,7 +28,7 @@ export function DriverDetail({
   id,
   backHref,
 }: Readonly<{ id: string; /** The list, with the filter the admin came from. */ backHref: string }>) {
-  const { detail, busy, retry, saveProfile, moveTo, saveVehicle, removeVehicle } =
+  const { detail, busy, retry, saveProfile, moveTo, saveVehicle, retireVehicle } =
     useDriverDetail(id);
   const [approvalFeedback, setApprovalFeedback] = useState<Outcome | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -160,7 +160,7 @@ export function DriverDetail({
             busy={busy}
             onSave={(patch) => saveVehicle(vehicle.id, patch)}
             onDelete={async () => {
-              const outcome = await removeVehicle(vehicle.id);
+              const outcome = await retireVehicle(vehicle.id);
               if (outcome.ok) focusOnRender.current = heading.current;
               return outcome;
             }}

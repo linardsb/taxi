@@ -23,6 +23,7 @@ import {
 import { DRIZZLE, type DbTx } from '../../../common/db/db.module';
 import { DriversService } from '../../drivers';
 import { RealtimeService } from '../../realtime';
+import { driverActor } from '../ride-events.repository';
 import { RideTransitionService } from '../ride-transition.service';
 import { RidesRepository } from '../rides.repository';
 import { ArrivalAnnounceService } from './arrival-announce.service';
@@ -36,10 +37,14 @@ import {
   logTransitionRejected,
   type LoggableRide,
   type RejectionCause,
+  type TransitionReason,
 } from './ride-lifecycle.logging';
 import {
+  assertCancelReason,
   cancelledStatusFor,
+  lifecycleActorFor,
   pickupPinVerdict,
+  type CancelInput,
   type LifecycleActor,
 } from './ride-lifecycle.policy';
 
@@ -106,7 +111,12 @@ export class RideLifecycleService {
     // The convenience form is safe here: genuinely one statement, nothing else
     // in flight. `complete` composes `transitionInTx` instead, because it also
     // writes the split and releases the driver.
-    const moved = await this.transitions.transition(rideId, from, to);
+    const moved = await this.transitions.transition(
+      rideId,
+      from,
+      to,
+      driverActor(driverId),
+    );
     if (!moved) {
       this.logRejected(ride, 'driver', driverId, to, 'lost_race');
       throw new ConflictException('ride_transition_conflict');
@@ -142,7 +152,13 @@ export class RideLifecycleService {
       if (verdict === 'incorrect')
         await this.lifecycle.recordPickupPinFailure(tx, rideId);
       if (verdict !== 'open') return { verdict, moved: undefined };
-      const moved = await this.transitions.transitionInTx(tx, rideId, from, to);
+      const moved = await this.transitions.transitionInTx(
+        tx,
+        rideId,
+        from,
+        to,
+        driverActor(driverId),
+      );
       return { verdict, moved };
     });
 
@@ -199,7 +215,13 @@ export class RideLifecycleService {
     }
 
     const moved = await this.db.transaction(async (tx) => {
-      const moved = await this.transitions.transitionInTx(tx, rideId, from, to);
+      const moved = await this.transitions.transitionInTx(
+        tx,
+        rideId,
+        from,
+        to,
+        driverActor(driverId),
+      );
       if (!moved) {
         this.logRejected(ride, 'driver', driverId, to, 'lost_race');
         throw new ConflictException('ride_transition_conflict');
@@ -240,36 +262,27 @@ export class RideLifecycleService {
    * All four cancellation branches. The actor decides the terminal status and
    * comes from the JWT role, never a body field.
    */
-  async cancel(input: {
-    rideId: string;
-    actor: LifecycleActor;
-    actorId: string;
-    reason: string | null;
-  }): Promise<void> {
+  async cancel(input: CancelInput): Promise<void> {
+    assertCancelReason(input);
+    const actor = lifecycleActorFor(input.eventActor);
     const ride = await this.lifecycle.findForAction(input.rideId);
     if (!ride) throw new NotFoundException('ride_not_found');
 
     // A dispatcher (and the system) overrides ownership — that IS the override
     // (S9-2). Rider and driver may only cancel their own ride.
-    if (input.actor === 'rider' && ride.riderId !== input.actorId) {
+    if (actor === 'rider' && ride.riderId !== input.actorId) {
       throw new ForbiddenException('ride_not_yours');
     }
-    if (input.actor === 'driver' && ride.driverId !== input.actorId) {
+    if (actor === 'driver' && ride.driverId !== input.actorId) {
       throw new ForbiddenException('ride_not_yours');
     }
 
     const from = ride.status;
-    const to = cancelledStatusFor(input.actor);
+    const to = cancelledStatusFor(actor);
     // Load-bearing here in a way it is not in `driverStep`: `to` varies by
     // actor, so the machine — not a fixed step table — decides legality.
     if (!canTransition(from, to)) {
-      this.logRejected(
-        ride,
-        input.actor,
-        input.actorId,
-        to,
-        'illegal_transition',
-      );
+      this.logRejected(ride, actor, input.actorId, to, 'illegal_transition');
       throw new ConflictException('ride_not_cancellable');
     }
 
@@ -279,9 +292,16 @@ export class RideLifecycleService {
         input.rideId,
         from,
         to,
+        {
+          kind: input.eventActor,
+          // `ride_events_actor_id_ck`: a system event carries no user id.
+          id: input.eventActor === 'system' ? null : input.actorId,
+          reasonCode: input.reasonCode,
+          reasonText: input.reasonText,
+        },
       );
       if (!moved) {
-        this.logRejected(ride, input.actor, input.actorId, to, 'lost_race');
+        this.logRejected(ride, actor, input.actorId, to, 'lost_race');
         throw new ConflictException('ride_transition_conflict');
       }
 
@@ -302,9 +322,9 @@ export class RideLifecycleService {
     });
 
     // ── committed ──
-    this.transitions.emitStatus(moved, from, input.reason);
+    this.transitions.emitStatus(moved, from, input.reasonText);
     this.emitRevoked(input.rideId, revoked);
-    this.logApplied(moved, input.actor, input.actorId, from, to, input.reason);
+    this.logApplied(moved, actor, input.actorId, from, to, input);
   }
 
   /**
@@ -455,7 +475,7 @@ export class RideLifecycleService {
     actorId: string,
     from: RideStatus,
     to: RideStatus,
-    reason: string | null = null,
+    reason: TransitionReason | null = null,
   ): void {
     logTransitionApplied(this.logger, ride, actor, actorId, from, to, reason);
   }

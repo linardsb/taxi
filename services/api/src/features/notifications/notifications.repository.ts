@@ -170,10 +170,12 @@ export class NotificationsRepository {
       const [vehicle] = await this.db
         .select({ plate: vehicles.plate })
         .from(vehicles)
+        // NOT filtered on `retired_at`: this is the car a ride was served by,
+        // which must still resolve after it is retired (#316).
         .where(eq(vehicles.id, vehicleId))
         .limit(1);
-      // ON DELETE SET NULL makes a miss ~impossible, but never throw here —
-      // a throw would cost the rider their SMS body, not just the plate.
+      // Vehicles are never deleted (#316), so a miss is ~impossible — but never
+      // throw here: a throw would cost the rider their SMS body, not just the plate.
       plate = vehicle?.plate ?? null;
     }
 

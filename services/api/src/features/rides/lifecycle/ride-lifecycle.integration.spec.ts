@@ -475,7 +475,7 @@ describe('ride lifecycle (integration)', () => {
     await http
       .post(`/rides/${ride.id}/cancel`)
       .set('authorization', r.auth)
-      .send({ reason: 'changed my mind' })
+      .send({ reasonText: 'changed my mind' })
       .expect(201);
 
     expect((await rideRow(ride.id)).status).toBe('cancelled_by_rider');
@@ -494,7 +494,7 @@ describe('ride lifecycle (integration)', () => {
     await http
       .post(`/rides/${ride.id}/cancel`)
       .set('authorization', d.auth)
-      .send({ reason: 'car trouble' })
+      .send({ reasonCode: 'driver_vehicle_problem', reasonText: 'car trouble' })
       .expect(201);
 
     expect((await rideRow(ride.id)).status).toBe('cancelled_by_driver');
@@ -529,7 +529,10 @@ describe('ride lifecycle (integration)', () => {
     await http
       .post(`/rides/${ride.id}/cancel`)
       .set('authorization', dina.auth)
-      .send({ reason: 'rider left the car' })
+      .send({
+        reasonCode: 'dispatcher_rider_request',
+        reasonText: 'rider left the car',
+      })
       .expect(201);
 
     expect((await rideRow(ride.id)).status).toBe('cancelled_by_dispatcher');
