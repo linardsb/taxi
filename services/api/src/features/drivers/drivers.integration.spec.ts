@@ -266,17 +266,35 @@ describe('drivers (integration)', () => {
     expect(row!.plate).toBe(mine.plate);
   });
 
-  it('lets a driver re-register a plate they just deleted (edge — uniqueness is not a tombstone)', async () => {
+  it('lets a driver re-register a plate they just retired (edge — uniqueness is among ACTIVE cars, #316 D3)', async () => {
     const d = await driver(29);
     const car = await addCar(d.auth);
 
+    // The DELETE route is gone (#316): vehicles are protected records.
     await http
       .delete(`/drivers/me/vehicles/${car.id}`)
       .set('authorization', d.auth)
+      .expect(404);
+
+    await http
+      .post(`/drivers/me/vehicles/${car.id}/retire`)
+      .set('authorization', d.auth)
       .expect(204);
 
-    // A deleted row frees the plate: a driver swapping a car back must not be
-    // locked out by their own history.
+    // Retired: gone from the driver's list, still in the table.
+    const list = await http
+      .get('/drivers/me/vehicles')
+      .set('authorization', d.auth)
+      .expect(200);
+    expect(list.body).toEqual([]);
+    const [kept] = await ctx.db
+      .select()
+      .from(vehicles)
+      .where(eq(vehicles.id, car.id));
+    expect(kept!.retiredAt).not.toBeNull();
+
+    // The partial index frees the plate: a driver swapping a car back must not
+    // be locked out by their own history.
     await http
       .post('/drivers/me/vehicles')
       .set('authorization', d.auth)
@@ -690,7 +708,7 @@ describe('drivers (integration)', () => {
     });
   });
 
-  it('forces a driver offline when their last vehicle is deleted (edge)', async () => {
+  it('forces a driver offline when their last vehicle is retired, and refuses going online again (edge)', async () => {
     const d = await driver(15);
     const car = await addCar(d.auth);
     await http
@@ -701,15 +719,23 @@ describe('drivers (integration)', () => {
     expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
 
     await http
-      .delete(`/drivers/me/vehicles/${car.id}`)
+      .post(`/drivers/me/vehicles/${car.id}/retire`)
       .set('authorization', d.auth)
       .expect(204);
 
     expect((await d.row())!.status).toBe('offline');
     expect(ctx.locations.isOnline(cityId, d.id)).toBe(false);
+
+    // A retired car does not count toward `setOnlineIfEligible` (#316).
+    const res = await http
+      .put('/drivers/me/status')
+      .set('authorization', d.auth)
+      .send({ status: 'online' })
+      .expect(409);
+    expect((res.body as { message: string }).message).toBe('vehicle_required');
   });
 
-  it('keeps a driver online when a vehicle that is not their last is deleted (edge)', async () => {
+  it('keeps a driver online when a vehicle that is not their last is retired (edge)', async () => {
     const d = await driver(19);
     const first = await addCar(d.auth);
     await http
@@ -724,7 +750,7 @@ describe('drivers (integration)', () => {
       .expect(200);
 
     await http
-      .delete(`/drivers/me/vehicles/${first.id}`)
+      .post(`/drivers/me/vehicles/${first.id}/retire`)
       .set('authorization', d.auth)
       .expect(204);
 
@@ -733,7 +759,7 @@ describe('drivers (integration)', () => {
     expect(ctx.locations.isOnline(cityId, d.id)).toBe(true);
   });
 
-  it('refuses to delete a vehicle while on_ride (edge — #11 owns that transition)', async () => {
+  it('refuses to retire a vehicle while on_ride (edge — #11 owns that transition)', async () => {
     const d = await driver(20);
     const car = await addCar(d.auth);
     // Same trick as the presence case: no route can write `on_ride`.
@@ -743,26 +769,34 @@ describe('drivers (integration)', () => {
       .where(eq(drivers.userId, d.id));
 
     const res = await http
-      .delete(`/drivers/me/vehicles/${car.id}`)
+      .post(`/drivers/me/vehicles/${car.id}/retire`)
       .set('authorization', d.auth)
       .expect(409);
     expect((res.body as { message: string }).message).toBe('driver_on_ride');
 
-    // Nothing deleted — otherwise #11 restores them to `online` with no vehicle,
+    // Nothing retired — otherwise #11 restores them to `online` with no vehicle,
     // which is exactly the state `vehicle_required` exists to prevent.
     const [row] = await ctx.db
       .select()
       .from(vehicles)
       .where(eq(vehicles.id, car.id));
-    expect(row).toBeDefined();
+    expect(row!.retiredAt).toBeNull();
   });
 
-  it('404s when deleting a vehicle that is not there (failure)', async () => {
+  it('404s retiring a vehicle that is not there, or not yours (failure)', async () => {
     const d = await driver(18);
     await http.get('/drivers/me').set('authorization', d.auth).expect(200);
 
     await http
-      .delete(`/drivers/me/vehicles/${crypto.randomUUID()}`)
+      .post(`/drivers/me/vehicles/${crypto.randomUUID()}/retire`)
+      .set('authorization', d.auth)
+      .expect(404);
+
+    // Another driver's car: not yours reads exactly like not there.
+    const other = await driver(38);
+    const theirs = await addCar(other.auth);
+    await http
+      .post(`/drivers/me/vehicles/${theirs.id}/retire`)
       .set('authorization', d.auth)
       .expect(404);
   });

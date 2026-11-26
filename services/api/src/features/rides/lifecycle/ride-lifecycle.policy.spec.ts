@@ -1,4 +1,8 @@
+import type { RideEventActorKind } from '@taxi/shared';
 import {
+  lifecycleActorFor,
+  type CancelInput,
+  type LifecycleActor,
   PICKUP_PIN_MAX_ATTEMPTS,
   pickupPinVerdict,
   type PickupPinVerdict,
@@ -56,5 +60,31 @@ describe('pickupPinVerdict (#258)', () => {
 
   it('locks at five, the evidence doc figure (expected)', () => {
     expect(PICKUP_PIN_MAX_ATTEMPTS).toBe(5);
+  });
+});
+
+describe('CancelInput actor pairing (PR 331 L4)', () => {
+  it('rejects a role stated twice: actor is derived from eventActor (failure)', () => {
+    const input: CancelInput = {
+      rideId: '00000000-0000-4000-8000-00000000r001',
+      // @ts-expect-error -- `actor` leaves CancelInput; it is derived from `eventActor`
+      actor: 'system',
+      eventActor: 'dispatcher',
+      actorId: '00000000-0000-4000-8000-00000000d001',
+      reasonCode: null,
+      reasonText: null,
+    };
+    expect(input.eventActor).toBe('dispatcher');
+  });
+
+  const pairs: [RideEventActorKind, LifecycleActor][] = [
+    ['rider', 'rider'],
+    ['driver', 'driver'],
+    ['dispatcher', 'dispatcher'],
+    ['admin', 'dispatcher'],
+    ['system', 'system'],
+  ];
+  it.each(pairs)('lifecycleActorFor(%s) is %s (expected)', (kind, actor) => {
+    expect(lifecycleActorFor(kind)).toBe(actor);
   });
 });

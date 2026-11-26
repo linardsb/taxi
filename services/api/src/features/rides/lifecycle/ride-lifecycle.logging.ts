@@ -1,5 +1,5 @@
 import type { Logger } from '@nestjs/common';
-import type { RideStatus } from '@taxi/shared';
+import type { CancelReasonCode, RideStatus } from '@taxi/shared';
 import type { LifecycleRide } from './ride-lifecycle.repository';
 import type { LifecycleActor } from './ride-lifecycle.policy';
 
@@ -25,13 +25,19 @@ export type LoggableRide = {
   driverId: string | null;
 };
 
+/** The reason fields `logTransitionApplied` reads: the code as-is, the text only as a boolean. */
+export interface TransitionReason {
+  reasonCode: CancelReasonCode | null;
+  reasonText: string | null;
+}
+
 /**
  * `actorId` is WHICH person, not just which role: a dispatcher cancelling a
  * moving ride is the one ownership-bypassing action here, and `actor:
  * 'dispatcher'` alone does not say which of them did it.
  *
- * `reason` is rider/driver/dispatcher-authored free text (280 chars,
- * `rideCancelSchema`) and is therefore reduced to a BOOLEAN. "Waiting at
+ * `reason.reasonText` is rider/driver/dispatcher-authored free text (280
+ * chars, `rideCancelSchema`) and is therefore reduced to a BOOLEAN. "Waiting at
  * Brīvības iela 42, call me on 26123456" is an address and an unmasked phone
  * number, both of which `.claude/references/logging-standard.md` forbids.
  */
@@ -42,7 +48,7 @@ export function logTransitionApplied(
   actorId: string,
   from: RideStatus,
   to: RideStatus,
-  reason: string | null = null,
+  reason: TransitionReason | null = null,
 ): void {
   logger.log({
     event: 'ride.lifecycle.transition_applied',
@@ -53,7 +59,9 @@ export function logTransitionApplied(
     actorId,
     from,
     to,
-    hasReason: reason !== null,
+    hasReason: (reason?.reasonText ?? null) !== null,
+    // A closed enum — safe to log, unlike the text (#316).
+    reasonCode: reason?.reasonCode ?? null,
     at: new Date().toISOString(),
   });
 }

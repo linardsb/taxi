@@ -44,14 +44,13 @@
  *   open after #12, which deliberately scoped itself to settling a completed
  *   ride: every one of these is a money movement with no evidenced policy, and
  *   they need one before they need code.
- * - THE CANCELLATION `reason` IS EPHEMERAL. It reaches the rider's and driver's
- *   phones on `ride:status` and is then gone: no column holds it, and the log
- *   records only `hasReason`, because the text is author-written free text and
+ * - THE CANCELLATION REASON IS STORED (#316), on the cancel's `ride_events`
+ *   row: a closed `reason_code` plus optional free text. A console cancel
+ *   (dispatcher/admin) must carry a code; rider and driver may still send none
+ *   until their pickers land (#326, #322). The log records `reasonCode` and
+ *   only `hasReason` for the text, because the text is author-written and
  *   `.claude/references/logging-standard.md` forbids the address and phone
- *   number a rider will put in it. So "why was this ride cancelled" has no
- *   durable answer — only WHO, via `actorId` on the transition log.
- *   `dispatch_audit_log` is shaped for assignments and is the wrong home; a
- *   cancellation audit is its own ticket.
+ *   number a rider will put in it.
  * - A DRIVER STRANDED ON `in_progress` HAS NO SELF-SERVICE EXIT.
  *   `ALLOWED_TRANSITIONS.in_progress` is `['completed', 'cancelled_by_dispatcher']`,
  *   so they cannot cancel; and `setPresence` refuses `offline` while
@@ -100,6 +99,12 @@ export type { BoardRide } from './board-ride';
 export type { AwaitingRide } from './ride-row';
 export { RideTransitionService } from './ride-transition.service';
 export type { DbTx, TransitionedRide } from './ride-transition.service';
+export {
+  actorKindFromRole,
+  driverActor,
+  SYSTEM_ACTOR,
+  type RideEventActor,
+} from './ride-events.repository';
 /**
  * Same exception, one more consumer: `drivers.status = 'on_ride'` is written
  * only by the ride lifecycle, so dispatch composes `claimDriver` into its

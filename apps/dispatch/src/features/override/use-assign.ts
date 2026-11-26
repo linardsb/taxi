@@ -5,6 +5,7 @@ import {
   dispatchRosterSchema,
   type DispatchDriver,
   type MessageKey,
+  type RideCancel,
 } from '@taxi/shared';
 import { useRouter } from 'next/navigation';
 import { useCallback, useRef, useState } from 'react';
@@ -47,7 +48,7 @@ export function useAssign(): {
   loadRoster: () => Promise<void>;
   assign: (rideId: string, driverId: string, reason: string | null) => Promise<Outcome>;
   reassign: (rideId: string, driverId: string, reason: string | null) => Promise<Outcome>;
-  cancel: (rideId: string, reason: string | null) => Promise<Outcome>;
+  cancel: (rideId: string, body: RideCancel) => Promise<Outcome>;
   reset: () => void;
 } {
   const router = useRouter();
@@ -163,10 +164,10 @@ export function useAssign(): {
   );
 
   const cancel = useCallback(
-    (rideId: string, reason: string | null) =>
+    (rideId: string, body: RideCancel) =>
       // The lifecycle route, not a dispatch one: `POST /rides/:id/cancel`
-      // already accepts `dispatcher`/`admin`, so cancelling is UI-only work.
-      post(`/rides/${rideId}/cancel`, { reason }, 'console.cancel_failed'),
+      // accepts `dispatcher`/`admin`, and since #316 requires their reason code.
+      post(`/rides/${rideId}/cancel`, body, 'console.cancel_failed'),
     [post],
   );
 

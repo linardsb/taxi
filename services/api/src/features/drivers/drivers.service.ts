@@ -198,7 +198,7 @@ export class DriversService {
       // only ever discard.
       //
       // The vehicle check is INSIDE the update (L8). Counting first and setting
-      // after left a window for a concurrent delete of the last vehicle to slip
+      // after left a window for a concurrent retire of the last vehicle to slip
       // between them, which is how a driver ended up online with no car.
       const online = await this.drivers.setOnlineIfEligible(userId);
       if (!online) {

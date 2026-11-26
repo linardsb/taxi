@@ -16,7 +16,7 @@ const profileWith = (status: DriverStatus): DriverProfile =>
  * L8's race, CONSTRUCTED rather than raced for. The window is a single round
  * trip, so a concurrency test would be flaky; `onCount` fires at exactly the
  * point where a concurrent `PUT /drivers/me/status` would have landed — after
- * `remove()` has read the profile, before it decides whether to force offline.
+ * `retire()` has read the profile, before it decides whether to force offline.
  */
 function build(
   options: { onCount?: (setStatus: (s: DriverStatus) => void) => void } = {},
@@ -41,7 +41,7 @@ function build(
   } as unknown as DriversRepository;
 
   const vehicles = {
-    remove: () => Promise.resolve(true),
+    retire: () => Promise.resolve(true),
     countForDriver: () => {
       options.onCount?.(setStatus);
       return Promise.resolve(0); // that was the driver's last car
@@ -64,23 +64,23 @@ function build(
   };
 }
 
-describe('VehiclesService.remove — the delete/online TOCTOU', () => {
+describe('VehiclesService.retire — the retire/online TOCTOU', () => {
   it('forces an already-online driver offline when their last vehicle goes (expected)', async () => {
     const ctx = build();
     ctx.setStatus('online');
 
-    await ctx.service.remove(USER_ID, VEHICLE_ID);
+    await ctx.service.retire(USER_ID, VEHICLE_ID);
 
     expect(ctx.statusNow()).toBe('offline');
     expect(ctx.markOffline).toHaveBeenCalledWith(CITY_ID, USER_ID);
   });
 
-  it('still forces offline when the driver went online DURING the delete (failure — L8)', async () => {
+  it('still forces offline when the driver went online DURING the retire (failure — L8)', async () => {
     const ctx = build({ onCount: (setStatus) => setStatus('online') });
 
-    await ctx.service.remove(USER_ID, VEHICLE_ID);
+    await ctx.service.retire(USER_ID, VEHICLE_ID);
 
-    // Deciding from the status read BEFORE the delete returns early here, and
+    // Deciding from the status read BEFORE the retire returns early here, and
     // leaves a driver online with zero vehicles: online, and a candidate #10
     // can only ever discard — the exact disagreement between "you are online"
     // and "you can be offered a ride" that `vehicle_required` exists to stop.
@@ -90,7 +90,7 @@ describe('VehiclesService.remove — the delete/online TOCTOU', () => {
   it('changes nothing for a driver who was never online (edge)', async () => {
     const ctx = build();
 
-    await ctx.service.remove(USER_ID, VEHICLE_ID);
+    await ctx.service.retire(USER_ID, VEHICLE_ID);
 
     // The conditional UPDATE reports "nothing happened", which is what keeps
     // the forced_offline log honest.

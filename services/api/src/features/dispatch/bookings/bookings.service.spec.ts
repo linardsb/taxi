@@ -38,7 +38,11 @@ function noteArg(rides: { requestForCaller: jest.Mock }): unknown {
   return (rides.requestForCaller.mock.calls[0] as unknown[])[4];
 }
 
-type Caller = { phone: string; resolveRiderId: () => Promise<string> };
+type Caller = {
+  phone: string;
+  resolveRiderId: () => Promise<string>;
+  createdBy: { kind: string; id: string };
+};
 
 function build() {
   // Typed as the mocks, cast at the constructor — the other order gives every
@@ -80,7 +84,12 @@ describe('BookingsService', () => {
   it('books through RidesService as a phone order, keyed on the dispatcher (expected)', async () => {
     const { rides, customers, dispatch, service } = build();
 
-    const created = await service.book(DISPATCHER_ID, 'idem-1', BODY);
+    const created = await service.book(
+      DISPATCHER_ID,
+      'idem-1',
+      BODY,
+      'dispatcher',
+    );
 
     expect(created.ride.id).toBe(RIDE_ID);
     // No name: the fill is the one name writer on this path (#269). The
@@ -106,6 +115,8 @@ describe('BookingsService', () => {
     // #123: the reservation is keyed on the phone, so it can be taken before
     // any identity exists.
     expect(caller.phone).toBe('+37129999000');
+    // The `created` event's actor (#316): the booking dispatcher, by role.
+    expect(caller.createdBy).toEqual({ kind: 'dispatcher', id: DISPATCHER_ID });
     expect(key).toBe('idem-1');
     // Q7: the cap counts against the dispatcher, or a venue's 25 bookings for 25
     // different riders would never meet a rider-keyed limit at all.
@@ -133,7 +144,12 @@ describe('BookingsService', () => {
       role: 'rider',
     });
 
-    const created = await service.book(DISPATCHER_ID, 'idem-2', BODY);
+    const created = await service.book(
+      DISPATCHER_ID,
+      'idem-2',
+      BODY,
+      'dispatcher',
+    );
 
     // The upsert's conflict branch returns the existing row and writes neither
     // `role` nor the marker — the integration spec pins the SQL side.
@@ -150,10 +166,15 @@ describe('BookingsService', () => {
   it('books without a name when callerName is blank, never a 400 (edge)', async () => {
     const { rides, customers, service } = build();
 
-    await service.book(DISPATCHER_ID, 'idem-5b', {
-      ...BODY,
-      callerName: '   ',
-    });
+    await service.book(
+      DISPATCHER_ID,
+      'idem-5b',
+      {
+        ...BODY,
+        callerName: '   ',
+      },
+      'dispatcher',
+    );
 
     expect(customers.fillEmptyDisplayName).not.toHaveBeenCalled();
     expect(rides.requestForCaller).toHaveBeenCalledTimes(1);
@@ -161,10 +182,15 @@ describe('BookingsService', () => {
 
   it('trims the note, and a blank one becomes no note (edge, #303 D4)', async () => {
     const padded = build();
-    await padded.service.book(DISPATCHER_ID, 'idem-6', {
-      ...BODY,
-      dispatcherNote: '  Ratiņkrēsls  ',
-    });
+    await padded.service.book(
+      DISPATCHER_ID,
+      'idem-6',
+      {
+        ...BODY,
+        dispatcherNote: '  Ratiņkrēsls  ',
+      },
+      'dispatcher',
+    );
     expect(noteArg(padded.rides)).toBe('Ratiņkrēsls');
     expect(padded.dispatch.insertBookingAudit).toHaveBeenCalledWith(
       expect.objectContaining({ payload: { note: 'Ratiņkrēsls' } }),
@@ -173,10 +199,15 @@ describe('BookingsService', () => {
     // The console sends whitespace as typed; the driver must not get an
     // empty box.
     const blank = build();
-    await blank.service.book(DISPATCHER_ID, 'idem-7', {
-      ...BODY,
-      dispatcherNote: '   ',
-    });
+    await blank.service.book(
+      DISPATCHER_ID,
+      'idem-7',
+      {
+        ...BODY,
+        dispatcherNote: '   ',
+      },
+      'dispatcher',
+    );
     expect(noteArg(blank.rides)).toBeNull();
     expect(blank.dispatch.insertBookingAudit).toHaveBeenCalledWith(
       expect.objectContaining({ payload: {} }),
@@ -187,7 +218,7 @@ describe('BookingsService', () => {
     const { service } = build();
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
 
-    await service.book(DISPATCHER_ID, 'idem-3', BODY);
+    await service.book(DISPATCHER_ID, 'idem-3', BODY, 'dispatcher');
 
     expect(JSON.stringify(log.mock.calls)).not.toContain('37129999000');
     expect(log).toHaveBeenCalledWith(
@@ -208,7 +239,7 @@ describe('BookingsService', () => {
     });
 
     await expect(
-      service.book(DISPATCHER_ID, 'idem-4', BODY),
+      service.book(DISPATCHER_ID, 'idem-4', BODY, 'dispatcher'),
     ).rejects.toBeInstanceOf(BadRequestException);
     // Nothing was created: a booking that turned a driver into their own
     // passenger would corrupt every eligibility read on that user.
@@ -227,7 +258,7 @@ describe('BookingsService', () => {
     });
 
     await expect(
-      service.book(DISPATCHER_ID, 'idem-8', BODY),
+      service.book(DISPATCHER_ID, 'idem-8', BODY, 'dispatcher'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(customers.findOrCreateCustomer).not.toHaveBeenCalled();
     expect(customers.fillEmptyDisplayName).not.toHaveBeenCalled();
@@ -238,9 +269,9 @@ describe('BookingsService', () => {
     // A 429 from the cap: `RidesService` throws before it calls the resolver.
     rides.requestForCaller.mockRejectedValue(new Error('too_many_requests'));
 
-    await expect(service.book(DISPATCHER_ID, 'idem-9', BODY)).rejects.toThrow(
-      'too_many_requests',
-    );
+    await expect(
+      service.book(DISPATCHER_ID, 'idem-9', BODY, 'dispatcher'),
+    ).rejects.toThrow('too_many_requests');
     expect(customers.findOrCreateUser).not.toHaveBeenCalled();
     expect(customers.findOrCreateCustomer).not.toHaveBeenCalled();
   });
@@ -250,7 +281,12 @@ describe('BookingsService', () => {
     dispatch.insertBookingAudit.mockRejectedValue(new Error('db down'));
     const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
 
-    const created = await service.book(DISPATCHER_ID, 'idem-5', BODY);
+    const created = await service.book(
+      DISPATCHER_ID,
+      'idem-5',
+      BODY,
+      'dispatcher',
+    );
 
     // The car is already being dispatched; a 500 here would be retried into a
     // second ride. Loud, not fatal.
@@ -266,5 +302,13 @@ describe('BookingsService', () => {
     // `?? 0` fails closed: no audit call at all cannot pass as "after".
     expect(requested).toBeLessThan(audited ?? 0);
     error.mockRestore();
+  });
+});
+
+describe('BookingsService.book creatorKind (PR 331 L3)', () => {
+  it('does not accept system as the creator kind (failure)', () => {
+    // @ts-expect-error -- creatorKind narrows to 'dispatcher' | 'admin'
+    const kind: Parameters<BookingsService['book']>[3] = 'system';
+    expect(kind).toBe('system');
   });
 });

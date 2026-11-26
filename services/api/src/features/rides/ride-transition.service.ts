@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import { DRIZZLE, type DbTx } from '../../common/db/db.module';
 import { RideNotificationsService } from '../notifications';
 import { RealtimeService } from '../realtime';
+import { insertRideEvent, type RideEventActor } from './ride-events.repository';
 
 /**
  * The columns every caller of this service needs.
@@ -47,7 +48,9 @@ function toTransitioned(row: RideRow): TransitionedRide {
 }
 
 /**
- * The ONE guarded writer of `rides.status`. Two consumers: #10 (dispatch,
+ * The ONE guarded writer of `rides.status`, and of the `status` rows in
+ * `ride_events` (#316) — every matched UPDATE appends its event in the same
+ * transaction, with a REQUIRED actor. Two consumers: #10 (dispatch,
  * `requested→offered→accepted` and `offered→requested`) and #11 (the lifecycle
  * from `accepted` onward). Dispatch writing status directly would mean
  * `assertTransition` is called in two places and #11 arrives to find the
@@ -72,13 +75,17 @@ export class RideTransitionService {
    * `assertTransition` runs FIRST and throws `InvalidRideTransitionError`, a
    * programming error that should 500 rather than be caught. The UPDATE is then
    * conditional on `status = from`, so `undefined` means no row matched and the
-   * caller lost a race — a 409, never a 500.
+   * caller lost a race — a 409, never a 500 — and no event is written.
+   *
+   * `actor` is required so a missing actor is a compile error, never a null
+   * in a protected, uneditable row (#316).
    */
   async transitionInTx(
     tx: DbTx,
     rideId: string,
     from: RideStatus,
     to: RideStatus,
+    actor: RideEventActor,
   ): Promise<TransitionedRide | undefined> {
     assertTransition(from, to);
 
@@ -88,7 +95,15 @@ export class RideTransitionService {
       .where(and(eq(rides.id, rideId), eq(rides.status, from)))
       .returning();
 
-    return row ? toTransitioned(row) : undefined;
+    if (!row) return undefined;
+    await insertRideEvent(tx, {
+      rideId,
+      kind: 'status',
+      fromStatus: from,
+      toStatus: to,
+      actor,
+    });
+    return toTransitioned(row);
   }
 
   /**
@@ -141,10 +156,11 @@ export class RideTransitionService {
     rideId: string,
     from: RideStatus,
     to: RideStatus,
+    actor: RideEventActor,
     reason: string | null = null,
   ): Promise<TransitionedRide | undefined> {
     const ride = await this.db.transaction((tx) =>
-      this.transitionInTx(tx, rideId, from, to),
+      this.transitionInTx(tx, rideId, from, to, actor),
     );
     if (ride) this.emitStatus(ride, from, reason);
     return ride;

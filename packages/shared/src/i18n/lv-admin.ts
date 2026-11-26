@@ -48,8 +48,10 @@ export const lvAdmin = {
   'admin.vehicle.category': 'Kategorija',
   'admin.vehicle.seats': 'Pasažieru vietas',
   'admin.vehicle.child_seat': 'Bērnu sēdeklis',
-  'admin.vehicle.delete': 'Dzēst auto',
-  'admin.vehicle.delete_confirm': 'Dzēst auto {plate}? To nevar atsaukt.',
+  // Keys keep `delete`; the action is retire since #316 — the car stays on past rides.
+  'admin.vehicle.delete': 'Noņemt no lietošanas',
+  'admin.vehicle.delete_confirm':
+    'Noņemt auto {plate} no lietošanas? Tas paliks agrāko braucienu vēsturē.',
   'admin.vehicle.delete_cancel': 'Atcelt',
   'admin.category.standard': 'Standarta',
   'admin.category.fastest': 'Ātrākais',

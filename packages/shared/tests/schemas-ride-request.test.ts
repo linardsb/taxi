@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   pickupPinSchema,
-  rideCancelSchema,
   rideOptionsSchema,
   ridePaymentMethodUpdateSchema,
   rideQuoteBodySchema,
@@ -156,12 +155,6 @@ describe('ridePaymentMethodUpdateSchema', () => {
       ridePaymentMethodUpdateSchema.safeParse({ paymentMethod: 'balance' })
         .success,
     ).toBe(false);
-  });
-});
-
-describe('rideCancelSchema', () => {
-  it('defaults reason to null — a cancel need not explain itself (edge)', () => {
-    expect(rideCancelSchema.parse({}).reason).toBeNull();
   });
 });
 

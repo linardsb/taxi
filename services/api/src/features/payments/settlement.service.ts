@@ -109,6 +109,7 @@ export class SettlementService {
           input.rideId,
           'completed',
           'settled',
+          { kind: input.actor, id: input.actorId },
         );
         if (!moved) return undefined; // someone else settled this ride
 

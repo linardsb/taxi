@@ -112,9 +112,9 @@ const RIDER_PHONE = '+371290001';
 const DRIVER_PHONE = '+371290002';
 
 /**
- * `vehicles_plate_uix` is `UNIQUE btree(upper(plate))` — GLOBALLY unique, not
- * per driver. Fixed plate + fixed driver is what makes the GET-then-POST below
- * idempotent across runs.
+ * `vehicles_plate_uix` is `UNIQUE btree(upper(plate))` among ACTIVE cars
+ * (#316: `WHERE retired_at IS NULL`), not per driver. Fixed plate + fixed
+ * driver is what makes the GET-then-POST below idempotent across runs.
  */
 const PLATE = 'MINT001';
 
@@ -808,7 +808,7 @@ async function signIn(
   return { id: session.user.id, accessToken: session.accessToken };
 }
 
-/** GET before POST: the plate is globally unique, so a blind POST fails on run 2. */
+/** GET before POST: the plate is unique among active cars, so a blind POST fails on run 2. */
 async function ensureVehicle(auth: string): Promise<void> {
   const listed = expectStatus(
     await api('GET', '/drivers/me/vehicles', { auth }),
@@ -1384,7 +1384,7 @@ async function teardown(
   if (state.rideId !== null && state.rider !== null) {
     const res = await api('POST', `/rides/${state.rideId}/cancel`, {
       auth: state.rider.accessToken,
-      body: { reason: 'mint:ride teardown' },
+      body: { reasonText: 'mint:ride teardown' },
     }).catch((err: unknown) => ({ status: 0, body: String(err) }));
     console.log(`cancel ride ${state.rideId} → ${res.status}`);
   }

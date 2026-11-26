@@ -9,7 +9,7 @@ import {
   type Language,
   type RideCategory,
 } from '@taxi/shared';
-import { and, eq, exists, inArray, notExists, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNull, notExists, sql } from 'drizzle-orm';
 import { DRIZZLE, type DbTx } from '../../common/db/db.module';
 
 type DriverRow = typeof drivers.$inferSelect;
@@ -174,7 +174,7 @@ export class DriversRepository {
    * write must not let the driver through.
    *
    * The checks have to live inside the UPDATE (L8). Counting vehicles and then
-   * setting the status leaves a window: a concurrent DELETE of the last vehicle
+   * setting the status leaves a window: a concurrent retire of the last vehicle
    * lands between the two and the driver ends up online with no car — online
    * and unable to be matched, which is the exact disagreement between "you are
    * online" and "you can be offered a ride" that `vehicle_required` exists to
@@ -196,7 +196,9 @@ export class DriversRepository {
             this.db
               .select({ one: sql`1` })
               .from(vehicles)
-              .where(eq(vehicles.driverId, userId)),
+              .where(
+                and(eq(vehicles.driverId, userId), isNull(vehicles.retiredAt)),
+              ),
           ),
           // #61 chain A: the rides table decides, not `drivers.status` — an
           // offline driver who accepted mid-disconnect has a live ride and no
@@ -270,12 +272,12 @@ export class DriversRepository {
   }
 
   /**
-   * The mirror of the above, for the delete path: forces offline only if the
+   * The mirror of the above, for the retire path: forces offline only if the
    * driver is currently online, in one statement. `undefined` means they were
    * not online, so nothing happened and nothing should be logged.
    *
    * Also L8: the caller used to decide this from a `status` it had read BEFORE
-   * deleting the vehicle, so a `PUT status=online` that landed in between was
+   * retiring the vehicle, so a `PUT status=online` that landed in between was
    * invisible and the driver stayed online with zero cars.
    */
   async setOfflineIfOnline(userId: string): Promise<DriverProfile | undefined> {
@@ -378,21 +380,30 @@ export class DriversRepository {
    * has to build paging anyway. Ordered so the truncation is at least stable.
    */
   async findRosterContacts(limit: number): Promise<DriverRosterContact[]> {
-    return this.db
-      .select({
-        driverId: drivers.userId,
-        name: users.displayName,
-        phone: users.phone,
-        status: drivers.status,
-        vehiclePlate: sql<string | null>`min(${vehicles.plate})`,
-      })
-      .from(drivers)
-      .innerJoin(users, eq(users.id, drivers.userId))
-      .leftJoin(vehicles, eq(vehicles.driverId, drivers.userId))
-      .where(eq(drivers.approvalStatus, 'approved'))
-      .groupBy(drivers.userId, users.displayName, users.phone, drivers.status)
-      .orderBy(users.displayName)
-      .limit(limit);
+    return (
+      this.db
+        .select({
+          driverId: drivers.userId,
+          name: users.displayName,
+          phone: users.phone,
+          status: drivers.status,
+          vehiclePlate: sql<string | null>`min(${vehicles.plate})`,
+        })
+        .from(drivers)
+        .innerJoin(users, eq(users.id, drivers.userId))
+        // Active cars only: a retired car is history, not a match (#316).
+        .leftJoin(
+          vehicles,
+          and(
+            eq(vehicles.driverId, drivers.userId),
+            isNull(vehicles.retiredAt),
+          ),
+        )
+        .where(eq(drivers.approvalStatus, 'approved'))
+        .groupBy(drivers.userId, users.displayName, users.phone, drivers.status)
+        .orderBy(users.displayName)
+        .limit(limit)
+    );
   }
 
   /**
@@ -410,7 +421,11 @@ export class DriversRepository {
     const rows = await this.db
       .select()
       .from(drivers)
-      .leftJoin(vehicles, eq(vehicles.driverId, drivers.userId))
+      // Active cars only: a retired car is history, not a match (#316).
+      .leftJoin(
+        vehicles,
+        and(eq(vehicles.driverId, drivers.userId), isNull(vehicles.retiredAt)),
+      )
       .where(inArray(drivers.userId, driverIds));
 
     const byDriver = new Map<string, DriverMatchAttributes>();
