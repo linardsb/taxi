@@ -243,4 +243,24 @@ describe('CancelDialog', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('Neizdevās atcelt');
   });
+
+  it('labels the note required and aria-required for dispatcher_other (PR 331 L2, failure)', () => {
+    renderDialog();
+
+    pickReason('dispatcher_other');
+
+    const note = screen.getByRole('textbox', { name: 'Piezīme (obligāta)' });
+    expect(note).toHaveAttribute('aria-required', 'true');
+  });
+
+  it('keeps the optional note label for other dispatcher codes (PR 331 L2, edge)', () => {
+    renderDialog();
+
+    pickReason('dispatcher_rider_request');
+
+    const note = screen.getByRole('textbox', {
+      name: 'Piezīme (nav obligāta)',
+    });
+    expect(note).not.toHaveAttribute('aria-required', 'true');
+  });
 });

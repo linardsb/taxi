@@ -304,3 +304,11 @@ describe('BookingsService', () => {
     error.mockRestore();
   });
 });
+
+describe('BookingsService.book creatorKind (PR 331 L3)', () => {
+  it('does not accept system as the creator kind (failure)', () => {
+    // @ts-expect-error -- creatorKind narrows to 'dispatcher' | 'admin'
+    const kind: Parameters<BookingsService['book']>[3] = 'system';
+    expect(kind).toBe('system');
+  });
+});

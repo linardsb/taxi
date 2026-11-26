@@ -22,15 +22,11 @@ import { APP_ENV, type Env } from '../../common/config/env.schema';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth';
 import { BoardService } from './board/board.service';
+import { consoleActor } from './console-actor';
 import { DispatchService } from './dispatch.service';
 import { ForceAssignService } from './force-assign.service';
 import { ReassignService } from './reassign.service';
 import { RosterService } from './roster.service';
-
-/** Console routes are `@Roles('dispatcher', 'admin')`; the event records which (#316). */
-function consoleActor(user: JwtClaims): 'dispatcher' | 'admin' {
-  return user.role === 'admin' ? 'admin' : 'dispatcher';
-}
 
 /**
  * `@Roles` is per-ROUTE here, not per-controller: drivers and dispatchers share

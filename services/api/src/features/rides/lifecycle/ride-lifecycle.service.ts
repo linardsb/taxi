@@ -42,6 +42,7 @@ import {
 import {
   assertCancelReason,
   cancelledStatusFor,
+  lifecycleActorFor,
   pickupPinVerdict,
   type CancelInput,
   type LifecycleActor,
@@ -263,30 +264,25 @@ export class RideLifecycleService {
    */
   async cancel(input: CancelInput): Promise<void> {
     assertCancelReason(input);
+    const actor = lifecycleActorFor(input.eventActor);
     const ride = await this.lifecycle.findForAction(input.rideId);
     if (!ride) throw new NotFoundException('ride_not_found');
 
     // A dispatcher (and the system) overrides ownership — that IS the override
     // (S9-2). Rider and driver may only cancel their own ride.
-    if (input.actor === 'rider' && ride.riderId !== input.actorId) {
+    if (actor === 'rider' && ride.riderId !== input.actorId) {
       throw new ForbiddenException('ride_not_yours');
     }
-    if (input.actor === 'driver' && ride.driverId !== input.actorId) {
+    if (actor === 'driver' && ride.driverId !== input.actorId) {
       throw new ForbiddenException('ride_not_yours');
     }
 
     const from = ride.status;
-    const to = cancelledStatusFor(input.actor);
+    const to = cancelledStatusFor(actor);
     // Load-bearing here in a way it is not in `driverStep`: `to` varies by
     // actor, so the machine — not a fixed step table — decides legality.
     if (!canTransition(from, to)) {
-      this.logRejected(
-        ride,
-        input.actor,
-        input.actorId,
-        to,
-        'illegal_transition',
-      );
+      this.logRejected(ride, actor, input.actorId, to, 'illegal_transition');
       throw new ConflictException('ride_not_cancellable');
     }
 
@@ -305,7 +301,7 @@ export class RideLifecycleService {
         },
       );
       if (!moved) {
-        this.logRejected(ride, input.actor, input.actorId, to, 'lost_race');
+        this.logRejected(ride, actor, input.actorId, to, 'lost_race');
         throw new ConflictException('ride_transition_conflict');
       }
 
@@ -328,7 +324,7 @@ export class RideLifecycleService {
     // ── committed ──
     this.transitions.emitStatus(moved, from, input.reasonText);
     this.emitRevoked(input.rideId, revoked);
-    this.logApplied(moved, input.actor, input.actorId, from, to, input);
+    this.logApplied(moved, actor, input.actorId, from, to, input);
   }
 
   /**

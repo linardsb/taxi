@@ -25,6 +25,7 @@ export const enReasons = {
   'console.cancel_reason_placeholder': 'Choose a reason',
   'console.cancel_reason_required': 'Choose a cancellation reason',
   'console.cancel_note_required': "The 'other' reason needs a note",
+  'console.cancel_note_required_label': 'Note (required)',
   'console.cancel_note_placeholder': 'No names or phone numbers',
   'console.assign_error_cancel_reason_required':
     'A cancellation needs a reason',

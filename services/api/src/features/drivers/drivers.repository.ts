@@ -174,7 +174,7 @@ export class DriversRepository {
    * write must not let the driver through.
    *
    * The checks have to live inside the UPDATE (L8). Counting vehicles and then
-   * setting the status leaves a window: a concurrent DELETE of the last vehicle
+   * setting the status leaves a window: a concurrent retire of the last vehicle
    * lands between the two and the driver ends up online with no car — online
    * and unable to be matched, which is the exact disagreement between "you are
    * online" and "you can be offered a ride" that `vehicle_required` exists to
@@ -272,12 +272,12 @@ export class DriversRepository {
   }
 
   /**
-   * The mirror of the above, for the delete path: forces offline only if the
+   * The mirror of the above, for the retire path: forces offline only if the
    * driver is currently online, in one statement. `undefined` means they were
    * not online, so nothing happened and nothing should be logged.
    *
    * Also L8: the caller used to decide this from a `status` it had read BEFORE
-   * deleting the vehicle, so a `PUT status=online` that landed in between was
+   * retiring the vehicle, so a `PUT status=online` that landed in between was
    * invisible and the driver stayed online with zero cars.
    */
   async setOfflineIfOnline(userId: string): Promise<DriverProfile | undefined> {

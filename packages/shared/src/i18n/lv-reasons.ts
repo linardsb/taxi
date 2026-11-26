@@ -29,6 +29,7 @@ export const lvReasons = {
   'console.cancel_reason_placeholder': 'Izvēlieties iemeslu',
   'console.cancel_reason_required': 'Izvēlieties atcelšanas iemeslu',
   'console.cancel_note_required': "Iemeslam 'cits' vajag piezīmi",
+  'console.cancel_note_required_label': 'Piezīme (obligāta)',
   'console.cancel_note_placeholder': 'Bez vārdiem vai tālruņa numuriem',
   'console.assign_error_cancel_reason_required': 'Atcelšanai vajag iemeslu',
   'console.assign_error_cancel_reason_not_allowed': 'Šo iemeslu nevar izmantot',

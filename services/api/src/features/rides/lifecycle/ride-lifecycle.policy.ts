@@ -22,9 +22,31 @@ import {
  * records forever.
  *
  * There is no `admin` member: an admin cancelling is doing a dispatcher's job,
- * and the machine has no `cancelled_by_admin`. The controller maps it.
+ * and the machine has no `cancelled_by_admin`. `lifecycleActorFor` maps it.
  */
 export type LifecycleActor = 'rider' | 'driver' | 'dispatcher' | 'system';
+
+/**
+ * `admin → dispatcher`: adding a fifth cancelled status for admin would be a
+ * shared-contract plus database-enum change; the audit answer is #20's admin
+ * view, and the event row keeps `admin` (#316, Q6).
+ */
+const LIFECYCLE_ACTOR_BY_EVENT_ACTOR = {
+  rider: 'rider',
+  driver: 'driver',
+  dispatcher: 'dispatcher',
+  admin: 'dispatcher',
+  system: 'system',
+} as const satisfies Record<RideEventActorKind, LifecycleActor>;
+
+/**
+ * The lifecycle actor is DERIVED from the event actor, never passed beside it
+ * (PR #331 L4): two independent fields let a caller record a system cancel as
+ * a dispatcher act.
+ */
+export function lifecycleActorFor(kind: RideEventActorKind): LifecycleActor {
+  return LIFECYCLE_ACTOR_BY_EVENT_ACTOR[kind];
+}
 
 /**
  * `as const satisfies`, never an annotation — an annotation widens the values
@@ -46,9 +68,10 @@ export function cancelledStatusFor(actor: LifecycleActor): RideStatus {
 /** `RideLifecycleService.cancel`'s input. Kept here so the service stays under the 500-line cap. */
 export interface CancelInput {
   rideId: string;
-  /** Decides the terminal status (admin collapsed to dispatcher). */
-  actor: LifecycleActor;
-  /** Recorded on the event — admin stays admin (#316, Q6). */
+  /**
+   * Recorded on the event — admin stays admin (#316, Q6). The terminal status
+   * comes from `lifecycleActorFor(eventActor)`.
+   */
   eventActor: RideEventActorKind;
   actorId: string;
   reasonCode: CancelReasonCode | null;
@@ -69,7 +92,9 @@ export function assertCancelReason(input: CancelInput): void {
     }
     return;
   }
-  if (!isCancelReasonFor(input.actor, input.reasonCode)) {
+  if (
+    !isCancelReasonFor(lifecycleActorFor(input.eventActor), input.reasonCode)
+  ) {
     throw new UnprocessableEntityException('cancel_reason_not_allowed');
   }
 }

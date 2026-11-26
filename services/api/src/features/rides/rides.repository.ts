@@ -321,8 +321,8 @@ export class RidesRepository {
    *
    * The sole writer of BOTH assignment columns: `driver_id` and, since #86,
    * `vehicle_id`. The vehicle-resolution rule lives here and nowhere else —
-   * the driver's vehicle in the ride's category, else their first by plate
-   * (deterministic), else NULL.
+   * the driver's active vehicle in the ride's category, else their first
+   * active vehicle by plate (deterministic), else NULL.
    *
    * `tx` composes this into the accept path's transaction, where the offer
    * accept, the status change, this write and the audit row must commit or roll
@@ -341,9 +341,10 @@ export class RidesRepository {
       .set({
         driverId,
         // The vehicle the rider will match at the kerb, frozen at assignment:
-        // the driver's vehicle in the ride's category, else their first by
-        // plate (deterministic), else NULL — a force-assigned driver may own
-        // no car at all, and refusing the assignment for that would break S9-2.
+        // the driver's active vehicle in the ride's category, else their first
+        // active one by plate (deterministic), else NULL — a force-assigned
+        // driver may own no active car at all, and refusing the assignment for
+        // that would break S9-2.
         vehicleId: sql`(
           select v.id from ${vehicles} as v
           where v.driver_id = ${driverId} and v.retired_at is null

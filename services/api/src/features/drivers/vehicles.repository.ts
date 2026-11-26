@@ -8,7 +8,7 @@ type VehicleRow = typeof vehicles.$inferSelect;
 
 /** Postgres `unique_violation`. */
 const UNIQUE_VIOLATION = '23505';
-/** The index from migration 0004, on `upper(plate)`. */
+/** The index from migration 0004, on `upper(plate)`; partial (active cars only) since 0017. */
 const PLATE_INDEX = 'vehicles_plate_uix';
 
 /**

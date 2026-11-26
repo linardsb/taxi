@@ -3,11 +3,11 @@ import {
   displayNameSchema,
   type DispatcherBookingBody,
   type RideCreated,
-  type RideEventActorKind,
   type UserRole,
 } from '@taxi/shared';
 import { CustomersRepository } from '../../customers';
 import { RidesService } from '../../rides';
+import type { ConsoleActorKind } from '../console-actor';
 import { DispatchRepository } from '../dispatch.repository';
 
 function assertRiderPhone(user: { role: UserRole } | undefined): void {
@@ -42,7 +42,7 @@ export class BookingsService {
     idempotencyKey: string,
     body: DispatcherBookingBody,
     /** The JWT role as an event actor — admin stays admin on the `created` event (#316). */
-    creatorKind: RideEventActorKind,
+    creatorKind: ConsoleActorKind,
   ): Promise<RideCreated> {
     const { callerPhone, callerName, dispatcherNote, ...rideBody } = body;
     // Blank is "no note" (#303 D4): the console sends whitespace as typed, and

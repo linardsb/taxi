@@ -25,6 +25,7 @@ export const ruReasons = {
   'console.cancel_reason_placeholder': 'Выберите причину',
   'console.cancel_reason_required': 'Выберите причину отмены',
   'console.cancel_note_required': "Для причины 'другая' нужно примечание",
+  'console.cancel_note_required_label': 'Примечание (обязательно)',
   'console.cancel_note_placeholder': 'Без имён и номеров телефонов',
   'console.assign_error_cancel_reason_required': 'Для отмены нужна причина',
   'console.assign_error_cancel_reason_not_allowed':

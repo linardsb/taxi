@@ -47,7 +47,7 @@ Adds the K1/K2 compliance record layer. `ride_events` is an append-only history 
 
   **Run: green** (gate).
 - Unit: `ride-transition.service.spec.ts` (+2: event on match, none on miss), `ride-lifecycle.service.spec.ts` (+2: 422 required for dispatcher and admin, 422 not-allowed), `bookings.service.spec.ts` (+1 assertion: `createdBy`). **Run: green** (gate).
-- Dispatch app: `cancel-dialog.test.tsx` (16), `use-assign.test.tsx` (+4), `dialog-shell.test.tsx` (5, new). **Run: green.**
+- Dispatch app: `cancel-dialog.test.tsx` (16; 18 after PR #331 L2), `use-assign.test.tsx` (+4), `dialog-shell.test.tsx` (5, new). **Run: green.**
 
 ## Validation results
 All `observed` on 2026-11-26 against the compose Postgres 16 + Redis.
@@ -59,6 +59,7 @@ All `observed` on 2026-11-26 against the compose Postgres 16 + Redis.
     - dispatch: 365
     - driver: 364
     - rider: 231
+  - These figures are at `a9d59e5`. After the PR #331 review fixes, api is 1029 tests and dispatch 367 (`observed`, see `.claude/reports/pr-331-review-fixes.md`).
   - The first gate run was red: 1 rider test still expected the old `{ reason: null }` cancel body. Fixed in `02f43cc`; see deviation 15.
   - The gate ran with `NODE_OPTIONS=--no-experimental-webstorage`, a local workaround for Node 26's built-in `localStorage` clashing with jsdom. CI does not need it.
 - **db mutation (Task 9):** with `CREATE TRIGGER rides_no_delete` replaced, 3 tests went red: the 2 rides delete cases and the drift check. 45 stayed green: drivers and vehicles, plus the other 3 db files, which shows the rollback wrapping holds. Restored.
@@ -76,7 +77,7 @@ All `observed` on 2026-11-26 against the compose Postgres 16 + Redis.
   The `assigned`/`released` writers are unaffected. Restored.
 - **Task 19 lint probe:** 1 hit on `db.delete(rideEvents)`, 0 on `Map.delete`.
 - **Static:** api eslint 0 errors, 18 warnings: the 17-warning baseline plus 1 in the new spec. `drizzle-kit generate` → "No schema changes".
-- **File budgets** (`wc -l`): `ride-lifecycle.service.ts` 496, `rides.service.ts` 497, `rides.repository.ts` 460, `dispatch.service.ts` 466, `dispatch.repository.ts` 435.
+- **File budgets** (`wc -l`): `ride-lifecycle.service.ts` 496, `rides.service.ts` 497, `rides.repository.ts` 460, `dispatch.service.ts` 466, `dispatch.repository.ts` 435. After the PR #331 fixes: `ride-lifecycle.service.ts` 492, `rides.repository.ts` 461; the rest unchanged.
 - **Not run:** Level 4 manual.
 
 ## Deviations from the plan

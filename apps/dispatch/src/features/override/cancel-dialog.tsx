@@ -72,6 +72,9 @@ export function CancelDialog({
   const codeRef = useRef<HTMLSelectElement>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const blocked = submitting || disabledReasonKey !== null;
+  // A `*_other` code makes the note required; the label and `aria-required`
+  // must say so, or VoiceOver reads "optional" on a field that blocks submit.
+  const noteRequired = reasonCode !== '' && reasonNeedsText(reasonCode);
 
   const confirm = () => {
     if (reasonCode === '') {
@@ -170,11 +173,17 @@ export function CancelDialog({
           htmlFor="cancel-reason-note"
           style={{ fontSize: 'var(--font-size-sm)' }}
         >
-          {formatMessage(LANG, 'console.cancel_reason')}
+          {formatMessage(
+            LANG,
+            noteRequired
+              ? 'console.cancel_note_required_label'
+              : 'console.cancel_reason',
+          )}
         </label>
         <textarea
           id="cancel-reason-note"
           ref={noteRef}
+          aria-required={noteRequired || undefined}
           value={reason}
           maxLength={280}
           rows={2}

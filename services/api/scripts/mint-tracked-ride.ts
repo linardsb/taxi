@@ -1384,7 +1384,7 @@ async function teardown(
   if (state.rideId !== null && state.rider !== null) {
     const res = await api('POST', `/rides/${state.rideId}/cancel`, {
       auth: state.rider.accessToken,
-      body: { reason: 'mint:ride teardown' },
+      body: { reasonText: 'mint:ride teardown' },
     }).catch((err: unknown) => ({ status: 0, body: String(err) }));
     console.log(`cancel ride ${state.rideId} → ${res.status}`);
   }

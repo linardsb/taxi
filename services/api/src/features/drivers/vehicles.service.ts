@@ -31,7 +31,8 @@ export class VehiclesService {
   }
 
   /**
-   * The plate is unique platform-wide (migration 0004, on `upper(plate)`), so
+   * The plate is unique among active cars (migration 0004 on `upper(plate)`,
+   * partial on `retired_at IS NULL` since 0017), so
    * both write paths can lose that race. Enforced in the database rather than
    * by a SELECT-then-INSERT, which two concurrent registrations walk straight
    * through — the check is only worth having if it is atomic.
@@ -82,7 +83,7 @@ export class VehiclesService {
    */
   async retire(userId: string, vehicleId: string): Promise<void> {
     // Read BEFORE the retire: forcing offline only covers `online`, so an
-    // `on_ride` driver deleting their last car would slip through untouched and
+    // `on_ride` driver retiring their last car would slip through untouched and
     // break the online ⟹ has-a-vehicle invariant the moment #11 restores them.
     // Refusing is also the better product answer — that is the car they are in.
     const profile = await this.drivers.findOrCreate(userId);
@@ -99,7 +100,7 @@ export class VehiclesService {
     await this.locations.markOffline(this.env.DEFAULT_CITY_ID, userId);
 
     // A conditional UPDATE, not `profile.status !== 'online'` (L8). That status
-    // was read BEFORE the delete, so a `PUT status=online` landing in between
+    // was read BEFORE the retire, so a `PUT status=online` landing in between
     // was invisible: the early return left a driver online with zero cars.
     // `undefined` means they were not online, so nothing changed to report.
     const forcedOffline = await this.drivers.setOfflineIfOnline(userId);

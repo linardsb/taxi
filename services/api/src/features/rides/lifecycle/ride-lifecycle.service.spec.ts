@@ -504,7 +504,6 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'system',
         actorId: RIDER_ID,
         eventActor: 'system',
         reasonCode: null,
@@ -547,7 +546,6 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'driver',
         actorId: DRIVER_ID,
         eventActor: 'driver',
         reasonCode: null,
@@ -576,7 +574,6 @@ describe('RideLifecycleService', () => {
       await expect(
         service.cancel({
           rideId: RIDE_ID,
-          actor: 'rider',
           actorId: RIDER_ID,
           eventActor: 'rider',
           reasonCode: null,
@@ -598,7 +595,6 @@ describe('RideLifecycleService', () => {
       await expect(
         service.cancel({
           rideId: RIDE_ID,
-          actor: 'system',
           actorId: RIDER_ID,
           eventActor: 'system',
           reasonCode: null,
@@ -616,7 +612,6 @@ describe('RideLifecycleService', () => {
         await expect(
           service.cancel({
             rideId: RIDE_ID,
-            actor: 'dispatcher',
             eventActor,
             actorId: DISPATCHER_ID,
             reasonCode: null,
@@ -637,7 +632,6 @@ describe('RideLifecycleService', () => {
       await expect(
         service.cancel({
           rideId: RIDE_ID,
-          actor: 'rider',
           eventActor: 'rider',
           actorId: RIDER_ID,
           reasonCode: 'dispatcher_other',
@@ -657,7 +651,6 @@ describe('RideLifecycleService', () => {
       await expect(
         service.cancel({
           rideId: RIDE_ID,
-          actor: 'rider',
           actorId: RIDER_ID,
           eventActor: 'rider',
           reasonCode: null,
@@ -673,7 +666,6 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'dispatcher',
         actorId: OTHER_DRIVER,
         eventActor: 'dispatcher',
         reasonCode: 'dispatcher_rider_request',
@@ -798,7 +790,6 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'dispatcher',
         actorId: DISPATCHER_ID,
         eventActor: 'dispatcher',
         reasonCode: 'dispatcher_other',
@@ -838,7 +829,6 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'driver',
         actorId: DRIVER_ID,
         eventActor: 'driver',
         reasonCode: null,
