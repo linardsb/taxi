@@ -19,11 +19,28 @@ Escape hatches, all fail-open:
 """
 
 import json
+import os
 import subprocess
 import sys
 
 CODE_PREFIXES = ("apps/", "services/", "packages/", "db/")
 CHECK_TIMEOUT_S = 300
+# Node 26's built-in `localStorage` shadows jsdom's, so every dispatch test that
+# touches `window.localStorage` fails locally (PR #331). CI does not need it.
+WEBSTORAGE_FLAG = "--no-experimental-webstorage"
+
+
+def check_env() -> dict:
+    """The environment for `pnpm check`, plus WEBSTORAGE_FLAG when this Node
+    accepts it: an unknown flag in NODE_OPTIONS makes every node process exit."""
+    env = dict(os.environ)
+    probe = subprocess.run(
+        ["node", WEBSTORAGE_FLAG, "-e", "0"],
+        capture_output=True, timeout=15,
+    )
+    if probe.returncode == 0:
+        env["NODE_OPTIONS"] = f"{env.get('NODE_OPTIONS', '')} {WEBSTORAGE_FLAG}".strip()
+    return env
 
 
 def dirty_code_files() -> list:
@@ -49,7 +66,7 @@ def main() -> None:
             sys.exit(0)
 
         result = subprocess.run(
-            "pnpm check", shell=True,
+            "pnpm check", shell=True, env=check_env(),
             capture_output=True, text=True, timeout=CHECK_TIMEOUT_S,
         )
         if result.returncode == 0:
