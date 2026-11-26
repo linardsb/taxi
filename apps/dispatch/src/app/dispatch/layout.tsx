@@ -20,10 +20,12 @@ export default function DispatchLayout({
       {/* Visible focus on every interactive element — a hard launch rule.
           `textarea` was missing: the reason fields on both override dialogs
           (#19 Phase A) and the booking form's note (Phase B) are textareas, so
-          three focusable controls fell back to the browser default. */}
+          three focusable controls fell back to the browser default. `select`
+          joined with #316's cancel-reason picker, matching /admin's layout. */}
       <style>{`
         .console a:focus-visible, .console button:focus-visible,
-        .console input:focus-visible, .console textarea:focus-visible {
+        .console input:focus-visible, .console textarea:focus-visible,
+        .console select:focus-visible {
           outline: 3px solid var(--color-accent);
           outline-offset: 2px;
         }

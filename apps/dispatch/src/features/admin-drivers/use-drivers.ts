@@ -148,7 +148,7 @@ export function useDriverDetail(id: string): {
   saveProfile: (patch: AdminDriverUpdate) => Promise<Outcome>;
   moveTo: (to: DriverApprovalStatus) => Promise<Outcome>;
   saveVehicle: (vehicleId: string, patch: AdminVehicleUpdate) => Promise<Outcome>;
-  removeVehicle: (vehicleId: string) => Promise<Outcome>;
+  retireVehicle: (vehicleId: string) => Promise<Outcome>;
 } {
   const { busy, run, onLoadError } = useRunner();
   const [nonce, setNonce] = useState(0);
@@ -207,9 +207,9 @@ export function useDriverDetail(id: string): {
       ),
     // Refetched, not patched locally: deleting an online driver's last car
     // also takes them offline server-side, so the server's copy is the truth.
-    removeVehicle: (vehicleId) =>
+    retireVehicle: (vehicleId) =>
       run(
-        () => api.deleteVehicle(vehicleId),
+        () => api.retireVehicle(vehicleId),
         () => setNonce((n) => n + 1),
       ),
   };

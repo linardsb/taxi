@@ -80,6 +80,7 @@ const acceptedRide: TransitionedRide = { ...offeredRide, status: 'accepted' };
 
 const input = () => ({
   dispatcherId: DISPATCHER_ID,
+  actorKind: 'dispatcher' as const,
   rideId: RIDE_ID,
   driverId: DRIVER_ID,
   reason: 'VIP regular',
@@ -245,6 +246,7 @@ describe('ForceAssignService', () => {
       RIDE_ID,
       'requested',
       'offered',
+      { kind: 'dispatcher', id: DISPATCHER_ID },
     );
     expect(transitionInTx).toHaveBeenNthCalledWith(
       2,
@@ -252,6 +254,7 @@ describe('ForceAssignService', () => {
       RIDE_ID,
       'offered',
       'accepted',
+      { kind: 'dispatcher', id: DISPATCHER_ID },
     );
 
     // The audit trail records what Dina put in front of the driver: an
@@ -281,6 +284,7 @@ describe('ForceAssignService', () => {
       RIDE_ID,
       DRIVER_ID,
       expect.anything(),
+      { kind: 'dispatcher', id: DISPATCHER_ID },
     );
 
     // #15's driver app receives the same `ride:assigned` a normal accept

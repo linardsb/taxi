@@ -421,19 +421,6 @@ export type RidePaymentMethodUpdate = z.infer<
   typeof ridePaymentMethodUpdateSchema
 >;
 
-/**
- * The `POST /rides/:rideId/cancel` body (#11). The ACTOR is deliberately absent:
- * it comes from the JWT role, the same rule that keeps `riderId` off
- * `rideRequestBodySchema` and `dispatcherId` off the force-assign body.
- *
- * `max(280)` matches `rideAssignmentSchema.reason` and
- * `rideStatusEventSchema.reason` — the reason travels straight onto the wire.
- */
-export const rideCancelSchema = z.object({
-  reason: z.string().max(280).nullable().default(null),
-});
-export type RideCancel = z.infer<typeof rideCancelSchema>;
-
 /** A pickup PIN (#258): exactly 4 digits, kept as a string so `0042` survives. */
 export const pickupPinSchema = z.string().regex(/^\d{4}$/);
 export type PickupPin = z.infer<typeof pickupPinSchema>;

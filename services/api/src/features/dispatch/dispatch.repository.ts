@@ -3,6 +3,7 @@ import { dispatchAuditLog, rideOffers, type Db } from '@taxi/db';
 import {
   rideAssignmentSchema,
   type AssignmentSource,
+  type DeclineReasonCode,
   type RideOffer,
 } from '@taxi/shared';
 import { and, count, desc, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm';
@@ -261,7 +262,8 @@ export class DispatchRepository {
   ): Promise<OfferRef | undefined> {
     const [row] = await (tx ?? this.db)
       .update(rideOffers)
-      .set({ status: 'accepted' })
+      // `responded_at` only on a driver's own answer (#316 Q5); written once.
+      .set({ status: 'accepted', respondedAt: sql`now()` })
       .where(
         and(
           eq(rideOffers.id, offerId),
@@ -277,11 +279,12 @@ export class DispatchRepository {
   async declineOffer(
     offerId: string,
     driverId: string,
+    declineReason: DeclineReasonCode | null,
     tx?: DbTx,
   ): Promise<OfferRef | undefined> {
     const [row] = await (tx ?? this.db)
       .update(rideOffers)
-      .set({ status: 'declined' })
+      .set({ status: 'declined', respondedAt: sql`now()`, declineReason })
       .where(
         and(
           eq(rideOffers.id, offerId),

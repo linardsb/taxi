@@ -21,6 +21,7 @@ import {
   type BoardRide,
 } from './board-ride';
 import { assertEntryStatus, type RideEntryStatus } from './ride-entry';
+import { insertRideEvent, type RideEventActor } from './ride-events.repository';
 import { toAwaiting, toRide, toTrip, type AwaitingRide } from './ride-row';
 import type { DbTx } from './ride-transition.service';
 
@@ -58,6 +59,8 @@ export interface CreateRideInput {
   trip: TripEstimate;
   /** Dina's note (#303); null off the phone path and when blank. */
   dispatcherNote: string | null;
+  /** The `created` event's actor (#316): the rider, or the dispatcher/admin on the phone path. */
+  createdBy: RideEventActor;
 }
 
 @Injectable()
@@ -106,6 +109,13 @@ export class RidesRepository {
       if (!row) {
         throw new Error('rides insert returned no row');
       }
+      await insertRideEvent(tx, {
+        rideId: row.id,
+        kind: 'created',
+        fromStatus: null,
+        toStatus: input.status,
+        actor: input.createdBy,
+      });
 
       const breakdown = input.quote.breakdown;
       const lines: FareLineDraft[] = [
@@ -311,37 +321,50 @@ export class RidesRepository {
    *
    * The sole writer of BOTH assignment columns: `driver_id` and, since #86,
    * `vehicle_id`. The vehicle-resolution rule lives here and nowhere else —
-   * the driver's vehicle in the ride's category, else their first by plate
-   * (deterministic), else NULL.
+   * the driver's active vehicle in the ride's category, else their first
+   * active vehicle by plate (deterministic), else NULL.
    *
    * `tx` composes this into the accept path's transaction, where the offer
    * accept, the status change, this write and the audit row must commit or roll
    * back together. Without it this would silently commit outside the caller's
-   * transaction and defeat that atomicity.
+   * transaction and defeat that atomicity. Required since #316: the
+   * `assigned` event it writes must commit with the assignment.
    */
   async assignDriver(
     rideId: string,
     driverId: string,
-    tx?: DbTx,
+    tx: DbTx,
+    actor: RideEventActor,
   ): Promise<boolean> {
-    const [row] = await (tx ?? this.db)
+    const [row] = await tx
       .update(rides)
       .set({
         driverId,
         // The vehicle the rider will match at the kerb, frozen at assignment:
-        // the driver's vehicle in the ride's category, else their first by
-        // plate (deterministic), else NULL — a force-assigned driver may own
-        // no car at all, and refusing the assignment for that would break S9-2.
+        // the driver's active vehicle in the ride's category, else their first
+        // active one by plate (deterministic), else NULL — a force-assigned
+        // driver may own no active car at all, and refusing the assignment for
+        // that would break S9-2.
         vehicleId: sql`(
           select v.id from ${vehicles} as v
-          where v.driver_id = ${driverId}
+          where v.driver_id = ${driverId} and v.retired_at is null
           order by (v.category = ${rides.category}) desc, v.plate asc
           limit 1
         )`,
       })
       .where(and(eq(rides.id, rideId), isNull(rides.driverId)))
-      .returning({ id: rides.id });
-    return row !== undefined;
+      .returning({ vehicleId: rides.vehicleId, status: rides.status });
+    if (!row) return false;
+    await insertRideEvent(tx, {
+      rideId,
+      kind: 'assigned',
+      fromStatus: null,
+      toStatus: row.status,
+      actor,
+      driverId,
+      vehicleId: row.vehicleId,
+    });
+    return true;
   }
 
   /**
@@ -373,9 +396,18 @@ export class RidesRepository {
   async unassignDriver(
     rideId: string,
     driverId: string,
-    tx?: DbTx,
+    tx: DbTx,
+    actor: RideEventActor,
   ): Promise<boolean> {
-    const [row] = await (tx ?? this.db)
+    // The outgoing car for the `released` event (#316) — Postgres 16 has no
+    // `RETURNING OLD`. No FOR UPDATE needed: the only caller runs this after
+    // `transitionInTx` updated this row in the same transaction, which
+    // already holds its lock.
+    const [prev] = await tx
+      .select({ vehicleId: rides.vehicleId })
+      .from(rides)
+      .where(eq(rides.id, rideId));
+    const [row] = await tx
       .update(rides)
       .set({ driverId: null, vehicleId: null })
       .where(
@@ -385,8 +417,18 @@ export class RidesRepository {
           inArray(rides.status, [...UNASSIGNABLE_RIDE_STATUSES]),
         ),
       )
-      .returning({ id: rides.id });
-    return row !== undefined;
+      .returning({ status: rides.status });
+    if (!row) return false;
+    await insertRideEvent(tx, {
+      rideId,
+      kind: 'released',
+      fromStatus: null,
+      toStatus: row.status,
+      actor,
+      driverId,
+      vehicleId: prev?.vehicleId ?? null,
+    });
+    return true;
   }
 
   /**

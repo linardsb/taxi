@@ -221,7 +221,10 @@ describe('RideLifecycleService', () => {
 
       await service.driverStep('arrived', DRIVER_ID, RIDE_ID);
 
-      expect(transition).toHaveBeenCalledWith(RIDE_ID, 'arriving', 'arrived');
+      expect(transition).toHaveBeenCalledWith(RIDE_ID, 'arriving', 'arrived', {
+        kind: 'driver',
+        id: DRIVER_ID,
+      });
       // The convenience form emits for itself — the service must not double up.
       expect(emitStatus).not.toHaveBeenCalled();
     });
@@ -271,6 +274,7 @@ describe('RideLifecycleService', () => {
         RIDE_ID,
         'arrived',
         'in_progress',
+        { kind: 'driver', id: DRIVER_ID },
       );
       expect(emitStatus).toHaveBeenCalledWith(
         transitioned('in_progress'),
@@ -342,6 +346,7 @@ describe('RideLifecycleService', () => {
         RIDE_ID,
         'arrived',
         'in_progress',
+        { kind: 'driver', id: DRIVER_ID },
       );
     });
 
@@ -499,9 +504,10 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'system',
         actorId: RIDER_ID,
-        reason: 'payment preauth failed',
+        eventActor: 'system',
+        reasonCode: null,
+        reasonText: 'payment preauth failed',
       });
 
       expect(transitionInTx).toHaveBeenCalledWith(
@@ -509,6 +515,12 @@ describe('RideLifecycleService', () => {
         RIDE_ID,
         'requested',
         'cancelled_by_system',
+        {
+          kind: 'system',
+          id: null,
+          reasonCode: null,
+          reasonText: 'payment preauth failed',
+        },
       );
       // `reason: 'cancelled'` has been in the catalog since #2 with no
       // producer. This is it — and unlike a decline, here it is accurate.
@@ -534,9 +546,10 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'driver',
         actorId: DRIVER_ID,
-        reason: null,
+        eventActor: 'driver',
+        reasonCode: null,
+        reasonText: null,
       });
 
       // One line, five release sites — and it is inside the transaction.
@@ -561,9 +574,10 @@ describe('RideLifecycleService', () => {
       await expect(
         service.cancel({
           rideId: RIDE_ID,
-          actor: 'rider',
           actorId: RIDER_ID,
-          reason: null,
+          eventActor: 'rider',
+          reasonCode: null,
+          reasonText: null,
         }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(transitionInTx).not.toHaveBeenCalled();
@@ -581,11 +595,51 @@ describe('RideLifecycleService', () => {
       await expect(
         service.cancel({
           rideId: RIDE_ID,
-          actor: 'system',
           actorId: RIDER_ID,
-          reason: 'payment preauth failed',
+          eventActor: 'system',
+          reasonCode: null,
+          reasonText: 'payment preauth failed',
         }),
       ).rejects.toThrow('ride_not_cancellable');
+      expect(transitionInTx).not.toHaveBeenCalled();
+    });
+
+    it('422s a dispatcher or admin cancel with no reason code, before any write (failure, #316)', async () => {
+      for (const eventActor of ['dispatcher', 'admin'] as const) {
+        const { service, transitionInTx, events } = build({
+          ride: lifecycleRide({ status: 'requested', driverId: null }),
+        });
+        await expect(
+          service.cancel({
+            rideId: RIDE_ID,
+            eventActor,
+            actorId: DISPATCHER_ID,
+            reasonCode: null,
+            reasonText: null,
+          }),
+        ).rejects.toThrow(
+          new UnprocessableEntityException('cancel_reason_required'),
+        );
+        expect(transitionInTx).not.toHaveBeenCalled();
+        expect(events).toEqual([]);
+      }
+    });
+
+    it('422s a rider sending a dispatcher code (failure, #316)', async () => {
+      const { service, transitionInTx } = build({
+        ride: lifecycleRide({ status: 'requested', driverId: null }),
+      });
+      await expect(
+        service.cancel({
+          rideId: RIDE_ID,
+          eventActor: 'rider',
+          actorId: RIDER_ID,
+          reasonCode: 'dispatcher_other',
+          reasonText: 'x',
+        }),
+      ).rejects.toThrow(
+        new UnprocessableEntityException('cancel_reason_not_allowed'),
+      );
       expect(transitionInTx).not.toHaveBeenCalled();
     });
 
@@ -597,9 +651,10 @@ describe('RideLifecycleService', () => {
       await expect(
         service.cancel({
           rideId: RIDE_ID,
-          actor: 'rider',
           actorId: RIDER_ID,
-          reason: null,
+          eventActor: 'rider',
+          reasonCode: null,
+          reasonText: null,
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
@@ -611,9 +666,10 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'dispatcher',
         actorId: OTHER_DRIVER,
-        reason: 'caller changed their mind',
+        eventActor: 'dispatcher',
+        reasonCode: 'dispatcher_rider_request',
+        reasonText: 'caller changed their mind',
       });
 
       expect(transitionInTx).toHaveBeenCalledWith(
@@ -621,6 +677,12 @@ describe('RideLifecycleService', () => {
         RIDE_ID,
         'in_progress',
         'cancelled_by_dispatcher',
+        {
+          kind: 'dispatcher',
+          id: OTHER_DRIVER,
+          reasonCode: 'dispatcher_rider_request',
+          reasonText: 'caller changed their mind',
+        },
       );
     });
   });
@@ -728,9 +790,10 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'dispatcher',
         actorId: DISPATCHER_ID,
-        reason: PII_REASON,
+        eventActor: 'dispatcher',
+        reasonCode: 'dispatcher_other',
+        reasonText: PII_REASON,
       });
 
       const applied = find(log, 'ride.lifecycle.transition_applied');
@@ -742,6 +805,8 @@ describe('RideLifecycleService', () => {
         from: 'arrived',
         to: 'cancelled_by_dispatcher',
         hasReason: true,
+        // The code is a closed enum, so it is logged; the text never is (#316).
+        reasonCode: 'dispatcher_other',
       });
       expect(applied).not.toHaveProperty('reason');
 
@@ -764,9 +829,10 @@ describe('RideLifecycleService', () => {
 
       await service.cancel({
         rideId: RIDE_ID,
-        actor: 'driver',
         actorId: DRIVER_ID,
-        reason: null,
+        eventActor: 'driver',
+        reasonCode: null,
+        reasonText: null,
       });
 
       expect(find(log, 'ride.lifecycle.transition_applied')).toMatchObject({

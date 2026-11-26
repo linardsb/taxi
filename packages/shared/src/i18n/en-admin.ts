@@ -45,9 +45,9 @@ export const enAdmin = {
   'admin.vehicle.category': 'Category',
   'admin.vehicle.seats': 'Passenger seats',
   'admin.vehicle.child_seat': 'Child seat',
-  'admin.vehicle.delete': 'Delete vehicle',
+  'admin.vehicle.delete': 'Retire vehicle',
   'admin.vehicle.delete_confirm':
-    'Delete vehicle {plate}? This cannot be undone.',
+    'Retire vehicle {plate}? It stays in the history of past rides.',
   'admin.vehicle.delete_cancel': 'Cancel',
   'admin.category.standard': 'Standard',
   'admin.category.fastest': 'Fastest',

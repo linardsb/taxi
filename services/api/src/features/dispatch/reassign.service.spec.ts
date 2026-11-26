@@ -29,6 +29,7 @@ const releasedRide: TransitionedRide = {
 
 const input = () => ({
   dispatcherId: DISPATCHER_ID,
+  actorKind: 'dispatcher' as const,
   rideId: RIDE_ID,
   driverId: NEW_DRIVER,
   reason: 'driver not moving',
@@ -165,11 +166,18 @@ describe('ReassignService', () => {
       RIDE_ID,
       'accepted',
       'requested',
+      { kind: 'dispatcher', id: DISPATCHER_ID },
     );
-    expect(t.unassignDriver).toHaveBeenCalledWith(RIDE_ID, OLD_DRIVER, {});
+    expect(t.unassignDriver).toHaveBeenCalledWith(
+      RIDE_ID,
+      OLD_DRIVER,
+      {},
+      { kind: 'dispatcher', id: DISPATCHER_ID },
+    );
     expect(t.releaseFromRide).toHaveBeenCalledWith(OLD_DRIVER, {});
     expect(t.forceAssign).toHaveBeenCalledWith({
       dispatcherId: DISPATCHER_ID,
+      actorKind: 'dispatcher',
       rideId: RIDE_ID,
       driverId: NEW_DRIVER,
       reason: 'driver not moving',
@@ -258,6 +266,7 @@ describe('ReassignService', () => {
       RIDE_ID,
       'arriving',
       'requested',
+      { kind: 'dispatcher', id: DISPATCHER_ID },
     );
   });
 

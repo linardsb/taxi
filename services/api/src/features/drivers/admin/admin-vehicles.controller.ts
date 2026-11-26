@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  HttpCode,
-  Param,
-  Patch,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import {
   adminVehicleUpdateSchema,
   type AdminVehicleUpdate,
@@ -33,12 +26,13 @@ export class AdminVehiclesController {
     return this.admin.updateVehicle(id, body);
   }
 
-  @Delete(':id')
+  /** Retire, never delete (#316). */
+  @Post(':id/retire')
   @Roles('admin')
   @HttpCode(204)
-  remove(
+  retire(
     @Param('id', new ZodValidationPipe(vehicleIdSchema)) id: string,
   ): Promise<void> {
-    return this.admin.removeVehicle(id);
+    return this.admin.retireVehicle(id);
   }
 }

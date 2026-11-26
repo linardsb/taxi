@@ -1,7 +1,11 @@
+import { UnprocessableEntityException } from '@nestjs/common';
 import {
+  isCancelReasonFor,
   isPaymentMethodLocked,
   isTerminal,
   RIDE_STATUSES,
+  type CancelReasonCode,
+  type RideEventActorKind,
   type RideStatus,
 } from '@taxi/shared';
 
@@ -18,9 +22,31 @@ import {
  * records forever.
  *
  * There is no `admin` member: an admin cancelling is doing a dispatcher's job,
- * and the machine has no `cancelled_by_admin`. The controller maps it.
+ * and the machine has no `cancelled_by_admin`. `lifecycleActorFor` maps it.
  */
 export type LifecycleActor = 'rider' | 'driver' | 'dispatcher' | 'system';
+
+/**
+ * `admin → dispatcher`: adding a fifth cancelled status for admin would be a
+ * shared-contract plus database-enum change; the audit answer is #20's admin
+ * view, and the event row keeps `admin` (#316, Q6).
+ */
+const LIFECYCLE_ACTOR_BY_EVENT_ACTOR = {
+  rider: 'rider',
+  driver: 'driver',
+  dispatcher: 'dispatcher',
+  admin: 'dispatcher',
+  system: 'system',
+} as const satisfies Record<RideEventActorKind, LifecycleActor>;
+
+/**
+ * The lifecycle actor is DERIVED from the event actor, never passed beside it
+ * (PR #331 L4): two independent fields let a caller record a system cancel as
+ * a dispatcher act.
+ */
+export function lifecycleActorFor(kind: RideEventActorKind): LifecycleActor {
+  return LIFECYCLE_ACTOR_BY_EVENT_ACTOR[kind];
+}
 
 /**
  * `as const satisfies`, never an annotation — an annotation widens the values
@@ -37,6 +63,40 @@ const CANCELLED_STATUS_BY_ACTOR = {
 /** actor → terminal cancellation status. Exhaustive over `LifecycleActor`. */
 export function cancelledStatusFor(actor: LifecycleActor): RideStatus {
   return CANCELLED_STATUS_BY_ACTOR[actor];
+}
+
+/** `RideLifecycleService.cancel`'s input. Kept here so the service stays under the 500-line cap. */
+export interface CancelInput {
+  rideId: string;
+  /**
+   * Recorded on the event — admin stays admin (#316, Q6). The terminal status
+   * comes from `lifecycleActorFor(eventActor)`.
+   */
+  eventActor: RideEventActorKind;
+  actorId: string;
+  reasonCode: CancelReasonCode | null;
+  /** Free text — never logged. */
+  reasonText: string | null;
+}
+
+/**
+ * #316 (K2): a console cancel (dispatcher or admin) must say why; rider and
+ * driver may still send no code until their pickers land (#326, #322). A code
+ * must belong to the cancelling actor's list — admin uses the dispatcher list.
+ * Runs before any transaction, so a 422 writes nothing.
+ */
+export function assertCancelReason(input: CancelInput): void {
+  if (input.reasonCode === null) {
+    if (input.eventActor === 'dispatcher' || input.eventActor === 'admin') {
+      throw new UnprocessableEntityException('cancel_reason_required');
+    }
+    return;
+  }
+  if (
+    !isCancelReasonFor(lifecycleActorFor(input.eventActor), input.reasonCode)
+  ) {
+    throw new UnprocessableEntityException('cancel_reason_not_allowed');
+  }
 }
 
 /**

@@ -364,8 +364,8 @@ export default function DispatchPage() {
           errorKey={assignApi.errorKey}
           disabledReasonKey={disabledReasonKey}
           onClose={() => setTarget(null)}
-          onConfirm={(reason) => {
-            void assignApi.cancel(target.rideId, reason).then((outcome) => {
+          onConfirm={(body) => {
+            void assignApi.cancel(target.rideId, body).then((outcome) => {
               if (outcome.ok) setTarget(null);
             });
           }}
